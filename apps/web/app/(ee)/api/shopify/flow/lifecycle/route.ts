@@ -29,6 +29,7 @@ export async function POST(request: Request) {
       body: rawBodyBytes,
       signature,
       secret,
+      rotationSecret: process.env.SHOPIFY_WEBHOOK_SECRET_NEXT,
     })
   ) {
     return Response.json({ error: "Invalid signature." }, { status: 401 });
