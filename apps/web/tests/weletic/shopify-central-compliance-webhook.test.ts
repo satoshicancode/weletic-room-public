@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { createHmac } from "node:crypto";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   resolveComplianceStore: vi.fn(),
@@ -209,9 +209,11 @@ function resolvedStore(domain: string) {
 }
 
 describe("central durable Shopify compliance ingress", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.SHOPIFY_WEBHOOK_SECRET = secret;
+    vi.stubEnv("SHOPIFY_WEBHOOK_SECRET_NEXT", "");
     mocks.resolveComplianceStore.mockImplementation(async (domain: string) =>
       resolvedStore(domain),
     );
@@ -251,6 +253,31 @@ describe("central durable Shopify compliance ingress", () => {
     mocks.transaction.mockImplementation((callback, client) =>
       callback(client),
     );
+  });
+
+  it("accepts the next signing key only during configured overlap", async () => {
+    const next = "central-compliance-next-key-at-least-32-characters";
+    const body = {
+      shop_domain: "a.myshopify.com",
+      customer: { id: 42 },
+      orders_requested: [101],
+    };
+    const makeRequest = () => {
+      const request = signedRequest({ body });
+      request.headers.set(
+        "x-shopify-hmac-sha256",
+        createHmac("sha256", next)
+          .update(JSON.stringify(body))
+          .digest("base64"),
+      );
+      return request;
+    };
+    vi.stubEnv("SHOPIFY_WEBHOOK_SECRET_NEXT", next);
+    expect((await POST(makeRequest())).status).toBe(200);
+    expect(mocks.persistAndQueue).toHaveBeenCalledTimes(1);
+    vi.stubEnv("SHOPIFY_WEBHOOK_SECRET_NEXT", "");
+    expect((await POST(makeRequest())).status).toBe(401);
+    expect(mocks.persistAndQueue).toHaveBeenCalledTimes(1);
   });
 
   it("persists encrypted durable work before acknowledging and never requires an Admin token", async () => {

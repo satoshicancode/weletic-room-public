@@ -411,6 +411,7 @@ export const POST = async (req: Request) => {
         body: bodyBytes,
         signature,
         secret: webhookSecret,
+        rotationSecret: process.env.SHOPIFY_WEBHOOK_SECRET_NEXT,
       })
     ) {
       return new Response(`[Shopify] Invalid webhook signature. Skipping...`, {

@@ -67,6 +67,7 @@ export async function readVerifiedShopifyWebhook<T>({
       body: rawBodyBytes,
       signature,
       secret,
+      rotationSecret: process.env.SHOPIFY_WEBHOOK_SECRET_NEXT,
     })
   ) {
     return { ok: false, response: unauthorizedWebhook() };
