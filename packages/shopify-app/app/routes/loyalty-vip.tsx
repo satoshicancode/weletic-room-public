@@ -1,25 +1,25 @@
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { useId, useMemo } from "react";
-import { EarningRulesSession } from "../../../../apps/web/ui/weletic/loyalty/earning-rules-screen";
+import { VipCampaignSession } from "../../../../apps/web/ui/weletic/loyalty/vip-campaign-screen";
 import { LoyaltyNavigation } from "../loyalty-navigation";
-import { createMerchantEarningRulesClient } from "../merchant-earning-rules-client";
+import { createMerchantVipCampaignClient } from "../merchant-vip-campaign-client";
 
-// Data-free authenticated bootstrap. Every data request obtains a fresh token.
 export { action, ErrorBoundary, headers, links, loader } from "./settings";
-export default function EarningRulesPage() {
+
+export default function VipCampaignPage() {
   const shopify = useAppBridge();
   const scopeKey = useId();
   const transport = useMemo(
     () => ({
       scopeKey,
-      ...createMerchantEarningRulesClient(() => shopify.idToken()),
+      ...createMerchantVipCampaignClient(() => shopify.idToken()),
     }),
     [scopeKey, shopify],
   );
   return (
     <main className="weletic-shoppers">
       <LoyaltyNavigation />
-      <EarningRulesSession transport={transport} />
+      <VipCampaignSession transport={transport} />
     </main>
   );
 }

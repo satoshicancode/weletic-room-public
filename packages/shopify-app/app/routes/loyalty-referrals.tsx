@@ -1,7 +1,7 @@
-import { Link } from "@remix-run/react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { useId, useMemo } from "react";
 import { ReferralConfigurationSession } from "../../../../apps/web/ui/weletic/loyalty/referral-configuration-screen";
+import { LoyaltyNavigation } from "../loyalty-navigation";
 import { createMerchantReferralConfigurationClient } from "../merchant-referral-configuration-client";
 
 // Data-free authenticated bootstrap. Every data request obtains a fresh token.
@@ -18,9 +18,7 @@ export default function ReferralConfigurationPage() {
   );
   return (
     <main className="weletic-shoppers">
-      <nav aria-label="Weletic">
-        <Link to="/">Weletic</Link> · <Link to="/loyalty">Loyalty</Link>
-      </nav>
+      <LoyaltyNavigation />
       <ReferralConfigurationSession transport={transport} />
     </main>
   );

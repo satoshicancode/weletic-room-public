@@ -73,6 +73,22 @@ const update = {
   expectedInstallationGeneration: "g1",
   settings: { pointsPerCurrencyUnit: "1.2500" },
 };
+const vipView = {
+  storeId: "store-a",
+  installationGeneration: "g1",
+  revision: "b".repeat(64),
+  affectedResourceId: null,
+  capabilities: { configure: true },
+  policy: {
+    milestoneMode: "amount_spent",
+    timeframe: "rolling_12m",
+    downgradeGraceDays: 30,
+    autoDowngradeEnabled: true,
+  },
+  tiers: [],
+  campaigns: [],
+  tierHistory: [],
+};
 
 describe("workspace settings consolidation", () => {
   let container: HTMLDivElement;
@@ -89,7 +105,9 @@ describe("workspace settings consolidation", () => {
     mocks.preview.mockResolvedValue({ jobId: "preview-a" });
     fetcher = vi
       .fn<typeof fetch>()
-      .mockImplementation(async () => Response.json(view));
+      .mockImplementation(async (url) =>
+        Response.json(String(url).includes("vip-campaigns") ? vipView : view),
+      );
     vi.stubGlobal("fetch", fetcher);
   });
   afterEach(async () => {
@@ -109,30 +127,38 @@ describe("workspace settings consolidation", () => {
         }),
       );
     });
-  it("keeps tier creation and links policy editing to shared settings", async () => {
-    const configure = vi.fn();
+  it("loads tier and campaign management through the shared fenced editor", async () => {
     await act(async () =>
       root.render(
         createElement(TabVip, {
-          tiers: [],
-          onConfigure: configure,
-          onRefresh: refreshed,
+          workspaceId: "workspace-a",
         }),
       ),
     );
-    expect(container.querySelector("form")).toBeNull();
-    const policy = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Configure VIP policy"),
-    )!;
-    await act(async () => policy.click());
-    expect(configure).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("VIP policy");
+    expect(fetcher.mock.calls[0][0]).toBe(
+      "/api/weletic/vip-campaigns?workspaceId=workspace-a",
+    );
     const add = [...container.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Add VIP Tier"),
+      button.textContent?.includes("Add tier"),
     )!;
     await act(async () => add.click());
-    expect(container.querySelector('[role="dialog"]')?.textContent).toBe(
-      "Controlled tier editor",
+    expect(container.querySelector('input[value=""]')).not.toBeNull();
+    const language = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Language"]',
+    )!;
+    language.value = "vi";
+    await act(async () =>
+      language.dispatchEvent(new Event("change", { bubbles: true })),
     );
+    expect(container.textContent).toContain("Chính sách VIP");
+    expect(container.textContent).toContain("Điều kiện xếp hạng");
+    language.value = "ja";
+    await act(async () =>
+      language.dispatchEvent(new Event("change", { bubbles: true })),
+    );
+    expect(container.textContent).toContain("VIPポリシー");
+    expect(container.textContent).toContain("到達条件");
     expect(mocks.legacySave).not.toHaveBeenCalled();
   });
   it("renders one shared configuration editor alongside retained backfill controls", async () => {
