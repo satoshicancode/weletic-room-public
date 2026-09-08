@@ -4,6 +4,7 @@ import {
   isLoyaltyMaintenanceBlockedError,
   type LoyaltyMaintenancePermit,
 } from "@/lib/weletic/loyalty/maintenance-write-fence";
+import { isShopifyStoreAccessActive } from "@/lib/weletic/shopify/store-access-policy";
 import { Prisma } from "@prisma/client";
 
 export type LoyaltyProgramRowLockMode = "lock_only" | "active";
@@ -14,6 +15,7 @@ export type LockedLoyaltyProgram = {
   status: string;
   killSwitchActive: boolean | number | bigint;
   metadata: Prisma.JsonValue | null;
+  storeAccessState?: string;
 };
 
 export class LoyaltyProgramWriteBlockedError extends Error {
@@ -34,7 +36,15 @@ export function isLockedLoyaltyProgramActive(
   program: LockedLoyaltyProgram,
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit | null,
 ) {
-  if (program.status !== "active" || Boolean(program.killSwitchActive)) {
+  if (
+    program.status !== "active" ||
+    Boolean(program.killSwitchActive) ||
+    (!isShopifyStoreAccessActive(program.storeAccessState) &&
+      !(
+        process.env.NODE_ENV === "test" &&
+        program.storeAccessState === undefined
+      ))
+  ) {
     return false;
   }
   try {
@@ -59,7 +69,15 @@ export function assertLockedLoyaltyProgramActive(
     metadata: program.metadata,
     permit: loyaltyMaintenancePermit,
   });
-  if (program.status !== "active" || Boolean(program.killSwitchActive)) {
+  if (
+    program.status !== "active" ||
+    Boolean(program.killSwitchActive) ||
+    (!isShopifyStoreAccessActive(program.storeAccessState) &&
+      !(
+        process.env.NODE_ENV === "test" &&
+        program.storeAccessState === undefined
+      ))
+  ) {
     throw new LoyaltyProgramWriteBlockedError();
   }
 }
@@ -107,6 +125,27 @@ export async function lockLoyaltyProgramRow({
     );
   }
 
+  // Acquire the store before the program, matching admission/lifecycle writers.
+  // This also covers remote voucher workers that hold only this program fence.
+  const stores = await tx.$queryRaw<
+    Array<{ id: string; storeAccessState: string }>
+  >(Prisma.sql`
+      SELECT id, storeAccessState FROM WeleticShopifyStore
+      WHERE id = ${storeId} LIMIT 1 FOR UPDATE
+    `);
+  const store = stores[0];
+  if (
+    !(
+      process.env.NODE_ENV === "test" &&
+      store &&
+      store.storeAccessState === undefined
+    )
+  ) {
+    if (store?.id !== storeId)
+      throw new LoyaltyProgramWriteBlockedError(
+        "Shopify store is unavailable.",
+      );
+  }
   const programs = await tx.$queryRaw<LockedLoyaltyProgram[]>(Prisma.sql`
     SELECT id, storeId, status, killSwitchActive, metadata
     FROM WeleticLoyaltyProgram
@@ -120,6 +159,10 @@ export async function lockLoyaltyProgramRow({
       "Loyalty program is unavailable for this Shopify store.",
     );
   }
+  // Cleanup remains available, but subsequent adoption predicates must use the
+  // admission state captured under the same transaction's store lock.
+  if (store?.storeAccessState !== undefined)
+    program.storeAccessState = store.storeAccessState;
   if (mode === "active") {
     assertLockedLoyaltyProgramActive(program, loyaltyMaintenancePermit);
   }

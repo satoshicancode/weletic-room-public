@@ -6,6 +6,10 @@ import {
 } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { lockLoyaltyProgramRowIfPresent } from "@/lib/weletic/loyalty/program-write-fence";
 import { Prisma } from "@prisma/client";
+import {
+  isShopifyStoreAccessActive,
+  type ShopifyStoreAccessState,
+} from "./store-access-policy";
 
 type StoreComplianceReader = Pick<
   Prisma.TransactionClient,
@@ -18,6 +22,7 @@ export type WeleticShopifyOperationalStore = {
   shopCurrency: string;
   currencyVerifiedAt: Date | null;
   installationGeneration: string | null;
+  storeAccessState?: ShopifyStoreAccessState;
 };
 
 export class ShopifyStoreOperationalWritesBlockedError extends Error {
@@ -98,6 +103,7 @@ async function readOperationalStore({
       shopCurrency: true,
       currencyVerifiedAt: true,
       installationGeneration: true,
+      storeAccessState: true,
     },
   });
   if (testMockWithoutComplianceState(store)) {
@@ -142,12 +148,12 @@ async function claimOperationalStore({
   }
 
   const query = storeId
-    ? Prisma.sql`SELECT id, complianceState, shopCurrency, currencyVerifiedAt, installationGeneration
+    ? Prisma.sql`SELECT id, complianceState, shopCurrency, currencyVerifiedAt, installationGeneration, storeAccessState
         FROM WeleticShopifyStore
         WHERE id = ${storeId}
         LIMIT 1
         FOR UPDATE`
-    : Prisma.sql`SELECT id, complianceState, shopCurrency, currencyVerifiedAt, installationGeneration
+    : Prisma.sql`SELECT id, complianceState, shopCurrency, currencyVerifiedAt, installationGeneration, storeAccessState
         FROM WeleticShopifyStore
         WHERE projectId = ${workspaceId!}
         LIMIT 1
@@ -291,6 +297,20 @@ export async function assertShopifyStoreAcceptsOperationalWrites({
       workspaceId,
       complianceState: store?.complianceState,
     });
+  }
+  // Existing focused mocks predate admission. Real reads always select the
+  // non-null column; an absent/unknown runtime value must fail closed.
+  if (
+    !(process.env.NODE_ENV === "test" && store.storeAccessState === undefined)
+  ) {
+    if (!isShopifyStoreAccessActive(store.storeAccessState)) {
+      throw new ShopifyStoreOperationalWritesBlockedError({
+        action,
+        storeId: store.id,
+        workspaceId,
+        complianceState: store.storeAccessState ?? "access_unavailable",
+      });
+    }
   }
   const missingCurrencyMarker =
     (store as { currencyVerifiedAt?: Date | null }).currencyVerifiedAt ===

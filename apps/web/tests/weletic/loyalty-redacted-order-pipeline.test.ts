@@ -129,6 +129,7 @@ describe("redacted customer order pipeline", () => {
         shopCurrency: true,
         currencyVerifiedAt: true,
         installationGeneration: true,
+        storeAccessState: true,
       },
     });
     expect(mocks.customerFindUnique).not.toHaveBeenCalled();

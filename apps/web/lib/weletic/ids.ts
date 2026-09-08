@@ -2,6 +2,7 @@ import { nanoid } from "@dub/utils";
 
 export type WeleticIdPrefix =
   | "wstore_"
+  | "saccess_"
   | "wmarket_"
   | "wprod_"
   | "wvar_"

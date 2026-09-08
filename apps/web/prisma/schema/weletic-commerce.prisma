@@ -81,6 +81,12 @@ enum WeleticShopifyStoreComplianceState {
   redacted
 }
 
+enum WeleticShopifyStoreAccessState {
+  pending_approval
+  active
+  suspended
+}
+
 model WeleticShopifyStore {
   id                      String                             @id
   projectId               String                             @unique
@@ -89,6 +95,8 @@ model WeleticShopifyStore {
   shopCurrency            String
   currencyVerifiedAt      DateTime?
   installationGeneration  String?                            @db.VarChar(64)
+  storeAccessState        WeleticShopifyStoreAccessState      @default(pending_approval)
+  storeAccessRevision     Int                                @default(1)
   defaultLocale           String                             @default("en")
   apiVersion              String
   syncStatus              WeleticSyncStatus                  @default(pending)
@@ -142,9 +150,28 @@ model WeleticShopifyStore {
   shopPrivacyTombstones        WeleticShopifyShopPrivacyTombstone[]
   voucherCleanups              WeleticShopifyVoucherCleanup[]
   voucherCleanupRequestLinks   WeleticShopifyVoucherCleanupRequestLink[]
+  accessChanges                WeleticShopifyStoreAccessChange[]
 
   @@index(syncStatus)
   @@index(complianceState)
+}
+
+// Operator-only admission changes. This append-only record is committed with
+// the store revision; it contains no customer identifiers or credentials.
+model WeleticShopifyStoreAccessChange {
+  id                     String   @id @db.VarChar(64)
+  storeId                String
+  installationGeneration String   @db.VarChar(64)
+  previousState          WeleticShopifyStoreAccessState
+  nextState              WeleticShopifyStoreAccessState
+  revision               Int
+  operator               String   @db.VarChar(191)
+  reason                 String   @db.VarChar(500)
+  createdAt              DateTime @default(now())
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, revision])
 }
 
 // Shopify Remix OAuth sessions. The serialized payload is encrypted before it

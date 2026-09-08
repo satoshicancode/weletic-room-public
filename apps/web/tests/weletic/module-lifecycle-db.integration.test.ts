@@ -64,6 +64,7 @@ describe("module lifecycle production transactions on isolated MySQL", () => {
     // Isolated synthetic scalar parents; no retained merchant or integration.
     await database.weleticShopifyStore.create({
       data: {
+        storeAccessState: "active",
         id: storeId,
         projectId: `workspace-${id}`,
         programId: `affiliate-${id}`,
