@@ -428,111 +428,37 @@ describe("Smile-parity rolling points expiry", () => {
     });
   });
 
-  it("sends a consent-gated, idempotent reminder and rejects stale dates", async () => {
-    const expiryAt = "2026-09-30T00:00:00.000Z";
-    vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue({
-      id: "wlacc_expiry",
-      cachedPointsBalance: BigInt(500),
-      nextExpiryDate: new Date(expiryAt),
-      pointsExpiryPolicyVersion: 2,
-      shopper: {
-        email: "member@example.com",
-        firstName: "Mai",
-        locale: "en",
-        acceptsMarketing: true,
-        ordersCount: 1,
-      },
-      program: {
-        ...policy,
-        name: "Yamax Points",
-        pointNamePlural: "Points",
-      },
-      store: { shopDomain: "yamax.myshopify.com" },
-    } as any);
-
-    const outcome = await sendPointsExpiryNotification({
-      storeId: "wstore_expiry",
-      payload: {
-        accountId: "wlacc_expiry",
-        lastActivityAt: "2026-08-30T00:00:00.000Z",
-        expiryMonths: 1,
-        expiryAt,
-        stage: "warning",
-        policyVersion: 2,
-      },
-      now: new Date("2026-09-01T00:00:00.000Z"),
-    });
-
-    expect(outcome).toBe("sent");
-    expect(sendBatchEmail).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          to: "member@example.com",
-          variant: "marketing",
-          unsubscribeUrl: "https://yamax.myshopify.com/account/profile",
-        }),
-      ],
-      {
-        idempotencyKey:
-          "loyalty-expiry-warning-wlacc_expiry-2026-09-30T00:00:00.000Z",
-      },
-    );
-
-    vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValueOnce({
-      id: "wlacc_opted_out",
-      cachedPointsBalance: BigInt(500),
-      nextExpiryDate: new Date(expiryAt),
-      pointsExpiryPolicyVersion: 2,
-      shopper: {
-        email: "opted-out@example.com",
-        acceptsMarketing: false,
-        ordersCount: 1,
-      },
-      program: {
-        ...policy,
-        name: "Yamax Points",
-        pointNamePlural: "Points",
-      },
-      store: { shopDomain: "yamax.myshopify.com" },
-    } as any);
-    expect(
-      await sendPointsExpiryNotification({
-        storeId: "wstore_expiry",
-        payload: {
-          accountId: "wlacc_opted_out",
-          lastActivityAt: "2026-08-30T00:00:00.000Z",
-          expiryMonths: 1,
-          expiryAt,
-          stage: "warning",
-          policyVersion: 2,
+  it.each([
+    ["en", "500 Points expire on September 30, 2026"],
+    ["ja-JP", "500 Pointsの有効期限は2026年9月30日です"],
+    ["vi-VN", "500 Points sẽ hết hạn vào 30 tháng 9, 2026"],
+    ["fr-FR", "500 Points expire on September 30, 2026"],
+    ["not a locale", "500 Points expire on September 30, 2026"],
+  ])(
+    "sends a consent-gated, idempotent %s reminder and rejects stale dates",
+    async (locale, subject) => {
+      const expiryAt = "2026-09-30T00:00:00.000Z";
+      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue({
+        id: "wlacc_expiry",
+        cachedPointsBalance: BigInt(500),
+        nextExpiryDate: new Date(expiryAt),
+        pointsExpiryPolicyVersion: 2,
+        shopper: {
+          email: "member@example.com",
+          firstName: "Mai",
+          locale,
+          acceptsMarketing: true,
+          ordersCount: 1,
         },
-        now: new Date("2026-09-01T00:00:00.000Z"),
-      }),
-    ).toBe("ineligible");
-    expect(sendBatchEmail).toHaveBeenCalledTimes(1);
+        program: {
+          ...policy,
+          name: "Yamax Points",
+          pointNamePlural: "Points",
+        },
+        store: { shopDomain: "yamax.myshopify.com" },
+      } as any);
 
-    expect(pointsExpiryDatesMatch(expiryAt, "2026-10-01T00:00:00.000Z")).toBe(
-      false,
-    );
-    vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValueOnce({
-      id: "wlacc_expiry",
-      cachedPointsBalance: BigInt(500),
-      nextExpiryDate: new Date("2026-10-01T00:00:00.000Z"),
-      pointsExpiryPolicyVersion: 2,
-      shopper: {
-        email: "member@example.com",
-        acceptsMarketing: true,
-        ordersCount: 1,
-      },
-      program: {
-        ...policy,
-        name: "Yamax Points",
-        pointNamePlural: "Points",
-      },
-      store: { shopDomain: "yamax.myshopify.com" },
-    } as any);
-    expect(
-      await sendPointsExpiryNotification({
+      const outcome = await sendPointsExpiryNotification({
         storeId: "wstore_expiry",
         payload: {
           accountId: "wlacc_expiry",
@@ -542,9 +468,93 @@ describe("Smile-parity rolling points expiry", () => {
           stage: "warning",
           policyVersion: 2,
         },
-      }),
-    ).toBe("stale");
-  });
+        now: new Date("2026-09-01T00:00:00.000Z"),
+      });
+
+      expect(outcome).toBe("sent");
+      expect(sendBatchEmail).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({
+            to: "member@example.com",
+            subject,
+            variant: "marketing",
+            unsubscribeUrl: "https://yamax.myshopify.com/account/profile",
+          }),
+        ],
+        {
+          idempotencyKey:
+            "loyalty-expiry-warning-wlacc_expiry-2026-09-30T00:00:00.000Z",
+        },
+      );
+
+      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValueOnce({
+        id: "wlacc_opted_out",
+        cachedPointsBalance: BigInt(500),
+        nextExpiryDate: new Date(expiryAt),
+        pointsExpiryPolicyVersion: 2,
+        shopper: {
+          email: "opted-out@example.com",
+          acceptsMarketing: false,
+          ordersCount: 1,
+        },
+        program: {
+          ...policy,
+          name: "Yamax Points",
+          pointNamePlural: "Points",
+        },
+        store: { shopDomain: "yamax.myshopify.com" },
+      } as any);
+      expect(
+        await sendPointsExpiryNotification({
+          storeId: "wstore_expiry",
+          payload: {
+            accountId: "wlacc_opted_out",
+            lastActivityAt: "2026-08-30T00:00:00.000Z",
+            expiryMonths: 1,
+            expiryAt,
+            stage: "warning",
+            policyVersion: 2,
+          },
+          now: new Date("2026-09-01T00:00:00.000Z"),
+        }),
+      ).toBe("ineligible");
+      expect(sendBatchEmail).toHaveBeenCalledTimes(1);
+
+      expect(pointsExpiryDatesMatch(expiryAt, "2026-10-01T00:00:00.000Z")).toBe(
+        false,
+      );
+      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValueOnce({
+        id: "wlacc_expiry",
+        cachedPointsBalance: BigInt(500),
+        nextExpiryDate: new Date("2026-10-01T00:00:00.000Z"),
+        pointsExpiryPolicyVersion: 2,
+        shopper: {
+          email: "member@example.com",
+          acceptsMarketing: true,
+          ordersCount: 1,
+        },
+        program: {
+          ...policy,
+          name: "Yamax Points",
+          pointNamePlural: "Points",
+        },
+        store: { shopDomain: "yamax.myshopify.com" },
+      } as any);
+      expect(
+        await sendPointsExpiryNotification({
+          storeId: "wstore_expiry",
+          payload: {
+            accountId: "wlacc_expiry",
+            lastActivityAt: "2026-08-30T00:00:00.000Z",
+            expiryMonths: 1,
+            expiryAt,
+            stage: "warning",
+            policyVersion: 2,
+          },
+        }),
+      ).toBe("stale");
+    },
+  );
 
   it("keeps the outbox retryable when no email provider accepts the reminder", async () => {
     const expiryAt = "2026-09-30T00:00:00.000Z";
