@@ -49,6 +49,9 @@ const rule = {
   minOrderSubtotal: null,
   excludeDiscountedItems: false,
   excludeTaxesAndShipping: true,
+  purchaseType: "one_time",
+  subscriptionCadence: "first_payment",
+  subscriptionPaymentLimit: null,
   maxEventsPerCustomer: 1,
   limitInterval: "lifetime",
   conditions: null,
@@ -114,6 +117,18 @@ describe("earning-rule transactional orchestration (mocked persistence)", () => 
     {
       earningRules: [
         { ...row.earningRules[0], startAt: new Date("2026-09-08") },
+      ],
+    },
+    {
+      earningRules: [
+        {
+          ...row.earningRules[0],
+          purchasePolicy: {
+            purchaseType: "both",
+            subscriptionCadence: "every_payment",
+            subscriptionPaymentLimit: null,
+          },
+        },
       ],
     },
     { earningRules: [] },

@@ -50,10 +50,21 @@ const row: WeleticRewardDefinition = {
   usageLimit: 1,
   usageLimitPerCustomer: 1,
   expiresInDays: null,
+  purchasePolicy: null,
   createdAt: new Date("2026-09-08"),
   updatedAt: new Date("2026-09-08"),
 };
 const fields = projectRewardCatalogEntry(row).fields!;
+const { purchaseType, subscriptionCadence, subscriptionPaymentLimit, ...base } =
+  fields;
+const persistedFields = {
+  ...base,
+  purchasePolicy: {
+    purchaseType,
+    subscriptionCadence,
+    subscriptionPaymentLimit,
+  },
+};
 const context = {
   tx,
   storeId: row.storeId,
@@ -212,7 +223,7 @@ describe("transaction-local reward catalog service (mocked persistence)", () => 
       tx,
       storeId: row.storeId,
       id: row.id,
-      data: { ...fields, pointsCost: row.pointsCost },
+      data: { ...persistedFields, pointsCost: row.pointsCost },
     });
     expect(mocks.create).not.toHaveBeenCalled();
   });
@@ -226,7 +237,7 @@ describe("transaction-local reward catalog service (mocked persistence)", () => 
     expect(mocks.create).toHaveBeenCalledExactlyOnceWith({
       tx,
       storeId: row.storeId,
-      ...fields,
+      ...persistedFields,
       pointsCost: row.pointsCost,
     });
     expect(mocks.update).toHaveBeenCalledExactlyOnceWith({

@@ -19,6 +19,9 @@ const purchase: EarningRuleFields = {
   minOrderSubtotal: "0",
   excludeDiscountedItems: false,
   excludeTaxesAndShipping: true,
+  purchaseType: "both",
+  subscriptionCadence: "every_payment",
+  subscriptionPaymentLimit: null,
   maxEventsPerCustomer: null,
   limitInterval: null,
   conditions: null,
@@ -32,6 +35,8 @@ const activity: EarningRuleFields = {
   minOrderSubtotal: null,
   maxEventsPerCustomer: 1,
   limitInterval: "lifetime",
+  purchaseType: "one_time",
+  subscriptionCadence: "first_payment",
 };
 
 describe("strict earning-rule wire contract", () => {
@@ -82,6 +87,23 @@ describe("strict earning-rule wire contract", () => {
     expect(earningRuleFieldsSchema.parse(activity).fixedPoints).toBe(
       "9223372036854775807",
     );
+  });
+  it("validates immutable subscription cadence terms", () => {
+    expect(
+      earningRuleFieldsSchema.safeParse({
+        ...purchase,
+        purchaseType: "subscription",
+        subscriptionCadence: "first_n_payments",
+        subscriptionPaymentLimit: 3,
+      }).success,
+    ).toBe(true);
+    expect(
+      earningRuleFieldsSchema.safeParse({
+        ...purchase,
+        subscriptionCadence: "first_n_payments",
+        subscriptionPaymentLimit: null,
+      }).success,
+    ).toBe(false);
   });
   it.each([
     { multiplier: 1 },

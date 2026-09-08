@@ -13,7 +13,7 @@ const en = {
   review:
     "Legacy review earning rules depend on publication and provider eligibility, not star rating. Hiding, deleting or invalidating a review can reverse points. These settings do not configure participation-based incentives. Enable the selected reviews provider before activation.",
   purchase:
-    "Taxes and shipping are excluded. Existing line-level refund allocation is preserved.",
+    "Taxes and shipping are excluded. Weletic interprets subscription orders produced by Shopify; it does not sell or manage subscriptions. Existing line-level refund allocation is preserved.",
   reset:
     "Changing the trigger resets earning settings and turns activation off.",
   fields: {
@@ -25,6 +25,9 @@ const en = {
     fixedPoints: "Points awarded",
     maxPointsPerEvent: "Maximum points per event (optional)",
     minOrderSubtotal: "Minimum order subtotal (optional)",
+    purchaseType: "Eligible purchase type",
+    subscriptionCadence: "Eligible subscription payments",
+    subscriptionPaymentLimit: "Number of eligible payments",
     maxEventsPerCustomer: "Maximum events per customer",
     limitInterval: "Limit period",
     excludeDiscountedItems: "Exclude discounted items",
@@ -54,6 +57,16 @@ const en = {
     monthly: "Monthly",
     calendar_year: "Calendar year",
   },
+  purchaseTypes: {
+    one_time: "One-time purchases",
+    subscription: "Subscriptions",
+    both: "One-time purchases and subscriptions",
+  },
+  subscriptionCadences: {
+    first_payment: "First payment",
+    first_n_payments: "First N payments",
+    every_payment: "Every payment",
+  },
   providers: {
     native: "Weletic reviews",
     judgeme: "Judge.me (legacy integration)",
@@ -78,7 +91,8 @@ export const earningRuleCopy: Record<EarningRuleLocale, Copy> = {
       "自己申告制：リンクを開く操作や申請では、フォロー・いいね・共有の実行は確認できません。",
     review:
       "従来のレビュー獲得ルールは星評価ではなく、公開状況と連携先の適格条件に基づきます。非表示・削除・無効化によりポイントが取り消される場合があります。この設定では参加型インセンティブは設定できません。有効化前に選択したレビュー連携を有効にしてください。",
-    purchase: "税金と送料は対象外です。既存の明細別返金配分を維持します。",
+    purchase:
+      "税金と送料は対象外です。WeleticはShopifyが生成した定期購入注文を判定しますが、定期購入の販売・契約管理は行いません。既存の明細別返金配分を維持します。",
     reset: "トリガーを変更すると獲得設定がリセットされ、無効になります。",
     fields: {
       name: "ルール名",
@@ -89,6 +103,9 @@ export const earningRuleCopy: Record<EarningRuleLocale, Copy> = {
       fixedPoints: "付与ポイント",
       maxPointsPerEvent: "イベントごとのポイント上限（任意）",
       minOrderSubtotal: "注文小計の最低額（任意）",
+      purchaseType: "対象購入タイプ",
+      subscriptionCadence: "対象となる定期購入の支払い",
+      subscriptionPaymentLimit: "対象となる支払い回数",
       maxEventsPerCustomer: "顧客ごとのイベント上限",
       limitInterval: "制限期間",
       excludeDiscountedItems: "割引商品を除外",
@@ -114,6 +131,16 @@ export const earningRuleCopy: Record<EarningRuleLocale, Copy> = {
       link_click: "リンクを開く",
     },
     periods: { lifetime: "全期間", monthly: "月ごと", calendar_year: "暦年" },
+    purchaseTypes: {
+      one_time: "通常購入",
+      subscription: "定期購入",
+      both: "通常購入と定期購入",
+    },
+    subscriptionCadences: {
+      first_payment: "初回支払い",
+      first_n_payments: "最初のN回の支払い",
+      every_payment: "すべての支払い",
+    },
     providers: { native: "Weleticレビュー", judgeme: "Judge.me（既存連携）" },
   },
   vi: {
@@ -129,7 +156,7 @@ export const earningRuleCopy: Record<EarningRuleLocale, Copy> = {
     review:
       "Quy tắc tích điểm đánh giá cũ phụ thuộc trạng thái xuất bản và điều kiện của nhà cung cấp, không phụ thuộc số sao. Ẩn, xóa hoặc vô hiệu hóa đánh giá có thể thu hồi điểm. Các cài đặt này không cấu hình ưu đãi dựa trên việc tham gia. Cần bật nhà cung cấp đánh giá đã chọn trước khi kích hoạt.",
     purchase:
-      "Không tính thuế và phí vận chuyển. Giữ nguyên phân bổ hoàn tiền theo từng dòng hàng.",
+      "Không tính thuế và phí vận chuyển. Weletic diễn giải đơn đăng ký do Shopify tạo ra; ứng dụng không bán hay quản lý đăng ký. Giữ nguyên phân bổ hoàn tiền theo từng dòng hàng.",
     reset:
       "Đổi điều kiện kích hoạt sẽ đặt lại cài đặt tích điểm và tắt quy tắc.",
     fields: {
@@ -141,6 +168,9 @@ export const earningRuleCopy: Record<EarningRuleLocale, Copy> = {
       fixedPoints: "Điểm thưởng",
       maxPointsPerEvent: "Điểm tối đa mỗi sự kiện (tùy chọn)",
       minOrderSubtotal: "Tổng tiền hàng tối thiểu (tùy chọn)",
+      purchaseType: "Loại đơn đủ điều kiện",
+      subscriptionCadence: "Kỳ thanh toán thuê bao đủ điều kiện",
+      subscriptionPaymentLimit: "Số kỳ thanh toán đủ điều kiện",
       maxEventsPerCustomer: "Số sự kiện tối đa mỗi khách hàng",
       limitInterval: "Chu kỳ giới hạn",
       excludeDiscountedItems: "Loại trừ hàng giảm giá",
@@ -169,6 +199,16 @@ export const earningRuleCopy: Record<EarningRuleLocale, Copy> = {
       lifetime: "Trọn đời",
       monthly: "Hàng tháng",
       calendar_year: "Năm dương lịch",
+    },
+    purchaseTypes: {
+      one_time: "Mua một lần",
+      subscription: "Thuê bao",
+      both: "Mua một lần và thuê bao",
+    },
+    subscriptionCadences: {
+      first_payment: "Lần thanh toán đầu",
+      first_n_payments: "N lần thanh toán đầu",
+      every_payment: "Mọi lần thanh toán",
     },
     providers: {
       native: "Đánh giá Weletic",

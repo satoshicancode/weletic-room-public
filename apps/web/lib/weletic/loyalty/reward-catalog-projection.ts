@@ -1,4 +1,8 @@
 import type { WeleticRewardDefinition } from "@prisma/client";
+import {
+  DEFAULT_REWARD_PURCHASE_POLICY,
+  loyaltyPurchasePolicySchema,
+} from "./purchase-policy";
 import { rewardCatalogFieldsSchema } from "./reward-catalog-contract";
 
 function projectIds(value: unknown, resource: string): unknown {
@@ -13,6 +17,9 @@ function projectIds(value: unknown, resource: string): unknown {
 
 /** Minimal editor projection, never raw Prisma/JSON or provider identity. */
 export function projectRewardCatalogEntry(reward: WeleticRewardDefinition) {
+  const purchasePolicy = loyaltyPurchasePolicySchema.safeParse(
+    reward.purchasePolicy ?? DEFAULT_REWARD_PURCHASE_POLICY,
+  );
   const parsed = rewardCatalogFieldsSchema.safeParse({
     name: reward.name,
     description: reward.description,
@@ -39,11 +46,15 @@ export function projectRewardCatalogEntry(reward: WeleticRewardDefinition) {
     usageLimit: reward.usageLimit,
     usageLimitPerCustomer: reward.usageLimitPerCustomer,
     expiresInDays: reward.expiresInDays,
+    ...(purchasePolicy.success ? purchasePolicy.data : {}),
     status: reward.status,
   });
   // Older scope names, POS definitions, zero-point direct-incentive definitions,
   // and provider-backed legacy rewards need their own deliberate migration.
-  const editable = parsed.success && reward.shopifyPriceRuleId === null;
+  const editable =
+    parsed.success &&
+    purchasePolicy.success &&
+    reward.shopifyPriceRuleId === null;
   return {
     id: reward.id,
     name: reward.name,

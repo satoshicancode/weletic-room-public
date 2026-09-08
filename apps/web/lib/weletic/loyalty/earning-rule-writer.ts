@@ -36,7 +36,10 @@ export type ValidatedEarningRuleData = Pick<
   | "excludeDiscountedItems"
   | "excludeTaxesAndShipping"
   | "isActive"
-> & { conditions: Prisma.InputJsonValue | Prisma.NullTypes.DbNull };
+> & {
+  conditions: Prisma.InputJsonValue | Prisma.NullTypes.DbNull;
+  purchasePolicy: Prisma.InputJsonValue;
+};
 export async function writeEarningRuleInTransaction({
   tx,
   storeId,

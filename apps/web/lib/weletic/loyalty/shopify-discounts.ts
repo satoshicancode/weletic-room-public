@@ -11,6 +11,12 @@ import {
   ShopifyTokenAuthorityError,
 } from "@/lib/weletic/shopify/token-authority";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
+import {
+  DEFAULT_REWARD_PURCHASE_POLICY,
+  getExpectedShopifyDiscountPurchaseConfiguration,
+  getShopifyDiscountPurchaseFields,
+  readLoyaltyPurchasePolicy,
+} from "./purchase-policy";
 
 export const SHOPIFY_DISCOUNT_API_VERSION =
   process.env.SHOPIFY_ADMIN_API_VERSION || "2026-07";
@@ -890,6 +896,8 @@ export interface CreateBasicDiscountInput {
   combinesWith?: ShopifyDiscountCombinesWith;
   usageLimit?: number | null;
   appliesOncePerCustomer?: boolean;
+  appliesOnOneTimePurchase?: boolean;
+  appliesOnSubscription?: boolean;
   recurringCycleLimit?: number | null;
   customFetch?: typeof fetch;
 }
@@ -908,6 +916,8 @@ export interface CreateFreeShippingDiscountInput {
   combinesWith?: ShopifyDiscountCombinesWith;
   usageLimit?: number | null;
   appliesOncePerCustomer?: boolean;
+  appliesOnOneTimePurchase?: boolean;
+  appliesOnSubscription?: boolean;
   recurringCycleLimit?: number | null;
   customFetch?: typeof fetch;
 }
@@ -1095,6 +1105,8 @@ export async function createBasicDiscount(
     },
     usageLimit = 1,
     appliesOncePerCustomer = true,
+    appliesOnOneTimePurchase,
+    appliesOnSubscription,
     recurringCycleLimit,
     customFetch,
   } = input;
@@ -1209,13 +1221,16 @@ export async function createBasicDiscount(
   // Shopify rejects these fields entirely when the shop has no subscription
   // selling plans. Omission gives the native one-time-purchase defaults; only
   // an explicitly recurring reward opts into subscription semantics.
-  const subscriptionFields =
-    recurringCycleLimit !== undefined && recurringCycleLimit !== null
-      ? {
-          appliesOnOneTimePurchase: true,
-          appliesOnSubscription: true,
-        }
-      : {};
+  const hasExplicitPurchasePolicy =
+    appliesOnOneTimePurchase !== undefined ||
+    appliesOnSubscription !== undefined ||
+    (recurringCycleLimit !== undefined && recurringCycleLimit !== null);
+  const subscriptionFields = hasExplicitPurchasePolicy
+    ? {
+        appliesOnOneTimePurchase: appliesOnOneTimePurchase ?? true,
+        appliesOnSubscription: appliesOnSubscription ?? true,
+      }
+    : {};
 
   const basicCodeDiscount = {
     title,
@@ -1320,6 +1335,8 @@ export async function createFreeShippingDiscount(
     },
     usageLimit = 1,
     appliesOncePerCustomer = true,
+    appliesOnOneTimePurchase,
+    appliesOnSubscription,
     recurringCycleLimit,
     customFetch,
   } = input;
@@ -1377,13 +1394,16 @@ export async function createFreeShippingDiscount(
   // Keep Shopify Basic/non-subscription stores on native one-time defaults.
   // Supplying explicit false/true flags is not accepted until the shop uses
   // subscriptions, so only recurring rewards include this input surface.
-  const subscriptionFields =
-    recurringCycleLimit !== undefined && recurringCycleLimit !== null
-      ? {
-          appliesOnOneTimePurchase: true,
-          appliesOnSubscription: true,
-        }
-      : {};
+  const hasExplicitPurchasePolicy =
+    appliesOnOneTimePurchase !== undefined ||
+    appliesOnSubscription !== undefined ||
+    (recurringCycleLimit !== undefined && recurringCycleLimit !== null);
+  const subscriptionFields = hasExplicitPurchasePolicy
+    ? {
+        appliesOnOneTimePurchase: appliesOnOneTimePurchase ?? true,
+        appliesOnSubscription: appliesOnSubscription ?? true,
+      }
+    : {};
 
   const freeShippingCodeDiscount = {
     title,
@@ -2290,6 +2310,7 @@ export interface ProvisionLoyaltyRewardDiscountParams {
     usageLimit?: number | null;
     usageLimitPerCustomer?: number | null;
     expiresInDays?: number | null;
+    purchasePolicy?: unknown;
   };
   discountCode: string;
   startsAt?: Date | null;
@@ -2367,6 +2388,18 @@ export function matchesLoyaltyRewardDiscountConfiguration({
 }) {
   const configuration = remote.configuration;
   if (!configuration) return false;
+  let expectedPurchaseConfiguration;
+  try {
+    expectedPurchaseConfiguration =
+      getExpectedShopifyDiscountPurchaseConfiguration(
+        readLoyaltyPurchasePolicy(
+          rewardDefinition.purchasePolicy,
+          DEFAULT_REWARD_PURCHASE_POLICY,
+        ),
+      );
+  } catch {
+    return false;
+  }
 
   const currency = expectedShopCurrency.trim().toUpperCase();
   if (
@@ -2375,13 +2408,12 @@ export function matchesLoyaltyRewardDiscountConfiguration({
     configuration.usageLimit !== (rewardDefinition.usageLimit || 1) ||
     configuration.appliesOncePerCustomer !==
       (rewardDefinition.usageLimitPerCustomer === 1) ||
-    !configuration.appliesOnOneTimePurchase ||
-    configuration.appliesOnSubscription ||
-    // Shopify canonicalizes one-time-only discounts to a recurring-cycle
-    // limit of 1, even when the create input omits the subscription fields.
-    // Requiring that normalized value keeps ambiguous-create adoption strict
-    // without rejecting the discount Shopify actually persisted.
-    configuration.recurringCycleLimit !== 1 ||
+    configuration.appliesOnOneTimePurchase !==
+      expectedPurchaseConfiguration.appliesOnOneTimePurchase ||
+    configuration.appliesOnSubscription !==
+      expectedPurchaseConfiguration.appliesOnSubscription ||
+    configuration.recurringCycleLimit !==
+      expectedPurchaseConfiguration.recurringCycleLimit ||
     configuration.combinesWith.orderDiscounts !==
       Boolean(rewardDefinition.combinesWithOrderDiscounts) ||
     configuration.combinesWith.productDiscounts !==
@@ -2648,6 +2680,20 @@ export async function provisionLoyaltyRewardDiscount(
     );
   }
   const appliesOncePerCustomer = rewardDefinition.usageLimitPerCustomer === 1;
+  let purchaseFields;
+  try {
+    purchaseFields = getShopifyDiscountPurchaseFields(
+      readLoyaltyPurchasePolicy(
+        rewardDefinition.purchasePolicy,
+        DEFAULT_REWARD_PURCHASE_POLICY,
+      ),
+    );
+  } catch {
+    throw new ShopifyDiscountError(
+      "INVALID_REQUEST",
+      "Loyalty reward purchase eligibility is invalid.",
+    );
+  }
 
   switch (rewardDefinition.rewardType) {
     case "amount_off":
@@ -2671,6 +2717,7 @@ export async function provisionLoyaltyRewardDiscount(
         combinesWith,
         usageLimit,
         appliesOncePerCustomer,
+        ...purchaseFields,
         customFetch,
       });
 
@@ -2692,6 +2739,7 @@ export async function provisionLoyaltyRewardDiscount(
         combinesWith,
         usageLimit,
         appliesOncePerCustomer,
+        ...purchaseFields,
         customFetch,
       });
 
@@ -2708,6 +2756,7 @@ export async function provisionLoyaltyRewardDiscount(
         combinesWith,
         usageLimit,
         appliesOncePerCustomer,
+        ...purchaseFields,
         customFetch,
       });
 
@@ -2746,6 +2795,7 @@ export async function provisionLoyaltyRewardDiscount(
         combinesWith,
         usageLimit,
         appliesOncePerCustomer,
+        ...purchaseFields,
         customFetch,
       });
 

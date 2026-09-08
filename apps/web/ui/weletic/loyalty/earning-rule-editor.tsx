@@ -49,7 +49,14 @@ export function EarningRuleEditor({
       />
     </label>
   );
-  const select = <K extends "triggerCode" | "limitInterval" | "provider">(
+  const select = <
+    K extends
+      | "triggerCode"
+      | "limitInterval"
+      | "provider"
+      | "purchaseType"
+      | "subscriptionCadence",
+  >(
     key: K,
     options: Record<EarningRuleForm[K], string>,
   ) => (
@@ -134,6 +141,14 @@ export function EarningRuleEditor({
           <>
             {text("multiplier", true)}
             {text("minOrderSubtotal", true)}
+            {select("purchaseType", copy.purchaseTypes)}
+            {value.purchaseType !== "one_time" && (
+              <>
+                {select("subscriptionCadence", copy.subscriptionCadences)}
+                {value.subscriptionCadence === "first_n_payments" &&
+                  text("subscriptionPaymentLimit", true)}
+              </>
+            )}
             {checkbox("excludeDiscountedItems")}
             <p className="text-sm">{copy.purchase}</p>
           </>

@@ -9,8 +9,14 @@ import type { ValidatedEarningRuleData } from "./earning-rule-writer";
 /** Parse even typed callers: HTTP authority and transaction fencing are separate. */
 export function parseEarningRuleData(input: unknown): ValidatedEarningRuleData {
   const rule = earningRuleFieldsSchema.parse(input);
+  const {
+    purchaseType,
+    subscriptionCadence,
+    subscriptionPaymentLimit,
+    ...storedRule
+  } = rule;
   return {
-    ...rule,
+    ...storedRule,
     ruleType: rule.triggerCode === "order_paid" ? "multiplier" : "fixed_points",
     multiplier: new Prisma.Decimal(rule.multiplier),
     fixedPoints: rule.fixedPoints === null ? null : BigInt(rule.fixedPoints),
@@ -26,5 +32,10 @@ export function parseEarningRuleData(input: unknown): ValidatedEarningRuleData {
           conditions: rule.conditions,
         })
       : rule.conditions ?? Prisma.DbNull,
+    purchasePolicy: {
+      purchaseType,
+      subscriptionCadence,
+      subscriptionPaymentLimit,
+    },
   };
 }

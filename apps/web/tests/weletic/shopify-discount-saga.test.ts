@@ -520,6 +520,47 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
       ).not.toHaveProperty("appliesOnSubscription");
     });
 
+    it("writes exact first-N subscription eligibility into native discounts", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            discountCodeBasicCreate: {
+              codeDiscountNode: {
+                id: "gid://shopify/DiscountCodeNode/subscription",
+                codeDiscount: {
+                  title: "Subscription reward",
+                  status: "ACTIVE",
+                  codes: { nodes: [{ code: "WL-SUB" }] },
+                },
+              },
+              userErrors: [],
+            },
+          },
+        }),
+      });
+      await createBasicDiscount({
+        shopDomain: "store.myshopify.com",
+        accessToken: "shpat_test_token",
+        code: "WL-SUB",
+        title: "Subscription reward",
+        valueType: "fixed_amount",
+        value: 10,
+        appliesOnOneTimePurchase: false,
+        appliesOnSubscription: true,
+        recurringCycleLimit: 3,
+        customFetch: mockFetch as any,
+      });
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.variables.basicCodeDiscount).toMatchObject({
+        recurringCycleLimit: 3,
+        customerGets: {
+          appliesOnOneTimePurchase: false,
+          appliesOnSubscription: true,
+        },
+      });
+    });
+
     it.each([
       {
         name: "top-level errors even when partial data contains a node",

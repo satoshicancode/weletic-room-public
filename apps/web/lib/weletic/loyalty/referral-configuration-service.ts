@@ -3,6 +3,10 @@ import { createHash } from "node:crypto";
 import { currencyMinorUnits } from "../money";
 import { projectEarningRuleCurrency } from "./earning-rule-projection";
 import {
+  DEFAULT_REFERRAL_PURCHASE_POLICY,
+  loyaltyPurchasePolicySchema,
+} from "./purchase-policy";
+import {
   canonicalReferralFields,
   referralConfigurationFieldsSchema,
   referralConfigurationRequestSchema,
@@ -14,6 +18,13 @@ import {
   isReferralCouponProvisionable,
   RewardDefinitionConflictError,
 } from "./rewards";
+
+const {
+  purchaseType: _defaultPurchaseType,
+  subscriptionCadence: _defaultSubscriptionCadence,
+  subscriptionPaymentLimit: _defaultSubscriptionPaymentLimit,
+  ...DEFAULT_REFERRAL_RULE_PERSISTED_FIELDS
+} = DEFAULT_REFERRAL_RULE_CONFIG;
 
 export async function readReferralConfigurationState(
   tx: Prisma.TransactionClient,
@@ -67,6 +78,9 @@ export async function readReferralConfigurationState(
     ? Math.min(2, currencyMinorUnits(shopCurrency))
     : null;
   const rule = rules[0];
+  const purchasePolicy = loyaltyPurchasePolicySchema.safeParse(
+    rule?.purchasePolicy ?? DEFAULT_REFERRAL_PURCHASE_POLICY,
+  );
   const projected = rule
     ? {
         advocatePointsReward: rule.advocatePointsReward.toString(),
@@ -79,6 +93,7 @@ export async function readReferralConfigurationState(
           rule.minQualifyingOrderSubtotal?.toString() ?? null,
         maxReferralsPerAdvocate: rule.maxReferralsPerAdvocate,
         fraudCheckSameIp: rule.fraudCheckSameIp,
+        ...(purchasePolicy.success ? purchasePolicy.data : {}),
         isActive: rule.isActive,
       }
     : { ...DEFAULT_REFERRAL_RULE_CONFIG };
@@ -139,7 +154,7 @@ export async function manageReferralConfigurationInTransaction({
           tx,
           storeId,
           ruleData: {
-            ...DEFAULT_REFERRAL_RULE_CONFIG,
+            ...DEFAULT_REFERRAL_RULE_PERSISTED_FIELDS,
             advocatePointsReward: BigInt(
               DEFAULT_REFERRAL_RULE_CONFIG.advocatePointsReward,
             ),
@@ -149,6 +164,7 @@ export async function manageReferralConfigurationInTransaction({
             minQualifyingOrderSubtotal: new Prisma.Decimal(
               DEFAULT_REFERRAL_RULE_CONFIG.minQualifyingOrderSubtotal,
             ),
+            purchasePolicy: DEFAULT_REFERRAL_PURCHASE_POLICY,
             isActive: false,
           },
         });
@@ -181,12 +197,23 @@ export async function manageReferralConfigurationInTransaction({
         )
           throw new RewardDefinitionConflictError();
       }
+      const {
+        purchaseType,
+        subscriptionCadence,
+        subscriptionPaymentLimit,
+        ...ruleFields
+      } = input.fields;
       const saved = await writeReferralRuleInTransaction({
         tx,
         storeId,
         ruleId: input.ruleId,
         ruleData: {
-          ...input.fields,
+          ...ruleFields,
+          purchasePolicy: {
+            purchaseType,
+            subscriptionCadence,
+            subscriptionPaymentLimit,
+          },
           advocatePointsReward: BigInt(input.fields.advocatePointsReward),
           refereePointsReward: BigInt(input.fields.refereePointsReward),
           minQualifyingOrderSubtotal:

@@ -16,6 +16,9 @@ export const DEFAULT_REFERRAL_RULE_CONFIG = Object.freeze({
   minQualifyingOrderSubtotal: "30",
   maxReferralsPerAdvocate: null,
   fraudCheckSameIp: true,
+  purchaseType: "both" as const,
+  subscriptionCadence: "first_payment" as const,
+  subscriptionPaymentLimit: null,
   isActive: true,
 });
 

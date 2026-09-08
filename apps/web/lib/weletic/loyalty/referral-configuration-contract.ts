@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  loyaltyPurchasePolicySchema,
+  loyaltyPurchaseTypeSchema,
+  loyaltySubscriptionCadenceSchema,
+  loyaltySubscriptionPaymentLimitSchema,
+} from "./purchase-policy";
 import { MAX_REFERRALS_PER_ADVOCATE_LIMIT } from "./referral-rule-config";
 
 const id = z.string().min(1).max(191);
@@ -28,10 +34,26 @@ export const referralConfigurationFieldsSchema = z
       .max(MAX_REFERRALS_PER_ADVOCATE_LIMIT)
       .nullable(),
     fraudCheckSameIp: z.boolean(),
+    purchaseType: loyaltyPurchaseTypeSchema,
+    subscriptionCadence: loyaltySubscriptionCadenceSchema,
+    subscriptionPaymentLimit: loyaltySubscriptionPaymentLimitSchema,
     isActive: z.boolean(),
   })
   .strict()
   .superRefine((fields, ctx) => {
+    const purchasePolicy = loyaltyPurchasePolicySchema.safeParse({
+      purchaseType: fields.purchaseType,
+      subscriptionCadence: fields.subscriptionCadence,
+      subscriptionPaymentLimit: fields.subscriptionPaymentLimit,
+    });
+    if (!purchasePolicy.success)
+      ctx.addIssue({
+        code: "custom",
+        path: ["subscriptionPaymentLimit"],
+        message:
+          purchasePolicy.error.issues[0]?.message ??
+          "Provide valid purchase eligibility",
+      });
     for (const side of ["advocate", "referee"] as const) {
       const kind = fields[`${side}RewardKind`];
       const rewardId = fields[`${side}RewardDefinitionId`];

@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  loyaltyPurchasePolicySchema,
+  loyaltyPurchaseTypeSchema,
+  loyaltySubscriptionCadenceSchema,
+  loyaltySubscriptionPaymentLimitSchema,
+} from "./purchase-policy";
 
 const identifier = z.string().min(1).max(191);
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
@@ -62,12 +68,26 @@ export const rewardCatalogFieldsSchema = z
     usageLimit: limit.nullable(),
     usageLimitPerCustomer: z.union([z.literal(0), z.literal(1)]),
     expiresInDays: z.number().int().min(1).max(36500).nullable(),
+    purchaseType: loyaltyPurchaseTypeSchema,
+    subscriptionCadence: loyaltySubscriptionCadenceSchema,
+    subscriptionPaymentLimit: loyaltySubscriptionPaymentLimitSchema,
     status: z.enum(["active", "inactive", "archived"]),
   })
   .strict()
   .superRefine((reward, context) => {
     const issue = (field: string, message: string) =>
       context.addIssue({ code: "custom", path: [field], message });
+    const purchasePolicy = loyaltyPurchasePolicySchema.safeParse({
+      purchaseType: reward.purchaseType,
+      subscriptionCadence: reward.subscriptionCadence,
+      subscriptionPaymentLimit: reward.subscriptionPaymentLimit,
+    });
+    if (!purchasePolicy.success)
+      issue(
+        "subscriptionPaymentLimit",
+        purchasePolicy.error.issues[0]?.message ??
+          "Provide valid purchase eligibility",
+      );
     if (reward.exchangeType === "incremental") {
       if (reward.rewardType !== "amount_off")
         issue("exchangeType", "Incremental rewards require amount-off type");
@@ -188,6 +208,14 @@ export const rewardCatalogFieldsSchema = z
       issue(
         "rewardType",
         "Financial artifacts do not use discount-code conditions",
+      );
+    if (
+      ["gift_card", "store_credit"].includes(reward.rewardType) &&
+      reward.purchaseType !== "one_time"
+    )
+      issue(
+        "purchaseType",
+        "Financial artifacts do not support subscription discount terms",
       );
   });
 

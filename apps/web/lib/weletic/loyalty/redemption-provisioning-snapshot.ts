@@ -6,6 +6,11 @@ import {
 } from "@/lib/weletic/shopify/privacy-identity";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import {
+  DEFAULT_REWARD_PURCHASE_POLICY,
+  loyaltyPurchasePolicySchema,
+  readLoyaltyPurchasePolicy,
+} from "./purchase-policy";
 
 const NullableDecimalStringSchema = z
   .string()
@@ -27,6 +32,7 @@ export const LoyaltyRedemptionProvisioningSnapshotSchema = z
       "store_credit",
     ]),
     salesChannel: z.enum(["online_store", "pos", "both"]).optional(),
+    purchasePolicy: loyaltyPurchasePolicySchema.optional(),
     pointsCost: z.string().regex(/^\d+$/),
     discountValue: NullableDecimalStringSchema,
     maxDiscountValue: NullableDecimalStringSchema,
@@ -72,6 +78,7 @@ type RewardDefinitionForSnapshot = {
   description?: string | null;
   rewardType: unknown;
   salesChannel?: unknown;
+  purchasePolicy?: unknown;
   discountValue?: unknown;
   maxDiscountValue?: unknown;
   minOrderAmount?: unknown;
@@ -109,6 +116,9 @@ function getContentDigest(snapshot: SnapshotContent) {
         snapshot.rewardType,
         ...(Object.prototype.hasOwnProperty.call(snapshot, "salesChannel")
           ? [snapshot.salesChannel]
+          : []),
+        ...(Object.prototype.hasOwnProperty.call(snapshot, "purchasePolicy")
+          ? [snapshot.purchasePolicy]
           : []),
         snapshot.pointsCost,
         snapshot.discountValue,
@@ -181,6 +191,10 @@ export function createLoyaltyRedemptionProvisioningSnapshot({
     reward.salesChannel === "both"
       ? { salesChannel: reward.salesChannel }
       : {}),
+    purchasePolicy: readLoyaltyPurchasePolicy(
+      reward.purchasePolicy,
+      DEFAULT_REWARD_PURCHASE_POLICY,
+    ),
     pointsCost: pointsCost.toString(),
     discountValue: nullableDecimal(discountValue),
     maxDiscountValue: nullableDecimal(reward.maxDiscountValue),
@@ -285,6 +299,7 @@ export function getRewardDefinitionFromProvisioningSnapshot({
     name: provisioningName,
     rewardType: snapshot.rewardType,
     salesChannel: snapshot.salesChannel,
+    purchasePolicy: snapshot.purchasePolicy ?? DEFAULT_REWARD_PURCHASE_POLICY,
     discountValue: snapshot.discountValue,
     maxDiscountValue: snapshot.maxDiscountValue,
     minOrderAmount: snapshot.minOrderAmount,

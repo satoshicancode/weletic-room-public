@@ -41,6 +41,7 @@ export async function writeReferralRuleInTransaction({
     | "minQualifyingOrderSubtotal"
     | "maxReferralsPerAdvocate"
     | "fraudCheckSameIp"
+    | "purchasePolicy"
     | "isActive"
   >;
 }) {

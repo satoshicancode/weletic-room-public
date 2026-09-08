@@ -28,6 +28,9 @@ const amount: RewardCatalogFields = {
   usageLimit: 1,
   usageLimitPerCustomer: 1,
   expiresInDays: null,
+  purchaseType: "one_time",
+  subscriptionCadence: "first_payment",
+  subscriptionPaymentLimit: null,
   status: "inactive",
 };
 const parse = (patch: Record<string, unknown>) =>
@@ -112,8 +115,29 @@ describe("new reward catalog exact contract", () => {
   });
   it("rejects ignored fixed-reward limits and unknown capabilities", () => {
     expect(parse({ pointsStep: "100" }).success).toBe(false);
-    expect(parse({ purchaseType: "subscription" }).success).toBe(false);
+    expect(
+      parse({
+        purchaseType: "subscription",
+        subscriptionCadence: "every_payment",
+      }).success,
+    ).toBe(true);
     expect(parse({ salesChannel: "pos" }).success).toBe(false);
+  });
+  it("requires a bounded first-N subscription payment count", () => {
+    expect(
+      parse({
+        purchaseType: "both",
+        subscriptionCadence: "first_n_payments",
+        subscriptionPaymentLimit: 3,
+      }).success,
+    ).toBe(true);
+    expect(
+      parse({
+        purchaseType: "both",
+        subscriptionCadence: "first_n_payments",
+        subscriptionPaymentLimit: null,
+      }).success,
+    ).toBe(false);
   });
   it("requires an explicit product cap and scope", () => {
     const product = {

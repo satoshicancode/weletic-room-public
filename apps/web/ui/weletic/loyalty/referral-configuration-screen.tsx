@@ -46,7 +46,16 @@ const copy = {
     maximum: "Maximum referrals per advocate (blank: unlimited)",
     fraud: "Flag matching IP addresses for fraud review",
     active: "Enable referrals",
-    note: "First qualifying purchase only. Selecting a catalog coupon does not issue it. Issued rewards and recorded history remain unchanged. Unqualified referrals use the rules current at qualification; snapshotted friend offers retain their terms. Prospective policy snapshots, subscription policy and live checkout acceptance remain incomplete. Threshold precision is limited by the existing two-decimal column and shop currency.",
+    purchaseType: "Qualifying purchase type",
+    cadence: "Eligible subscription payments",
+    paymentLimit: "Eligible payment count",
+    oneTime: "One-time purchases",
+    subscription: "Subscriptions",
+    both: "Both",
+    firstPayment: "First payment",
+    firstNPayments: "First N payments",
+    everyPayment: "Every renewal",
+    note: "A referral can qualify only once, using eligible line subtotal and the rule current at qualification. Selecting a catalog coupon does not issue it. Weletic interprets Shopify subscription orders but does not sell or manage subscriptions. Issued rewards and recorded history remain unchanged.",
     status: "Status",
     enabled: "Active",
     disabled: "Inactive",
@@ -77,7 +86,16 @@ const copy = {
     maximum: "紹介者ごとの上限（空欄：無制限）",
     fraud: "同一IPを不正確認の対象にする",
     active: "紹介を有効にする",
-    note: "初回の対象購入のみ。特典の選択だけではクーポンを発行しません。発行済み特典と履歴は変更しません。未達成の紹介には達成時点の条件を適用し、保存済みの友達向けオファーは元の条件を維持します。将来適用する条件の固定、定期購入設定、実決済検証は未完了です。注文下限は既存の小数2桁の列と店舗通貨の精度に制限されます。",
+    purchaseType: "対象となる購入種類",
+    cadence: "対象となる定期購入支払い",
+    paymentLimit: "対象支払い回数",
+    oneTime: "通常購入",
+    subscription: "定期購入",
+    both: "両方",
+    firstPayment: "初回支払い",
+    firstNPayments: "最初のN回",
+    everyPayment: "すべての更新",
+    note: "紹介は、達成時点のルールと対象明細の小計に基づき一度だけ達成できます。特典の選択だけではクーポンを発行しません。WeleticはShopifyの定期購入注文を判定しますが、定期購入の販売・契約管理は行いません。発行済み特典と履歴は変更しません。",
     status: "状態",
     enabled: "有効",
     disabled: "無効",
@@ -109,7 +127,16 @@ const copy = {
     maximum: "Số lượt tối đa mỗi người giới thiệu (trống: không giới hạn)",
     fraud: "Đánh dấu IP trùng để kiểm tra gian lận",
     active: "Bật giới thiệu",
-    note: "Chỉ áp dụng cho lần mua hợp lệ đầu tiên. Chọn coupon không phát hành coupon. Phần thưởng đã phát hành và lịch sử không thay đổi. Giới thiệu chưa đạt điều kiện dùng quy tắc tại thời điểm đạt; ưu đãi bạn bè đã lưu giữ nguyên điều khoản. Cố định chính sách cho tương lai, cấu hình định kỳ và nghiệm thu thanh toán còn chưa hoàn tất. Ngưỡng đơn hàng bị giới hạn bởi cột hai chữ số thập phân hiện có và tiền tệ cửa hàng.",
+    purchaseType: "Loại mua hàng đủ điều kiện",
+    cadence: "Thanh toán đăng ký đủ điều kiện",
+    paymentLimit: "Số lần thanh toán đủ điều kiện",
+    oneTime: "Mua một lần",
+    subscription: "Đăng ký",
+    both: "Cả hai",
+    firstPayment: "Lần đầu",
+    firstNPayments: "N lần đầu",
+    everyPayment: "Mọi lần gia hạn",
+    note: "Mỗi lượt giới thiệu chỉ đạt điều kiện một lần, theo tổng phụ của các dòng hợp lệ và quy tắc tại thời điểm đó. Chọn coupon không phát hành coupon. Weletic chỉ diễn giải đơn đăng ký từ Shopify, không bán hay quản lý hợp đồng đăng ký. Phần thưởng đã phát hành và lịch sử không thay đổi.",
     status: "Trạng thái",
     enabled: "Đang bật",
     disabled: "Đã tắt",
@@ -265,6 +292,82 @@ function ConfigurationForm({
             onChange={(event) => setMaximum(event.target.value)}
           />
         </label>
+        <label>
+          {text.purchaseType}
+          <select
+            className={control}
+            value={fields.purchaseType}
+            onChange={(event) => {
+              const purchaseType = event.target.value as
+                | "one_time"
+                | "subscription"
+                | "both";
+              setFields((old) => ({
+                ...old,
+                purchaseType,
+                subscriptionCadence:
+                  purchaseType === "one_time"
+                    ? "first_payment"
+                    : old.subscriptionCadence,
+                subscriptionPaymentLimit:
+                  purchaseType === "one_time"
+                    ? null
+                    : old.subscriptionPaymentLimit,
+              }));
+            }}
+          >
+            <option value="one_time">{text.oneTime}</option>
+            <option value="subscription">{text.subscription}</option>
+            <option value="both">{text.both}</option>
+          </select>
+        </label>
+        {fields.purchaseType !== "one_time" && (
+          <label>
+            {text.cadence}
+            <select
+              className={control}
+              value={fields.subscriptionCadence}
+              onChange={(event) => {
+                const subscriptionCadence = event.target.value as
+                  | "first_payment"
+                  | "first_n_payments"
+                  | "every_payment";
+                setFields((old) => ({
+                  ...old,
+                  subscriptionCadence,
+                  subscriptionPaymentLimit:
+                    subscriptionCadence === "first_n_payments"
+                      ? old.subscriptionPaymentLimit ?? 2
+                      : null,
+                }));
+              }}
+            >
+              <option value="first_payment">{text.firstPayment}</option>
+              <option value="first_n_payments">{text.firstNPayments}</option>
+              <option value="every_payment">{text.everyPayment}</option>
+            </select>
+          </label>
+        )}
+        {fields.purchaseType !== "one_time" &&
+          fields.subscriptionCadence === "first_n_payments" && (
+            <label>
+              {text.paymentLimit}
+              <input
+                className={control}
+                inputMode="numeric"
+                value={fields.subscriptionPaymentLimit ?? ""}
+                aria-invalid={errors.includes("subscriptionPaymentLimit")}
+                onChange={(event) =>
+                  update(
+                    "subscriptionPaymentLimit",
+                    /^\d+$/.test(event.target.value)
+                      ? Number(event.target.value)
+                      : null,
+                  )
+                }
+              />
+            </label>
+          )}
         <label>
           <input
             type="checkbox"

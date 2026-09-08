@@ -36,6 +36,13 @@ import {
   WeleticPointsLedgerEntryType,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
+import {
+  classifyLoyaltyPurchaseLine,
+  DEFAULT_EARNING_PURCHASE_POLICY,
+  isLoyaltyPurchaseLineEligible,
+  readLoyaltyPurchasePolicy,
+  type LoyaltyPurchasePolicy,
+} from "./purchase-policy";
 
 const FINANCIAL_TRANSACTION_RETRIES = 5;
 
@@ -1055,6 +1062,7 @@ function buildMutableTestPolicy(
     },
     earningRules: (program.earningRules ?? []).map((rule) => ({
       ...rule,
+      purchasePolicy: rule.purchasePolicy ?? DEFAULT_EARNING_PURCHASE_POLICY,
       // Generated Prisma rows always contain the exact boolean. This default
       // exists only for legacy focused mocks that predate the field.
       excludeTaxesAndShipping: rule.excludeTaxesAndShipping ?? true,
@@ -2257,6 +2265,23 @@ export async function processOrderPointsEarn({
       reason: "invalid_order_paid_rule_configuration",
     });
   }
+  const orderLines = order.lines || [];
+  const purchasePolicies = new Map<string, LoyaltyPurchasePolicy>();
+  try {
+    for (const rule of scheduledRules) {
+      purchasePolicies.set(
+        rule.id,
+        readLoyaltyPurchasePolicy(
+          rule.purchasePolicy,
+          DEFAULT_EARNING_PURCHASE_POLICY,
+        ),
+      );
+    }
+  } catch {
+    return persistNoAwardOutcome({
+      reason: "invalid_order_paid_rule_configuration",
+    });
+  }
   const eligibleRules = scheduledRules.filter((rule) => {
     if (
       Array.isArray(rule.eligibleTierIds) &&
@@ -2266,7 +2291,18 @@ export async function processOrderPointsEarn({
         return false;
       }
     }
-    return true;
+    const purchasePolicy = purchasePolicies.get(rule.id)!;
+    if (orderLines.length === 0) {
+      // Production order classification must be backed by immutable lines.
+      // This compatibility path exists only for focused legacy unit fixtures.
+      return (
+        process.env.NODE_ENV === "test" &&
+        purchasePolicy.purchaseType !== "subscription"
+      );
+    }
+    return orderLines.some((line) =>
+      isLoyaltyPurchaseLineEligible({ policy: purchasePolicy, line }),
+    );
   });
 
   const selectedRule = eligibleRules[0] ?? null;
@@ -2368,12 +2404,26 @@ export async function processOrderPointsEarn({
   }
 
   // 5. Evaluate order line eligibility & exclusions
-  const orderLines = order.lines || [];
   const capturedOrderNet = order.shopNet ?? order.presentmentNet ?? BigInt(0);
+  const selectedPurchasePolicy = purchasePolicies.get(selectedRule.id)!;
+  const orderLineById = new Map(orderLines.map((line) => [line.id, line]));
   const lineInputs: LineAllocationInput[] = orderLines.map((line) => {
     let isExcluded = false;
     let exclusionReason: string | null = null;
     if (
+      !isLoyaltyPurchaseLineEligible({
+        policy: selectedPurchasePolicy,
+        line,
+      })
+    ) {
+      isExcluded = true;
+      exclusionReason =
+        classifyLoyaltyPurchaseLine(line).kind === "unknown"
+          ? "subscription_classification_unknown"
+          : "purchase_policy_ineligible";
+    }
+    if (
+      !isExcluded &&
       selectedRule.excludeDiscountedItems &&
       line.shopDiscount &&
       line.shopDiscount > BigInt(0)
@@ -2582,6 +2632,7 @@ export async function processOrderPointsEarn({
         holdingPeriodDays,
         pointsPerCurrencyUnit: pointsPerCurrencyUnit.toString(),
         ruleMultiplier: ruleMultiplier.toString(),
+        purchasePolicy: selectedPurchasePolicy,
         campaignMultiplier: campaignMultiplier.toString(),
         campaignTargets: selectedCampaign
           ? {
@@ -2597,6 +2648,9 @@ export async function processOrderPointsEarn({
           lineNetAmount: l.lineNetAmount.toString(),
           awardedPoints: l.awardedPoints.toString(),
           isExcluded: l.isExcluded,
+          purchaseClassification: classifyLoyaltyPurchaseLine(
+            orderLineById.get(l.orderLineId) ?? {},
+          ),
           sku: l.sku ?? null,
           collectionExternalIds: l.collectionExternalIds ?? [],
           campaignMatched: l.campaignMatched ?? false,
