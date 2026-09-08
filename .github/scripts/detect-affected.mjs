@@ -10,6 +10,11 @@ const FULL_CHECK_FILES = new Set([
 ]);
 
 const FULL_CHECK_PREFIXES = [".github/workflows/", ".github/scripts/"];
+// These web endpoints and helpers form the embedded app's shared trust boundary.
+const SHOPIFY_SECURITY_PREFIXES = [
+  "apps/web/app/(ee)/api/shopify/",
+  "apps/web/lib/weletic/shopify/",
+];
 const CODE_FILE_PATTERN = /\.(?:cjs|cts|js|jsx|mjs|mts|ts|tsx)$/;
 const CONFIG_FILE_PATTERN =
   /(?:^|\/)(?:eslint|next|playwright|prettier|tsconfig|vite|vitest)[^/]*\.(?:js|json|mjs|ts)$/;
@@ -30,6 +35,14 @@ export function classifyAffectedPaths(paths, { forceAll = false } = {}) {
     const file = rawPath.trim();
 
     if (!file) {
+      continue;
+    }
+
+    if (SHOPIFY_SECURITY_PREFIXES.some((prefix) => file.startsWith(prefix))) {
+      affected.lint = true;
+      affected.shopify = true;
+      affected.unit = true;
+      affected.web = true;
       continue;
     }
 

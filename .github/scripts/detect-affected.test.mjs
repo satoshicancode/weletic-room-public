@@ -42,6 +42,36 @@ test("Shopify-only changes do not schedule the web suite", () => {
   }
 });
 
+test("Shopify trust-boundary changes schedule every check independently", () => {
+  for (const file of [
+    "apps/web/app/(ee)/api/shopify/flow/lifecycle/route.ts",
+    "apps/web/app/(ee)/api/shopify/integration/webhook/route.ts",
+    "apps/web/lib/weletic/shopify/webhook-request.ts",
+    "apps/web/lib/weletic/shopify/webhook-signature.ts",
+  ]) {
+    assert.deepEqual(classifyAffectedPaths([file]), {
+      lint: true,
+      shopify: true,
+      unit: true,
+      web: true,
+    });
+  }
+});
+
+test("similarly named web directories retain targeted checks", () => {
+  for (const file of [
+    "apps/web/app/(ee)/api/shopify-other/route.ts",
+    "apps/web/lib/weletic/shopify-other/helper.ts",
+  ]) {
+    assert.deepEqual(classifyAffectedPaths([file]), {
+      lint: true,
+      shopify: false,
+      unit: true,
+      web: true,
+    });
+  }
+});
+
 test("shared package changes conservatively validate both applications", () => {
   assert.deepEqual(classifyAffectedPaths(["packages/utils/src/index.ts"]), {
     lint: true,
