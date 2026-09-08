@@ -80,6 +80,18 @@ export function EarningRuleEditor({
                 selected as EarningRuleForm["triggerCode"],
               ),
             );
+          } else if (key === "purchaseType") {
+            setInvalid([]);
+            onChange({
+              ...value,
+              purchaseType: selected as EarningRuleForm["purchaseType"],
+              subscriptionCadence:
+                selected === "one_time"
+                  ? "first_payment"
+                  : value.subscriptionCadence,
+              subscriptionPaymentLimit:
+                selected === "one_time" ? "" : value.subscriptionPaymentLimit,
+            });
           } else update(key, selected);
         }}
       >
