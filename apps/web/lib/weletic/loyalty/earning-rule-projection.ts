@@ -1,5 +1,10 @@
 import type { WeleticLoyaltyEarningRule } from "@prisma/client";
 import { earningRuleFieldsSchema } from "./earning-rule-contract";
+import {
+  DEFAULT_EARNING_PURCHASE_POLICY,
+  DEFAULT_NON_PURCHASE_ACTIVITY_POLICY,
+  loyaltyPurchasePolicySchema,
+} from "./purchase-policy";
 
 export function projectEarningRuleCurrency(currency: unknown): string | null {
   return typeof currency === "string" && /^[A-Z]{3}$/.test(currency)
@@ -9,6 +14,12 @@ export function projectEarningRuleCurrency(currency: unknown): string | null {
 
 /** Never expose raw JSON, tenant identity, or lifecycle columns to the editor. */
 export function projectEarningRule(rule: WeleticLoyaltyEarningRule) {
+  const purchasePolicy = loyaltyPurchasePolicySchema.safeParse(
+    rule.purchasePolicy ??
+      (rule.triggerCode === "order_paid"
+        ? DEFAULT_EARNING_PURCHASE_POLICY
+        : DEFAULT_NON_PURCHASE_ACTIVITY_POLICY),
+  );
   const parsed = earningRuleFieldsSchema.safeParse({
     name: rule.name,
     description: rule.description,
@@ -20,6 +31,7 @@ export function projectEarningRule(rule: WeleticLoyaltyEarningRule) {
     minOrderSubtotal: rule.minOrderSubtotal?.toString() ?? null,
     excludeDiscountedItems: rule.excludeDiscountedItems,
     excludeTaxesAndShipping: rule.excludeTaxesAndShipping,
+    ...(purchasePolicy.success ? purchasePolicy.data : {}),
     maxEventsPerCustomer: rule.maxEventsPerCustomer,
     limitInterval: rule.limitInterval,
     conditions: rule.conditions,
@@ -28,6 +40,7 @@ export function projectEarningRule(rule: WeleticLoyaltyEarningRule) {
   // Do not reinterpret legacy provider defaults or a different stored rule type.
   const editable =
     parsed.success &&
+    purchasePolicy.success &&
     rule.ruleType ===
       (rule.triggerCode === "order_paid" ? "multiplier" : "fixed_points");
   return {

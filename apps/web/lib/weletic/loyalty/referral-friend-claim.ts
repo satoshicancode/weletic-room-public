@@ -47,6 +47,13 @@ import {
 } from "@prisma/client";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  DEFAULT_REFERRAL_PURCHASE_POLICY,
+  DEFAULT_REWARD_PURCHASE_POLICY,
+  getEligibleLoyaltyOrderSubtotal,
+  loyaltyPurchasePolicySchema,
+  readLoyaltyPurchasePolicy,
+} from "./purchase-policy";
 
 const CLAIM_METADATA_KEY = "friendRewardSnapshot";
 const LEGACY_FRIEND_REWARD_CLEANUP_PENDING_REASON =
@@ -74,6 +81,7 @@ const friendRewardSnapshotSchema = z
         name: z.string().min(1),
         rewardType: provisionableRewardTypeSchema,
         salesChannel: rewardSalesChannelSchema.optional(),
+        purchasePolicy: loyaltyPurchasePolicySchema.optional(),
         discountValue: nullableDecimalStringSchema,
         maxDiscountValue: nullableDecimalStringSchema,
         minOrderAmount: nullableDecimalStringSchema,
@@ -120,6 +128,7 @@ function rewardSnapshotFromDefinition({
     name: string;
     rewardType: string;
     salesChannel?: unknown;
+    purchasePolicy?: Prisma.JsonValue;
     discountValue: Prisma.Decimal | null;
     maxDiscountValue: Prisma.Decimal | null;
     minOrderAmount: Prisma.Decimal | null;
@@ -153,6 +162,10 @@ function rewardSnapshotFromDefinition({
       name: reward.name,
       rewardType: provisionableRewardTypeSchema.parse(reward.rewardType),
       ...(salesChannel ? { salesChannel } : {}),
+      purchasePolicy: readLoyaltyPurchasePolicy(
+        reward.purchasePolicy,
+        DEFAULT_REWARD_PURCHASE_POLICY,
+      ),
       discountValue: reward.discountValue?.toString() ?? null,
       maxDiscountValue: reward.maxDiscountValue?.toString() ?? null,
       minOrderAmount: reward.minOrderAmount?.toString() ?? null,
@@ -1351,12 +1364,31 @@ export async function evaluateReferralFriendClaimQualification({
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       });
       if (!rule) return { qualified: false as const, reason: "Inactive rule" };
+      let qualificationPurchasePolicy;
+      try {
+        qualificationPurchasePolicy = readLoyaltyPurchasePolicy(
+          rule.purchasePolicy,
+          DEFAULT_REFERRAL_PURCHASE_POLICY,
+        );
+      } catch {
+        return { qualified: false as const, reason: "Invalid purchase policy" };
+      }
+      const eligibleSubtotal = await getEligibleLoyaltyOrderSubtotal({
+        tx,
+        storeId,
+        orderId,
+        policy: qualificationPurchasePolicy,
+        testFallbackSubtotal: orderSubtotal,
+      });
+      if (eligibleSubtotal <= BigInt(0)) {
+        return { qualified: false as const, reason: "Ineligible purchase" };
+      }
       if (rule.minQualifyingOrderSubtotal) {
         const minimum = decimalToMinorUnits(
           rule.minQualifyingOrderSubtotal.toString(),
           currency,
         );
-        if (orderSubtotal < minimum) {
+        if (eligibleSubtotal < minimum) {
           return { qualified: false as const, reason: "Below minimum" };
         }
       }
@@ -1453,6 +1485,9 @@ export async function evaluateReferralFriendClaimQualification({
               ? referral.metadata
               : {}) as Record<string, unknown>),
             qualificationOrderId: orderId,
+            qualificationReferralRuleId: rule.id,
+            qualificationPurchasePolicy,
+            eligibleSubtotal: eligibleSubtotal.toString(),
             requiredCouponSides: couponSnapshot ? ["advocate"] : [],
             referralCouponRewardSnapshots: couponSnapshot
               ? { advocate: couponSnapshot }

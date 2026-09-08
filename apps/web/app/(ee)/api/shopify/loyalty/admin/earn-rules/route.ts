@@ -14,6 +14,10 @@ import {
   writeEarningRuleInTransaction,
 } from "@/lib/weletic/loyalty/earning-rule-writer";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
+import {
+  DEFAULT_EARNING_PURCHASE_POLICY,
+  DEFAULT_NON_PURCHASE_ACTIVITY_POLICY,
+} from "@/lib/weletic/loyalty/purchase-policy";
 import { loyaltySuccessResponse } from "@/lib/weletic/loyalty/response";
 import { reviewRewardConditionsSchema } from "@/lib/weletic/loyalty/review-rewards";
 import { Prisma } from "@prisma/client";
@@ -296,6 +300,9 @@ export const POST = withWorkspace(
       minOrderSubtotal: isOrderRule ? parsedMinOrderSubtotal : null,
       excludeDiscountedItems: Boolean(excludeDiscountedItems),
       excludeTaxesAndShipping: true,
+      purchasePolicy: isOrderRule
+        ? DEFAULT_EARNING_PURCHASE_POLICY
+        : DEFAULT_NON_PURCHASE_ACTIVITY_POLICY,
       isActive: Boolean(isActive),
     } satisfies Prisma.WeleticLoyaltyEarningRuleUncheckedUpdateInput;
     const rule = await withActiveStoreLoyaltyMutation({

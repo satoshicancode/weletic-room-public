@@ -289,6 +289,7 @@ model WeleticLoyaltyEarningRule {
   limitInterval           String? // "lifetime", "calendar_year", "monthly"
   eligibleTierIds         Json?                  @db.Json
   conditions              Json?                  @db.Json // Typed conditions (collections, tags, SKUs)
+  purchasePolicy          Json?                  @db.Json // Strict one-time/subscription eligibility snapshot
   excludeDiscountedItems  Boolean                @default(false)
   excludeTaxesAndShipping Boolean                @default(true)
   startAt                 DateTime?
@@ -587,6 +588,7 @@ model WeleticRewardDefinition {
   usageLimit                    Int?
   usageLimitPerCustomer         Int?                      @default(1)
   expiresInDays                 Int?
+  purchasePolicy                Json?                     @db.Json // Strict one-time/subscription applicability
   createdAt                     DateTime                  @default(now())
   updatedAt                     DateTime                  @updatedAt
 
@@ -689,6 +691,7 @@ model WeleticLoyaltyReferralRule {
   minQualifyingOrderSubtotal Decimal?                  @db.Decimal(10, 2)
   maxReferralsPerAdvocate    Int? // null = unlimited
   fraudCheckSameIp           Boolean                   @default(true)
+  purchasePolicy            Json?                     @db.Json // Qualifying purchase/cadence policy
   isActive                   Boolean                   @default(true)
   createdAt                  DateTime                  @default(now())
   updatedAt                  DateTime                  @updatedAt

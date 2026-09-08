@@ -368,6 +368,7 @@ function getRewardDefinitionFromSnapshot(
     name: snapshot.provisioningName,
     rewardType: snapshot.rewardType,
     salesChannel: snapshot.salesChannel,
+    purchasePolicy: snapshot.purchasePolicy,
     discountValue: snapshot.discountValue,
     maxDiscountValue: snapshot.maxDiscountValue,
     minOrderAmount: snapshot.minOrderAmount,

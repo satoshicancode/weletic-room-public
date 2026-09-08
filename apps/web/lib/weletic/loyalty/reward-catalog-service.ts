@@ -109,8 +109,14 @@ export async function saveRewardCatalogInTransaction({
     if (!existing || projectRewardCatalogEntry(existing).fields === null)
       throw new RewardDefinitionConflictError();
   }
+  const {
+    purchaseType,
+    subscriptionCadence,
+    subscriptionPaymentLimit,
+    ...rewardFields
+  } = data.reward;
   const fields = {
-    ...data.reward,
+    ...rewardFields,
     pointsCost: BigInt(data.reward.pointsCost),
     pointsStep:
       data.reward.pointsStep === null ? null : BigInt(data.reward.pointsStep),
@@ -122,6 +128,11 @@ export async function saveRewardCatalogInTransaction({
       data.reward.maxPointsCost === null
         ? null
         : BigInt(data.reward.maxPointsCost),
+    purchasePolicy: {
+      purchaseType,
+      subscriptionCadence,
+      subscriptionPaymentLimit,
+    },
   };
   let affectedId: string;
   if (data.rewardId !== null) {

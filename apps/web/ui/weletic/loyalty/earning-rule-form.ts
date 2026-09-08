@@ -13,6 +13,9 @@ export type EarningRuleForm = {
   fixedPoints: string;
   maxPointsPerEvent: string;
   minOrderSubtotal: string;
+  purchaseType: EarningRuleFields["purchaseType"];
+  subscriptionCadence: EarningRuleFields["subscriptionCadence"];
+  subscriptionPaymentLimit: string;
   maxEventsPerCustomer: string;
   limitInterval: "lifetime" | "monthly" | "calendar_year";
   excludeDiscountedItems: boolean;
@@ -37,6 +40,10 @@ export function newEarningRuleForm(
     fixedPoints: "",
     maxPointsPerEvent: "",
     minOrderSubtotal: "",
+    purchaseType: triggerCode === "order_paid" ? "both" : "one_time",
+    subscriptionCadence:
+      triggerCode === "order_paid" ? "every_payment" : "first_payment",
+    subscriptionPaymentLimit: "",
     maxEventsPerCustomer: triggerCode === "product_review" ? "2" : "1",
     limitInterval:
       triggerCode === "birthday"
@@ -85,6 +92,12 @@ export function parseEarningRuleForm(form: EarningRuleForm) {
     fixedPoints: order ? null : form.fixedPoints,
     maxPointsPerEvent: form.maxPointsPerEvent || null,
     minOrderSubtotal: order ? form.minOrderSubtotal || null : null,
+    purchaseType: order ? form.purchaseType : "one_time",
+    subscriptionCadence: order ? form.subscriptionCadence : "first_payment",
+    subscriptionPaymentLimit:
+      order && form.subscriptionCadence === "first_n_payments"
+        ? integer(form.subscriptionPaymentLimit)
+        : null,
     maxEventsPerCustomer: order ? null : integer(form.maxEventsPerCustomer),
     limitInterval: order ? null : form.limitInterval,
     excludeDiscountedItems: form.excludeDiscountedItems,
@@ -118,6 +131,9 @@ export function earningRuleFormFromFields(
     fixedPoints: fields.fixedPoints ?? "",
     maxPointsPerEvent: fields.maxPointsPerEvent ?? "",
     minOrderSubtotal: fields.minOrderSubtotal ?? "",
+    purchaseType: fields.purchaseType,
+    subscriptionCadence: fields.subscriptionCadence,
+    subscriptionPaymentLimit: String(fields.subscriptionPaymentLimit ?? ""),
     maxEventsPerCustomer: String(fields.maxEventsPerCustomer ?? 1),
     limitInterval: fields.limitInterval ?? "lifetime",
     excludeDiscountedItems: fields.excludeDiscountedItems,

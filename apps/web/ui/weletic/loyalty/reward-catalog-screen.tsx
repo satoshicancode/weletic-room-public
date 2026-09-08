@@ -45,7 +45,7 @@ const copy = {
     error: "Result unavailable or uncertain. Reload before making changes.",
     invalid: "Check the highlighted configuration fields.",
     saved: "Reward saved.",
-    note: "Values use minor currency units (JPY 1 = 1; USD 1 = 100). Type changes reset incompatible draft settings. Blank code usage defaults to one use. Subscription settings are not available yet. Product rewards are capped discounts, not guaranteed free items. Gift Card/Store Credit checkout acceptance remains gated; code-use controls do not apply to them.",
+    note: "Values use minor currency units (JPY 1 = 1; USD 1 = 100). Native Shopify discount rewards can target one-time purchases, subscriptions, or both; Weletic does not sell or manage subscriptions. Product rewards are capped discounts, not guaranteed free items. Gift Card/Store Credit checkout acceptance remains gated.",
   },
   ja: {
     title: "特典カタログ",
@@ -70,7 +70,7 @@ const copy = {
     error: "結果を確認できません。変更前に再読み込みしてください。",
     invalid: "設定項目を確認してください。",
     saved: "特典を保存しました。",
-    note: "金額は最小通貨単位です（1円 = 1、1米ドル = 100）。種類を変更すると対応しない下書き設定を初期化します。コード利用回数が空欄の場合は1回です。定期購入設定は未対応です。商品特典は上限付き割引で、必ず無料になるわけではありません。ギフトカード・ストアクレジットの決済検証は未完了で、コード利用制限は適用されません。",
+    note: "金額は最小通貨単位です（1円 = 1、1米ドル = 100）。Shopify標準割引は通常購入、定期購入、または両方を対象にできます。Weleticは定期購入の販売・契約管理を行いません。商品特典は上限付き割引です。ギフトカード・ストアクレジットの決済検証は未完了です。",
   },
   vi: {
     title: "Danh mục phần thưởng",
@@ -95,7 +95,7 @@ const copy = {
     error: "Chưa thể xác nhận kết quả. Hãy tải lại trước khi thay đổi.",
     invalid: "Hãy kiểm tra các trường cấu hình.",
     saved: "Đã lưu phần thưởng.",
-    note: "Số tiền dùng đơn vị tiền tệ nhỏ nhất (1 JPY = 1; 1 USD = 100). Đổi loại sẽ đặt lại cấu hình nháp không tương thích. Để trống số lần dùng mã nghĩa là một lần. Chưa hỗ trợ cấu hình đơn hàng định kỳ. Quà sản phẩm là giảm giá có giới hạn, không đảm bảo miễn phí. Thanh toán Gift Card/Store Credit chưa được nghiệm thu; giới hạn sử dụng mã không áp dụng cho hai loại này.",
+    note: "Số tiền dùng đơn vị tiền tệ nhỏ nhất (1 JPY = 1; 1 USD = 100). Phần thưởng giảm giá Shopify có thể áp dụng cho mua một lần, đăng ký hoặc cả hai; Weletic không bán hay quản lý hợp đồng đăng ký. Quà sản phẩm là giảm giá có giới hạn. Gift Card/Store Credit vẫn cần nghiệm thu.",
   },
 };
 const labels: Record<keyof RewardCatalogForm, [string, string, string]> = {
@@ -161,6 +161,17 @@ const labels: Record<keyof RewardCatalogForm, [string, string, string]> = {
     "有効日数（空欄：無期限）",
     "Số ngày hết hạn (trống: không hạn)",
   ],
+  purchaseType: ["Purchase eligibility", "購入対象", "Điều kiện mua hàng"],
+  subscriptionCadence: [
+    "Subscription payments",
+    "定期購入の支払い",
+    "Thanh toán đăng ký",
+  ],
+  subscriptionPaymentLimit: [
+    "Eligible payment count",
+    "対象支払い回数",
+    "Số lần thanh toán đủ điều kiện",
+  ],
   status: ["Status", "状態", "Trạng thái"],
 };
 const options: Partial<
@@ -192,6 +203,16 @@ const options: Partial<
   exchangeType: [
     ["fixed", "Fixed", "固定", "Cố định"],
     ["incremental", "Incremental", "段階式", "Theo bước"],
+  ],
+  purchaseType: [
+    ["one_time", "One-time purchases", "通常購入", "Mua một lần"],
+    ["subscription", "Subscriptions", "定期購入", "Đăng ký"],
+    ["both", "Both", "両方", "Cả hai"],
+  ],
+  subscriptionCadence: [
+    ["first_payment", "First payment", "初回支払い", "Lần đầu"],
+    ["first_n_payments", "First N payments", "最初のN回", "N lần đầu"],
+    ["every_payment", "Every renewal", "すべての更新", "Mọi lần gia hạn"],
   ],
   status: [
     ["inactive", "Inactive", "無効", "Chưa kích hoạt"],
@@ -239,6 +260,15 @@ function RewardEditor({
   const incremental = form.exchangeType === "incremental";
   const visible = (key: keyof RewardCatalogForm) => {
     if (key === "salesChannel") return false;
+    if (key === "purchaseType") return !financial;
+    if (key === "subscriptionCadence")
+      return !financial && form.purchaseType !== "one_time";
+    if (key === "subscriptionPaymentLimit")
+      return (
+        !financial &&
+        form.purchaseType !== "one_time" &&
+        form.subscriptionCadence === "first_n_payments"
+      );
     if (key === "exchangeType") return form.rewardType === "amount_off";
     if (["pointsStep", "minPointsCost", "maxPointsCost"].includes(key))
       return incremental;
@@ -275,6 +305,26 @@ function RewardEditor({
           minPointsCost: value === "incremental" ? "100" : "",
           maxPointsCost: "",
           maxDiscountValue: "",
+        };
+      if (key === "purchaseType")
+        return {
+          ...current,
+          purchaseType: value,
+          subscriptionCadence:
+            value === "one_time"
+              ? "first_payment"
+              : current.subscriptionCadence,
+          subscriptionPaymentLimit:
+            value === "one_time" ? "" : current.subscriptionPaymentLimit,
+        };
+      if (key === "subscriptionCadence")
+        return {
+          ...current,
+          subscriptionCadence: value,
+          subscriptionPaymentLimit:
+            value === "first_n_payments"
+              ? current.subscriptionPaymentLimit || "2"
+              : "",
         };
       if (key === "appliesToResource" && value === "entire_order")
         return {

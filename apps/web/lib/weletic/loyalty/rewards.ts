@@ -30,6 +30,11 @@ import {
   WeleticRewardType,
 } from "@prisma/client";
 import {
+  DEFAULT_REWARD_PURCHASE_POLICY,
+  readLoyaltyPurchasePolicy,
+  type LoyaltyPurchasePolicy,
+} from "./purchase-policy";
+import {
   assertAccountBackedReward,
   assertRewardAccountRelation,
 } from "./reward-ownership";
@@ -60,6 +65,7 @@ export interface CreateRewardDefinitionParams {
   usageLimit?: number | null;
   usageLimitPerCustomer?: number | null;
   expiresInDays?: number | null;
+  purchasePolicy?: LoyaltyPurchasePolicy;
 }
 
 export function isProvisionableShopifyRewardType(
@@ -152,6 +158,7 @@ type ProvisionableRewardDefinition = {
   entitledCollectionIds: unknown;
   usageLimit?: number | null;
   usageLimitPerCustomer?: number | null;
+  purchasePolicy?: unknown;
 };
 
 export function isDiscountCodeRewardType(rewardType: WeleticRewardType) {
@@ -172,6 +179,22 @@ export function isDiscountCodeRewardType(rewardType: WeleticRewardType) {
 export function isRewardDefinitionProvisionable(
   reward: ProvisionableRewardDefinition,
 ) {
+  let purchasePolicy: LoyaltyPurchasePolicy;
+  try {
+    purchasePolicy = readLoyaltyPurchasePolicy(
+      reward.purchasePolicy,
+      DEFAULT_REWARD_PURCHASE_POLICY,
+    );
+  } catch {
+    return false;
+  }
+  if (
+    (reward.rewardType === WeleticRewardType.gift_card ||
+      reward.rewardType === WeleticRewardType.store_credit) &&
+    purchasePolicy.purchaseType !== "one_time"
+  ) {
+    return false;
+  }
   if (
     reward.salesChannel &&
     reward.salesChannel !== WeleticRewardSalesChannel.online_store &&
@@ -269,6 +292,19 @@ export function validateIncrementalRewardConfig({
 export async function createRewardDefinition(
   params: CreateRewardDefinitionParams,
 ) {
+  const purchasePolicy = readLoyaltyPurchasePolicy(
+    params.purchasePolicy,
+    DEFAULT_REWARD_PURCHASE_POLICY,
+  );
+  if (
+    (params.rewardType === WeleticRewardType.gift_card ||
+      params.rewardType === WeleticRewardType.store_credit) &&
+    purchasePolicy.purchaseType !== "one_time"
+  ) {
+    throw new Error(
+      "Gift-card and store-credit rewards do not support subscription discount terms.",
+    );
+  }
   validateIncrementalRewardConfig({
     rewardType: params.rewardType,
     exchangeType: params.exchangeType ?? WeleticRewardExchangeType.fixed,
@@ -385,6 +421,7 @@ export async function createRewardDefinition(
       usageLimit: params.usageLimit ?? null,
       usageLimitPerCustomer: params.usageLimitPerCustomer ?? 1,
       expiresInDays: params.expiresInDays ?? null,
+      purchasePolicy: purchasePolicy as unknown as Prisma.InputJsonValue,
       status: WeleticRewardStatus.active,
     },
   });
@@ -423,6 +460,7 @@ export async function updateRewardDefinition({
     usageLimit: number | null;
     usageLimitPerCustomer: number | null;
     expiresInDays: number | null;
+    purchasePolicy: LoyaltyPurchasePolicy;
   }>;
   tx?: Prisma.TransactionClient;
 }) {
@@ -441,6 +479,7 @@ export async function updateRewardDefinition({
       status: true,
       discountValue: true,
       maxDiscountValue: true,
+      purchasePolicy: true,
       entitledProductIds: true,
       entitledVariantIds: true,
       entitledCollectionIds: true,
@@ -468,6 +507,19 @@ export async function updateRewardDefinition({
   });
 
   const nextRewardType = data.rewardType ?? existing.rewardType;
+  const nextPurchasePolicy = readLoyaltyPurchasePolicy(
+    data.purchasePolicy ?? existing.purchasePolicy,
+    DEFAULT_REWARD_PURCHASE_POLICY,
+  );
+  if (
+    (nextRewardType === WeleticRewardType.gift_card ||
+      nextRewardType === WeleticRewardType.store_credit) &&
+    nextPurchasePolicy.purchaseType !== "one_time"
+  ) {
+    throw new Error(
+      "Gift-card and store-credit rewards do not support subscription discount terms.",
+    );
+  }
   const nextSalesChannel =
     data.salesChannel ??
     existing.salesChannel ??
@@ -642,6 +694,10 @@ export async function updateRewardDefinition({
         usageLimit: data.usageLimit,
         usageLimitPerCustomer: data.usageLimitPerCustomer,
         expiresInDays: data.expiresInDays,
+        purchasePolicy:
+          data.purchasePolicy !== undefined
+            ? (nextPurchasePolicy as unknown as Prisma.InputJsonValue)
+            : undefined,
       },
     });
   } catch (error) {

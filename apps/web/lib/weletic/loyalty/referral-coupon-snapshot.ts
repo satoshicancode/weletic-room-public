@@ -3,6 +3,11 @@ import { z } from "zod";
 
 import { getShopifyCustomerSelectionDigest } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
 import { VERSIONED_SHOPIFY_PRIVACY_DIGEST_PATTERN } from "@/lib/weletic/shopify/privacy-identity";
+import {
+  DEFAULT_REWARD_PURCHASE_POLICY,
+  loyaltyPurchasePolicySchema,
+  readLoyaltyPurchasePolicy,
+} from "./purchase-policy";
 
 const REFERRAL_COUPON_IDENTITY_HEX_LENGTH = 24;
 const SHOPIFY_DISCOUNT_TITLE_MAX_LENGTH = 255;
@@ -25,6 +30,7 @@ export const ReferralCouponRewardSnapshotSchema = z
       "free_product",
     ]),
     salesChannel: z.enum(["online_store", "pos", "both"]).optional(),
+    purchasePolicy: loyaltyPurchasePolicySchema.optional(),
     discountValue: NullableDecimalStringSchema,
     maxDiscountValue: NullableDecimalStringSchema,
     minOrderAmount: NullableDecimalStringSchema,
@@ -82,6 +88,9 @@ export function getReferralCouponRewardSnapshotContentDigest(
         ...(Object.prototype.hasOwnProperty.call(snapshot, "salesChannel")
           ? [snapshot.salesChannel]
           : []),
+        ...(Object.prototype.hasOwnProperty.call(snapshot, "purchasePolicy")
+          ? [snapshot.purchasePolicy]
+          : []),
         snapshot.discountValue,
         snapshot.maxDiscountValue,
         snapshot.minOrderAmount,
@@ -128,6 +137,7 @@ type ReferralCouponRewardDefinition = {
   description: string | null;
   rewardType: unknown;
   salesChannel?: unknown;
+  purchasePolicy?: unknown;
   discountValue: unknown;
   maxDiscountValue: unknown;
   minOrderAmount: unknown;
@@ -261,6 +271,10 @@ export function createReferralCouponRewardSnapshot({
     description: reward.description,
     rewardType,
     ...(salesChannel ? { salesChannel } : {}),
+    purchasePolicy: readLoyaltyPurchasePolicy(
+      reward.purchasePolicy,
+      DEFAULT_REWARD_PURCHASE_POLICY,
+    ),
     discountValue: getNullableDecimalString(reward.discountValue),
     maxDiscountValue: getNullableDecimalString(reward.maxDiscountValue),
     minOrderAmount: getNullableDecimalString(reward.minOrderAmount),

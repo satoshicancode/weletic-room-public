@@ -9,6 +9,11 @@ import {
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
+import {
+  DEFAULT_REFERRAL_PURCHASE_POLICY,
+  getEligibleLoyaltyOrderSubtotal,
+  readLoyaltyPurchasePolicy,
+} from "@/lib/weletic/loyalty/purchase-policy";
 import { getReferralCouponIdempotencyKey } from "@/lib/weletic/loyalty/referral-coupon";
 import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
 import { DEFAULT_REFERRAL_RULE_CONFIG } from "@/lib/weletic/loyalty/referral-rule-config";
@@ -165,6 +170,7 @@ function createDefaultReferralRule(
       maxReferralsPerAdvocate:
         DEFAULT_REFERRAL_RULE_CONFIG.maxReferralsPerAdvocate,
       fraudCheckSameIp: DEFAULT_REFERRAL_RULE_CONFIG.fraudCheckSameIp,
+      purchasePolicy: DEFAULT_REFERRAL_PURCHASE_POLICY,
       isActive: DEFAULT_REFERRAL_RULE_CONFIG.isActive,
     },
   });
@@ -1228,16 +1234,46 @@ export async function evaluateReferralQualification(
         };
       }
 
+      let qualificationPurchasePolicy;
+      try {
+        qualificationPurchasePolicy = readLoyaltyPurchasePolicy(
+          rule.purchasePolicy,
+          DEFAULT_REFERRAL_PURCHASE_POLICY,
+        );
+      } catch {
+        return {
+          qualified: false as const,
+          reason: "Referral purchase policy is invalid",
+          advocatePointsAwarded: BigInt(0),
+          refereePointsAwarded: BigInt(0),
+        };
+      }
+      const eligibleSubtotal = await getEligibleLoyaltyOrderSubtotal({
+        tx,
+        storeId: input.storeId,
+        orderId: input.orderId,
+        policy: qualificationPurchasePolicy,
+        testFallbackSubtotal: input.orderSubtotal,
+      });
+      if (eligibleSubtotal <= BigInt(0)) {
+        return {
+          qualified: false as const,
+          reason: "Order has no purchase lines eligible for referrals",
+          advocatePointsAwarded: BigInt(0),
+          refereePointsAwarded: BigInt(0),
+        };
+      }
+
       if (rule.minQualifyingOrderSubtotal) {
         const minimumSubtotal = referralMinimumSubtotalMinorUnits({
           minimumSubtotal: rule.minQualifyingOrderSubtotal,
           currency: input.currency,
         });
 
-        if (input.orderSubtotal < minimumSubtotal) {
+        if (eligibleSubtotal < minimumSubtotal) {
           return {
             qualified: false as const,
-            reason: `Order subtotal ${input.orderSubtotal} ${input.currency} minor units is below minimum qualifying amount ${minimumSubtotal}`,
+            reason: `Eligible order subtotal ${eligibleSubtotal} ${input.currency} minor units is below minimum qualifying amount ${minimumSubtotal}`,
             advocatePointsAwarded: BigInt(0),
             refereePointsAwarded: BigInt(0),
           };
@@ -1427,6 +1463,9 @@ export async function evaluateReferralQualification(
               couponJobs.map((job) => [job.side, job.rewardSnapshot]),
             ),
             qualificationOrderId: input.orderId,
+            qualificationReferralRuleId: rule.id,
+            qualificationPurchasePolicy,
+            eligibleSubtotal: eligibleSubtotal.toString(),
             rewardKinds: {
               advocate: rule.advocateRewardKind,
               referee: rule.refereeRewardKind,

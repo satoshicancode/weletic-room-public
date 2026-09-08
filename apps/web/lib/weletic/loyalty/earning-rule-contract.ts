@@ -4,6 +4,12 @@ import {
   isCustomerIntentTriggerCode,
   validateCustomerIntentConditions,
 } from "./customer-intent-policy";
+import {
+  loyaltyPurchasePolicySchema,
+  loyaltyPurchaseTypeSchema,
+  loyaltySubscriptionCadenceSchema,
+  loyaltySubscriptionPaymentLimitSchema,
+} from "./purchase-policy";
 
 const identifier = z.string().min(1).max(191);
 const revision = z.string().regex(/^[a-f0-9]{64}$/);
@@ -60,6 +66,9 @@ export const earningRuleFieldsSchema = z
     minOrderSubtotal: subtotal.nullable(),
     excludeDiscountedItems: z.boolean(),
     excludeTaxesAndShipping: z.literal(true),
+    purchaseType: loyaltyPurchaseTypeSchema,
+    subscriptionCadence: loyaltySubscriptionCadenceSchema,
+    subscriptionPaymentLimit: loyaltySubscriptionPaymentLimitSchema,
     maxEventsPerCustomer: z.number().int().min(1).max(100).nullable(),
     limitInterval: z.enum(["lifetime", "monthly", "calendar_year"]).nullable(),
     conditions: z.union([socialConditions, reviewConditions]).nullable(),
@@ -70,6 +79,17 @@ export const earningRuleFieldsSchema = z
     const issue = (path: string, message: string) =>
       context.addIssue({ code: "custom", path: [path], message });
     if (rule.triggerCode === "order_paid") {
+      const purchasePolicy = loyaltyPurchasePolicySchema.safeParse({
+        purchaseType: rule.purchaseType,
+        subscriptionCadence: rule.subscriptionCadence,
+        subscriptionPaymentLimit: rule.subscriptionPaymentLimit,
+      });
+      if (!purchasePolicy.success)
+        issue(
+          "subscriptionPaymentLimit",
+          purchasePolicy.error.issues[0]?.message ??
+            "Provide valid purchase eligibility",
+        );
       for (const key of [
         "fixedPoints",
         "maxEventsPerCustomer",
@@ -80,6 +100,15 @@ export const earningRuleFieldsSchema = z
           issue(key, "Not applicable to purchase earning");
       return;
     }
+    if (
+      rule.purchaseType !== "one_time" ||
+      rule.subscriptionCadence !== "first_payment" ||
+      rule.subscriptionPaymentLimit !== null
+    )
+      issue(
+        "purchaseType",
+        "Non-purchase activities are always one-time events",
+      );
     if (rule.fixedPoints === null)
       issue("fixedPoints", "Activity earning requires fixed points");
     if (rule.maxEventsPerCustomer === null || rule.limitInterval === null)

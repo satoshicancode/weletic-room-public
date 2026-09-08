@@ -27,6 +27,9 @@ export const newRewardCatalogFields = (): RewardCatalogFields => ({
   usageLimit: 1,
   usageLimitPerCustomer: 1,
   expiresInDays: null,
+  purchaseType: "one_time",
+  subscriptionCadence: "first_payment",
+  subscriptionPaymentLimit: null,
   status: "inactive",
 });
 export function rewardCatalogFormFromFields(
@@ -71,6 +74,7 @@ export function parseRewardCatalogForm(form: RewardCatalogForm) {
     usageLimit: integer(form.usageLimit),
     usageLimitPerCustomer: integer(form.usageLimitPerCustomer),
     expiresInDays: integer(form.expiresInDays),
+    subscriptionPaymentLimit: integer(form.subscriptionPaymentLimit),
     entitledProductIds: ids(form.entitledProductIds, "Product"),
     entitledVariantIds: ids(form.entitledVariantIds, "ProductVariant"),
     entitledCollectionIds: ids(form.entitledCollectionIds, "Collection"),
@@ -104,5 +108,8 @@ export function changeRewardCatalogType(
       rewardType === "free_product" ? "specific_items" : "entire_order",
     usageLimit: financial ? "" : "1",
     usageLimitPerCustomer: financial ? "0" : "1",
+    purchaseType: financial ? "one_time" : form.purchaseType,
+    subscriptionCadence: financial ? "first_payment" : form.subscriptionCadence,
+    subscriptionPaymentLimit: financial ? "" : form.subscriptionPaymentLimit,
   };
 }

@@ -52,6 +52,7 @@ export type LoyaltyEarnPolicySnapshotV1 = {
     limitInterval: string | null;
     eligibleTierIds: string[];
     conditions: Prisma.JsonValue | null;
+    purchasePolicy?: Prisma.JsonValue | null;
     excludeDiscountedItems: boolean;
     excludeTaxesAndShipping: boolean;
     startAt: string | null;
@@ -546,6 +547,14 @@ export function buildLoyaltyEarnPolicySnapshot(
             "earningRule.eligibleTierIds",
           ),
           conditions: cloneJson(rule.conditions, "earningRule.conditions"),
+          ...(rule.purchasePolicy === null || rule.purchasePolicy === undefined
+            ? {}
+            : {
+                purchasePolicy: cloneJson(
+                  rule.purchasePolicy,
+                  "earningRule.purchasePolicy",
+                ),
+              }),
           excludeDiscountedItems: exactBoolean(
             rule.excludeDiscountedItems,
             "earningRule.excludeDiscountedItems",
