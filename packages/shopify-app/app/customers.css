@@ -30,6 +30,63 @@
   cursor: default;
 }
 
+.weletic-communications {
+  max-width: 60rem;
+  padding: 1.5rem 0;
+  overflow-wrap: anywhere;
+  color: #202223;
+  font-family: system-ui, sans-serif;
+}
+.weletic-communications h1 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+.weletic-communications :where(p, h2, h3) {
+  margin: 1rem 0;
+  line-height: 1.6;
+}
+.weletic-communications label {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.weletic-communications :where(input, select, textarea, button) {
+  max-width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid #8a8a8a;
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+}
+.weletic-communications :where(input:not([type="checkbox"]), textarea) {
+  width: 100%;
+  box-sizing: border-box;
+}
+.weletic-communications input[type="checkbox"] {
+  min-height: 1.25rem;
+  width: 1.25rem;
+}
+.weletic-communications :where(fieldset, section) {
+  min-width: 0;
+  border: 1px solid #dfe3e8;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin: 1rem 0;
+  box-sizing: border-box;
+}
+.weletic-communications :disabled {
+  opacity: 0.65;
+}
+.weletic-communications :focus-visible {
+  outline: 3px solid #005bd3;
+  outline-offset: 2px;
+}
+.weletic-communications [role="alert"] {
+  color: #8e1f0b;
+}
+
 .weletic-analytics {
   color: #202223;
   font-family: system-ui, sans-serif;
