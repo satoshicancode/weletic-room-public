@@ -172,6 +172,7 @@ export interface ProgramHealthMetricsResult {
 export type LoyaltyHealthMetricsReport = ProgramHealthMetricsResult;
 
 export interface TierDistributionItem {
+  assignment?: "configured" | "unassigned" | "unavailable";
   tierId: string;
   name: string;
   slug?: string | null;
@@ -999,11 +1000,17 @@ export async function getLoyaltyTierDistribution(params: {
     });
   }
 
-  const entryTier = tiers.length > 0 ? tiers[0] : null;
+  const configuredTierIds = new Set(tiers.map((tier: any) => tier.id));
+  const unassignedKey = "__analytics_unassigned__";
+  const unavailableKey = "__analytics_unavailable__";
 
   for (const acc of accounts) {
-    const tierId =
-      acc.currentTierId || (entryTier ? entryTier.id : "unassigned");
+    // Report persisted assignments; never infer tier enrollment from order.
+    const tierId = !acc.currentTierId
+      ? unassignedKey
+      : configuredTierIds.has(acc.currentTierId)
+        ? acc.currentTierId
+        : unavailableKey;
     if (!tierStatsMap.has(tierId)) {
       tierStatsMap.set(tierId, {
         count: 0,
@@ -1033,7 +1040,35 @@ export async function getLoyaltyTierDistribution(params: {
     stat.spend += spend;
   }
 
-  return tiers.map((tier: any) => {
+  const reportingTiers = [
+    ...tiers.map((tier: any) => ({
+      ...tier,
+      assignment: "configured" as const,
+    })),
+    ...(tierStatsMap.has(unassignedKey)
+      ? [
+          {
+            id: unassignedKey,
+            name: "Unassigned",
+            slug: null,
+            tierOrder: 0,
+            assignment: "unassigned" as const,
+          },
+        ]
+      : []),
+    ...(tierStatsMap.has(unavailableKey)
+      ? [
+          {
+            id: unavailableKey,
+            name: "Unavailable tier",
+            slug: null,
+            tierOrder: 0,
+            assignment: "unavailable" as const,
+          },
+        ]
+      : []),
+  ];
+  return reportingTiers.map((tier: any) => {
     const stat = tierStatsMap.get(tier.id) || {
       count: 0,
       points: BigInt(0),
@@ -1046,6 +1081,7 @@ export async function getLoyaltyTierDistribution(params: {
         : 0;
 
     return {
+      assignment: tier.assignment,
       tierId: tier.id,
       name: tier.name,
       slug: tier.slug,
