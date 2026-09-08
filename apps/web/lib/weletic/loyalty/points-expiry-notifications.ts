@@ -12,7 +12,10 @@ import {
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import { getWeleticTransactionalEmailOptions } from "@/lib/weletic/transactional-email";
 import { sendBatchEmail } from "@dub/email";
-import PointsExpiryReminder from "@dub/email/templates/points-expiry-reminder";
+import PointsExpiryReminder, {
+  getPointsExpiryCopy,
+  resolvePointsExpiryLocale,
+} from "@dub/email/templates/points-expiry-reminder";
 import { WeleticPointsLedgerEntryType } from "@prisma/client";
 
 const EXPLICIT_PARTICIPATION_TYPES: WeleticPointsLedgerEntryType[] = [
@@ -135,7 +138,7 @@ export async function sendPointsExpiryNotification({
   });
   if (communications.paused) throw new ShopperEmailPausedError();
 
-  const locale = shopper.locale || "en";
+  const locale = resolvePointsExpiryLocale(shopper.locale);
   let expiryDate: string;
   try {
     expiryDate = new Intl.DateTimeFormat(locale, {
@@ -160,10 +163,13 @@ export async function sendPointsExpiryNotification({
       {
         ...getWeleticTransactionalEmailOptions(),
         to: shopper.email,
-        subject:
-          stage === "last_chance"
-            ? `Last chance: ${pointsBalance} expire on ${expiryDate}`
-            : `${pointsBalance} expire on ${expiryDate}`,
+        subject: getPointsExpiryCopy({
+          locale,
+          urgency: stage,
+          pointsBalance,
+          expiryDate,
+          brandName: communications.brandName,
+        }).subject,
         variant: "marketing",
         unsubscribeUrl: `${accountUrl}/profile`,
         react: PointsExpiryReminder({
@@ -175,6 +181,7 @@ export async function sendPointsExpiryNotification({
           expiryDate,
           accountUrl,
           urgency: stage,
+          locale,
         }),
       },
     ],

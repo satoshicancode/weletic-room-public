@@ -158,7 +158,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       const [batch, opts] = vi.mocked(sendBatchEmail).mock.calls[0];
       expect(batch[0]).toMatchObject({
         to: "consented@example.com",
-        subject: "1250 Points expire on 2026年10月1日",
+        subject: "1250 Pointsの有効期限は2026年10月1日です",
         variant: "marketing",
         unsubscribeUrl: "https://yamaxdev.myshopify.com/account/profile",
       });
