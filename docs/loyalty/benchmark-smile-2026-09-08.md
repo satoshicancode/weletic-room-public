@@ -3,7 +3,8 @@
 Read-only Chrome observations on `n0pvef-cs`. No values changed, saves,
 activation, emails, subscription changes, or transactions. Observed controls
 are not executed behavior or proof of plan entitlement. Home banner showed
-"Free trial ends in 2 days"; not treated as an exact billing deadline.
+"Free trial ends in 1 day"; not treated as an exact billing deadline. No
+screenshots were retained; this normalized note is the durable reference.
 
 ## Points
 
@@ -41,7 +42,9 @@ or specific-collection applicability; recipient-account binding option; minimum
 purchase requirement; code prefix; shipping/product discount combination controls;
 copy excludes combination with order discounts; optional elapsed-time reward
 expiry; custom icon. No subscription option selected, so conditional recurring
-payment settings are not yet observed here. No test redemption performed.
+payment settings were deliberately not inspected: revealing them would require
+changing the selected form value, which was outside this read-only capture. No
+test redemption performed.
 
 Incremental order-discount reward editor separately shows points step, reward
 value, minimum/maximum redemption points, purchase-type menu, collection scope,
@@ -82,7 +85,32 @@ explicit product requirement, not inferred Smile parity.
 Source: `/apps/smile-io/on-site`.
 Launcher, panel, nudges; dedicated landing page; loyalty hub in modern Shopify
 customer accounts; product-page earning points; customer-account points banner;
-after-purchase points. No theme/account editor or activation opened.
+after-purchase points.
+
+The launcher editor separates desktop/mobile copy, position and visibility. It
+offers default or uploaded icons; shape; left/right position; side/bottom spacing;
+primary/background and font colors; desktop icon/text ordering; mobile text or
+icon layout; desktop-and-mobile, desktop-only or hidden visibility; homepage and
+URL-substring exclusions; and optional `z-index` plus `!important`. Desktop and
+mobile previews are separate.
+
+The panel editor exposes minimum-size banner and brand-icon uploads, visitor and
+member headers, account-creation copy and calls to action, reorderable Points /
+Referrals / VIP sections, and a default opening view (home, earn, redeem or
+refer). It publishes section deep links such as `#smile-home`. Appearance offers
+light/dark styles, branded primary/secondary colors, separate banner/header/
+button/link/icon roles, container/card/button/input shapes, six wallpaper
+choices, and optional Smile attribution. The UI states these appearance choices
+also flow into nudges and email.
+
+Three nudge editors are included and disabled in the reference store: first-time
+visitor account creation, points spending when a shopper can redeem at cart, and
+available-reward usage at cart. Each supports a default/preset/uploaded image,
+editable title/description/button, default restoration and preview. Observed
+defaults use `{{points_program.points_label_plural}}` and
+`{{customer.points_balance_formatted}}` for the points-spending nudge; the other
+defaults prompt sign-up/login or adding the available reward to cart. No theme,
+customer-account editor, nudge enablement, activation or save was performed.
 
 ## Communications
 
@@ -93,6 +121,36 @@ through Smile, VIP tier achieved, reward expiry reminder. Separate appearance
 customization. General settings expose sender name and reply-to identity.
 Recipient addresses and merchant contact values are intentionally omitted here.
 No test email sent and no notification toggled.
+
+The reference statuses were: all listed journeys on except Points earned, which
+was off. Expiry warning and last chance are configured for 30 and three days
+before balance expiry respectively; reward expiry reminder is three days before
+reward expiry. Every message editor includes a minimum 1200 x 480 banner,
+desktop/mobile preview, test-email control, activation toggle and save control.
+Email appearance separately exposes button/text colors derived from branding and
+a minimum 400 x 144 logo.
+
+Observed subjects and variables were:
+
+- Points expiry warning and last chance:
+  `Your {{reward_program.points_label_plural}} from {{store_name}} expire on {{customer.points_balance_expires_at_formatted}}`.
+- Birthday reward: `Happy birthday!`.
+- Points earned: `You've earned {{reward_fulfillment.name}}!`; reward-name variable.
+- Reward redeemed: `Your {{reward_fulfillment.name}} confirmation`; reward name
+  and currency-formatted redemption amount variables.
+- Referral completed: `Your friend used your referral!`; reward-name variable.
+- Friend received referral: `Your {{reward_fulfillment.name}} reward confirmation`;
+  reward-name variable.
+- Referral shared through Smile:
+  `{{ advocate_customer.full_name }} gave you {{ friend_reward.name }} to use on your first order`;
+  advocate name, friend reward and custom-message preview content.
+- VIP tier achieved: `You've achieved {{ customer.vip_tier.name }}!`; customer
+  tier-name variable plus next-tier and membership-expiry preview content.
+- Reward expiry reminder: `Your reward is expiring soon!`.
+
+Default previews combine the event message with contextual next-reward, earning,
+redemption-code/terms, referral or tier-benefit sections as applicable, plus
+preference management. No preview customer values were retained.
 
 Points-earned editor: subject/title/description, variables, banner, desktop/mobile
 preview, sent count, test-send and activation controls. Preview includes next
@@ -118,4 +176,30 @@ growth, first/repeat earners/redeemers, top actions/referrers and VIP behavior.
 The two finance reports (issued-discount value and outstanding-points value)
 are visibly Plus-gated even in this trial. Do not claim this trial exposes all
 Smile functionality or infer financial formulas from those locked titles.
-No report export downloaded and no plan upgrade opened.
+
+Read-only report previews exposed these filters and export columns without a
+download:
+
+- Customers — filters: became-member date, points balance, enough-points-to-redeem
+  flag and membership status. Columns: Smile customer ID, first name, last name,
+  email, points balance, referral URL, membership status, date of birth, became
+  member at, first/last points earned at, first/last points redeemed at and last
+  order placed at.
+- Points transactions — filters: date range (default previous 30 days), change
+  type, minimum points and maximum points. Columns: Smile customer ID, first name,
+  last name, email, comment, points change, new balance, internal note, type and
+  date.
+- Points redemptions — filters: date range (default previous 30 days) and channel.
+  Columns: Smile customer ID, first name, last name, email, channel, date, points
+  redeemed, reward name and code.
+- Orders — filters: date (default previous 30 days), points earned and Smile-code
+  presence. Columns: email, placed at, order number, payment status, POS flag,
+  discount codes, Smile-code flag, grand total, rewardable total, points earned
+  and referred-customer flag.
+- VIP tier changes — filters: date range (default previous 30 days), change type
+  and new tier. Columns: Smile customer ID, first name, last name, email, type,
+  new tier, old tier and changed at.
+- Referrals — date range (default previous 30 days). The empty reference report
+  displayed no column schema, so none is inferred.
+
+No report filter was applied, no export downloaded and no plan upgrade opened.
