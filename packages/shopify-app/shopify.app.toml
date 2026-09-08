@@ -1,0 +1,59 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "2ddb3295b5911813add84c763b4111d3"
+name = "Weletic Room"
+handle = "weletic-room"
+application_url = "https://shopify.weletic.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = true
+
+[access_scopes]
+# Scopes required for products, markets, orders, discounts, translations, and customer loyalty
+scopes = "read_products,write_products,read_markets,read_orders,read_translations,read_discounts,write_discounts,read_price_rules,write_price_rules,read_customers,write_customers,read_gift_cards,write_gift_cards,read_store_credit_accounts,write_store_credit_account_transactions,write_app_proxy"
+
+[auth]
+redirect_urls = [
+  "https://shopify.weletic.com/auth/callback"
+]
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "https://app.weletic.com/api/shopify/integration/webhook"
+
+  [[webhooks.subscriptions]]
+  topics = ["products/update", "products/delete"]
+  uri = "https://app.weletic.com/api/shopify/integration/webhook"
+
+  [[webhooks.subscriptions]]
+  topics = ["orders/paid", "orders/fulfilled", "orders/cancelled"]
+  uri = "https://app.weletic.com/api/shopify/integration/webhook"
+
+  [[webhooks.subscriptions]]
+  topics = ["customers/create", "customers/update"]
+  uri = "https://app.weletic.com/api/shopify/integration/webhook"
+
+  [[webhooks.subscriptions]]
+  topics = ["refunds/create"]
+  uri = "https://app.weletic.com/api/shopify/integration/webhook"
+
+  [[webhooks.subscriptions]]
+  topics = ["discounts/delete", "discounts/update"]
+  uri = "https://app.weletic.com/api/shopify/integration/webhook"
+
+  [webhooks.privacy_compliance]
+  customer_data_request_url = "https://app.weletic.com/api/shopify/integration/webhook"
+  customer_deletion_url = "https://app.weletic.com/api/shopify/integration/webhook"
+  shop_deletion_url = "https://app.weletic.com/api/shopify/integration/webhook"
+
+[pos]
+embedded = false
+
+[app_proxy]
+url = "https://shopify.weletic.com/apps/proxy"
+subpath = "weletic"
+prefix = "apps"

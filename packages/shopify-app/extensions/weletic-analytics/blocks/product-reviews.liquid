@@ -1,0 +1,15 @@
+{% if product %}
+  <weletic-reviews data-product-id="{{ product.id }}" data-mode="full" data-proxy="/apps/weletic/reviews" {{ block.shopify_attributes }}>
+    <h2>Customer reviews</h2><p role="status">Loading reviews…</p>
+  </weletic-reviews>
+{% endif %}
+{% schema %}
+{
+  "name": "Weletic product reviews",
+  "target": "section",
+  "javascript": "weletic-reviews.js",
+  "stylesheet": "weletic-reviews.css",
+  "enabled_on": { "templates": ["product"] },
+  "settings": []
+}
+{% endschema %}

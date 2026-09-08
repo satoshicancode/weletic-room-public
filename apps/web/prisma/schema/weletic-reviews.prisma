@@ -1,0 +1,298 @@
+// Native verified-purchase reviews. Private identity remains on the shopper;
+// public projections explicitly select only published review content.
+enum WeleticReviewRequestStatus {
+  queued
+  sending
+  sent
+  submitted
+  expired
+  cancelled
+  failed
+}
+
+enum WeleticProductReviewStatus {
+  pending
+  published
+  hidden
+  rejected
+  redacted
+}
+
+enum WeleticReviewRewardStatus {
+  pending
+  awarded
+  ineligible
+  reversed
+  invalidated
+  recovery_pending
+  unrecoverable
+}
+
+enum WeleticReviewMediaStatus {
+  reserved
+  uploaded
+  deletion_pending
+  deleted
+}
+
+model WeleticReviewSettings {
+  storeId                 String    @id
+  enabled                 Boolean   @default(false)
+  sendAfterDays           Int       @default(7)
+  expiresAfterDays        Int       @default(30)
+  autoPublish             Boolean   @default(false)
+  photoUploadsEnabled     Boolean   @default(true)
+  requestEmailEnabled     Boolean   @default(false)
+  // Revision allocation is separate from activation. No public activation writer
+  // exists until direct fulfillment and privacy release gates pass.
+  incentivePolicyRevision Int       @default(0)
+  activeIncentivePolicyId String?
+  activatedAt             DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  store                 WeleticShopifyStore           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  activeIncentivePolicy WeleticReviewIncentivePolicy? @relation("ActiveReviewIncentivePolicy", fields: [storeId, activeIncentivePolicyId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([storeId, activeIncentivePolicyId])
+}
+
+// Append-only promises. Editing settings creates a revision, never changes an
+// invitation's policy or an already reserved award.
+model WeleticReviewIncentivePolicy {
+  id            String   @id
+  storeId       String
+  revision      Int
+  snapshot      Json     @db.Json
+  contentDigest String   @db.VarChar(64)
+  createdAt     DateTime @default(now())
+
+  store          WeleticShopifyStore           @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  activeSettings WeleticReviewSettings[]       @relation("ActiveReviewIncentivePolicy")
+  requests       WeleticReviewRequest[]
+  claims         WeleticReviewIncentiveClaim[]
+
+  @@unique([storeId, id])
+  @@unique([storeId, revision])
+}
+
+// One order-wide claim shared by product and future store-experience reviews.
+// Reservation is not issuance; award/reversal services must retain this marker.
+model WeleticReviewIncentiveClaim {
+  id                 String   @id
+  storeId            String
+  orderId            String
+  shopperId          String
+  policyId           String
+  sourceReviewId     String
+  subjectType        String   @db.VarChar(32)
+  status             String   @default("reserved") @db.VarChar(32)
+  awardSnapshot      Json     @db.Json
+  validationSnapshot Json     @db.Json
+  createdAt          DateTime @default(now())
+
+  store        WeleticShopifyStore                 @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  order        WeleticCommerceOrder                @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  shopper      WeleticShopper                      @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
+  policy       WeleticReviewIncentivePolicy        @relation(fields: [storeId, policyId], references: [storeId, id], onDelete: Restrict)
+  invalidation WeleticReviewIncentiveInvalidation?
+
+  @@unique([storeId, id], map: "wl_review_claim_store_id_uq")
+  @@unique([storeId, orderId], map: "wl_review_incentive_order_uq")
+  @@index([storeId, shopperId])
+  @@index([storeId, policyId])
+  @@index(orderId)
+}
+
+// One confirmed decision per order-wide claim. Decision identity and snapshot
+// are immutable; remote recovery progress may advance without changing them.
+model WeleticReviewIncentiveInvalidation {
+  id                     String    @id
+  storeId                String
+  claimId                String
+  shopperId              String
+  decisionId             String    @db.VarChar(191)
+  actorUserId            String    @db.VarChar(191)
+  reason                 String    @db.VarChar(64)
+  installationGeneration String    @db.VarChar(64)
+  decisionSnapshot       Json      @db.Json
+  outcome                String    @default("pending") @db.VarChar(32)
+  cleanupId              String?   @db.VarChar(191)
+  completedAt            DateTime?
+  createdAt              DateTime  @default(now())
+
+  store   WeleticShopifyStore           @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  claim   WeleticReviewIncentiveClaim   @relation(fields: [storeId, claimId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+  shopper WeleticShopper                @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+  cleanup WeleticShopifyVoucherCleanup? @relation(fields: [storeId, cleanupId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([storeId, decisionId], map: "wl_review_invalidation_decision_uq")
+  @@unique([storeId, claimId], map: "wl_review_invalidation_claim_uq")
+  @@unique([storeId, cleanupId], map: "wl_review_invalidation_cleanup_uq")
+  @@index([storeId, shopperId, id], map: "wl_review_invalidation_shopper_idx")
+  @@index([storeId, outcome, id], map: "wl_review_invalidation_work_idx")
+}
+
+// Cancellation can precede both the paid-order projection and fulfillment.
+// Retain its order identity so delayed events cannot revive invitations.
+model WeleticReviewOrderCancellation {
+  storeId         String
+  orderExternalId String              @db.VarChar(191)
+  cancelledAt     DateTime
+  store           WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, orderExternalId])
+}
+
+model WeleticReviewRequest {
+  id                     String                     @id
+  storeId                String
+  orderId                String
+  productId              String
+  shopperId              String
+  incentivePolicyId      String?
+  installationGeneration String?                    @db.VarChar(64)
+  status                 WeleticReviewRequestStatus @default(queued)
+  fulfilledAt            DateTime
+  sendAt                 DateTime
+  expiresAt              DateTime
+  tokenHash              String?                    @unique @db.VarChar(64)
+  // Only the delivery worker needs recoverable token material; cleared on send.
+  encryptedDeliveryToken String?                    @db.Text
+  deliveryToken          String?                    @db.VarChar(64)
+  deliveryReservedAt     DateTime?
+  deliveryLeaseExpiresAt DateTime?
+  deliveryAttempts       Int                        @default(0)
+  lastError              String?                    @db.VarChar(191)
+  sentAt                 DateTime?
+  submittedAt            DateTime?
+  cancelledAt            DateTime?
+  cancellationReason     String?                    @db.VarChar(191)
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+
+  store           WeleticShopifyStore           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order           WeleticCommerceOrder          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  product         WeleticShopifyProduct         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  shopper         WeleticShopper                @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
+  lines           WeleticReviewRequestLine[]
+  review          WeleticProductReview?
+  media           WeleticReviewMedia[]
+  incentivePolicy WeleticReviewIncentivePolicy? @relation(fields: [storeId, incentivePolicyId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, orderId, productId])
+  @@unique([storeId, id])
+  @@index([storeId, status, sendAt, id])
+  @@index([storeId, shopperId])
+  @@index([status, deliveryLeaseExpiresAt])
+  @@index(orderId)
+  @@index(productId)
+  @@index([storeId, incentivePolicyId])
+}
+
+model WeleticReviewRequestLine {
+  id                String @id
+  requestId         String
+  orderLineId       String
+  purchasedQuantity Int
+
+  request   WeleticReviewRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  orderLine WeleticCommerceOrderLine @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+
+  @@unique([requestId, orderLineId])
+  @@index(orderLineId)
+}
+
+model WeleticProductReview {
+  id                              String                     @id
+  storeId                         String
+  requestId                       String                     @unique
+  productId                       String
+  shopperId                       String
+  status                          WeleticProductReviewStatus @default(pending)
+  version                         Int                        @default(1)
+  rating                          Int
+  title                           String                     @db.VarChar(120)
+  body                            String                     @db.Text
+  displayName                     String                     @db.VarChar(80)
+  merchantReply                   String?                    @db.Text
+  verifiedPurchase                Boolean                    @default(true)
+  // Set only by the future trusted participation validator, never moderation.
+  participationStatus             String                     @default("pending") @db.VarChar(32)
+  participationValidatedAt        DateTime?
+  participationValidationRevision String?                    @db.VarChar(64)
+  participationContentDigest      String?                    @db.VarChar(64)
+  incentivized                    Boolean                    @default(false)
+  rewardStatus                    WeleticReviewRewardStatus  @default(pending)
+  rewardLedgerId                  String?                    @db.VarChar(191)
+  rewardReason                    String?                    @db.VarChar(191)
+  publishedAt                     DateTime?
+  moderatedAt                     DateTime?
+  moderatedByUserId               String?
+  redactedAt                      DateTime?
+  createdAt                       DateTime                   @default(now())
+  updatedAt                       DateTime                   @updatedAt
+
+  store            WeleticShopifyStore            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  request          WeleticReviewRequest           @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
+  product          WeleticShopifyProduct          @relation(fields: [productId], references: [id], onDelete: Restrict)
+  shopper          WeleticShopper                 @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
+  media            WeleticReviewMedia[]
+  moderationAudits WeleticReviewModerationAudit[]
+
+  @@unique([storeId, id])
+  @@unique([storeId, requestId])
+  @@index([storeId, productId, status, createdAt, id])
+  @@index([storeId, status, createdAt, id])
+  @@index([storeId, shopperId])
+  @@index(productId)
+}
+
+// Prospective content-moderation history; never a replacement for financial
+// ledger evidence. Private explanation/actor links are scrubbed on erasure.
+model WeleticReviewModerationAudit {
+  id                     String                     @id
+  storeId                String
+  reviewId               String
+  actorKind              String                     @db.VarChar(32)
+  actorUserId            String?
+  appId                  String?
+  installationGeneration String?                    @db.VarChar(64)
+  merchantActionId       String?                    @db.VarChar(64)
+  reasonCode             String                     @db.VarChar(32)
+  reasonDetails          String?                    @db.Text
+  fromVersion            Int
+  toVersion              Int
+  fromStatus             WeleticProductReviewStatus
+  toStatus               WeleticProductReviewStatus
+  replyChanged           Boolean
+  redactedAt             DateTime?
+  createdAt              DateTime                   @default(now())
+
+  review WeleticProductReview @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, reviewId, toVersion], map: "review_moderation_version_unique")
+  @@index([storeId, createdAt, id], map: "review_moderation_store_created")
+  @@index([storeId, redactedAt, id], map: "review_moderation_redaction")
+}
+
+model WeleticReviewMedia {
+  id              String                   @id
+  storeId         String
+  requestId       String
+  reviewId        String?
+  objectKey       String                   @unique @db.VarChar(191)
+  contentType     String                   @db.VarChar(32)
+  sizeBytes       Int
+  status          WeleticReviewMediaStatus @default(reserved)
+  uploadExpiresAt DateTime
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  request WeleticReviewRequest  @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
+  review  WeleticProductReview? @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
+
+  @@index([storeId, requestId, status])
+  @@index([storeId, reviewId])
+  @@index([status, uploadExpiresAt])
+}

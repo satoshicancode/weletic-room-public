@@ -1,0 +1,713 @@
+// Weletic-owned commerce projection and immutable financial ledger.
+// Names are intentionally prefixed to minimize conflicts when merging Dub upstream.
+
+enum WeleticSyncStatus {
+  pending
+  running
+  succeeded
+  failed
+}
+
+enum WeleticProductStatus {
+  active
+  draft
+  archived
+}
+
+enum WeleticWebhookStatus {
+  received
+  processed
+  ignored
+  failed
+}
+
+enum WeleticOrderStatus {
+  pending
+  paid
+  partially_refunded
+  refunded
+  voided
+}
+
+enum WeleticCustomerClassification {
+  new
+  returning
+  unknown
+}
+
+enum WeleticLedgerEntryType {
+  sale
+  reversal
+  adjustment
+}
+
+enum WeleticCommissionScope {
+  program
+  partner
+  collection
+  product
+  variant
+  promotion
+  tag
+}
+
+enum WeleticCommissionRuleType {
+  percentage
+  fixed
+}
+
+enum WeleticFixedAmountMode {
+  order
+  line
+  item
+}
+
+enum WeleticPayoutProfileStatus {
+  draft
+  pending_verification
+  verified
+  disabled
+}
+
+enum WeleticReconciliationStatus {
+  open
+  resolved
+  ignored
+}
+
+enum WeleticShopifyStoreComplianceState {
+  active
+  frozen
+  redacted
+}
+
+model WeleticShopifyStore {
+  id                      String                             @id
+  projectId               String                             @unique
+  programId               String                             @unique
+  shopDomain              String                             @unique
+  shopCurrency            String
+  currencyVerifiedAt      DateTime?
+  installationGeneration  String?                            @db.VarChar(64)
+  defaultLocale           String                             @default("en")
+  apiVersion              String
+  syncStatus              WeleticSyncStatus                  @default(pending)
+  lastFullSyncAt          DateTime?
+  lastIncrementalAt       DateTime?
+  lastReconciledAt        DateTime?
+  lastSyncError           String?                            @db.Text
+  complianceState         WeleticShopifyStoreComplianceState @default(active)
+  uninstalledAt           DateTime?
+  redactedAt              DateTime?
+  financialRetentionUntil DateTime?
+  createdAt               DateTime                           @default(now())
+  updatedAt               DateTime                           @updatedAt
+
+  project                      Project                                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  program                      Program                                   @relation(fields: [programId], references: [id], onDelete: Cascade)
+  markets                      WeleticShopifyMarket[]
+  products                     WeleticShopifyProduct[]
+  syncRuns                     WeleticShopifySyncRun[]
+  webhookEvents                WeleticShopifyWebhookEvent[]
+  orders                       WeleticCommerceOrder[]
+  refunds                      WeleticCommerceRefund[]
+  reconciliationIssues         WeleticReconciliationIssue[]
+  shoppers                     WeleticShopper[]
+  loyaltyProgram               WeleticLoyaltyProgram?
+  loyaltyAccounts              WeleticLoyaltyAccount[]
+  pointsLedgerEntries          WeleticPointsLedgerEntry[]
+  rewardDefinitions            WeleticRewardDefinition[]
+  rewardRedemptions            WeleticRewardRedemption[]
+  rewardCouponUses             WeleticRewardCouponUse[]
+  loyaltyBackfillJobs          WeleticLoyaltyBackfillJob[]
+  loyaltyReferrals             WeleticLoyaltyReferral[]
+  loyaltyEarnGrants            WeleticLoyaltyEarnGrant[]
+  loyaltyOutboxJobs            WeleticLoyaltyOutboxJob[]
+  flowTriggerStates            WeleticShopifyFlowTriggerState[]
+  loyaltyReviewIntegrations    WeleticLoyaltyReviewIntegration[]
+  reviewSettings               WeleticReviewSettings?
+  reviewIncentivePolicies      WeleticReviewIncentivePolicy[]
+  reviewIncentiveClaims        WeleticReviewIncentiveClaim[]
+  reviewIncentiveInvalidations WeleticReviewIncentiveInvalidation[]
+  merchantSettings             WeleticMerchantSettings?
+  shopifyStaffGrants           WeleticShopifyStaffGrant[]
+  shopifyMerchantActions       WeleticShopifyMerchantAction[]
+  reviewOrderCancellations     WeleticReviewOrderCancellation[]
+  reviewRequests               WeleticReviewRequest[]
+  nativeReviews                WeleticProductReview[]
+  loyaltyEarnPolicyRevisions   WeleticLoyaltyEarnPolicyRevision[]
+  complianceRequests           WeleticShopifyComplianceRequest[]
+  complianceArtifacts          WeleticShopifyComplianceArtifact[]
+  customerPrivacyTombstones    WeleticShopifyCustomerPrivacyTombstone[]
+  shopPrivacyTombstones        WeleticShopifyShopPrivacyTombstone[]
+  voucherCleanups              WeleticShopifyVoucherCleanup[]
+  voucherCleanupRequestLinks   WeleticShopifyVoucherCleanupRequestLink[]
+
+  @@index(syncStatus)
+  @@index(complianceState)
+}
+
+// Shopify Remix OAuth sessions. The serialized payload is encrypted before it
+// reaches this model; the standalone Shopify process never receives DB access.
+model WeleticShopifyAppSession {
+  id        String    @id
+  shop      String
+  isOnline  Boolean
+  expiresAt DateTime?
+  payload   String    @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index(shop)
+  @@index(expiresAt)
+}
+
+// Coordination survives SDK session invalidation/deletion. This is not a token
+// store or reconnect authorization. Each database still hosts one Shopify app.
+model WeleticShopifySessionCoordination {
+  id             String    @id @db.VarChar(64)
+  appId          String    @db.VarChar(191)
+  shop           String    @db.VarChar(255)
+  revision       BigInt    @default(0)
+  leaseEpoch     BigInt    @default(0)
+  leaseOwnerHash String?   @db.VarChar(64)
+  leaseExpiresAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([appId, shop])
+  @@index(shop)
+  @@index(leaseExpiresAt)
+}
+
+model WeleticShopifyMarket {
+  id                String   @id
+  storeId           String
+  externalId        String
+  name              String
+  handle            String?
+  catalogExternalId String?
+  countryCodes      Json     @db.Json
+  currencyCodes     Json     @db.Json
+  rootUrls          Json?    @db.Json
+  webPresenceUrl    String?  @db.Text
+  defaultLocale     String?
+  primary           Boolean  @default(false)
+  enabled           Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  store        WeleticShopifyStore         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  prices       WeleticShopifyMarketPrice[]
+  translations WeleticShopifyTranslation[]
+  productLinks WeleticProductLink[]
+  orders       WeleticCommerceOrder[]
+
+  @@unique([storeId, externalId])
+  @@index([storeId, enabled])
+  @@index([storeId, updatedAt])
+}
+
+model WeleticShopifyProduct {
+  id                    String               @id
+  storeId               String
+  programId             String
+  externalId            String
+  handle                String
+  title                 String
+  descriptionHtml       String?              @db.LongText
+  productType           String?
+  vendor                String?
+  tags                  Json?                @db.Json
+  collectionExternalIds Json?                @db.Json
+  featuredImageUrl      String?              @db.LongText
+  status                WeleticProductStatus @default(active)
+  availableForSale      Boolean              @default(true)
+  publishedAt           DateTime?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  store           WeleticShopifyStore         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  program         Program                     @relation(fields: [programId], references: [id], onDelete: Cascade)
+  variants        WeleticShopifyVariant[]
+  translations    WeleticShopifyTranslation[]
+  productLinks    WeleticProductLink[]
+  orderLines      WeleticCommerceOrderLine[]
+  commissionRules WeleticCommissionRule[]
+  reviewRequests  WeleticReviewRequest[]
+  nativeReviews   WeleticProductReview[]
+
+  @@unique([storeId, externalId])
+  @@unique([storeId, handle])
+  @@index([programId, status, availableForSale])
+  @@index([storeId, updatedAt])
+  @@fulltext([title, productType, vendor])
+}
+
+model WeleticShopifyVariant {
+  id                 String   @id
+  productId          String
+  externalId         String
+  title              String
+  sku                String?
+  barcode            String?
+  options            Json?    @db.Json
+  imageUrl           String?  @db.LongText
+  availableForSale   Boolean  @default(true)
+  inventoryQuantity  Int?
+  shopPrice          BigInt
+  shopCompareAtPrice BigInt?
+  shopCurrency       String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  product         WeleticShopifyProduct       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketPrices    WeleticShopifyMarketPrice[]
+  productLinks    WeleticProductLink[]
+  orderLines      WeleticCommerceOrderLine[]
+  commissionRules WeleticCommissionRule[]
+
+  @@unique([productId, externalId])
+  @@index([productId, availableForSale])
+  @@index([productId, updatedAt])
+  @@index(externalId)
+  @@index(sku)
+}
+
+model WeleticShopifyTranslation {
+  id              String   @id
+  productId       String
+  marketId        String?
+  marketKey       String   @default("*")
+  locale          String
+  title           String
+  descriptionHtml String?  @db.LongText
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  product WeleticShopifyProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+  market  WeleticShopifyMarket? @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, locale, marketKey])
+  @@index([marketId, locale])
+  @@index([productId, updatedAt])
+}
+
+model WeleticShopifyMarketPrice {
+  id              String   @id
+  variantId       String
+  marketId        String
+  countryCode     String
+  amount          BigInt
+  compareAtAmount BigInt?
+  currency        String
+  available       Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  variant WeleticShopifyVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  market  WeleticShopifyMarket  @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, marketId, countryCode])
+  @@index([marketId, countryCode, available])
+  @@index([marketId, countryCode, updatedAt])
+}
+
+model WeleticShopifySyncRun {
+  id          String            @id
+  storeId     String
+  kind        String
+  status      WeleticSyncStatus @default(pending)
+  cursor      String?           @db.Text
+  stats       Json?             @db.Json
+  error       String?           @db.Text
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, status, createdAt])
+}
+
+model WeleticShopifyWebhookEvent {
+  id                          String               @id
+  storeId                     String
+  webhookId                   String               @unique
+  topic                       String
+  authenticatedBodyDigest     String?              @db.VarChar(191)
+  storeInstallationGeneration String?              @db.VarChar(64)
+  status                      WeleticWebhookStatus @default(received)
+  payload                     Json?                @db.Json
+  error                       String?              @db.Text
+  attempts                    Int                  @default(0)
+  occurredAt                  DateTime?
+  processedAt                 DateTime?
+  createdAt                   DateTime             @default(now())
+  updatedAt                   DateTime             @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, topic, createdAt])
+  @@index([status, createdAt])
+}
+
+model WeleticProductLink {
+  id          String   @id
+  programId   String
+  partnerId   String
+  productId   String
+  variantId   String?
+  marketId    String?
+  countryCode String?
+  linkId      String   @unique
+  locale      String   @default("en")
+  subId       String?
+  targetUrl   String   @db.LongText
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  program Program                @relation(fields: [programId], references: [id], onDelete: Cascade)
+  partner Partner                @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  product WeleticShopifyProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant WeleticShopifyVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  market  WeleticShopifyMarket?  @relation(fields: [marketId], references: [id], onDelete: SetNull)
+  link    Link                   @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([programId, partnerId, createdAt])
+  @@index([productId, marketId])
+  @@index(partnerId)
+  @@index(variantId)
+  @@index(marketId)
+}
+
+model WeleticFxRateSnapshot {
+  id          String   @id
+  base        String
+  quote       String
+  rate        Decimal  @db.Decimal(30, 12)
+  provider    String
+  providerRef String?
+  capturedAt  DateTime
+  createdAt   DateTime @default(now())
+
+  orders       WeleticCommerceOrder[]
+  refunds      WeleticCommerceRefund[]
+  payoutQuotes WeleticPayoutQuote[]
+
+  @@index([base, quote, capturedAt])
+}
+
+model WeleticCommerceOrder {
+  id                      String                        @id
+  storeId                 String
+  programId               String
+  partnerId               String?
+  linkId                  String?
+  marketId                String?
+  marketCountryCode       String?
+  externalId              String
+  orderName               String?
+  checkoutToken           String?
+  customerOrderSequence   Int?
+  customerClassification  WeleticCustomerClassification @default(unknown)
+  customerSegmentIds      Json?                         @db.Json
+  shopifyRewardSnapshot   Json?                         @db.Json
+  loyaltyPolicyRevisionId String?
+  status                  WeleticOrderStatus            @default(paid)
+  presentmentCurrency     String
+  presentmentSubtotal     BigInt
+  presentmentDiscount     BigInt                        @default(0)
+  presentmentNet          BigInt
+  presentmentTax          BigInt                        @default(0)
+  presentmentShipping     BigInt                        @default(0)
+  presentmentTotal        BigInt
+  shopCurrency            String
+  shopSubtotal            BigInt
+  shopDiscount            BigInt                        @default(0)
+  shopNet                 BigInt
+  shopTax                 BigInt                        @default(0)
+  shopShipping            BigInt                        @default(0)
+  shopTotal               BigInt
+  accountingCurrency      String
+  accountingNet           BigInt
+  accountingTotal         BigInt
+  accountingFxRate        Decimal                       @db.Decimal(30, 12)
+  fxRateSnapshotId        String?
+  occurredAt              DateTime
+  processedAt             DateTime?
+  analyticsRecordedAt     DateTime?
+  dubStatsRecordedAt      DateTime?
+  createdAt               DateTime                      @default(now())
+  updatedAt               DateTime                      @updatedAt
+
+  store                 WeleticShopifyStore               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  program               Program                           @relation(fields: [programId], references: [id])
+  partner               Partner?                          @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  link                  Link?                             @relation(fields: [linkId], references: [id], onDelete: SetNull)
+  shopper               WeleticShopper?                   @relation(fields: [shopperId], references: [id], onDelete: SetNull)
+  market                WeleticShopifyMarket?             @relation(fields: [marketId], references: [id], onDelete: SetNull)
+  fxRateSnapshot        WeleticFxRateSnapshot?            @relation(fields: [fxRateSnapshotId], references: [id], onDelete: SetNull)
+  lines                 WeleticCommerceOrderLine[]
+  refunds               WeleticCommerceRefund[]
+  loyaltyEarnGrants     WeleticLoyaltyEarnGrant[]
+  loyaltyPolicyRevision WeleticLoyaltyEarnPolicyRevision? @relation(fields: [storeId, loyaltyPolicyRevisionId], references: [storeId, id], onDelete: Restrict)
+  shopperId             String?
+  reviewRequests        WeleticReviewRequest[]
+  reviewIncentiveClaims WeleticReviewIncentiveClaim[]
+
+  @@unique([storeId, externalId])
+  @@index([programId, partnerId, occurredAt])
+  @@index([status, occurredAt])
+  @@index(partnerId)
+  @@index(linkId)
+  @@index(shopperId)
+  @@index(marketId)
+  @@index(fxRateSnapshotId)
+  @@index(loyaltyPolicyRevisionId)
+  @@index([storeId, loyaltyPolicyRevisionId])
+}
+
+model WeleticCommerceOrderLine {
+  id                             String   @id
+  orderId                        String
+  externalId                     String
+  productId                      String?
+  variantId                      String?
+  sku                            String?
+  sellingPlanId                  String?
+  sellingPlanCategory            String?
+  subscriptionSeriesKey          String?
+  subscriptionSequence           Int?
+  collectionExternalIds          Json?    @db.Json
+  productTags                    Json?    @db.Json
+  title                          String
+  quantity                       Int
+  presentmentGross               BigInt
+  presentmentDiscount            BigInt   @default(0)
+  presentmentNet                 BigInt
+  shopGross                      BigInt
+  shopDiscount                   BigInt   @default(0)
+  shopNet                        BigInt
+  accountingNet                  BigInt
+  commissionableAccountingAmount BigInt
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+
+  order              WeleticCommerceOrder           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product            WeleticShopifyProduct?         @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variant            WeleticShopifyVariant?         @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  refundLines        WeleticCommerceRefundLine[]
+  calculations       WeleticCommissionCalculation[]
+  loyaltyLineEarns   WeleticLoyaltyOrderLineEarn[]
+  reviewRequestLines WeleticReviewRequestLine[]
+
+  @@unique([orderId, externalId])
+  @@index(productId)
+  @@index(variantId)
+  @@index(sellingPlanId)
+  @@index(subscriptionSeriesKey)
+}
+
+model WeleticCommerceRefund {
+  id                  String    @id
+  storeId             String
+  orderId             String
+  externalId          String
+  presentmentCurrency String
+  presentmentAmount   BigInt
+  shopCurrency        String
+  shopAmount          BigInt
+  accountingCurrency  String
+  accountingAmount    BigInt
+  accountingFxRate    Decimal   @db.Decimal(30, 12)
+  fxRateSnapshotId    String?
+  occurredAt          DateTime
+  processedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  store          WeleticShopifyStore         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order          WeleticCommerceOrder        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fxRateSnapshot WeleticFxRateSnapshot?      @relation(fields: [fxRateSnapshotId], references: [id], onDelete: SetNull)
+  lines          WeleticCommerceRefundLine[]
+
+  @@unique([storeId, externalId])
+  @@index([orderId, occurredAt])
+  @@index(fxRateSnapshotId)
+}
+
+model WeleticCommerceRefundLine {
+  id                String   @id
+  refundId          String
+  orderLineId       String
+  externalId        String
+  quantity          Int
+  presentmentAmount BigInt
+  shopAmount        BigInt
+  accountingAmount  BigInt
+  createdAt         DateTime @default(now())
+
+  refund       WeleticCommerceRefund          @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  orderLine    WeleticCommerceOrderLine       @relation(fields: [orderLineId], references: [id])
+  calculations WeleticCommissionCalculation[]
+
+  @@unique([refundId, externalId])
+  @@index(orderLineId)
+}
+
+model WeleticCommissionRule {
+  id                   String                    @id
+  logicalKey           String
+  version              Int
+  programId            String
+  partnerId            String?
+  scope                WeleticCommissionScope
+  ruleType             WeleticCommissionRuleType
+  fixedAmountMode      WeleticFixedAmountMode    @default(line)
+  priority             Int                       @default(0)
+  collectionExternalId String?
+  productId            String?
+  variantId            String?
+  promotionCode        String?
+  tag                  String?
+  basisPoints          Int?
+  fixedAmount          BigInt?
+  currency             String?
+  minOrderAmount       BigInt?
+  maxCommissionAmount  BigInt?
+  effectiveAt          DateTime
+  expiresAt            DateTime?
+  active               Boolean                   @default(true)
+  createdByUserId      String?
+  createdAt            DateTime                  @default(now())
+
+  program      Program                        @relation(fields: [programId], references: [id], onDelete: Cascade)
+  partner      Partner?                       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  product      WeleticShopifyProduct?         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant      WeleticShopifyVariant?         @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  calculations WeleticCommissionCalculation[]
+
+  @@unique([programId, logicalKey, version])
+  @@index([programId, active, effectiveAt, expiresAt])
+  @@index([productId, variantId])
+  @@index([collectionExternalId, promotionCode])
+  @@index(variantId)
+  @@index(partnerId)
+}
+
+model WeleticCommissionCalculation {
+  id                   String                 @id
+  entryType            WeleticLedgerEntryType
+  orderLineId          String?
+  refundLineId         String?
+  commissionId         String?
+  ruleId               String
+  sourceKey            String                 @unique
+  accountingCurrency   String
+  commissionableAmount BigInt
+  earnings             BigInt
+  calculationVersion   Int                    @default(1)
+  inputs               Json                   @db.Json
+  createdAt            DateTime               @default(now())
+
+  orderLine  WeleticCommerceOrderLine?  @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+  refundLine WeleticCommerceRefundLine? @relation(fields: [refundLineId], references: [id], onDelete: Cascade)
+  commission Commission?                @relation(fields: [commissionId], references: [id], onDelete: SetNull)
+  rule       WeleticCommissionRule      @relation(fields: [ruleId], references: [id])
+
+  @@index(orderLineId)
+  @@index(refundLineId)
+  @@index(commissionId)
+  @@index(ruleId)
+  @@index([entryType, createdAt])
+}
+
+model WeleticPayoutProfile {
+  id                  String                     @id
+  partnerId           String
+  programId           String
+  country             String
+  payoutCurrency      String
+  provider            String
+  method              String
+  providerAccountRef  String?
+  status              WeleticPayoutProfileStatus @default(draft)
+  taxResidencyCountry String?
+  locale              String                     @default("en")
+  details             Json?                      @db.Json
+  verifiedAt          DateTime?
+  verifiedByUserId    String?
+  verificationNotes   String?                    @db.Text
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  partner Partner              @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  program Program              @relation(fields: [programId], references: [id], onDelete: Cascade)
+  quotes  WeleticPayoutQuote[]
+
+  @@unique([partnerId, programId, payoutCurrency, provider])
+  @@index([partnerId, status])
+  @@index([programId, status])
+  @@index(verifiedByUserId)
+}
+
+model WeleticPayoutQuote {
+  id                 String    @id
+  payoutId           String    @unique
+  payoutProfileId    String?
+  accountingAmount   BigInt
+  accountingCurrency String
+  payoutAmount       BigInt
+  payoutCurrency     String
+  fxRate             Decimal   @db.Decimal(30, 12)
+  feeAmount          BigInt    @default(0)
+  provider           String
+  providerQuoteRef   String?
+  fxRateSnapshotId   String?
+  quotedAt           DateTime
+  expiresAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  payout         Payout                 @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  profile        WeleticPayoutProfile?  @relation(fields: [payoutProfileId], references: [id], onDelete: SetNull)
+  fxRateSnapshot WeleticFxRateSnapshot? @relation(fields: [fxRateSnapshotId], references: [id], onDelete: SetNull)
+
+  @@index([provider, quotedAt])
+  @@index(payoutProfileId)
+  @@index(fxRateSnapshotId)
+}
+
+model WeleticPayoutStatement {
+  id                 String   @id
+  payoutId           String   @unique
+  locale             String
+  accountingCurrency String
+  payoutCurrency     String
+  storageKey         String?  @db.Text
+  snapshot           Json     @db.Json
+  generatedAt        DateTime
+  createdAt          DateTime @default(now())
+
+  payout Payout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+}
+
+model WeleticReconciliationIssue {
+  id          String                      @id
+  storeId     String
+  externalKey String
+  kind        String
+  severity    String
+  status      WeleticReconciliationStatus @default(open)
+  details     Json                        @db.Json
+  detectedAt  DateTime                    @default(now())
+  resolvedAt  DateTime?
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, kind, externalKey])
+  @@index([storeId, status, severity])
+}

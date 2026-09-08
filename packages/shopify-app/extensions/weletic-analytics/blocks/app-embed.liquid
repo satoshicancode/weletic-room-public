@@ -1,0 +1,112 @@
+{% comment %}
+  Weletic Loyalty Launcher & Analytics App Embed
+  Renders the interactive floating loyalty launcher and customer drawer.
+  Strictly compliant with Zero-PII DOM architecture.
+{% endcomment %}
+
+{% if block.settings.enable_conversion_tracker %}
+  <script
+    defer
+    src="{{ 'weletic-tracker.js' | asset_url | escape }}"
+    data-weletic-domain="{{ block.settings.custom_domain | default: 'weletic.com' | escape }}"
+    data-auto-discount="{{ block.settings.auto_apply_discounts | default: true | escape }}"
+  ></script>
+{% endif %}
+
+{% if block.settings.enable_loyalty_widget %}
+  {{ 'weletic-loyalty-styles.css' | asset_url | stylesheet_tag }}
+
+  <div
+    id="weletic-loyalty-root-{{ block.id | escape }}"
+    data-weletic-loyalty-root
+    data-weletic-instance-id="{{ block.id | escape }}"
+    data-shop="{{ shop.permanent_domain | escape }}"
+    data-logged-in="{% if customer %}true{% else %}false{% endif %}"
+    data-currency="{{ cart.currency.iso_code | default: shop.currency | escape }}"
+    data-login-url="{{ routes.account_login_url | escape }}"
+    data-register-url="{{ routes.account_register_url | escape }}"
+    data-position="{{ block.settings.loyalty_position | default: 'bottom_right' | escape }}"
+    data-primary-color="{{ block.settings.loyalty_primary_color | default: '#6366f1' | escape }}"
+    data-launcher-text="{{ block.settings.loyalty_launcher_text | default: 'Rewards' | escape }}"
+    data-proxy-prefix="{{ block.settings.proxy_prefix | default: '/apps/weletic' | escape }}"
+  ></div>
+
+  <script
+    defer
+    src="{{ 'weletic-loyalty-shared.js' | asset_url | escape }}"
+  ></script>
+  <script
+    defer
+    src="{{ 'weletic-loyalty-widget.js' | asset_url | escape }}"
+  ></script>
+{% endif %}
+
+{% schema %}
+{
+  "name": "Weletic Loyalty Launcher",
+  "target": "body",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Partner Attribution & Tracking"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_conversion_tracker",
+      "label": "Enable Conversion Tracking",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "auto_apply_discounts",
+      "label": "Auto-apply partner discounts at checkout",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "custom_domain",
+      "label": "Custom tracking domain",
+      "default": "weletic.com"
+    },
+    {
+      "type": "header",
+      "content": "Loyalty Floating Launcher"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_loyalty_widget",
+      "label": "Enable Floating Loyalty Widget",
+      "default": true
+    },
+    {
+      "type": "select",
+      "id": "loyalty_position",
+      "label": "Widget Position",
+      "options": [
+        { "value": "bottom_right", "label": "Bottom Right" },
+        { "value": "bottom_left", "label": "Bottom Left" }
+      ],
+      "default": "bottom_right"
+    },
+    {
+      "type": "color",
+      "id": "loyalty_primary_color",
+      "label": "Primary Theme Color",
+      "default": "#6366f1"
+    },
+    {
+      "type": "text",
+      "id": "loyalty_launcher_text",
+      "label": "Launcher Button Text",
+      "default": "Rewards"
+    },
+    {
+      "type": "text",
+      "id": "proxy_prefix",
+      "label": "App Proxy Subpath",
+      "default": "/apps/weletic",
+      "info": "Must match the subpath configured in Shopify App Proxy."
+    }
+  ]
+}
+{% endschema %}

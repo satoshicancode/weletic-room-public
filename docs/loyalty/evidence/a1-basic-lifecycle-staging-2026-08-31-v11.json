@@ -1,0 +1,172 @@
+{
+  "version": 4,
+  "startedAt": "2026-08-31T04:03:03.119Z",
+  "completedAt": "2026-08-31T04:03:49.229Z",
+  "overallStatus": "FAILED",
+  "summary": {
+    "total": 5,
+    "passed": 3,
+    "failed": 2,
+    "deferred": 0
+  },
+  "checks": [
+    {
+      "name": "A1 harness runtime availability",
+      "status": "PASSED",
+      "durationMs": 1661,
+      "evidence": {
+        "kind": "LOCAL_SAFETY_GUARD",
+        "liveShopify": false,
+        "authenticatedSynthetic": false,
+        "logicalTime": false,
+        "summary": "Local database, lock, tuple, and cleanup safety evidence."
+      }
+    },
+    {
+      "name": "Staging tenant, credential, and baseline safety",
+      "status": "PASSED",
+      "durationMs": 1415,
+      "evidence": {
+        "kind": "LOCAL_SAFETY_GUARD",
+        "liveShopify": false,
+        "authenticatedSynthetic": false,
+        "logicalTime": false,
+        "summary": "Local database, lock, tuple, and cleanup safety evidence."
+      }
+    },
+    {
+      "name": "Retained-customer exclusivity and drained outbox quiescence",
+      "status": "PASSED",
+      "durationMs": 767,
+      "evidence": {
+        "kind": "LOCAL_SAFETY_GUARD",
+        "liveShopify": false,
+        "authenticatedSynthetic": false,
+        "logicalTime": false,
+        "summary": "Local database, lock, tuple, and cleanup safety evidence."
+      }
+    },
+    {
+      "name": "Temporary loyalty configuration installation",
+      "status": "FAILED",
+      "durationMs": 7,
+      "evidence": {
+        "kind": "LOCAL_SAFETY_GUARD",
+        "liveShopify": false,
+        "authenticatedSynthetic": false,
+        "logicalTime": false,
+        "summary": "Local database, lock, tuple, and cleanup safety evidence."
+      },
+      "reason": "Recovery customer-create digest set is invalid."
+    }
+  ],
+  "cleanup": {
+    "name": "Restore configuration and remove disposable fixtures",
+    "status": "FAILED",
+    "durationMs": 43033,
+    "evidence": {
+      "kind": "LIVE_SHOPIFY_CLEANUP",
+      "liveShopify": true,
+      "authenticatedSynthetic": false,
+      "logicalTime": false,
+      "summary": "Live Shopify customer and discount deletion with Admin API absence readback, followed by exact local cleanup, two residue passes, retained-baseline verification, and maintenance-lease release as the final step."
+    },
+    "reason": "Fixture cleanup had 3 failure(s): delete exact local fixtures: Exact fixture deletion count changed for temporary tiers; cleanup was rolled back and the maintenance lease remains active. | delete and requiesce post-local exact outbox: Post-local outbox cleanup is blocked until exact local fixture deletion succeeds. | verify two-pass zero residue: Final residue verification requires completed local cleanup and post-local outbox fixed-point deletion."
+  },
+  "evidenceProvenance": {
+    "live": [
+      {
+        "kind": "LIVE_CUSTOMER_PROVISIONING",
+        "liveShopify": true,
+        "authenticatedSynthetic": false,
+        "logicalTime": false,
+        "summary": "Live Shopify Admin customerCreate followed by observation of its locally provisioned account; the payload-free registered webhook audit row is retained and not claimed by the harness."
+      },
+      {
+        "kind": "LIVE_SHOPIFY_READBACK",
+        "liveShopify": true,
+        "authenticatedSynthetic": false,
+        "logicalTime": false,
+        "summary": "Live Shopify Admin metafield or discount API readback."
+      }
+    ],
+    "synthetic": [
+      {
+        "kind": "SIGNED_SYNTHETIC_INGRESS",
+        "liveShopify": false,
+        "authenticatedSynthetic": true,
+        "logicalTime": false,
+        "summary": "Authenticated HMAC-signed synthetic staging webhook ingress; not a real checkout event."
+      }
+    ],
+    "local": [
+      {
+        "kind": "LOCAL_SAFETY_GUARD",
+        "liveShopify": false,
+        "authenticatedSynthetic": false,
+        "logicalTime": false,
+        "summary": "Local database, lock, tuple, and cleanup safety evidence."
+      },
+      {
+        "kind": "LOGICAL_TIME_WORKER",
+        "liveShopify": false,
+        "authenticatedSynthetic": false,
+        "logicalTime": true,
+        "summary": "Exact fixture-scoped local outbox execution with an explicit logical business clock."
+      }
+    ],
+    "composite": [
+      {
+        "kind": "SYNTHETIC_LOCAL_EVIDENCE",
+        "liveShopify": false,
+        "authenticatedSynthetic": true,
+        "logicalTime": false,
+        "summary": "Authenticated HMAC-signed synthetic ingress plus local durable-state assertions; no live Shopify readback."
+      },
+      {
+        "kind": "SYNTHETIC_LOGICAL_TIME_EVIDENCE",
+        "liveShopify": false,
+        "authenticatedSynthetic": true,
+        "logicalTime": true,
+        "summary": "Authenticated HMAC-signed synthetic ingress plus exact fixture-scoped logical-time worker execution; no live Shopify readback."
+      },
+      {
+        "kind": "COMPOSITE_STAGING_EVIDENCE",
+        "liveShopify": true,
+        "authenticatedSynthetic": true,
+        "logicalTime": false,
+        "summary": "Composite evidence combining signed synthetic ingress, local durable state, and live Shopify Admin API readback."
+      },
+      {
+        "kind": "COMPOSITE_LOGICAL_TIME_EVIDENCE",
+        "liveShopify": true,
+        "authenticatedSynthetic": true,
+        "logicalTime": true,
+        "summary": "Composite evidence combining signed synthetic ingress, local durable state, exact logical-time worker execution, and live Shopify Admin API readback."
+      }
+    ],
+    "cleanup": [
+      {
+        "kind": "LIVE_SHOPIFY_CLEANUP",
+        "liveShopify": true,
+        "authenticatedSynthetic": false,
+        "logicalTime": false,
+        "summary": "Live Shopify customer and discount deletion with Admin API absence readback, followed by exact local cleanup, two residue passes, retained-baseline verification, and maintenance-lease release as the final step."
+      }
+    ]
+  },
+  "intentionallySkipped": [
+    "real Shopify checkout order and refund lifecycle",
+    "live checkout coupon acceptance and application",
+    "Shopify Plus checkout-only capabilities",
+    "app/uninstalled store freeze and teardown",
+    "shop/redact store erasure",
+    "customers/data_request webhook delivery and external export delivery",
+    "external partner or multi-merchant service flows"
+  ],
+  "intentionallyRetained": [
+    "authenticated, generation-fenced, terminal, error-free, payload-free registered customers/create audit evidence: count=0, owned=false, deleted=false",
+    "keyed-HMAC customer privacy fences: count=0, ttlValid=false, securityEvidence=true, deleted=false"
+  ],
+  "recoveryCapsule": null
+}

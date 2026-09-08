@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-09-01T08:17:21.226Z",
+  "storeDomain": "n0pvef-cs.myshopify.com",
+  "status": "PASSED",
+  "checks": {
+    "safetyGates": true,
+    "customerCreated": true,
+    "localAccountCreated": true,
+    "giftCardIssued": true,
+    "giftCardReadback": true,
+    "storeCreditIssued": true,
+    "storeCreditReadback": true,
+    "walletValidated": true,
+    "giftCardDeactivated": true,
+    "storeCreditDebited": true,
+    "storeCreditZero": true,
+    "customerDeleted": true,
+    "localCleanup": true
+  },
+  "cleanup": {
+    "remoteFinancialValueRemaining": false,
+    "remoteCustomerRemaining": false,
+    "localFixtureRowsRemaining": 0
+  }
+}

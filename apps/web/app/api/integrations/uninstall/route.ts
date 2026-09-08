@@ -1,0 +1,69 @@
+import { DubApiError } from "@/lib/api/errors";
+import { withWorkspace } from "@/lib/auth";
+import { googleAdsInstalledWorkspaces } from "@/lib/integrations/google-ads/installed-workspaces";
+import { slackOAuthProvider } from "@/lib/integrations/slack/oauth";
+import { prisma } from "@/lib/prisma";
+import { GOOGLE_ADS_INTEGRATION_ID, SLACK_INTEGRATION_ID } from "@dub/utils";
+import { waitUntil } from "@vercel/functions";
+import { NextResponse } from "next/server";
+
+// DELETE /api/integrations/uninstall - uninstall an installation by id
+export const DELETE = withWorkspace(
+  async ({ searchParams, session, workspace }) => {
+    const { installationId } = searchParams;
+
+    const installation = await prisma.installedIntegration.findUnique({
+      where: {
+        id: installationId,
+        projectId: workspace.id,
+      },
+    });
+
+    if (!installation) {
+      throw new DubApiError({
+        code: "not_found",
+        message: "Integration not found",
+      });
+    }
+
+    if (installation.userId !== session.user.id) {
+      throw new DubApiError({
+        code: "unauthorized",
+        message:
+          "You are not authorized to uninstall this integration. Only the user who installed it can uninstall it.",
+      });
+    }
+
+    const { integrationId, webhooks } =
+      await prisma.installedIntegration.delete({
+        where: {
+          id: installationId,
+        },
+        select: {
+          integrationId: true,
+          webhooks: {
+            select: {
+              id: true,
+              triggers: true,
+            },
+          },
+        },
+      });
+
+    waitUntil(
+      Promise.all([
+        ...(integrationId === SLACK_INTEGRATION_ID
+          ? [slackOAuthProvider.uninstall(installation)]
+          : []),
+        ...(integrationId === GOOGLE_ADS_INTEGRATION_ID
+          ? [googleAdsInstalledWorkspaces.remove(workspace.id)]
+          : []),
+      ]),
+    );
+
+    return NextResponse.json({ id: installationId });
+  },
+  {
+    requiredPermissions: ["integrations.write"],
+  },
+);

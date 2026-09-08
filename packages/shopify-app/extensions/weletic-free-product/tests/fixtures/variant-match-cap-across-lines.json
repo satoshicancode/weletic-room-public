@@ -1,0 +1,67 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "presentmentCurrencyRate": "1.0",
+      "cart": {
+        "cost": { "subtotalAmount": { "amount": "100.00" } },
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/1",
+            "quantity": 2,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/201",
+              "product": { "id": "gid://shopify/Product/20" }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/2",
+            "quantity": 5,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/201",
+              "product": { "id": "gid://shopify/Product/20" }
+            }
+          }
+        ]
+      },
+      "discount": {
+        "discountClasses": ["PRODUCT", "ORDER"],
+        "metafield": {
+          "value": "{\"version\":1,\"productIds\":[],\"variantIds\":[\"gid://shopify/ProductVariant/201\"],\"quantity\":3,\"message\":\"Three free samples\"}"
+        }
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "productDiscountsAdd": {
+            "candidates": [
+              {
+                "message": "Three free samples",
+                "targets": [
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/1",
+                      "quantity": 2
+                    }
+                  },
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/2",
+                      "quantity": 1
+                    }
+                  }
+                ],
+                "value": { "percentage": { "value": 100.0 } }
+              }
+            ],
+            "selectionStrategy": "FIRST"
+          }
+        }
+      ]
+    }
+  }
+}

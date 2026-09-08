@@ -1,0 +1,148 @@
+{% comment %}
+  Weletic Loyalty Landing Page Section Block
+  Provides a full-page rewards showcase: Hero, Tiers Breakdown,
+  Ways to Earn, Ways to Redeem, and Referral Hub.
+  Strictly compliant with Zero-PII DOM architecture.
+{% endcomment %}
+
+{{ 'weletic-loyalty-styles.css' | asset_url | stylesheet_tag }}
+
+<div
+  id="weletic-loyalty-landing-root-{{ block.id | escape }}"
+  class="weletic-landing-container"
+  data-weletic-loyalty-landing-root
+  data-weletic-instance-id="{{ block.id | escape }}"
+  data-shop="{{ shop.permanent_domain | escape }}"
+  data-logged-in="{% if customer %}true{% else %}false{% endif %}"
+  data-currency="{{ cart.currency.iso_code | default: shop.currency | escape }}"
+  data-login-url="{{ routes.account_login_url | escape }}"
+  data-register-url="{{ routes.account_register_url | escape }}"
+  data-proxy-prefix="{{ block.settings.proxy_prefix | default: '/apps/weletic' | escape }}"
+  data-primary-color="{{ block.settings.primary_color | default: '#6366f1' | escape }}"
+  data-show-tiers="{{ block.settings.show_tiers | escape }}"
+  data-show-earn="{{ block.settings.show_earn | escape }}"
+  data-show-redeem="{{ block.settings.show_redeem | escape }}"
+  data-show-referrals="{{ block.settings.show_referrals | escape }}"
+  data-show-faq="{{ block.settings.show_faq | escape }}"
+>
+  <!-- Hero Section -->
+  <div class="weletic-landing-hero">
+    <h1 class="weletic-landing-title">{{ block.settings.hero_title | default: 'VIP Rewards Program' | escape }}</h1>
+    <p class="weletic-landing-subtitle">
+      {{ block.settings.hero_subtitle | default: 'Earn points every time you shop, unlock exclusive VIP tiers, and redeem rewards.' | escape }}
+    </p>
+
+    <div
+      class="weletic-landing-auth-cta"
+      id="weletic-landing-auth-banner-{{ block.id | escape }}"
+      data-weletic-landing-auth-banner
+    >
+      {% if customer %}
+        <div class="weletic-landing-user-badge">
+          <span class="weletic-spinner-sm"></span> Loading your member rewards balance...
+        </div>
+      {% else %}
+        <div class="weletic-landing-guest-actions">
+          <a href="{{ routes.account_register_url | escape }}" class="weletic-btn-hero-primary">Join Now & Earn Points</a>
+          <a href="{{ routes.account_login_url | escape }}" class="weletic-btn-hero-secondary">Already a Member? Sign In</a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Dynamic Content Sections Injected via weletic-loyalty-landing.js -->
+  <div
+    id="weletic-landing-sections-{{ block.id | escape }}"
+    class="weletic-landing-content"
+    data-weletic-landing-sections
+  >
+    <div class="weletic-loading-placeholder">
+      <div class="weletic-spinner"></div>
+      <p>Loading loyalty program details...</p>
+    </div>
+  </div>
+</div>
+
+<script
+  defer
+  src="{{ 'weletic-loyalty-shared.js' | asset_url | escape }}"
+></script>
+<script
+  defer
+  src="{{ 'weletic-loyalty-landing.js' | asset_url | escape }}"
+></script>
+
+{% schema %}
+{
+  "name": "Loyalty Landing Page",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Hero Banner"
+    },
+    {
+      "type": "text",
+      "id": "hero_title",
+      "label": "Hero Title",
+      "default": "VIP Rewards Program"
+    },
+    {
+      "type": "textarea",
+      "id": "hero_subtitle",
+      "label": "Hero Subtitle",
+      "default": "Earn points every time you shop, unlock exclusive VIP tiers, and redeem rewards."
+    },
+    {
+      "type": "color",
+      "id": "primary_color",
+      "label": "Accent Color",
+      "default": "#6366f1"
+    },
+    {
+      "type": "header",
+      "content": "Section Visibility"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_tiers",
+      "label": "Show VIP Tiers Breakdown",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_earn",
+      "label": "Show Ways to Earn Points",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_redeem",
+      "label": "Show Ways to Redeem Rewards",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_referrals",
+      "label": "Show Refer-a-Friend Section",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_faq",
+      "label": "Show FAQ Section",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Advanced"
+    },
+    {
+      "type": "text",
+      "id": "proxy_prefix",
+      "label": "App Proxy Subpath",
+      "default": "/apps/weletic"
+    }
+  ]
+}
+{% endschema %}

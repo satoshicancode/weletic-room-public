@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "apps/web/.react-email"
+  - "packages/*"
+  - "packages/embeds/*"
+  - "packages/shopify-app/extensions/*"

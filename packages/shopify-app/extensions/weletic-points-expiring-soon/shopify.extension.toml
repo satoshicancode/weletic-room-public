@@ -1,0 +1,24 @@
+[[extensions]]
+name = "Weletic points expiring soon"
+type = "flow_trigger"
+handle = "weletic-points-expiring-soon"
+uid = "0fd0f99d-69bb-43ed-91de-a1d2ee563596"
+description = "Starts a workflow before a customer's Weletic loyalty points expire."
+
+[settings]
+
+  [[settings.fields]]
+  type = "customer_reference"
+  description = "The customer whose points are nearing expiry."
+
+  [[settings.fields]]
+  type = "number_decimal"
+  key = "Points expiring"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Expiry date"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Urgency"

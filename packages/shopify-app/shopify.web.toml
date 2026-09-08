@@ -1,0 +1,7 @@
+# Learn more about web configuration at https://shopify.dev/docs/apps/tools/cli/configuration#web-configuration
+
+roles = ["frontend", "backend"]
+
+[commands]
+dev = "pnpm dev"
+build = "pnpm build"

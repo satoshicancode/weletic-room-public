@@ -1,0 +1,111 @@
+export const reviewModerationCopy = {
+  en: {
+    heading: "Moderate or reply",
+    status: "Publication status",
+    keep: "Keep current status",
+    published: "Published",
+    hidden: "Hidden",
+    rejected: "Rejected",
+    reply: "Merchant reply",
+    reason: "Moderation reason",
+    choose: "Choose a reason",
+    details: "Reason details (private)",
+    save: "Save moderation",
+    invalid:
+      "Choose a reason and change the status or reply. Explain any other reason.",
+    help: "Requires moderation permission. This does not validate fraud or change reward policies. Participation incentives are independent of publication; legacy rewards retain their historical rules.",
+    limit: "Media preview and invitation controls are not available here yet.",
+    saved: "Saved. Load the first page to see the current review and continue.",
+    denied:
+      "You do not have moderation permission. Displayed reviews were cleared; reload to check your read access.",
+    reload:
+      "The review changed or the request was already handled. Reload before editing again.",
+    reauthenticate: "Reopen Weletic from Shopify Admin to authenticate again.",
+    unavailable:
+      "The result could not be confirmed. No retry was sent. Reload before deciding whether to edit again.",
+    saving: "Saving moderation…",
+    reasons: {
+      approved: "Approved for publication",
+      spam: "Spam",
+      personal_information: "Personal information",
+      abusive_content: "Abusive content",
+      duplicate: "Duplicate",
+      off_topic: "Off topic",
+      merchant_reply: "Merchant reply",
+      other: "Other (explanation required)",
+    },
+  },
+  ja: {
+    heading: "審査・返信",
+    status: "公開状態",
+    keep: "現在の状態を維持",
+    published: "公開",
+    hidden: "非公開",
+    rejected: "却下",
+    reply: "店舗からの返信",
+    reason: "審査理由",
+    choose: "理由を選択",
+    details: "理由の詳細（非公開）",
+    save: "審査内容を保存",
+    invalid:
+      "理由を選び、状態または返信を変更してください。「その他」は説明が必要です。",
+    help: "審査権限が必要です。この操作は不正判定や特典ポリシーの変更ではありません。参加特典は公開状態に依存しません。旧特典には従来のルールが適用されます。",
+    limit: "メディアのプレビューと依頼の操作はまだ利用できません。",
+    saved:
+      "保存しました。最初のページを読み込み、最新のレビューを確認してください。",
+    denied:
+      "審査権限がありません。表示中のレビューを消去しました。再読み込みで閲覧権限を確認してください。",
+    reload:
+      "レビューが変更されたか、この操作は処理済みです。編集前に再読み込みしてください。",
+    reauthenticate: "Shopify管理画面からWeleticを開き直して認証してください。",
+    unavailable:
+      "結果を確認できませんでした。再送信はしていません。再編集する前に再読み込みしてください。",
+    saving: "審査内容を保存中…",
+    reasons: {
+      approved: "公開を承認",
+      spam: "スパム",
+      personal_information: "個人情報",
+      abusive_content: "攻撃的な内容",
+      duplicate: "重複",
+      off_topic: "無関係な内容",
+      merchant_reply: "店舗からの返信",
+      other: "その他（説明必須）",
+    },
+  },
+  vi: {
+    heading: "Kiểm duyệt hoặc trả lời",
+    status: "Trạng thái công bố",
+    keep: "Giữ trạng thái hiện tại",
+    published: "Đã công bố",
+    hidden: "Ẩn",
+    rejected: "Từ chối",
+    reply: "Phản hồi của cửa hàng",
+    reason: "Lý do kiểm duyệt",
+    choose: "Chọn lý do",
+    details: "Chi tiết lý do (riêng tư)",
+    save: "Lưu kiểm duyệt",
+    invalid:
+      "Chọn lý do và thay đổi trạng thái hoặc phản hồi. Lý do khác cần có giải thích.",
+    help: "Cần quyền kiểm duyệt. Thao tác này không xác nhận gian lận hoặc thay đổi chính sách thưởng. Thưởng tham gia không phụ thuộc việc công bố; thưởng cũ giữ nguyên quy tắc lịch sử.",
+    limit: "Chưa hỗ trợ xem trước media và quản lý lời mời tại đây.",
+    saved: "Đã lưu. Tải trang đầu để xem đánh giá hiện tại và tiếp tục.",
+    denied:
+      "Bạn không có quyền kiểm duyệt. Đã xóa các đánh giá đang hiển thị; tải lại để kiểm tra quyền xem.",
+    reload:
+      "Đánh giá đã thay đổi hoặc yêu cầu đã được xử lý. Tải lại trước khi chỉnh sửa.",
+    reauthenticate: "Mở lại Weletic từ Shopify Admin để xác thực.",
+    unavailable:
+      "Không thể xác nhận kết quả. Chưa gửi lại yêu cầu. Tải lại trước khi quyết định chỉnh sửa tiếp.",
+    saving: "Đang lưu kiểm duyệt…",
+    reasons: {
+      approved: "Chấp thuận công bố",
+      spam: "Spam",
+      personal_information: "Thông tin cá nhân",
+      abusive_content: "Nội dung xúc phạm",
+      duplicate: "Trùng lặp",
+      off_topic: "Không liên quan",
+      merchant_reply: "Phản hồi của cửa hàng",
+      other: "Khác (cần giải thích)",
+    },
+  },
+};

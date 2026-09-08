@@ -1,0 +1,318 @@
+{
+  "timestamp": "2026-08-31T04:55:43.459Z",
+  "storeDomain": "n0pvef-cs.myshopify.com",
+  "executionMode": "live-admin",
+  "environment": "development",
+  "overallStatus": "PASSED",
+  "totalDurationMs": 26339,
+  "summary": {
+    "totalChecks": 16,
+    "passedChecks": 16,
+    "failedChecks": 0,
+    "skippedChecks": 0
+  },
+  "phases": {
+    "domainResolution": {
+      "phase": "Store Domain & Workspace Resolution",
+      "passed": true,
+      "durationMs": 52,
+      "checks": [
+        {
+          "name": "Domain String Normalization",
+          "passed": true,
+          "durationMs": 0,
+          "details": {
+            "targetDomain": "n0pvef-cs.myshopify.com",
+            "normalizedList": [
+              "n0pvef-cs.myshopify.com",
+              "n0pvef-cs.myshopify.com",
+              "n0pvef-cs.myshopify.com",
+              "n0pvef-cs.myshopify.com"
+            ]
+          },
+          "provenance": {
+            "source": "local-static",
+            "executionMode": "live-admin",
+            "live": false
+          }
+        },
+        {
+          "name": "Canonical Store Resolution (DB / InstalledIntegration)",
+          "passed": true,
+          "durationMs": 52,
+          "details": {
+            "hasWorkspace": true,
+            "hasStore": true,
+            "hasProgram": true,
+            "domainMatchesTarget": true,
+            "hasAccessToken": true
+          },
+          "provenance": {
+            "source": "persisted-database",
+            "executionMode": "live-admin",
+            "live": false
+          }
+        }
+      ],
+      "provenance": {
+        "source": "mixed",
+        "executionMode": "live-admin",
+        "live": false
+      }
+    },
+    "localServiceHmacChecks": {
+      "phase": "Local Service-HMAC Cryptographic Checks",
+      "passed": true,
+      "durationMs": 20,
+      "checks": [
+        {
+          "name": "Local Service-HMAC SHA-256 Round Trip",
+          "passed": true,
+          "durationMs": 18,
+          "details": {
+            "signatureLength": 64,
+            "timestamp": "1788152117172"
+          },
+          "provenance": {
+            "source": "local-static",
+            "executionMode": "live-admin",
+            "live": false
+          }
+        },
+        {
+          "name": "Local Service-HMAC Clock-Skew Rejection (> 5 min)",
+          "passed": true,
+          "durationMs": 0,
+          "provenance": {
+            "source": "local-static",
+            "executionMode": "live-admin",
+            "live": false
+          }
+        },
+        {
+          "name": "Local Service-HMAC Payload-Tamper Rejection",
+          "passed": true,
+          "durationMs": 2,
+          "provenance": {
+            "source": "local-static",
+            "executionMode": "live-admin",
+            "live": false
+          }
+        }
+      ],
+      "provenance": {
+        "source": "local-static",
+        "executionMode": "live-admin",
+        "live": false
+      }
+    },
+    "staticCustomerAccountClaimChecks": {
+      "phase": "Static Customer Account Claim Parser Checks",
+      "passed": true,
+      "durationMs": 1,
+      "checks": [
+        {
+          "name": "Static Customer Account Claim Extraction (dest & sub GID)",
+          "passed": true,
+          "durationMs": 0,
+          "details": {
+            "valid": true,
+            "shopMatchesTarget": true,
+            "numericCustomerIdAccepted": true
+          },
+          "provenance": {
+            "source": "local-static",
+            "executionMode": "live-admin",
+            "live": false
+          }
+        },
+        {
+          "name": "Static Rejection of Malformed / Incomplete Claims",
+          "passed": true,
+          "durationMs": 1,
+          "provenance": {
+            "source": "local-static",
+            "executionMode": "live-admin",
+            "live": false
+          }
+        }
+      ],
+      "provenance": {
+        "source": "local-static",
+        "executionMode": "live-admin",
+        "live": false
+      }
+    },
+    "graphqlDiscounts": {
+      "phase": "Shopify GraphQL Admin API 2026-07 Discount Lifecycle",
+      "passed": true,
+      "durationMs": 15737,
+      "checks": [
+        {
+          "name": "Shopify GraphQL 2026-07: Authoritative Shop Currency Readback",
+          "passed": true,
+          "durationMs": 465,
+          "details": {
+            "currencyCodeReadBack": true
+          },
+          "provenance": {
+            "source": "shopify-admin-api",
+            "executionMode": "live-admin",
+            "live": true
+          }
+        },
+        {
+          "name": "Shopify GraphQL 2026-07: discountCodeBasicCreate",
+          "passed": true,
+          "durationMs": 1782,
+          "details": {
+            "preflightCodeAbsent": true,
+            "createDispatched": true,
+            "outcome": "created-and-read-back",
+            "configurationReadBack": true
+          },
+          "provenance": {
+            "source": "shopify-admin-api",
+            "executionMode": "live-admin",
+            "live": true
+          }
+        },
+        {
+          "name": "Shopify GraphQL 2026-07: discountCodeBasicCreate (Percentage Off)",
+          "passed": true,
+          "durationMs": 1373,
+          "details": {
+            "preflightCodeAbsent": true,
+            "createDispatched": true,
+            "outcome": "created-and-read-back",
+            "configurationReadBack": true
+          },
+          "provenance": {
+            "source": "shopify-admin-api",
+            "executionMode": "live-admin",
+            "live": true
+          }
+        },
+        {
+          "name": "Shopify GraphQL 2026-07: discountCodeFreeShippingCreate",
+          "passed": true,
+          "durationMs": 1336,
+          "details": {
+            "preflightCodeAbsent": true,
+            "createDispatched": true,
+            "outcome": "created-and-read-back",
+            "configurationReadBack": true
+          },
+          "provenance": {
+            "source": "shopify-admin-api",
+            "executionMode": "live-admin",
+            "live": true
+          }
+        },
+        {
+          "name": "Shopify GraphQL 2026-07: discountCodeBxgyCreate",
+          "passed": true,
+          "durationMs": 1475,
+          "details": {
+            "preflightCodeAbsent": true,
+            "createDispatched": true,
+            "outcome": "created-and-read-back",
+            "configurationReadBack": true
+          },
+          "provenance": {
+            "source": "shopify-admin-api",
+            "executionMode": "live-admin",
+            "live": true
+          }
+        },
+        {
+          "name": "Shopify GraphQL 2026-07: Independent Exact Configuration Readback",
+          "passed": true,
+          "durationMs": 1668,
+          "details": {
+            "expectedCount": 4,
+            "exactReadbackCount": 4
+          },
+          "provenance": {
+            "source": "shopify-admin-api",
+            "executionMode": "live-admin",
+            "live": true
+          }
+        },
+        {
+          "name": "Discount Cleanup (Deactivate & Delete)",
+          "passed": true,
+          "durationMs": 7257,
+          "details": {
+            "authorizedCleanupCount": 4,
+            "confirmedCleanedCount": 4,
+            "unresolvedDispatchedCount": 0
+          },
+          "provenance": {
+            "source": "shopify-admin-api",
+            "executionMode": "live-admin",
+            "live": true
+          }
+        }
+      ],
+      "provenance": {
+        "source": "shopify-admin-api",
+        "executionMode": "live-admin",
+        "live": true
+      }
+    },
+    "webhookProvisioning": {
+      "phase": "Webhook Provisioning & Local Body-HMAC Checks",
+      "passed": true,
+      "durationMs": 10520,
+      "checks": [
+        {
+          "name": "Automated 14-Topic Webhook Provisioning & Idempotency",
+          "passed": true,
+          "durationMs": 10520,
+          "details": {
+            "registered": [],
+            "skipped": [
+              "PRODUCTS_CREATE",
+              "PRODUCTS_UPDATE",
+              "PRODUCTS_DELETE",
+              "MARKETS_CREATE",
+              "MARKETS_UPDATE",
+              "MARKETS_DELETE",
+              "ORDERS_PAID",
+              "CUSTOMERS_CREATE",
+              "CUSTOMERS_UPDATE",
+              "REFUNDS_CREATE",
+              "DISCOUNTS_CREATE",
+              "DISCOUNTS_UPDATE",
+              "DISCOUNTS_DELETE",
+              "APP_UNINSTALLED"
+            ],
+            "failed": []
+          },
+          "provenance": {
+            "source": "shopify-admin-api",
+            "executionMode": "live-admin",
+            "live": true
+          }
+        },
+        {
+          "name": "Local Webhook Body-HMAC Primitive & Tamper Check",
+          "passed": true,
+          "durationMs": 0,
+          "provenance": {
+            "source": "local-static",
+            "executionMode": "live-admin",
+            "live": false
+          }
+        }
+      ],
+      "provenance": {
+        "source": "mixed",
+        "executionMode": "live-admin",
+        "live": false
+      }
+    }
+  },
+  "errors": []
+}

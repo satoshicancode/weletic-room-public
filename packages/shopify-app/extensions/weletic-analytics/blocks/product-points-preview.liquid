@@ -1,0 +1,72 @@
+{% comment %}
+  Weletic Product Points Preview Block
+  Renders live estimated points on product detail pages based on variant price,
+  VIP tier status, and active bonus multiplier campaigns.
+  Strictly compliant with Zero-PII DOM architecture.
+{% endcomment %}
+
+{{ 'weletic-loyalty-styles.css' | asset_url | stylesheet_tag }}
+
+<div
+  class="weletic-product-points-container"
+  data-shop="{{ shop.permanent_domain | escape }}"
+  data-logged-in="{% if customer %}true{% else %}false{% endif %}"
+  data-product-id="{{ product.id | escape }}"
+  data-current-price="{{ product.selected_or_first_available_variant.price | escape }}"
+  data-currency="{{ cart.currency.iso_code | default: shop.currency | escape }}"
+  data-proxy-prefix="{{ block.settings.proxy_prefix | default: '/apps/weletic' | escape }}"
+  data-prefix-text="{{ block.settings.prefix_text | default: 'Earn up to' | escape }}"
+  data-suffix-text="{{ block.settings.suffix_text | default: 'points with this purchase' | escape }}"
+  data-highlight-color="{{ block.settings.highlight_color | default: '#059669' | escape }}"
+>
+  <div class="weletic-points-preview-badge">
+    <span class="weletic-points-icon">✨</span>
+    <span class="weletic-points-text">
+      {{ block.settings.prefix_text | default: 'Earn up to' }}
+      <strong class="weletic-points-number" id="weletic-variant-points">
+        {% assign points_ratio = 1 %}
+        {% assign current_price_units = product.selected_or_first_available_variant.price | divided_by: 100 %}
+        {{ current_price_units | times: points_ratio }}
+      </strong>
+      {{ block.settings.suffix_text | default: 'points with this purchase' }}
+    </span>
+  </div>
+</div>
+
+<script
+  defer
+  src="{{ 'weletic-product-points.js' | asset_url }}"
+></script>
+
+{% schema %}
+{
+  "name": "Product Points Preview",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "prefix_text",
+      "label": "Prefix Text",
+      "default": "Earn up to"
+    },
+    {
+      "type": "text",
+      "id": "suffix_text",
+      "label": "Suffix Text",
+      "default": "points with this purchase"
+    },
+    {
+      "type": "color",
+      "id": "highlight_color",
+      "label": "Points Highlight Color",
+      "default": "#059669"
+    },
+    {
+      "type": "text",
+      "id": "proxy_prefix",
+      "label": "App Proxy Subpath",
+      "default": "/apps/weletic"
+    }
+  ]
+}
+{% endschema %}

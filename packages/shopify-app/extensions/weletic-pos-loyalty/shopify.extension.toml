@@ -1,0 +1,16 @@
+api_version = "2026-07"
+
+[[extensions]]
+name = "Weletic POS Loyalty"
+handle = "weletic-pos-loyalty"
+type = "ui_extension"
+uid = "a4f59f0c-eed2-4d35-a296-e359dfa49555"
+description = "Redeem customer loyalty points in Shopify POS"
+
+  [[extensions.targeting]]
+  target = "pos.home.tile.render"
+  module = "./src/Tile.tsx"
+
+  [[extensions.targeting]]
+  target = "pos.home.modal.render"
+  module = "./src/Modal.tsx"

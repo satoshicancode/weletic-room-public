@@ -1,0 +1,43 @@
+// Store-scoped Shopify actors never become workspace users or Partners.
+// All writes serialize through the store lifecycle lock; reinstall never
+// adopts grants from an earlier installation generation.
+model WeleticShopifyStaffGrant {
+  id                     String   @id @db.VarChar(64)
+  storeId                String
+  appId                  String   @db.VarChar(191)
+  installationGeneration String   @db.VarChar(64)
+  shopifyUserId          String   @db.VarChar(20)
+  permissions            Json
+  revision               Int      @default(1)
+  updatedByShopifyUserId String   @db.VarChar(20)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, appId, installationGeneration, shopifyUserId], map: "shopify_staff_grant_scope")
+  @@index([storeId, updatedAt])
+}
+
+// Written in the SAME transaction as the authorized operation. Its deterministic
+// ID consumes the signed request nonce; a failed transaction consumes neither.
+// No access tokens, session payloads, email addresses or arbitrary request bodies.
+model WeleticShopifyMerchantAction {
+  id                     String   @id @db.VarChar(64)
+  storeId                String
+  appId                  String   @db.VarChar(191)
+  installationGeneration String   @db.VarChar(64)
+  requestId              String   @db.VarChar(64)
+  shopifyUserId          String   @db.VarChar(20)
+  owner                  Boolean
+  permission             String   @db.VarChar(64)
+  grantRevision          Int?
+  targetShopifyUserId    String?  @db.VarChar(20)
+  changedPermissions     Json?
+  changedGrantRevision   Int?
+  createdAt              DateTime @default(now())
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, createdAt, id])
+}

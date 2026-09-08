@@ -1,0 +1,49 @@
+{
+  "name": "Weletic Trung Tâm Khách Hàng Thân Thiết",
+  "description": "Thẻ tích điểm thành viên, số dư điểm, thanh đổi điểm linh hoạt, giới thiệu bạn bè và đăng ký ngày sinh.",
+  "card": {
+    "title": "Phần Thưởng Thành Viên",
+    "pointsBalance": "Số Dư Điểm",
+    "pendingPoints": "Điểm Chờ Khả Dụng",
+    "maturesInDays": "Khả dụng sau {{days}} ngày",
+    "lifetimeEarned": "Tổng Điểm Đã Tích",
+    "expiryNotice": "Điểm hết hạn vào {{date}}"
+  },
+  "vip": {
+    "currentTier": "Hạng Hiện Tại",
+    "multiplierBadge": "{{multiplier}}x Tích Điểm",
+    "nextTier": "Hạng Tiếp Theo: {{tier}}",
+    "spendRemaining": "Mua thêm {{amount}} để đạt hạng {{tier}}",
+    "pointsRemaining": "Tích thêm {{points}} điểm để đạt hạng {{tier}}",
+    "maxTierAchieved": "Đã Đạt Hạng VIP Cao Nhất!",
+    "viewPerks": "Xem Quyền Lợi Hạng"
+  },
+  "redeem": {
+    "title": "Đổi Thưởng",
+    "sliderTitle": "Thanh Đổi Điểm Linh Hoạt",
+    "sliderSave": "Đổi {{points}} điểm để giảm {{amount}}",
+    "applyDiscount": "Áp Dụng Giảm Giá",
+    "redeemButton": "Đổi với {{points}} điểm",
+    "insufficientPoints": "Cần thêm {{points}} điểm",
+    "successTitle": "Đã Đổi Thưởng Thành Công!",
+    "copyCode": "Sao Chép Mã Giảm Giá",
+    "codeCopied": "Đã sao chép mã giảm giá!"
+  },
+  "referral": {
+    "title": "Giới Thiệu Bạn Bè",
+    "subtitle": "Tặng bạn {{refereeReward}}, nhận {{advocateReward}}",
+    "copyLink": "Sao Chép Liên Kết",
+    "linkCopied": "Đã sao chép liên kết!",
+    "friendsInvited": "Bạn Bè Đã Mời",
+    "pointsEarned": "Điểm Nhận Được"
+  },
+  "birthday": {
+    "title": "Quà Tặng Sinh Nhật",
+    "prompt": "Nhập ngày sinh để nhận {{points}} điểm thưởng hàng năm",
+    "month": "Tháng",
+    "day": "Ngày",
+    "save": "Lưu Ngày Sinh",
+    "savedEligible": "Đã lưu: {{date}}. Điểm sẽ được tặng vào sinh nhật!",
+    "savedLockedOut": "Đã lưu: {{date}}. Điểm thưởng sẽ bắt đầu từ năm {{nextYear}}."
+  }
+}

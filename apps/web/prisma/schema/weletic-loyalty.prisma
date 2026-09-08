@@ -1,0 +1,914 @@
+// Weletic-owned Customer Loyalty bounded context (ADRs 0003–0006)
+// Names are intentionally prefixed to isolate from Partner Affiliate tables and upstream Dub schema.
+
+enum WeleticLoyaltyStatus {
+  draft
+  test
+  active
+  disabled
+}
+
+enum WeleticLoyaltyAccountStatus {
+  active
+  suspended
+  closed
+}
+
+enum WeleticPointsLedgerEntryType {
+  EARN_ORDER
+  EARN_REFERRAL
+  EARN_BONUS
+  REDEEM_REWARD
+  REFUND_REVERSAL
+  MANUAL_ADJUSTMENT
+  EXPIRATION
+  BACKFILL
+  BACKFILL_CORRECTION
+  TIER_BONUS
+}
+
+enum WeleticRewardType {
+  amount_off
+  percentage_off
+  free_shipping
+  free_product
+  gift_card
+  store_credit
+}
+
+enum WeleticRewardArtifactKind {
+  discount_code
+  gift_card
+  store_credit
+}
+
+enum WeleticRewardSalesChannel {
+  online_store
+  pos
+  both
+}
+
+enum WeleticRewardExchangeType {
+  fixed
+  incremental
+}
+
+enum WeleticRewardStatus {
+  active
+  inactive
+  archived
+}
+
+enum WeleticRedemptionStatus {
+  active
+  provisioning
+  issued
+  used
+  failed
+  cancelled
+  expired
+}
+
+enum WeleticLoyaltyEarnGrantStatus {
+  pending
+  settled
+  matured
+  partially_reversed
+  reversed
+  voided
+}
+
+enum WeleticLoyaltyBackfillJobStatus {
+  pending
+  calculating
+  preview_ready
+  committing
+  completed
+  failed
+  cancelled
+}
+
+enum WeleticLoyaltyBackfillCreditStatus {
+  claimed
+  credited
+}
+
+enum WeleticLoyaltyReferralStatus {
+  pending
+  qualified
+  rewarded
+  cancelled
+  fraud_blocked
+}
+
+enum WeleticReferralRewardKind {
+  points
+  coupon
+}
+
+enum WeleticLoyaltyTierChangeReason {
+  threshold_reached
+  manual_override
+  annual_downgrade
+  bonus_promotion
+  grace_period_expired
+  program_activation
+}
+
+enum WeleticEarningRuleType {
+  multiplier
+  fixed_points
+}
+
+enum WeleticVipMilestoneMode {
+  amount_spent
+  points_earned
+  both
+}
+
+enum WeleticVipTimeframe {
+  rolling_12m
+  calendar_year
+  lifetime
+}
+
+enum WeleticLoyaltyOutboxJobType {
+  HOLDING_PERIOD_RELEASE
+  INACTIVITY_EXPIRY
+  TIER_REVIEW
+  METAFIELD_SYNC
+  REDEMPTION_RECOVERY
+  BIRTHDAY_REWARD
+  REFERRAL_REWARD_PROVISION
+  VOUCHER_PRIVACY_CLEANUP
+  REVIEW_REQUEST_EMAIL
+  REVIEW_SUMMARY_SYNC
+  REVIEW_MEDIA_CLEANUP
+  FLOW_TRIGGER
+  SHOPPER_REWARD_PROVISION
+}
+
+enum WeleticLoyaltyOutboxJobStatus {
+  pending
+  processing
+  completed
+  failed
+  dead_letter
+  cancelled
+}
+
+model WeleticShopper {
+  id                String   @id
+  storeId           String
+  shopifyCustomerId String
+  firstName         String?
+  lastName          String?
+  email             String?
+  phone             String?
+  locale            String?  @default("en")
+  tags              Json?    @db.Json
+  segmentIds        Json?    @db.Json
+  acceptsMarketing  Boolean  @default(false)
+  ordersCount       Int      @default(0)
+  totalSpent        BigInt   @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  store                        WeleticShopifyStore                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  loyaltyAccount               WeleticLoyaltyAccount?
+  orders                       WeleticCommerceOrder[]
+  earnGrants                   WeleticLoyaltyEarnGrant[]
+  privacyTombstones            WeleticShopifyCustomerPrivacyTombstone[]
+  reviewRequests               WeleticReviewRequest[]
+  nativeReviews                WeleticProductReview[]
+  rewardFulfillments           WeleticRewardRedemption[]
+  reviewIncentiveClaims        WeleticReviewIncentiveClaim[]
+  reviewIncentiveInvalidations WeleticReviewIncentiveInvalidation[]
+  rewardCouponUses             WeleticRewardCouponUse[]
+
+  @@unique([storeId, id])
+  @@unique([storeId, shopifyCustomerId])
+  @@index([storeId, email])
+  @@index([storeId, updatedAt])
+}
+
+model WeleticLoyaltyProgram {
+  id                            String               @id
+  storeId                       String               @unique
+  name                          String               @default("Loyalty Program")
+  status                        WeleticLoyaltyStatus @default(active)
+  pointNameSingular             String               @default("Point")
+  pointNamePlural               String               @default("Points")
+  pointsPerCurrencyUnit         Decimal              @default(1.0) @db.Decimal(10, 4)
+  liabilityValuationCurrency    String?              @db.VarChar(3)
+  liabilityMinorUnitsNumerator  BigInt?
+  liabilityPointsDenominator    BigInt?
+  holdingPeriodDays             Int                  @default(0)
+  pointsExpiryMonths            Int                  @default(0) // 0 = no expiry
+  pointsExpiryDays              Int                  @default(0) // Exact short windows (Smile supports 3 and 7 days)
+  pointsExpiryWarningDays       Int                  @default(30)
+  pointsExpiryLastChanceDays    Int                  @default(3)
+  pointsExpiryWarningEnabled    Boolean              @default(true)
+  pointsExpiryLastChanceEnabled Boolean              @default(true)
+  pointsExpiryPolicyAnchorAt    DateTime? // Enablement/reactivation/reduction anchor
+  pointsExpiryPolicyVersion     Int                  @default(0)
+  earnPolicyVersion             Int                  @default(0) // Monotonic append-only earn-policy revision counter
+  killSwitchActive              Boolean              @default(false)
+  activatedAt                   DateTime?
+  disabledAt                    DateTime?
+
+  // Surface & Storefront Integration Flags
+  enableOnlineStoreLauncher Boolean @default(true)
+  enableCustomerAccountHub  Boolean @default(true)
+  enableCheckoutExtension   Boolean @default(true)
+  enableProductPointsWidget Boolean @default(true)
+  enableMetafieldsSync      Boolean @default(true)
+  surfaceFlags              Json?   @db.Json
+
+  // VIP Program Policy
+  vipMilestoneMode        WeleticVipMilestoneMode @default(amount_spent)
+  vipTimeframe            WeleticVipTimeframe     @default(rolling_12m)
+  vipDowngradeGraceDays   Int                     @default(30)
+  vipAutoDowngradeEnabled Boolean                 @default(true)
+
+  branding  Json?    @db.Json
+  metadata  Json?    @db.Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  store               WeleticShopifyStore                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  accounts            WeleticLoyaltyAccount[]
+  earningRules        WeleticLoyaltyEarningRule[]
+  tiers               WeleticLoyaltyTier[]
+  referralRules       WeleticLoyaltyReferralRule[]
+  bonusCampaigns      WeleticLoyaltyBonusCampaign[]
+  earnPolicyRevisions WeleticLoyaltyEarnPolicyRevision[]
+  backfillJobs        WeleticLoyaltyBackfillJob[]
+  earnGrants          WeleticLoyaltyEarnGrant[]
+
+  @@unique([storeId, id])
+  @@index(status)
+}
+
+model WeleticLoyaltyBonusCampaign {
+  id                    String    @id
+  programId             String
+  name                  String
+  description           String?
+  multiplier            Decimal   @default(2.0) @db.Decimal(10, 4)
+  startAt               DateTime
+  endAt                 DateTime
+  isActive              Boolean   @default(true)
+  eligibleTierIds       Json?     @db.Json
+  eligibleSkus          Json?     @db.Json
+  eligibleCollectionIds Json?     @db.Json
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime?
+
+  program WeleticLoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, isActive])
+  @@index([programId, startAt, endAt])
+  @@index([programId, deletedAt, isActive, startAt, endAt])
+}
+
+model WeleticLoyaltyEarningRule {
+  id                      String                 @id
+  programId               String
+  name                    String
+  description             String?
+  triggerCode             String                 @default("order_paid")
+  ruleType                WeleticEarningRuleType @default(multiplier)
+  priority                Int                    @default(0)
+  multiplier              Decimal                @default(1.0) @db.Decimal(10, 4)
+  fixedPoints             BigInt?
+  minOrderSubtotal        Decimal?               @db.Decimal(10, 2)
+  maxPointsPerEvent       BigInt?
+  maxEventsPerCustomer    Int?
+  limitInterval           String? // "lifetime", "calendar_year", "monthly"
+  eligibleTierIds         Json?                  @db.Json
+  conditions              Json?                  @db.Json // Typed conditions (collections, tags, SKUs)
+  excludeDiscountedItems  Boolean                @default(false)
+  excludeTaxesAndShipping Boolean                @default(true)
+  startAt                 DateTime?
+  endAt                   DateTime?
+  isActive                Boolean                @default(true)
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  deletedAt               DateTime?
+
+  program WeleticLoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, isActive])
+  @@index([programId, triggerCode, isActive])
+  @@index([programId, priority])
+  @@index([programId, deletedAt, priority])
+}
+
+model WeleticLoyaltyReviewIntegration {
+  id                String    @id
+  storeId           String
+  provider          String    @db.VarChar(32)
+  encryptedApiToken String    @db.Text
+  webhookIds        Json?     @db.Json
+  enabled           Boolean   @default(false)
+  lastVerifiedAt    DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, provider])
+  @@index([provider, enabled])
+}
+
+model WeleticLoyaltyTier {
+  id                 String    @id
+  programId          String
+  name               String // "Bronze", "Silver", "Gold", "VIP Elite"
+  slug               String
+  tierOrder          Int       @default(1) // 1 = entry tier, 2 = tier 2, etc.
+  minSpendThreshold  BigInt    @default(0) // spend in minor units according to program timeframe
+  minPointsThreshold BigInt    @default(0) // points milestone
+  pointsMultiplier   Decimal   @default(1.0) @db.Decimal(10, 4) // e.g. 1.25 for 1.25x
+  entryBonusPoints   BigInt    @default(0)
+  gracePeriodDays    Int? // Tier-specific override for downgrade grace period
+  perks              Json?     @db.Json // Array of perk descriptors
+  iconUrl            String?
+  color              String? // Hex color for UI badge rendering (e.g. #FFD700)
+  criteria           Json?     @db.Json // Extended qualification criteria
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  program  WeleticLoyaltyProgram       @relation(fields: [programId], references: [id], onDelete: Cascade)
+  accounts WeleticLoyaltyAccount[]
+  fromHist WeleticLoyaltyTierHistory[] @relation("FromTier")
+  toHist   WeleticLoyaltyTierHistory[] @relation("ToTier")
+
+  @@unique([programId, slug])
+  @@unique([programId, tierOrder])
+  @@index([programId, tierOrder])
+  @@index([programId, deletedAt, tierOrder])
+}
+
+// Append-only aggregate snapshots used to evaluate delayed Shopify orders at
+// the policy that was effective when the order occurred. Mutable admin rows
+// remain the current editing projection; prior revisions are never updated or
+// backdated.
+model WeleticLoyaltyEarnPolicyRevision {
+  id            String   @id
+  storeId       String
+  programId     String
+  version       Int
+  effectiveAt   DateTime
+  schemaVersion Int      @default(1)
+  snapshot      Json     @db.Json
+  fingerprint   String   @db.VarChar(64)
+  reason        String?  @db.VarChar(191)
+  createdAt     DateTime @default(now())
+
+  store      WeleticShopifyStore       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  program    WeleticLoyaltyProgram     @relation(fields: [storeId, programId], references: [storeId, id], onDelete: Cascade)
+  orders     WeleticCommerceOrder[]
+  earnGrants WeleticLoyaltyEarnGrant[]
+
+  @@unique([programId, version])
+  @@unique([storeId, id])
+  @@unique([storeId, programId, id])
+  @@index([programId, effectiveAt, version])
+  @@index([storeId, effectiveAt])
+  @@index([programId, fingerprint])
+}
+
+model WeleticLoyaltyTierHistory {
+  id                       String                         @id
+  accountId                String
+  sequenceNumber           Int?
+  fromTierId               String?
+  toTierId                 String
+  changeReason             WeleticLoyaltyTierChangeReason @default(threshold_reached)
+  notes                    String?
+  qualifyingSpendSnapshot  BigInt?
+  qualifyingPointsSnapshot BigInt?
+  effectiveAt              DateTime                       @default(now())
+
+  account  WeleticLoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  fromTier WeleticLoyaltyTier?   @relation("FromTier", fields: [fromTierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  toTier   WeleticLoyaltyTier    @relation("ToTier", fields: [toTierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([accountId, sequenceNumber])
+  @@index([accountId, effectiveAt, sequenceNumber])
+  @@index([toTierId])
+}
+
+model WeleticLoyaltyAccount {
+  id                          String                      @id
+  storeId                     String
+  programId                   String
+  shopperId                   String                      @unique
+  status                      WeleticLoyaltyAccountStatus @default(active)
+  ledgerVersion               Int                         @default(0) // Optimistic concurrency lock
+  cachedPointsBalance         BigInt                      @default(0)
+  cachedPendingPoints         BigInt                      @default(0)
+  lifetimePointsEarned        BigInt                      @default(0)
+  lifetimePointsRedeemed      BigInt                      @default(0)
+  lastQualifyingActivityAt    DateTime? // Activity resetting inactivity expiry
+  nextExpiryDate              DateTime? // Next scheduled expiration cutoff
+  pointsExpiryPolicyVersion   Int                         @default(0)
+  pointsExpiryJobsScheduledAt DateTime? // Expiry date whose warning/expiry jobs were queued
+  referralCode                String?                     @unique
+  referredById                String?
+  referralCount               Int                         @default(0)
+  referralPointsEarned        BigInt                      @default(0)
+  currentTierId               String?
+  tierExpiresAt               DateTime?
+  tierSpendRolling12Months    BigInt                      @default(0)
+  tierPointsRolling12Months   BigInt                      @default(0)
+  enrolledAt                  DateTime                    @default(now())
+  metadata                    Json?                       @db.Json
+  createdAt                   DateTime                    @default(now())
+  updatedAt                   DateTime                    @updatedAt
+
+  store                WeleticShopifyStore                      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  program              WeleticLoyaltyProgram                    @relation(fields: [programId], references: [id], onDelete: Cascade)
+  shopper              WeleticShopper                           @relation(fields: [shopperId], references: [id], onDelete: Cascade)
+  referredBy           WeleticLoyaltyAccount?                   @relation("ReferralTree", fields: [referredById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  referredAccounts     WeleticLoyaltyAccount[]                  @relation("ReferralTree")
+  currentTier          WeleticLoyaltyTier?                      @relation(fields: [currentTierId], references: [id], onDelete: SetNull)
+  ledgerEntries        WeleticPointsLedgerEntry[]
+  redemptions          WeleticRewardRedemption[]
+  advocateReferrals    WeleticLoyaltyReferral[]                 @relation("AdvocateReferrals")
+  refereeReferrals     WeleticLoyaltyReferral[]                 @relation("RefereeReferrals")
+  tierHistory          WeleticLoyaltyTierHistory[]
+  backfillPreviewItems WeleticLoyaltyBackfillPreviewItem[]
+  earnGrants           WeleticLoyaltyEarnGrant[]
+  privacyTombstones    WeleticShopifyCustomerPrivacyTombstone[]
+
+  @@unique([storeId, id])
+  @@index([storeId, status])
+  @@index([programId, status])
+  @@index([storeId, referralCode])
+  @@index([referredById])
+  @@index([currentTierId])
+  @@index([storeId, nextExpiryDate])
+}
+
+model WeleticLoyaltyEarnGrant {
+  id                     String                        @id
+  storeId                String
+  programId              String
+  accountId              String
+  shopperId              String
+  orderId                String
+  status                 WeleticLoyaltyEarnGrantStatus @default(pending)
+  currency               String // Store base currency (shopCurrency)
+  eligibleSubtotalAmount BigInt // Minor units of eligible items
+  orderTotalAmount       BigInt // Minor units of total order
+  grossPoints            BigInt // Total points initially calculated
+  pendingPoints          BigInt                        @default(0) // Points remaining pending
+  settledPoints          BigInt                        @default(0) // Points released to active balance
+  reversedPoints         BigInt                        @default(0) // Cumulative points reversed/voided
+  availableAt            DateTime // Maturity date (order date + holdingPeriodDays)
+  settledAt              DateTime? // When points matured into ledger
+  voidedAt               DateTime? // When pending points were voided by early refund/cancellation
+
+  // Deterministic calculation snapshots
+  selectedRuleId        String?
+  selectedCampaignId    String?
+  tierId                String?
+  pointsPerCurrencyUnit Decimal  @db.Decimal(10, 4)
+  ruleMultiplier        Decimal  @default(1.0) @db.Decimal(10, 4)
+  campaignMultiplier    Decimal  @default(1.0) @db.Decimal(10, 4)
+  tierMultiplier        Decimal  @default(1.0) @db.Decimal(10, 4)
+  effectiveMultiplier   Decimal  @db.Decimal(10, 4)
+  calculationSnapshot   Json?    @db.Json
+  policyRevisionId      String?
+  metadata              Json?    @db.Json
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  store          WeleticShopifyStore               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  program        WeleticLoyaltyProgram             @relation(fields: [programId], references: [id], onDelete: Cascade)
+  account        WeleticLoyaltyAccount             @relation(fields: [accountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shopper        WeleticShopper                    @relation(fields: [shopperId], references: [id], onDelete: Cascade)
+  order          WeleticCommerceOrder              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  policyRevision WeleticLoyaltyEarnPolicyRevision? @relation(fields: [storeId, programId, policyRevisionId], references: [storeId, programId, id], onDelete: Restrict)
+  lineEarns      WeleticLoyaltyOrderLineEarn[]
+
+  @@unique([storeId, orderId])
+  @@index([accountId, status])
+  @@index([storeId, status, availableAt])
+  @@index([orderId])
+  @@index([policyRevisionId])
+  @@index([storeId, programId, policyRevisionId])
+  @@index([createdAt])
+}
+
+model WeleticLoyaltyOrderLineEarn {
+  id              String   @id
+  grantId         String
+  orderLineId     String
+  storeId         String
+  productId       String?
+  variantId       String?
+  lineExternalId  String?
+  title           String?
+  quantity        Int
+  lineNetAmount   BigInt // Line net amount in minor units (shopCurrency)
+  awardedPoints   BigInt // Proportionally allocated points for this line
+  reversedPoints  BigInt   @default(0) // Points clawed back on refunds for this specific line
+  isExcluded      Boolean  @default(false)
+  exclusionReason String?
+  metadata        Json?    @db.Json
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  grant     WeleticLoyaltyEarnGrant  @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  orderLine WeleticCommerceOrderLine @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+
+  @@unique([grantId, orderLineId])
+  @@index([orderLineId])
+  @@index([productId, variantId])
+  @@index([storeId, createdAt])
+}
+
+model WeleticPointsLedgerEntry {
+  id             String                       @id
+  storeId        String
+  accountId      String
+  sequenceNumber Int
+  entryType      WeleticPointsLedgerEntryType
+  pointsDelta    BigInt
+  pendingDelta   BigInt                       @default(0)
+  balanceAfter   BigInt
+  grantId        String?
+  referenceType  String?
+  referenceId    String?
+  idempotencyKey String
+  reason         String?
+  metadata       Json?                        @db.Json
+  createdAt      DateTime                     @default(now())
+
+  store   WeleticShopifyStore   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  account WeleticLoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([accountId, sequenceNumber])
+  @@unique([storeId, idempotencyKey])
+  @@index([accountId, createdAt])
+  @@index([referenceType, referenceId])
+}
+
+model WeleticRewardDefinition {
+  id                            String                    @id
+  storeId                       String
+  name                          String
+  description                   String?
+  rewardType                    WeleticRewardType
+  salesChannel                  WeleticRewardSalesChannel @default(online_store)
+  exchangeType                  WeleticRewardExchangeType @default(fixed)
+  pointsCost                    BigInt
+  pointsStep                    BigInt? // For incremental slider: e.g. 100 pts per $1
+  minPointsCost                 BigInt?
+  maxPointsCost                 BigInt?
+  discountValue                 Decimal?                  @db.Decimal(10, 2)
+  maxDiscountValue              Decimal?                  @db.Decimal(10, 2)
+  minOrderAmount                Decimal?                  @db.Decimal(10, 2)
+  status                        WeleticRewardStatus       @default(active)
+  shopifyPriceRuleId            String?
+  appliesToResource             String?                   @default("entire_order")
+  entitledCollectionIds         Json?                     @db.Json
+  entitledProductIds            Json?                     @db.Json
+  entitledVariantIds            Json?                     @db.Json
+  combinesWithProductDiscounts  Boolean                   @default(false)
+  combinesWithOrderDiscounts    Boolean                   @default(false)
+  combinesWithShippingDiscounts Boolean                   @default(false)
+  usageLimit                    Int?
+  usageLimitPerCustomer         Int?                      @default(1)
+  expiresInDays                 Int?
+  createdAt                     DateTime                  @default(now())
+  updatedAt                     DateTime                  @updatedAt
+
+  store                WeleticShopifyStore       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  redemptions          WeleticRewardRedemption[]
+  friendReferralClaims WeleticLoyaltyReferral[]  @relation("FriendReferralRewardDefinition")
+
+  @@index([storeId, status])
+}
+
+model WeleticRewardRedemption {
+  id                              String                    @id
+  storeId                         String
+  accountId                       String?
+  // Additive shopper ownership. Legacy rows retain their account-based owner.
+  // Direct awards require this owner and zero points; never auto-enroll a shopper.
+  shopperId                       String?
+  fulfillmentSource               String?                   @db.VarChar(32)
+  fulfillmentReference            String?                   @db.VarChar(191)
+  rewardDefinitionId              String
+  pointsSpent                     BigInt
+  shopifyDiscountCode             String
+  // Stage SQL pins utf8mb4_bin so database uniqueness exactly matches the
+  // NFKC + uppercase application canonicalizer.
+  shopifyDiscountCodeCanonical    String                    @db.VarChar(191)
+  settlementQuarantinedAt         DateTime?
+  settlementQuarantineReason      String?                   @db.Text
+  shopifyDiscountId               String? // Shopify GraphQL GID: gid://shopify/DiscountCodeNode/...
+  shopifyPriceRuleId              String?
+  artifactKind                    WeleticRewardArtifactKind @default(discount_code)
+  shopifyGiftCardId               String?
+  shopifyStoreCreditTransactionId String?
+  idempotencyKey                  String?
+  status                          WeleticRedemptionStatus   @default(provisioning)
+  compensationReason              String?
+  orderId                         String?
+  expiresAt                       DateTime?
+  usedAt                          DateTime?
+  ledgerEntryId                   String?
+  metadata                        Json?                     @db.Json
+  createdAt                       DateTime                  @default(now())
+  updatedAt                       DateTime                  @updatedAt
+
+  store            WeleticShopifyStore      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  account          WeleticLoyaltyAccount?   @relation(fields: [accountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shopper          WeleticShopper?          @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+  rewardDefinition WeleticRewardDefinition  @relation(fields: [rewardDefinitionId], references: [id], onDelete: Cascade)
+  couponUses       WeleticRewardCouponUse[]
+
+  @@unique([storeId, id], map: "wl_reward_store_id_uq")
+  @@unique([storeId, shopifyDiscountCodeCanonical], map: "wl_redemption_store_code_canonical_uq")
+  @@unique([storeId, shopifyGiftCardId], map: "wl_redemption_store_gift_card_uq")
+  @@unique([storeId, shopifyStoreCreditTransactionId], map: "wl_redemption_store_credit_tx_uq")
+  @@unique([storeId, idempotencyKey])
+  @@unique([storeId, fulfillmentSource, fulfillmentReference], map: "wl_reward_fulfillment_source_uq")
+  @@index([storeId, shopperId, createdAt, id], map: "wl_reward_shopper_history_idx")
+  @@index([accountId, status])
+  @@index([storeId, shopifyDiscountCode])
+  @@index([storeId, status])
+  @@index([storeId, createdAt])
+}
+
+// Append-only, provider-reported use of a shopper-owned coupon. The redemption
+// remains the shared artifact; this records each order without replacing its
+// first-use projection or manufacturing a points ledger entry.
+model WeleticRewardCouponUse {
+  id                      String   @id
+  storeId                 String
+  redemptionId            String
+  shopperId               String
+  orderExternalId         String   @db.VarChar(191)
+  installationGeneration  String   @db.VarChar(64)
+  source                  String   @db.VarChar(32)
+  usedAt                  DateTime
+  discountAmountMinor     BigInt?
+  currency                String?  @db.VarChar(3)
+  amountUnavailableReason String?  @db.VarChar(64)
+  priorRedemptionStatus   String   @db.VarChar(32)
+  createdAt               DateTime @default(now())
+
+  store      WeleticShopifyStore     @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  redemption WeleticRewardRedemption @relation(fields: [storeId, redemptionId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+  shopper    WeleticShopper          @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([storeId, redemptionId, orderExternalId], map: "wl_coupon_use_order_uq")
+  @@index([storeId, shopperId, createdAt, id], map: "wl_coupon_use_shopper_idx")
+  @@index([storeId, orderExternalId], map: "wl_coupon_use_order_idx")
+  @@index([storeId, id], map: "wl_coupon_use_store_id_idx")
+}
+
+model WeleticLoyaltyReferralRule {
+  id                         String                    @id
+  programId                  String
+  advocatePointsReward       BigInt                    @default(100)
+  refereePointsReward        BigInt                    @default(50)
+  advocateRewardKind         WeleticReferralRewardKind @default(points)
+  refereeRewardKind          WeleticReferralRewardKind @default(points)
+  advocateRewardDefinitionId String?
+  refereeRewardDefinitionId  String?
+  minQualifyingOrderSubtotal Decimal?                  @db.Decimal(10, 2)
+  maxReferralsPerAdvocate    Int? // null = unlimited
+  fraudCheckSameIp           Boolean                   @default(true)
+  isActive                   Boolean                   @default(true)
+  createdAt                  DateTime                  @default(now())
+  updatedAt                  DateTime                  @updatedAt
+
+  program WeleticLoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, isActive])
+}
+
+model WeleticLoyaltyReferral {
+  id                                 String                       @id
+  storeId                            String
+  advocateAccountId                  String
+  // Smile-compatible friend claims exist before a Shopify customer/account.
+  // Raw email is never retained; friendEmailDigest is a rotation-aware HMAC.
+  refereeShopperId                   String?
+  refereeAccountId                   String?
+  friendEmailDigest                  String?                      @db.VarChar(191)
+  friendRewardDefinitionId           String?
+  friendShopifyDiscountCode          String?
+  friendShopifyDiscountCodeCanonical String?                      @db.VarChar(191)
+  friendShopifyDiscountId            String?
+  friendRewardProvisionedAt          DateTime?
+  friendRewardEmailedAt              DateTime?
+  friendEmailLeaseToken              String?                      @db.VarChar(64)
+  friendEmailLeaseReservedAt         DateTime?
+  friendEmailLeaseExpiresAt          DateTime                     @default(dbgenerated("'1970-01-01 00:00:00.000'"))
+  friendEmailDeliveryAttempts        Int                          @default(0)
+  friendEmailLastError               String?                      @db.Text
+  friendRewardExpiresAt              DateTime?
+  dubLinkId                          String? // Dub shortlink ID (without Partner identity)
+  status                             WeleticLoyaltyReferralStatus @default(pending)
+  qualifyingOrderId                  String?
+  advocatePointsAwarded              BigInt                       @default(0)
+  refereePointsAwarded               BigInt                       @default(0)
+  ipHash                             String? // Hashed referee IP for abuse prevention
+  userAgentHash                      String? // Hashed User Agent
+  fraudReason                        String?
+  fraudSignals                       Json?                        @db.Json
+  metadata                           Json?                        @db.Json
+  rewardedAt                         DateTime?
+  createdAt                          DateTime                     @default(now())
+  updatedAt                          DateTime                     @updatedAt
+
+  store                  WeleticShopifyStore      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  advocateAccount        WeleticLoyaltyAccount    @relation("AdvocateReferrals", fields: [advocateAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  refereeAccount         WeleticLoyaltyAccount?   @relation("RefereeReferrals", fields: [refereeAccountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  friendRewardDefinition WeleticRewardDefinition? @relation("FriendReferralRewardDefinition", fields: [friendRewardDefinitionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([advocateAccountId, refereeAccountId])
+  @@unique([storeId, friendEmailDigest], map: "wl_referral_store_friend_email_uq")
+  @@unique([storeId, friendShopifyDiscountCodeCanonical], map: "wl_referral_store_friend_code_uq")
+  @@index([storeId, status])
+  @@index([advocateAccountId, status])
+  @@index([refereeAccountId])
+  @@index([friendRewardDefinitionId])
+  @@index([dubLinkId])
+  @@index([storeId, friendEmailLeaseExpiresAt], map: "wl_referral_email_lease_idx")
+}
+
+model WeleticLoyaltyBackfillJob {
+  id                     String                          @id
+  storeId                String
+  programId              String
+  status                 WeleticLoyaltyBackfillJobStatus @default(pending)
+  lookbackDays           Int? // null = all time
+  lookbackStartDate      DateTime?
+  pointsPerCurrencyUnit  Decimal                         @default(1.0) @db.Decimal(10, 4)
+  minOrderAmount         Decimal?                        @db.Decimal(18, 4)
+  totalShoppersCount     Int                             @default(0)
+  totalOrdersCount       Int                             @default(0)
+  totalProjectedPoints   BigInt                          @default(0)
+  processedAccountsCount Int                             @default(0)
+  totalCommittedPoints   BigInt                          @default(0)
+  commitLeaseId          String?                         @db.VarChar(64)
+  errorLog               String?                         @db.Text
+  metadata               Json?                           @db.Json
+  createdAt              DateTime                        @default(now())
+  updatedAt              DateTime                        @updatedAt
+  completedAt            DateTime?
+
+  store        WeleticShopifyStore                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  program      WeleticLoyaltyProgram               @relation(fields: [programId], references: [id], onDelete: Cascade)
+  previewItems WeleticLoyaltyBackfillPreviewItem[]
+
+  @@index([storeId, status])
+  @@index([programId, status])
+}
+
+// Immutable source-of-truth used for every historical order credit. Preview
+// regeneration discards only uncommitted rows; published rows are never
+// updated and commit state belongs in WeleticLoyaltyBackfillOrderCredit.
+model WeleticLoyaltyBackfillOrderSnapshot {
+  id                    String             @id
+  jobId                 String
+  storeId               String
+  programId             String
+  shopperId             String
+  accountId             String
+  orderId               String
+  orderVersion          DateTime
+  orderStatus           WeleticOrderStatus
+  orderHash             String             @db.VarChar(64)
+  policyRevisionId      String
+  currency              String
+  eligibleSpend         BigInt
+  refundedSpend         BigInt
+  orderTotalAmount      BigInt
+  projectedPoints       BigInt
+  pointsPerCurrencyUnit Decimal            @db.Decimal(10, 4)
+  effectiveMultiplier   Decimal            @default(1.0) @db.Decimal(10, 4)
+  lineAllocations       Json               @db.Json
+  createdAt             DateTime           @default(now())
+
+  @@unique([jobId, orderId])
+  @@index([storeId, orderId])
+  @@index([jobId, accountId])
+  @@index([shopperId])
+}
+
+// Durable cross-job claim. The store/order unique key prevents overlapping
+// backfills from ever creating more than one historical credit.
+model WeleticLoyaltyBackfillOrderCredit {
+  id            String                             @id
+  storeId       String
+  programId     String
+  jobId         String
+  snapshotId    String                             @unique
+  orderId       String
+  accountId     String
+  status        WeleticLoyaltyBackfillCreditStatus @default(claimed)
+  points        BigInt
+  ledgerEntryId String?                            @unique
+  earnGrantId   String?                            @unique
+  creditedAt    DateTime?
+  createdAt     DateTime                           @default(now())
+  updatedAt     DateTime                           @updatedAt
+
+  @@unique([storeId, orderId])
+  @@index([jobId, status])
+  @@index([accountId, createdAt])
+}
+
+model WeleticLoyaltyBackfillPreviewItem {
+  id                     String   @id
+  jobId                  String
+  shopperId              String
+  accountId              String
+  ordersCount            Int      @default(0)
+  eligibleSpend          BigInt   @default(0) // minor currency units
+  currency               String
+  projectedPoints        BigInt   @default(0)
+  committedLedgerEntryId String?
+  createdAt              DateTime @default(now())
+
+  job     WeleticLoyaltyBackfillJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  account WeleticLoyaltyAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([jobId, accountId])
+  @@index([jobId, shopperId])
+}
+
+model WeleticLoyaltyOutboxJob {
+  id             String                        @id
+  storeId        String
+  jobType        WeleticLoyaltyOutboxJobType
+  status         WeleticLoyaltyOutboxJobStatus @default(pending)
+  payload        Json                          @db.Json
+  idempotencyKey String?
+  scheduledFor   DateTime                      @default(now())
+  priority       Int                           @default(0) // Higher number = higher priority
+  attempts       Int                           @default(0)
+  maxAttempts    Int                           @default(5)
+  lastError      String?                       @db.Text
+  errorLog       Json?                         @db.Json // Array of { attempt: number, error: string, at: string }
+  lockedAt       DateTime?
+  lockedBy       String?
+  nextRetryAt    DateTime?
+  processedAt    DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, idempotencyKey])
+  @@index([status, scheduledFor, nextRetryAt])
+  @@index([storeId, jobType, status])
+  @@index([lockedAt])
+  @@index([createdAt])
+}
+
+model WeleticShopifyFlowTriggerState {
+  id                  String   @id
+  storeId             String
+  triggerDefinitionId String   @db.VarChar(191)
+  shopifyStoreId      String   @db.VarChar(32)
+  hasEnabledFlow      Boolean
+  observedAt          DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, triggerDefinitionId])
+  @@index([storeId, hasEnabledFlow])
+  @@index(observedAt)
+}
+
+model WeleticShopifyInstallIntent {
+  id          String    @id
+  workspaceId String
+  shopDomain  String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace Project @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, shopDomain])
+  @@index(expiresAt)
+}

@@ -1,0 +1,563 @@
+/**
+ * Weletic Loyalty Storefront Design System & Styles
+ * Pure CSS responsive styles for Launcher, Drawer Modal, Landing Page & Product Badge
+ */
+
+/* Launcher Floating Button */
+.weletic-launcher-btn {
+  position: fixed;
+  bottom: 24px;
+  z-index: 2147483640;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background-color: var(--weletic-primary, #6366f1);
+  color: #ffffff;
+  border: none;
+  border-radius: 9999px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.2s ease;
+}
+.weletic-launcher-btn[hidden] {
+  display: none;
+}
+.weletic-launcher-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.24);
+}
+.weletic-launcher-btn.weletic-pos-left {
+  left: 24px;
+}
+.weletic-launcher-btn.weletic-pos-right {
+  right: 24px;
+}
+
+/* Modal Overlay & Drawer */
+.weletic-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(3px);
+  z-index: 2147483645;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.25s ease,
+    visibility 0.25s ease;
+}
+.weletic-modal-overlay.weletic-open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.weletic-drawer {
+  position: fixed;
+  bottom: 90px;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 120px);
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.22);
+  z-index: 2147483646;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(20px) scale(0.95);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.25s ease,
+    visibility 0.25s ease;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+}
+.weletic-drawer.weletic-pos-left {
+  left: 24px;
+}
+.weletic-drawer.weletic-pos-right {
+  right: 24px;
+}
+.weletic-drawer.weletic-open {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  visibility: visible;
+}
+
+.weletic-drawer-header {
+  background: var(--weletic-primary, #6366f1);
+  color: var(--weletic-header-text, #ffffff);
+  padding: 24px 20px 16px;
+  position: relative;
+}
+
+.weletic-close-btn {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  color: var(--weletic-header-text, #ffffff);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+.weletic-close-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.weletic-header-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.weletic-header-subtitle {
+  font-size: 12px;
+  opacity: 0.9;
+  margin: 0;
+}
+
+/* User Card in Header */
+.weletic-user-card {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.weletic-points-val {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+.weletic-points-lbl {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 3px;
+}
+.weletic-tier-badge {
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111827;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Tab Navigation */
+.weletic-tab-nav {
+  display: flex;
+  background: #f9fafb;
+  border-bottom: 1px solid #f3f4f6;
+  padding: 4px;
+}
+.weletic-tab-btn {
+  flex: 1;
+  padding: 8px 4px;
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+.weletic-tab-btn.weletic-active {
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Drawer Body */
+.weletic-drawer-body {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+  max-height: 400px;
+}
+
+.weletic-load-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 140px;
+  padding: 24px;
+  color: #4b5563;
+  text-align: center;
+  font-size: 13px;
+}
+.weletic-loading-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 180px;
+  color: #6b7280;
+  text-align: center;
+}
+.weletic-spinner,
+.weletic-spinner-sm {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  border: 3px solid #e5e7eb;
+  border-top-color: var(--weletic-primary, #6366f1);
+  border-radius: 9999px;
+  animation: weletic-spin 0.8s linear infinite;
+}
+.weletic-spinner-sm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+  vertical-align: -2px;
+}
+@keyframes weletic-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.weletic-load-error {
+  color: #991b1b;
+}
+.weletic-member-load-error {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  background: #fef2f2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.weletic-btn-load-retry {
+  padding: 9px 16px;
+  color: #ffffff;
+  background: var(--weletic-primary, #6366f1);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+.weletic-btn-load-retry:focus-visible {
+  outline: 2px solid var(--weletic-primary, #6366f1);
+  outline-offset: 2px;
+}
+
+/* Card Lists */
+.weletic-card-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: #f9fafb;
+  border: 1px solid #f3f4f6;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+.weletic-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 2px;
+}
+.weletic-card-desc {
+  font-size: 11px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.weletic-reward-points-input {
+  width: 112px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  color: #111827;
+  background: #ffffff;
+  font-size: 12px;
+}
+.weletic-card-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #059669;
+  background: #ecfdf5;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.weletic-btn-redeem {
+  padding: 6px 12px;
+  background: var(--weletic-primary, #6366f1);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.weletic-btn-redeem:hover {
+  opacity: 0.9;
+}
+.weletic-btn-redeem:disabled {
+  background: #e5e7eb;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.weletic-wallet-card {
+  padding: 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+.weletic-wallet-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.weletic-wallet-status {
+  padding: 3px 7px;
+  background: #f3f4f6;
+  color: #6b7280;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.weletic-wallet-status.weletic-wallet-available {
+  background: #ecfdf5;
+  color: #047857;
+}
+.weletic-wallet-code {
+  margin: 8px 0 4px;
+  color: #111827;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+.weletic-wallet-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.weletic-wallet-apply {
+  padding: 6px 12px;
+  background: #ffffff;
+  color: var(--weletic-primary, #6366f1);
+  border: 1px solid var(--weletic-primary, #6366f1);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.weletic-wallet-empty {
+  padding: 12px;
+  margin-bottom: 12px;
+  color: #6b7280;
+  background: #f9fafb;
+  border-radius: 10px;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* Guest Logged Out View */
+.weletic-guest-box {
+  text-align: center;
+  padding: 24px 16px;
+}
+.weletic-guest-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 6px;
+}
+.weletic-guest-desc {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+.weletic-btn-primary {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  background: var(--weletic-primary, #6366f1);
+  color: #fff;
+  text-decoration: none;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.weletic-btn-secondary {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  background: #f3f4f6;
+  color: #374151;
+  text-decoration: none;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+.weletic-referral-form {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+.weletic-referral-form label {
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+}
+.weletic-referral-form input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 11px;
+  color: #111827;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  font: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.weletic-referral-form input:focus-visible {
+  border-color: var(--weletic-primary, #6366f1);
+  outline: 2px solid rgba(99, 102, 241, 0.25);
+  outline-offset: 1px;
+}
+.weletic-referral-form .weletic-btn-primary {
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  margin-top: 4px;
+}
+.weletic-referral-form .weletic-btn-primary:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+.weletic-referral-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.weletic-referral-note {
+  margin: 10px 0 0;
+  font-size: 10px;
+}
+
+/* Landing Page Sections */
+.weletic-landing-container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 48px 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.weletic-landing-hero {
+  text-align: center;
+  margin-bottom: 48px;
+}
+.weletic-landing-hero-branded {
+  padding: 64px 24px;
+  border-radius: 24px;
+  background-position: center;
+  background-size: cover;
+}
+.weletic-landing-hero-branded .weletic-landing-title,
+.weletic-landing-hero-branded .weletic-landing-subtitle {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+.weletic-landing-title {
+  font-size: 36px;
+  font-weight: 800;
+  color: #111827;
+  margin-bottom: 12px;
+}
+.weletic-landing-subtitle {
+  font-size: 16px;
+  color: #4b5563;
+  max-width: 600px;
+  margin: 0 auto 24px;
+}
+.weletic-landing-guest-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+.weletic-btn-hero-primary {
+  padding: 12px 24px;
+  background: #111827;
+  color: #fff;
+  border-radius: 9999px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+.weletic-btn-hero-secondary {
+  padding: 12px 24px;
+  background: #f3f4f6;
+  color: #111827;
+  border-radius: 9999px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Product Detail Page Points Badge */
+.weletic-product-points-container {
+  margin: 12px 0;
+  display: block;
+}
+.weletic-points-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #166534;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.weletic-points-number {
+  font-weight: 700;
+  color: #15803d;
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@dub/tinybird",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@tinybirdco/sdk": "^0.0.82"
+  }
+}

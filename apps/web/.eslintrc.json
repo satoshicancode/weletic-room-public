@@ -1,0 +1,18 @@
+{
+  "extends": "next/core-web-vitals",
+  "ignorePatterns": ["playwright/**"],
+  "overrides": [
+    {
+      "files": [
+        "app/api/og/**",
+        "app/**/invoices/**",
+        "app/(ee)/**/invoices/**",
+        "lib/qr/**"
+      ],
+      "rules": {
+        "@next/next/no-img-element": "off",
+        "jsx-a11y/alt-text": "off"
+      }
+    }
+  ]
+}

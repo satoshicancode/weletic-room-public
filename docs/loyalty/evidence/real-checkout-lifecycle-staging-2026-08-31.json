@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "startedAt": "2026-08-31T06:27:45Z",
+  "completedAt": "2026-08-31T06:54:49Z",
+  "overallStatus": "PASSED_WITH_CORRECTION",
+  "target": {
+    "store": "n0pvef-cs.myshopify.com",
+    "shopifyPlanScope": "Basic-compatible customer account and online-store flow",
+    "orderReference": "#1001"
+  },
+  "summary": {
+    "passed": 9,
+    "corrected": 1,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "name": "Native coupon acceptance in a real Shopify checkout",
+      "status": "PASSED",
+      "evidence": {
+        "kind": "LIVE_SHOPIFY_CHECKOUT",
+        "liveShopify": true,
+        "summary": "A previously issued Weletic fixed-amount coupon was accepted by Shopify checkout and reduced the two-item order by JPY 5,000. The coupon value itself is intentionally redacted."
+      }
+    },
+    {
+      "name": "Real order creation and payment",
+      "status": "PASSED",
+      "evidence": {
+        "kind": "LIVE_SHOPIFY_ORDER",
+        "liveShopify": true,
+        "summary": "Shopify created order #1001 for two units, accepted the temporary manual staging payment method, and recorded a JPY 5,870 paid total."
+      }
+    },
+    {
+      "name": "Real orders/paid webhook retry and persistence",
+      "status": "PASSED",
+      "evidence": {
+        "kind": "LIVE_SHOPIFY_WEBHOOK",
+        "liveShopify": true,
+        "summary": "The original Shopify webhook initially failed because the expired offline token could not refresh without the app environment in the local Next.js process. After restoring that environment and refreshing the offline session, Shopify retried the same webhook identifier; attempt 5 completed and the payload-free audit row is processed with no error."
+      }
+    },
+    {
+      "name": "Coupon settlement",
+      "status": "PASSED",
+      "evidence": {
+        "kind": "LOCAL_DURABLE_STATE",
+        "liveShopify": false,
+        "summary": "The checkout coupon transitioned to used, retained its Shopify order reference, and was not returned to the available wallet after refund."
+      }
+    },
+    {
+      "name": "Order earn settlement",
+      "status": "PASSED",
+      "evidence": {
+        "kind": "COMPOSITE_LIVE_EVIDENCE",
+        "liveShopify": true,
+        "summary": "The real paid order created one settled grant and one immutable EARN_ORDER ledger entry for 10,000 points."
+      }
+    },
+    {
+      "name": "Real full item and shipping refund",
+      "status": "PASSED",
+      "evidence": {
+        "kind": "LIVE_SHOPIFY_REFUND",
+        "liveShopify": true,
+        "summary": "Shopify refunded both of two units plus shipping, returned the full JPY 5,870 payment, restocked both units, and archived the zero-balance order. No refund-notification email was sent."
+      }
+    },
+    {
+      "name": "Real refunds/create webhook",
+      "status": "PASSED",
+      "evidence": {
+        "kind": "LIVE_SHOPIFY_WEBHOOK",
+        "liveShopify": true,
+        "summary": "The registered refunds/create delivery completed on its first attempt and persisted the two-unit JPY 5,000 item refund."
+      }
+    },
+    {
+      "name": "Discounted full-return clawback",
+      "status": "CORRECTED",
+      "evidence": {
+        "kind": "LIVE_DEFECT_AND_IDEMPOTENT_CORRECTION",
+        "liveShopify": true,
+        "summary": "The live refund exposed an under-clawback: amount-only proportional reversal removed 5,000 of the 10,000 pre-discount points. The engine now treats Shopify's cumulative returned quantity as a floor, a maintenance-only supplemental correction brought the grant and line to 10,000/10,000 reversed, and an immediate replay created no additional ledger entry."
+      }
+    },
+    {
+      "name": "Post-refund account and reward state",
+      "status": "PASSED",
+      "evidence": {
+        "kind": "LOCAL_DURABLE_STATE",
+        "liveShopify": false,
+        "summary": "The account returned to zero available and zero pending points, the grant is reversed with zero settled points, and the order-linked coupon remains used."
+      }
+    },
+    {
+      "name": "Shopify payment baseline restoration",
+      "status": "PASSED",
+      "evidence": {
+        "kind": "LIVE_SHOPIFY_CLEANUP",
+        "liveShopify": true,
+        "summary": "The temporary Weletic QA manual payment method was deactivated and the manual-payment-method list returned to its original empty baseline."
+      }
+    }
+  ],
+  "intentionallyRetained": [
+    "Shopify order #1001, its refund, and the staging QA tag as immutable audit evidence",
+    "Payload-free orders/paid and refunds/create webhook audit rows",
+    "The used coupon record and its order linkage",
+    "Original and supplemental refund-reversal ledger entries"
+  ],
+  "intentionallySkipped": [
+    "Shopify Plus checkout-only capabilities",
+    "external partner or multi-merchant service flows",
+    "referral multi-account purchase qualification",
+    "every non-fixed reward type in a real checkout",
+    "Online Store App Proxy validation",
+    "production deployment"
+  ],
+  "privacy": {
+    "customerEmailIncluded": false,
+    "customerNameIncluded": false,
+    "customerOrOrderExternalIdsIncluded": false,
+    "discountCodeIncluded": false,
+    "deliveryAddressIncluded": false,
+    "accessTokensIncluded": false
+  }
+}

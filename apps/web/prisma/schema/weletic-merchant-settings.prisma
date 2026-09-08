@@ -1,0 +1,18 @@
+// Shared shopper-facing configuration, independent of either module's enrollment.
+// Module activation stays on the existing loyalty/review program records.
+model WeleticMerchantSettings {
+  storeId            String   @id
+  revision           Int      @default(1)
+  brandName          String?  @db.VarChar(100)
+  logoUrl            String?  @db.VarChar(2048)
+  accentColor        String?  @db.VarChar(7)
+  // Explicit merchant policy timezone; null is not an inferred Shopify timezone.
+  timeZone           String?  @db.VarChar(100)
+  // Applies only to Weletic shopper producers, not Dub partner communications.
+  // False preserves each existing producer's own eligibility/consent gates.
+  shopperEmailPaused Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}

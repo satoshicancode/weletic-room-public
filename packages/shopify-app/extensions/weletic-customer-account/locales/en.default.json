@@ -1,0 +1,49 @@
+{
+  "name": "Weletic Loyalty Customer Account Hub",
+  "description": "Customer loyalty account card, points balance, redemption slider, referrals, and birthday entry.",
+  "card": {
+    "title": "Loyalty Rewards",
+    "pointsBalance": "Points Balance",
+    "pendingPoints": "Pending Points",
+    "maturesInDays": "Matures in {{days}} days",
+    "lifetimeEarned": "Lifetime Earned",
+    "expiryNotice": "Points expire on {{date}}"
+  },
+  "vip": {
+    "currentTier": "Current Tier",
+    "multiplierBadge": "{{multiplier}}x Points",
+    "nextTier": "Next Tier: {{tier}}",
+    "spendRemaining": "Spend {{amount}} more to reach {{tier}}",
+    "pointsRemaining": "Earn {{points}} more points to reach {{tier}}",
+    "maxTierAchieved": "Highest VIP Tier Achieved!",
+    "viewPerks": "View Tier Perks"
+  },
+  "redeem": {
+    "title": "Ways to Redeem",
+    "sliderTitle": "Dynamic Points Slider",
+    "sliderSave": "Redeem {{points}} points to save {{amount}}",
+    "applyDiscount": "Apply Discount",
+    "redeemButton": "Redeem for {{points}} pts",
+    "insufficientPoints": "Need {{points}} more points",
+    "successTitle": "Reward Redeemed!",
+    "copyCode": "Copy Discount Code",
+    "codeCopied": "Code copied to clipboard!"
+  },
+  "referral": {
+    "title": "Refer Friends",
+    "subtitle": "Give {{refereeReward}}, get {{advocateReward}}",
+    "copyLink": "Copy Referral Link",
+    "linkCopied": "Link copied to clipboard!",
+    "friendsInvited": "Friends Invited",
+    "pointsEarned": "Referral Points Earned"
+  },
+  "birthday": {
+    "title": "Birthday Reward",
+    "prompt": "Enter your birthday to receive {{points}} bonus points",
+    "month": "Month",
+    "day": "Day",
+    "save": "Save Birthday",
+    "savedEligible": "Registered: {{date}}. Reward awarded on your birthday!",
+    "savedLockedOut": "Registered: {{date}}. Reward begins in {{nextYear}}."
+  }
+}

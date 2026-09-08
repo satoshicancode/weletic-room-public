@@ -1,0 +1,24 @@
+[[extensions]]
+name = "Weletic reward redeemed"
+type = "flow_trigger"
+handle = "weletic-reward-redeemed"
+uid = "a694f0e4-00b9-438b-a822-53d166c432e7"
+description = "Starts a workflow after a Weletic loyalty reward is issued."
+
+[settings]
+
+  [[settings.fields]]
+  type = "customer_reference"
+  description = "The customer who redeemed the reward."
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Reward type"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Discount code"
+
+  [[settings.fields]]
+  type = "number_decimal"
+  key = "Points spent"

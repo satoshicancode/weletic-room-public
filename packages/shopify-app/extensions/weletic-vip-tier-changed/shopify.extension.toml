@@ -1,0 +1,24 @@
+[[extensions]]
+name = "Weletic VIP tier changed"
+type = "flow_trigger"
+handle = "weletic-vip-tier-changed"
+uid = "7ee77630-1677-436e-9bbd-cc99a20a479a"
+description = "Starts a workflow when a customer's Weletic VIP tier changes."
+
+[settings]
+
+  [[settings.fields]]
+  type = "customer_reference"
+  description = "The customer whose VIP tier changed."
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Previous tier"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "New tier"
+
+  [[settings.fields]]
+  type = "number_decimal"
+  key = "Multiplier"

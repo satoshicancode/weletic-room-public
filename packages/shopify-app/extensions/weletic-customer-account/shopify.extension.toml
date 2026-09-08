@@ -1,0 +1,17 @@
+name = "Weletic Loyalty Customer Account Hub"
+type = "ui_extension"
+api_version = "2026-07"
+uid = "8f3b14a2-7e9c-4d1a-a82f-cc9e102f4b55"
+
+# Full-page Loyalty Hub in New Customer Accounts (/account/loyalty).
+# Shopify requires customer-account.page.render to live in its own extension.
+[[targeting]]
+module = "./src/CustomerAccountLoyalty.tsx"
+target = "customer-account.page.render"
+
+[capabilities]
+api_access = true
+network_access = true
+
+[locales]
+default = "en"

@@ -1,0 +1,16 @@
+name = "Weletic Loyalty Checkout Slider"
+type = "ui_extension"
+api_version = "2026-07"
+uid = "aa5ce192-0e8d-3af1-6c81-bc74b5888d13e1c31d36"
+
+[[targeting]]
+module = "./src/Checkout.tsx"
+target = "purchase.checkout.reductions.render-after"
+
+[[targeting]]
+module = "./src/ThankYou.tsx"
+target = "purchase.thank-you.block.render"
+
+[capabilities]
+api_access = true
+network_access = true

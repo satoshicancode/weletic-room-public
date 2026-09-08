@@ -1,0 +1,8 @@
+{
+  "include": [
+    "src/schema.ts"
+  ],
+  "token": "${TINYBIRD_TOKEN}",
+  "baseUrl": "https://api.ap-east-1.aws.tinybird.co",
+  "devMode": "branch"
+}

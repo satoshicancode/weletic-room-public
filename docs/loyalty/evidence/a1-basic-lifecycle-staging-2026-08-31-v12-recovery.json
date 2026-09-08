@@ -1,0 +1,146 @@
+{
+  "version": 2,
+  "kind": "abandoned_a1_recovery",
+  "startedAt": "2026-08-31T04:24:24.888Z",
+  "completedAt": "2026-08-31T04:24:38.643Z",
+  "overallStatus": "PASSED",
+  "sourceReport": {
+    "version": 4,
+    "sha256": "9a3c470a4ba8da148f48467940df82a547cfc1386dd5706eb216abd5994087f1",
+    "preserved": true
+  },
+  "checks": [
+    {
+      "name": "Exact current and recovered baseline tenant",
+      "status": "PASSED",
+      "durationMs": 28,
+      "evidence": {
+        "exactTenantTuple": true
+      }
+    },
+    {
+      "name": "Expired abandoned maintenance generation",
+      "status": "PASSED",
+      "durationMs": 1,
+      "evidence": {
+        "recoveryBoundaryReached": false,
+        "authenticatedSourceOwnerContinuation": true
+      }
+    },
+    {
+      "name": "Exact baseline metadata and program diff",
+      "status": "PASSED",
+      "durationMs": 0,
+      "evidence": {
+        "baselineMetadataHashMatched": true,
+        "exactProgramDiff": true
+      }
+    },
+    {
+      "name": "Exact lease-owned Shopify fixture discovery",
+      "status": "PASSED",
+      "durationMs": 5060,
+      "evidence": {
+        "remoteFixtureCustomerCount": 1
+      }
+    },
+    {
+      "name": "Exact temporary definition diff",
+      "status": "PASSED",
+      "durationMs": 13,
+      "evidence": {
+        "temporaryDefinitionCount": 6
+      }
+    },
+    {
+      "name": "Exhaustive early-phase family and ingress closure",
+      "status": "PASSED",
+      "durationMs": 145,
+      "evidence": {
+        "terminalProjectionCount": 1,
+        "expiredUndeliveredCount": 0,
+        "shopperCount": 1,
+        "accountCount": 1,
+        "signupLedgerCount": 1,
+        "stableHistoricalRows": 770,
+        "preLeaseRetainedDriftRows": 70,
+        "leaseOwnedRows": 10,
+        "retainedRowCount": 840,
+        "allowedExtraRowCount": 10
+      }
+    },
+    {
+      "name": "Expired lease exact-generation takeover",
+      "status": "PASSED",
+      "durationMs": 36,
+      "evidence": {
+        "exactGenerationTakenOver": true
+      }
+    },
+    {
+      "name": "Exact fixture outbox quiescence",
+      "status": "PASSED",
+      "durationMs": 14,
+      "evidence": {
+        "exactFixtureOutboxRows": 0,
+        "baselineOutboxUnchanged": true
+      }
+    },
+    {
+      "name": "Exact remote fixture deletion under customer locks",
+      "status": "PASSED",
+      "durationMs": 2171,
+      "evidence": {
+        "remoteCustomersDeleted": 1
+      }
+    },
+    {
+      "name": "Remote absence and stable local closure",
+      "status": "PASSED",
+      "durationMs": 466,
+      "evidence": {
+        "remoteAbsenceConfirmed": true,
+        "localClosureStable": true
+      }
+    },
+    {
+      "name": "Canonical local cleanup and baseline program restore",
+      "status": "PASSED",
+      "durationMs": 324,
+      "evidence": {
+        "localRowsDeleted": 3,
+        "temporaryDefinitionsDeleted": 6,
+        "programBusinessRestored": true
+      }
+    },
+    {
+      "name": "Two-pass zero-residue and baseline-outbox verification",
+      "status": "PASSED",
+      "durationMs": 4998,
+      "evidence": {
+        "zeroResiduePasses": 2,
+        "retainedRegisteredAuditRows": 1,
+        "baselineOutboxUnchanged": true
+      }
+    },
+    {
+      "name": "Atomic maintenance release and exact program baseline",
+      "status": "PASSED",
+      "durationMs": 86,
+      "evidence": {
+        "maintenanceLeaseReleased": true,
+        "exactProgramBaseline": true
+      }
+    }
+  ],
+  "mutation": {
+    "leaseTakenOver": true,
+    "remoteCustomersDeleted": 1,
+    "localRowsDeleted": 3,
+    "temporaryDefinitionsDeleted": 6,
+    "maintenanceLeaseReleased": true
+  },
+  "recoveryCapsule": {
+    "sha256": "715dd2dc0e210f6c9b6ab42449b954d214d97548254e576519c71e8cf595852a"
+  }
+}

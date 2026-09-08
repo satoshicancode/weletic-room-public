@@ -1,0 +1,6 @@
+[[extensions]]
+name = "Weletic Flow lifecycle callback"
+type = "flow_trigger_lifecycle_callback"
+handle = "weletic-flow-lifecycle-callback"
+uid = "55f3b680-d546-4648-9355-915b77d2bd18"
+url = "https://app.weletic.com/api/shopify/flow/lifecycle"

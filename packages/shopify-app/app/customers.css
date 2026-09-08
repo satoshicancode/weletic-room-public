@@ -1,0 +1,31 @@
+/* Only the scoped shared merchant screens consume these utilities. No global reset of
+   Polaris or embedded-app elements. */
+@tailwind utilities;
+
+.weletic-shoppers {
+  padding: 0 1rem;
+  max-width: 76rem;
+  margin: auto;
+}
+.weletic-shoppers :where(h2, h3, p, dl, dd, ul) {
+  margin: 0;
+}
+.weletic-shoppers :where(ul) {
+  padding: 0;
+  list-style: none;
+}
+.weletic-shoppers :where(button, input, select) {
+  font: inherit;
+}
+.weletic-shoppers
+  :where(button, input, select, section, div, dl, li, ul, nav, fieldset) {
+  border-style: solid;
+  border-width: 0;
+  box-sizing: border-box;
+}
+.weletic-shoppers :where(button) {
+  cursor: pointer;
+}
+.weletic-shoppers :where(button:disabled) {
+  cursor: default;
+}

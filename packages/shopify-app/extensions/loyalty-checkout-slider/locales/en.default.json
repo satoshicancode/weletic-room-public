@@ -1,0 +1,10 @@
+{
+  "title": "Redeem VIP Points",
+  "pointsAvailable": "{{points}} points available",
+  "sliderLabel": "Choose points to apply",
+  "applyButton": "Apply Discount",
+  "applied": "Discount Applied",
+  "thankYouTitle": "Points Earned on this Order",
+  "thankYouMessage": "You earned {{points}} VIP points!",
+  "referralPrompt": "Share your referral link to earn 500 bonus points:"
+}

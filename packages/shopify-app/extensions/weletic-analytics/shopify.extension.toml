@@ -1,0 +1,10 @@
+name = "Weletic Room Loyalty & Analytics Suite"
+type = "theme"
+uid = "92ba6f50-a24d-a21e-de3e-92fea7ae9e13cc883f12"
+
+[build]
+entry_points = [
+  "blocks/app-embed.liquid",
+  "blocks/loyalty-landing.liquid",
+  "blocks/product-points-preview.liquid"
+]

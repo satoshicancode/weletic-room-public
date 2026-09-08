@@ -1,0 +1,59 @@
+"use server";
+
+import * as z from "zod/v4";
+import { googleAdsOAuthProvider } from "../integrations/google-ads/oauth";
+import { isGoogleAdsAllowedWorkspace } from "../integrations/google-ads/utils";
+import { hubSpotOAuthProvider } from "../integrations/hubspot/oauth";
+import { intercomOAuthProvider } from "../integrations/intercom/oauth";
+import { slackOAuthProvider } from "../integrations/slack/oauth";
+import { authActionClient } from "./safe-action";
+import { throwIfNoPermission } from "./throw-if-no-permission";
+
+const schema = z.object({
+  workspaceId: z.string(),
+  integrationSlug: z.string(),
+});
+
+// Get the installation URL for an integration
+export const getIntegrationInstallUrl = authActionClient
+  .inputSchema(schema)
+  .action(async ({ ctx, parsedInput }) => {
+    const { workspace } = ctx;
+    const { integrationSlug } = parsedInput;
+
+    throwIfNoPermission({
+      role: workspace.role,
+      requiredPermissions: ["integrations.write"],
+    });
+
+    let url: string | null = null;
+
+    if (integrationSlug === "slack") {
+      url = await slackOAuthProvider.generateAuthUrl(workspace.id);
+    } else if (integrationSlug === "hubspot") {
+      url = await hubSpotOAuthProvider.generateAuthUrl(workspace.id);
+    } else if (integrationSlug === "intercom") {
+      url = await intercomOAuthProvider.generateAuthUrl(workspace.id);
+    } else if (integrationSlug === "google-ads") {
+      if (
+        !process.env.GOOGLE_ADS_CLIENT_ID ||
+        !process.env.GOOGLE_ADS_CLIENT_SECRET
+      ) {
+        throw new Error(
+          "Google Ads OAuth chưa được cấu hình. Vui lòng thiết lập GOOGLE_ADS_CLIENT_ID và GOOGLE_ADS_CLIENT_SECRET trong file .env.",
+        );
+      }
+
+      if (!isGoogleAdsAllowedWorkspace(workspace.id)) {
+        throw new Error(
+          "Google Ads integration is not available for this workspace",
+        );
+      }
+
+      url = await googleAdsOAuthProvider.generateAuthUrl(workspace.id);
+    } else {
+      throw new Error("Invalid integration slug");
+    }
+
+    return { url };
+  });

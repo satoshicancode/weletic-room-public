@@ -1,0 +1,68 @@
+weletic-reviews {
+  display: block;
+  color: inherit;
+  font: inherit;
+}
+weletic-reviews[data-mode="full"] {
+  max-width: 960px;
+  margin: 32px auto;
+  padding: 20px;
+}
+weletic-reviews article {
+  border-top: 1px solid #ddd;
+  padding: 24px 0;
+}
+weletic-reviews h3 {
+  margin: 8px 0;
+  font-size: 1.1em;
+}
+weletic-reviews p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+weletic-reviews .wr-meta {
+  font-size: 0.875em;
+  opacity: 0.8;
+}
+weletic-reviews .wr-filters,
+weletic-reviews .wr-photos {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+weletic-reviews select,
+weletic-reviews button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #999;
+  border-radius: 5px;
+  padding: 8px 12px;
+}
+weletic-reviews button {
+  cursor: pointer;
+}
+weletic-reviews button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+weletic-reviews .wr-reply {
+  margin: 16px 0 0 16px;
+  padding: 12px;
+  border-left: 3px solid #ddd;
+}
+weletic-reviews img {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+weletic-reviews .wr-summary {
+  font-size: 1.125em;
+  font-weight: 600;
+}
+weletic-reviews :focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}

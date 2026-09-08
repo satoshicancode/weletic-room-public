@@ -1,0 +1,54 @@
+{
+  "name": "Weletic Room ロイヤルティ＆分析",
+  "description": "顧客ポイント、VIPランク、割引クーポン、パートナーアフィリエイト分析。",
+  "card": {
+    "title": "ロイヤルティ特典",
+    "pointsBalance": "ポイント残高",
+    "pendingPoints": "保留中ポイント",
+    "maturesInDays": "{{days}}日後に付与",
+    "lifetimeEarned": "累計獲得ポイント",
+    "expiryNotice": "{{date}}に失効します"
+  },
+  "vip": {
+    "currentTier": "現在のランク",
+    "multiplierBadge": "ポイント{{multiplier}}倍",
+    "nextTier": "次のランク: {{tier}}",
+    "spendRemaining": "あと{{amount}}の購入で{{tier}}へ昇格",
+    "pointsRemaining": "あと{{points}}ptで{{tier}}へ昇格",
+    "maxTierAchieved": "最高ランクに到達しました！",
+    "viewPerks": "特典一覧を見る"
+  },
+  "redeem": {
+    "title": "ポイント交換",
+    "sliderTitle": "スライダーでポイント交換",
+    "sliderSave": "{{points}}pt利用で{{amount}}引き",
+    "applyDiscount": "割引を適用する",
+    "redeemButton": "{{points}}ptで交換",
+    "insufficientPoints": "あと{{points}}pt必要",
+    "successTitle": "交換が完了しました！",
+    "copyCode": "クーポンコードをコピー",
+    "codeCopied": "コードをコピーしました！"
+  },
+  "referral": {
+    "title": "お友達紹介",
+    "subtitle": "お友達に{{refereeReward}}、あなたに{{advocateReward}}",
+    "copyLink": "紹介リンクをコピー",
+    "linkCopied": "リンクをコピーしました！",
+    "friendsInvited": "紹介人数",
+    "pointsEarned": "獲得ポイント"
+  },
+  "birthday": {
+    "title": "お誕生日特典",
+    "prompt": "お誕生日を登録して毎年{{points}}pt獲得",
+    "month": "月",
+    "day": "日",
+    "save": "お誕生日を登録",
+    "savedEligible": "登録完了: {{date}}。お誕生日に付与されます！",
+    "savedLockedOut": "登録完了: {{date}}。お誕生日特典は{{nextYear}}年から開始されます。"
+  },
+  "product": {
+    "prefix": "最大",
+    "suffix": "ポイント獲得",
+    "earnUpTo": "{{points}}pt獲得"
+  }
+}

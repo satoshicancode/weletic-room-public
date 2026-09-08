@@ -1,0 +1,113 @@
+name: weletic-loyalty-dev
+
+services:
+  mysql:
+    image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+    environment:
+      MYSQL_DATABASE: weletic_loyalty_dev
+      MYSQL_USER: loyalty_dev
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql_app
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root
+    command: ["--max-connections=100", "--innodb-buffer-pool-size=128M"]
+    ports: ["127.0.0.1:3307:3306"]
+    volumes: ["mysql:/var/lib/mysql"]
+    secrets: [mysql_app, mysql_root]
+    networks:
+      database:
+        aliases: [database-mysql]
+      host-access: {}
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  sql-http:
+    image: ghcr.io/mattrobenolt/ps-http-sim@sha256:fb624c2f615cd53910be07a5c6a62ddf54936a2e1c7322c8398fa2b5dd601c41
+    command:
+      [
+        "-listen-addr=0.0.0.0",
+        "-listen-port=3900",
+        "-mysql-addr=database-mysql",
+        "-mysql-dbname=weletic_loyalty_dev",
+        "-log-level=error",
+      ]
+    ports: ["127.0.0.1:3902:3900"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks: [database, host-access]
+    mem_limit: 128m
+
+  redis:
+    image: redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "128mb",
+        "--maxmemory-policy",
+        "noeviction",
+      ]
+    volumes: ["redis:/data"]
+    networks: [cache]
+    mem_limit: 256m
+
+  redis-http:
+    image: hiett/serverless-redis-http@sha256:5b0bb9239fce53abf87b2018a7a0deb9ec7bd900c5360738fe5fbeeb426f9150
+    environment:
+      SRH_MODE: file
+    volumes:
+      - ../../.env.loyalty-secrets.local/redis-tokens.json:/app/srh-config/tokens.json:ro
+    ports: ["127.0.0.1:8079:80"]
+    depends_on: [redis]
+    networks: [cache, host-access]
+    mem_limit: 256m
+
+  media:
+    # SeaweedFS 4.45, local S3 protocol/permission testing only.
+    image: chrislusf/seaweedfs@sha256:fc9f76fa993ad69966ffeb2f65d0318fcae39c6f8e20cf68ef7b3a5cb97769e5
+    command:
+      [
+        "mini",
+        "-dir=/data",
+        "-s3.config=/run/secrets/s3_config",
+        "-bucket=weletic-loyalty-dev-private,weletic-loyalty-dev-public",
+      ]
+    volumes: ["media:/data"]
+    secrets: [s3_config]
+    # No filer, admin, WebDAV or cluster-management port is published.
+    ports: ["127.0.0.1:9002:8333"]
+    networks: [media, host-access]
+    mem_limit: 512m
+
+networks:
+  # Docker Desktop does not publish ports for internal-only containers.
+  # Published ports remain explicitly loopback-only. This is not an egress firewall.
+  host-access:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_icc: "false"
+      com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
+  database:
+    internal: true
+  cache:
+    internal: true
+  media:
+    internal: true
+
+volumes:
+  mysql:
+  redis:
+  media:
+
+secrets:
+  mysql_app:
+    file: ../../.env.loyalty-secrets.local/mysql-app
+  mysql_root:
+    file: ../../.env.loyalty-secrets.local/mysql-root
+  s3_config:
+    file: ../../.env.loyalty-secrets.local/s3-config.json

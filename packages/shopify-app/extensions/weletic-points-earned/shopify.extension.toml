@@ -1,0 +1,28 @@
+[[extensions]]
+name = "Weletic points earned"
+type = "flow_trigger"
+handle = "weletic-points-earned"
+uid = "aa7c675c-7130-44b2-8ce1-99137830a318"
+description = "Starts a workflow when a customer earns Weletic loyalty points."
+
+[settings]
+
+  [[settings.fields]]
+  type = "customer_reference"
+  description = "The customer whose points changed."
+
+  [[settings.fields]]
+  type = "number_decimal"
+  key = "Points delta"
+
+  [[settings.fields]]
+  type = "number_decimal"
+  key = "Points balance"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Reason"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Order id"
