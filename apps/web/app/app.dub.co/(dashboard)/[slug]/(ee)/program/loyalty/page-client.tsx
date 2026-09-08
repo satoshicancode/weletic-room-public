@@ -395,21 +395,12 @@ export default function LoyaltyAdminPageClient({
               />
             )}
 
-            {activeTab === "vip" && (
-              <TabVip
-                tiers={tiers}
-                onConfigure={() => handleTabChange("settings")}
-                currency={currency}
-                onRefresh={fetchProgramData}
-              />
+            {activeTab === "vip" && workspaceId && (
+              <TabVip workspaceId={workspaceId} />
             )}
 
-            {activeTab === "bonuses" && (
-              <TabBonuses
-                campaigns={campaigns}
-                tiers={tiers}
-                onRefresh={fetchProgramData}
-              />
+            {activeTab === "bonuses" && workspaceId && (
+              <TabBonuses workspaceId={workspaceId} />
             )}
 
             {activeTab === "analytics" && (
