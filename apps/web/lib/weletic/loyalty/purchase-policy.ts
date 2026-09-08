@@ -1,4 +1,3 @@
-import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 export const loyaltyPurchaseTypeSchema = z.enum([
@@ -180,22 +179,18 @@ export async function getEligibleLoyaltyOrderSubtotal({
   policy,
   testFallbackSubtotal,
 }: {
-  tx: Prisma.TransactionClient;
+  tx: unknown;
   storeId: string;
   orderId: string;
   policy: LoyaltyPurchasePolicy;
   testFallbackSubtotal: bigint;
 }) {
   const delegate = (
-    tx as Prisma.TransactionClient & {
+    tx as {
       weleticCommerceOrderLine?: {
-        findMany?: (args: unknown) => Promise<
-          Array<
-            LoyaltyPurchaseLine & {
-              shopNet: bigint;
-            }
-          >
-        >;
+        findMany?: (
+          args: unknown,
+        ) => Promise<Array<LoyaltyPurchaseLine & { shopNet: bigint }>>;
       };
     }
   ).weleticCommerceOrderLine;
