@@ -1,0 +1,8 @@
+{
+  "status": "configuration_only_not_deployed",
+  "shopifyAppOrigin": "https://loyalty-shopify-dev.weletic.com",
+  "backendOrigin": "https://loyalty-api-dev.weletic.com",
+  "enablePublicRouting": false,
+  "approval": "ADR0027",
+  "note": "Reserved origins only. Not loaded by the loopback runtime. DNS, routing, deployment and installation require separate approval."
+}

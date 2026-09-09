@@ -5,6 +5,13 @@ Hiro on September 9, 2026. This feature is **in progress, not release-ready**.
 
 ## Current delivery boundary — September 10, public-main refresh
 
+The [September 10 isolated schema receipt](isolated-installation-schema-2026-09-10.md)
+records Hiro's ADR 0027 approval and successful application of the two reviewed
+pending/native-credential migrations to the isolated development database.
+Approved hostnames are recorded as inert configuration only. This supersedes
+earlier statements that these specific schema/hostname choices await approval;
+deployment, public exposure, installation and business mutations remain gated.
+
 Latest update: [ADR 0026](../adr/0026-audited-company-store-bootstrap.md) approves
 first-store bootstrap. Its [local implementation checkpoint](company-store-bootstrap-implementation.md)
 supersedes the earlier policy-decision blocker below; verification and live gates
