@@ -95,6 +95,23 @@
   opacity: 1;
   visibility: visible;
 }
+.weletic-drawer[hidden] {
+  display: none;
+}
+.weletic-drawer :focus-visible {
+  outline: 3px solid var(--weletic-primary, #6366f1);
+  outline-offset: 3px;
+}
+.weletic-drawer-header :focus-visible {
+  outline-color: var(--weletic-header-text, #ffffff);
+}
+.weletic-redemption-confirmation {
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
 
 .weletic-drawer-header {
   background: var(--weletic-primary, #6366f1);
