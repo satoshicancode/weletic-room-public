@@ -79,18 +79,21 @@ it("acknowledges verified terminal replay without recovering or posting again", 
   expect(mocks.recover).not.toHaveBeenCalled();
   expect(mocks.batch).not.toHaveBeenCalled();
 });
-it("returns continuation only after durable requeue succeeds", async () => {
-  const renewed = { private: "new lease" };
-  mocks.batch.mockResolvedValue({
-    completed: false,
-    processed: 50,
-    lease: renewed,
-  });
-  await expect(run()).resolves.toEqual({
-    historicalImportOutcome: "continued",
-  });
-  expect(mocks.continuation).toHaveBeenCalledWith({ lease: renewed });
-});
+it.each([1, 2, 49, 50])(
+  "returns continuation after durable requeue for %s rows",
+  async (processed) => {
+    const renewed = { private: "new lease" };
+    mocks.batch.mockResolvedValue({
+      completed: false,
+      processed,
+      lease: renewed,
+    });
+    await expect(run()).resolves.toEqual({
+      historicalImportOutcome: "continued",
+    });
+    expect(mocks.continuation).toHaveBeenCalledWith({ lease: renewed });
+  },
+);
 it.each([
   { processed: 0, lease },
   { processed: 50, lease: null },

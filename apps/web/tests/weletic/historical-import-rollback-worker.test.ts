@@ -76,18 +76,21 @@ it("does not recover or correct again after verified terminal replay", async () 
   });
   expect(mocks.recover).not.toHaveBeenCalled();
 });
-it("continues only after durable successful-progress handoff", async () => {
-  mocks.batch.mockResolvedValue({
-    completed: false,
-    contained: false,
-    processed: 50,
-    lease,
-  });
-  await expect(run()).resolves.toEqual({
-    historicalImportOutcome: "continued",
-  });
-  expect(mocks.continuation).toHaveBeenCalledWith({ lease });
-});
+it.each([1, 2, 49, 50])(
+  "continues %s rows only after durable successful-progress handoff",
+  async (processed) => {
+    mocks.batch.mockResolvedValue({
+      completed: false,
+      contained: false,
+      processed,
+      lease,
+    });
+    await expect(run()).resolves.toEqual({
+      historicalImportOutcome: "continued",
+    });
+    expect(mocks.continuation).toHaveBeenCalledWith({ lease });
+  },
+);
 it("stops containment instead of completing or requeuing it", async () => {
   mocks.batch.mockResolvedValue({
     completed: false,

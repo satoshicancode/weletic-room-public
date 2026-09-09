@@ -44,3 +44,7 @@ export const HistoricalImportOutboxClaimSchema = z
 export type HistoricalImportOutboxClaim = z.infer<
   typeof HistoricalImportOutboxClaimSchema
 >;
+// Soft delivery budget, checked only between atomic rows. A slow row is never
+// aborted halfway through accounting/containment. Retain room for recovery and
+// continuation within the outbox's default five-minute claim window.
+export const HISTORICAL_IMPORT_BATCH_TARGET_MS = 30_000;

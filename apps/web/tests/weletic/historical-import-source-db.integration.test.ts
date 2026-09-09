@@ -13,6 +13,7 @@ import {
   assertHistoricalImportExecutionLeaseInTransaction,
   claimHistoricalImportExecutionLeaseInTransaction,
 } from "../../lib/weletic/loyalty/historical-import-execution-lease";
+import { historicalImportFieldStateSchema } from "../../lib/weletic/loyalty/historical-import-fields";
 import { finalizeHistoricalImportExecution } from "../../lib/weletic/loyalty/historical-import-finalization";
 import {
   HistoricalImportConflictError,
@@ -97,14 +98,21 @@ afterAll(async () => {
     await database.weleticLoyaltyOutboxJob.deleteMany({ where });
     await database.weleticPointsLedgerEntry.deleteMany({ where });
     await database.weleticLoyaltyEarnGrant.deleteMany({ where });
-    const accounts = await database.weleticLoyaltyAccount.findMany({
-      where,
-      select: { id: true },
-    });
-    await database.weleticLoyaltyTierHistory.deleteMany({
-      where: { accountId: { in: accounts.map(({ id }) => id) } },
-    });
-    await database.weleticLoyaltyAccount.deleteMany({ where });
+    for (;;) {
+      const accounts = await database.weleticLoyaltyAccount.findMany({
+        where,
+        select: { id: true },
+        take: 500,
+      });
+      if (!accounts.length) break;
+      const ids = accounts.map(({ id }) => id);
+      await database.weleticLoyaltyTierHistory.deleteMany({
+        where: { accountId: { in: ids } },
+      });
+      await database.weleticLoyaltyAccount.deleteMany({
+        where: { ...where, id: { in: ids } },
+      });
+    }
     // Prisma relation emulation can exceed MySQL's placeholder ceiling when
     // deleting an entire maximum-size shopper fixture in a single operation.
     for (;;) {
@@ -290,8 +298,12 @@ it.skipIf(process.env.HISTORICAL_IMPORT_LARGE_SOURCE_INTEGRATION !== "1")(
   },
   60_000,
 );
-async function seedExecutableRow(withBirthday = false, withTier = false) {
-  const fixture = await seed(withBirthday, 1, withTier);
+async function seedExecutableRow(
+  withBirthday = false,
+  withTier = false,
+  rowCount = 1,
+) {
+  const fixture = await seed(withBirthday, rowCount, withTier);
   const shopper = await database.weleticShopper.create({
     data: {
       id: `shopper-${fixture.source.storeId}`,
@@ -912,6 +924,196 @@ it.skipIf(process.env.HISTORICAL_IMPORT_MAX_SOURCE_WORKER_INTEGRATION !== "1")(
     );
   },
   180_000,
+);
+it.skipIf(process.env.HISTORICAL_IMPORT_POPULATED_ROLLBACK_PROFILE !== "1")(
+  "profiles a bounded real rollback delivery against a synthetic 50,000-row committed fixture",
+  async () => {
+    const fixture = await seedExecutableRow(false, false, 50_000);
+    await executeHistoricalImportRow({
+      lease: fixture.lease,
+      snapshotId: fixture.snapshot.id,
+    });
+    const originalExecution =
+      await database.weleticLoyaltyImportRowExecution.findUniqueOrThrow({
+        where: { snapshotId: fixture.snapshot.id },
+      });
+    const originalAccount =
+      await database.weleticLoyaltyAccount.findUniqueOrThrow({
+        where: { id: originalExecution.accountId },
+      });
+    const originalLedger =
+      await database.weleticPointsLedgerEntry.findUniqueOrThrow({
+        where: { id: originalExecution.ledgerEntryId! },
+      });
+    const before = historicalImportFieldStateSchema.parse(
+      originalExecution.fieldStateBefore,
+    );
+    const after = historicalImportFieldStateSchema.parse(
+      originalExecution.fieldStateAfter,
+    );
+    // Synthetic committed fixture derived from one actual row. This profiles
+    // populated evidence reads; it does NOT prove 50,000 real worker commits.
+    for (let offset = 1; offset < 50_000; offset += 250) {
+      const rows = Array.from(
+        { length: Math.min(250, 50_000 - offset) },
+        (_, index) => {
+          const rowNumber = offset + index + 1;
+          return {
+            rowNumber,
+            snapshotId: `snapshot-${rowNumber}-${fixture.source.storeId}`,
+            shopperId: `profile-shopper-${rowNumber}-${fixture.source.storeId}`,
+            accountId: `profile-account-${rowNumber}-${fixture.source.storeId}`,
+            ledgerId: `profile-ledger-${rowNumber}-${fixture.source.storeId}`,
+          };
+        },
+      );
+      await database.weleticShopper.createMany({
+        data: rows.map((row) => ({
+          id: row.shopperId,
+          storeId: fixture.source.storeId,
+          shopifyCustomerId: String(122 + row.rowNumber),
+        })),
+      });
+      await database.weleticLoyaltyAccount.createMany({
+        data: rows.map((row) => ({
+          ...originalAccount,
+          id: row.accountId,
+          shopperId: row.shopperId,
+          referralCode: null,
+          metadata:
+            originalAccount.metadata === null
+              ? Prisma.DbNull
+              : (originalAccount.metadata as Prisma.InputJsonValue),
+        })),
+      });
+      await database.weleticPointsLedgerEntry.createMany({
+        data: rows.map((row) => ({
+          ...originalLedger,
+          id: row.ledgerId,
+          accountId: row.accountId,
+          referenceId: row.snapshotId,
+          idempotencyKey: `loyalty_import_opening:${fixture.source.id}:${row.snapshotId}`,
+          metadata: {
+            sourceId: fixture.source.id,
+            snapshotId: row.snapshotId,
+            normalizedSha256: fixture.source.normalizedSha256,
+          },
+        })),
+      });
+      await database.weleticLoyaltyImportRowExecution.createMany({
+        data: rows.map((row) => ({
+          ...originalExecution,
+          id: `profile-execution-${row.rowNumber}-${fixture.source.storeId}`,
+          snapshotId: row.snapshotId,
+          accountId: row.accountId,
+          ledgerEntryId: row.ledgerId,
+          fieldStateBefore: { ...before, accountId: row.accountId },
+          fieldStateAfter: { ...after, accountId: row.accountId },
+        })),
+      });
+    }
+    const source = await database.weleticLoyaltyImportSource.update({
+      where: { id: fixture.source.id },
+      data: {
+        status: "committed",
+        completedAt: new Date(),
+        revision: { increment: 1 },
+        leaseId: null,
+        leaseExpiresAt: null,
+      },
+    });
+    const transactionOptions = {
+      ...options,
+      timeout: HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS,
+    };
+    const started = performance.now();
+    await database.$transaction(
+      (tx) =>
+        queueHistoricalImportRollbackInTransaction({
+          tx,
+          request: {
+            ...fixture.request,
+            expectedRevision: historicalImportRevision({
+              storeId: source.storeId,
+              programId: source.programId,
+              installationGeneration: source.installationGeneration,
+              normalizedSha256: source.normalizedSha256,
+              source,
+            }),
+          },
+        }),
+      transactionOptions,
+    );
+    const queueMs = performance.now() - started;
+    const job = await database.weleticLoyaltyOutboxJob.findFirstOrThrow({
+      where: { storeId: source.storeId, jobType: "HISTORICAL_IMPORT_ROLLBACK" },
+    });
+    // Initial eligibility only; the worker must perform the durable handoff.
+    await database.weleticLoyaltyImportSource.update({
+      where: { id: source.id },
+      data: { leaseExpiresAt: new Date(0) },
+    });
+    await releaseFixtureJobToRealWorker(job.id);
+    const workerStarted = performance.now();
+    expect(
+      await processOutboxJobsBatch({
+        storeId: source.storeId,
+        jobIds: [job.id],
+        workerId: "populated-rollback-profile",
+      }),
+    ).toMatchObject({ processed: 1, failed: 0, deadLettered: 0, succeeded: 0 });
+    const workerMs = performance.now() - workerStarted;
+    const rolledBack = await database.weleticLoyaltyImportRowExecution.count({
+      where: { sourceId: source.id, status: "rolled_back" },
+    });
+    expect(rolledBack).toBeGreaterThan(0);
+    // Faster machines may reach the row cap before the soft time target.
+    // Fake-clock contract tests prove early yielding deterministically.
+    expect(rolledBack).toBeLessThanOrEqual(50);
+    expect(
+      await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id: job.id },
+      }),
+    ).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      lockedAt: null,
+      lockedBy: null,
+    });
+    const proof = await database.$transaction(
+      (tx) =>
+        readHistoricalImportExecutionProofInTransaction({
+          tx,
+          sourceId: source.id,
+          storeId: source.storeId,
+          programId: source.programId,
+        }),
+      transactionOptions,
+    );
+    expect(proof.summary).toMatchObject({
+      reconciled: true,
+      fullyRolledBack: false,
+      observedNetPoints: (
+        BigInt(50_000 - rolledBack) * BigInt("9007199254740993")
+      ).toString(),
+    });
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: source.storeId },
+      }),
+    ).toBe(50_000 + rolledBack);
+    console.log(
+      JSON.stringify({
+        event: "synthetic_populated_rollback_profile",
+        seededCommittedRows: 50_000,
+        realRollbackRows: rolledBack,
+        yieldedBeforeRowCap: rolledBack < 50,
+        queueMs: Math.round(queueMs),
+        workerMs: Math.round(workerMs),
+      }),
+    );
+  },
+  300_000,
 );
 it.skipIf(process.env.HISTORICAL_IMPORT_WORKER_LOAD_INTEGRATION !== "1")(
   "commits and rolls back 500 real rows across durable worker continuations",

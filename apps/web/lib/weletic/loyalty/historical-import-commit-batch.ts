@@ -7,6 +7,7 @@ import {
   renewHistoricalImportExecutionLeaseInTransaction,
 } from "./historical-import-execution-lease";
 import { finalizeHistoricalImportExecution } from "./historical-import-finalization";
+import { HISTORICAL_IMPORT_BATCH_TARGET_MS } from "./historical-import-job-contract";
 import { HistoricalImportConflictError } from "./historical-import-persistence";
 import { executeHistoricalImportRow } from "./historical-import-row-execution";
 
@@ -25,10 +26,15 @@ export async function processHistoricalImportCommitBatch({
   maxRows?: number;
 }) {
   const limit = z.number().int().min(1).max(100).parse(maxRows);
+  const startedAt = performance.now();
   let token = lease;
   let processed = 0;
   let afterRowNumber = 0;
-  while (processed < limit) {
+  while (
+    processed < limit &&
+    (processed === 0 ||
+      performance.now() - startedAt < HISTORICAL_IMPORT_BATCH_TARGET_MS)
+  ) {
     const next = await prisma.$transaction(
       async (tx) => {
         const current = await assertHistoricalImportExecutionLeaseInTransaction(

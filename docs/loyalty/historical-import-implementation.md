@@ -2,7 +2,7 @@
 
 Status: implementation in progress, 2026-09-09. The three import tables have been
 approved and created only in isolated local MySQL. Both opt-in database suites
-pass (43 tests across the latest suite runs). Byte-derived inspection/staging
+pass (44 tests across the latest suite runs). Byte-derived inspection/staging
 persistence and commit/rollback orchestration are covered locally; authenticated
 browser journeys and live merchant acceptance remain unproven. Nothing is deployed
 to Shopify.
@@ -76,6 +76,44 @@ an optimization, retaining foreign-entry and orphan discovery. A multi-row locke
 transaction would change contention and containment granularity and requires an
 explicit architectural decision, not an inferred performance allowance.
 
+### Populated rollback profile and bounded worker scheduling
+
+A synthetic committed fixture was built from one actual row execution, rewriting
+every shopper/account/snapshot/ledger identity and field-state binding for the
+remaining 49,999 rows. This is a populated performance fixture, **not evidence of
+50,000 commits through the worker**. Real full-source verification accepted it.
+An initial direct rollback profile took 24,612 ms to claim and 25,605 ms for one
+atomic correction. At that observed per-row cost, a fixed 50-row delivery risks
+exceeding the default five-minute outbox claim window. Extrapolation also suggests
+a full rollback could take days; no full-run duration has been measured.
+
+Commit and rollback batches now retain the row-count cap and add a monotonic
+30-second soft time target checked between rows. The first row is attempted even
+if selection consumes the target. No in-flight row is interrupted; failures and
+containment retain their original behavior. This is not a hard 30-second delivery
+deadline: recovery, selection, the last atomic row and durable continuation add
+time. Every existing full-source proof, lease and ownership check remains intact.
+
+The populated test then queued rollback and used the actual outbox worker. Queue
+creation took 26,236 ms; one delivery took 62,759 ms and corrected two rows. The
+same job returned to `pending`, with zero attempts and cleared ownership. Independent
+whole-source proof reconciled 50,002 ledger entries and exactly 49,998 opening
+balances remaining, with `fullyRolledBack: false`. The test passed (34 unrelated
+cases skipped). Faster machines may reach the row cap before the soft target;
+fake-clock tests prove the scheduling rule without a wall-clock performance claim.
+
+Fixture cleanup completed in bounded account/shopper batches. Independent read-only
+checks found zero source-suite fixtures across ten affected models. The focused
+suite passes 854 tests, including nine deterministic batch-budget cases and
+short-progress continuation cases for both worker phases. Independent review
+found no production blocker. The 50,000-row throughput gate remains open.
+
+Reducing full-source proof frequency across separate row transactions is not an
+approved shortcut. A proposed bounded multi-row transaction could retain a proof
+under the same locks while amortizing its cost, but would change contention and
+failure/containment granularity. That redesign requires an explicit architectural
+decision before implementation; continued task execution does not select it.
+
 ## Approved isolated database execution
 
 After verifying `weletic_loyalty_dev` and principal `loyalty_dev@%` at
@@ -84,7 +122,7 @@ The reviewed generated DDL SHA-256 is
 `c3a4017125ca45d444767bafdc7e3a3c0e04ea07b657af7714303b5a64c1a547`.
 No existing tables were altered. See [ADR 0021](../adr/0021-isolated-loyalty-import-tables.md).
 
-The source suite passed 34 cases across normal and opt-in load runs, including atomic rollback, actual outbox dispatch, competing claims and recovery,
+The source suite passed 35 cases across normal and opt-in load runs, including atomic rollback, actual outbox dispatch, competing claims and recovery,
 exact >safe-integer opening balance, concurrent row replay, source finalization,
 stale installation rejection and cross-store snapshot rejection. The accounting
 suite passed all nine cases, including append-only correction, later-activity
@@ -115,7 +153,7 @@ actionable issue. This proves transaction abort and retry, not user-requested
 append-only rollback orchestration, tier rollback or live-store acceptance.
 
 This document records incremental checkpoints; later sections supersede earlier
-implementation counts and diagnoses. Current verification: 839 focused
+implementation counts and diagnoses. Current verification: 854 focused
 import/outbox/staff-client tests, Prisma validation, focused lint, web/Shopify
 typechecking and both web and Shopify production builds pass.
 Installed source/ledger table tests are verified as above; authenticated browser
