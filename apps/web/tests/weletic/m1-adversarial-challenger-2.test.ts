@@ -356,9 +356,12 @@ describe("Milestone 1 (M1) Challenger 2: Data Precision & PII Adversarial Verifi
       );
       expect(content).not.toContain('root.getAttribute("data-customer-phone")');
 
-      // Verifies customer data is derived from API response in memory
-      expect(content).toContain("loyaltyData.shopper.firstName");
-      expect(content).toContain("/api/shopify/loyalty/customer");
+      // Balances come from the signed gateway; the greeting must not project
+      // the private shopper identity into markup. Runtime DOM coverage lives
+      // in loyalty-widget-core.test.ts.
+      expect(content).not.toContain("loyaltyData.shopper.firstName");
+      expect(content).toContain("shared.normalizeCustomer");
+      expect(content).toContain('proxyPrefix + "/customer?shop="');
     });
   });
 });

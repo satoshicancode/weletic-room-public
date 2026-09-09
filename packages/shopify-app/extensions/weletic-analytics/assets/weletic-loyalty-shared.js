@@ -211,11 +211,11 @@
     return parseIntegerValue(selected).toString();
   }
 
-  function formatInteger(value) {
+  function formatInteger(value, locale) {
     var amount = parseIntegerValue(value);
     if (amount === null) return "0";
     try {
-      return amount.toLocaleString();
+      return amount.toLocaleString(locale);
     } catch (_error) {
       var sign = amount < BigInt(0) ? "-" : "";
       var digits = (amount < BigInt(0) ? -amount : amount).toString();
@@ -324,11 +324,11 @@
     return "+" + formatPoints(rule?.fixedPoints || 0, singular, plural);
   }
 
-  function formatMinorMoney(value, currency) {
+  function formatMinorMoney(value, currency, locale) {
     var amount = parseIntegerValue(value);
     var currencyCode = currency || "USD";
     try {
-      var formatter = new Intl.NumberFormat(undefined, {
+      var formatter = new Intl.NumberFormat(locale, {
         style: "currency",
         currency: currencyCode,
       });

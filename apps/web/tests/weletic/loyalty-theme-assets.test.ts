@@ -811,6 +811,13 @@ describe("Shopify Basic loyalty theme assets", () => {
     button.click();
     button.click();
 
+    expect(redemptionRequests).toHaveLength(0);
+    const confirm = document.querySelector<HTMLButtonElement>(
+      "#weletic-confirm-redemption",
+    )!;
+    confirm.click();
+    confirm.click();
+
     await vi.waitFor(() => expect(redemptionRequests).toHaveLength(1));
     expect(redemptionRequests[0].pointsRequested).toBe("9007199254740993");
     releaseRedemption!();
