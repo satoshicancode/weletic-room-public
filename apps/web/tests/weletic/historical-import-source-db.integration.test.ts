@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { prisma as database } from "../../lib/prisma";
 import { processHistoricalImportCommitBatch } from "../../lib/weletic/loyalty/historical-import-commit-batch";
 import { continueHistoricalImportCommit } from "../../lib/weletic/loyalty/historical-import-continuation";
+import { HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS } from "../../lib/weletic/loyalty/historical-import-contract";
 import {
   queueHistoricalImportCommitInTransaction,
   queueHistoricalImportRollbackInTransaction,
@@ -104,7 +105,19 @@ afterAll(async () => {
       where: { accountId: { in: accounts.map(({ id }) => id) } },
     });
     await database.weleticLoyaltyAccount.deleteMany({ where });
-    await database.weleticShopper.deleteMany({ where });
+    // Prisma relation emulation can exceed MySQL's placeholder ceiling when
+    // deleting an entire maximum-size shopper fixture in a single operation.
+    for (;;) {
+      const shoppers = await database.weleticShopper.findMany({
+        where,
+        select: { id: true },
+        take: 500,
+      });
+      if (!shoppers.length) break;
+      await database.weleticShopper.deleteMany({
+        where: { ...where, id: { in: shoppers.map(({ id }) => id) } },
+      });
+    }
     await database.weleticLoyaltyTier.deleteMany({
       where: {
         programId: { in: stores.map((storeId) => `program-${storeId}`) },
@@ -613,6 +626,100 @@ async function uploadFixture() {
     );
   return { storeId, programId, source, stage };
 }
+
+it.skipIf(process.env.HISTORICAL_IMPORT_UPLOAD_LOAD_INTEGRATION !== "1")(
+  "inspects and stages a real maximum-size 50,000-row upload within merchant transaction limits",
+  async () => {
+    const { storeId } = await seedStore();
+    const rowCount = 50_000;
+    for (let offset = 0; offset < rowCount; offset += 1000)
+      await database.weleticShopper.createMany({
+        data: Array.from({ length: 1000 }, (_, index) => ({
+          id: `shopper-${offset + index}-${storeId}`,
+          storeId,
+          shopifyCustomerId: String(123 + offset + index),
+        })),
+      });
+    const json = JSON.stringify(
+      Array.from({ length: rowCount }, (_, index) => ({
+        shopifyCustomerId: `gid://shopify/Customer/${123 + index}`,
+        openingBalance: "9007199254740993",
+      })),
+    );
+    // Valid JSON whitespace reaches the byte limit independently of row count.
+    const bytes = new TextEncoder().encode(json.padEnd(10 * 1024 * 1024));
+    const source = {
+      format: "json" as const,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+    const transactionOptions = {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      timeout: HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS,
+    };
+    const inspectStarted = performance.now();
+    const preview = await database.$transaction(
+      (tx) =>
+        inspectHistoricalImportSourceInTransaction({
+          tx,
+          storeId,
+          installationGeneration: "g1",
+          bytes,
+          request: {
+            operation: "inspect",
+            expectedInstallationGeneration: "g1",
+            source,
+          },
+        }),
+      transactionOptions,
+    );
+    const inspectMs = performance.now() - inspectStarted;
+    expect(preview.valid).toBe(true);
+    expect(preview.rowCount).toBe(rowCount);
+    expect(
+      await database.weleticLoyaltyImportSource.count({ where: { storeId } }),
+    ).toBe(0);
+    const stageStarted = performance.now();
+    const staged = await database.$transaction(
+      (tx) =>
+        stageHistoricalImportInTransaction({
+          tx,
+          storeId,
+          installationGeneration: "g1",
+          staffId: "isolated-fixture-staff",
+          bytes,
+          request: {
+            operation: "stage",
+            expectedInstallationGeneration: "g1",
+            expectedRevision: preview.revision,
+            source,
+          },
+        }),
+      transactionOptions,
+    );
+    const stageMs = performance.now() - stageStarted;
+    expect(staged).toMatchObject({ status: "preview", rowCount });
+    const where = { storeId };
+    expect(
+      await database.weleticLoyaltyImportRowSnapshot.count({ where }),
+    ).toBe(rowCount);
+    expect(
+      await database.weleticLoyaltyImportRowExecution.count({ where }),
+    ).toBe(0);
+    expect(await database.weleticPointsLedgerEntry.count({ where })).toBe(0);
+    expect(await database.weleticLoyaltyAccount.count({ where })).toBe(0);
+    expect(await database.weleticLoyaltyOutboxJob.count({ where })).toBe(0);
+    console.log(
+      JSON.stringify({
+        event: "isolated_maximum_upload_load",
+        bytes: bytes.byteLength,
+        rows: rowCount,
+        inspectMs: Math.round(inspectMs),
+        stageMs: Math.round(stageMs),
+      }),
+    );
+  },
+  120_000,
+);
 
 async function queuedWorkerFixture(rowCount = 1, withFields = false) {
   const fixture = await seed(withFields, rowCount, withFields);

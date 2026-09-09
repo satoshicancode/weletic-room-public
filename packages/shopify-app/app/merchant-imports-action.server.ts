@@ -1,5 +1,6 @@
 import { json } from "@remix-run/node";
 import {
+  HISTORICAL_IMPORT_GATEWAY_TIMEOUT_MS,
   HISTORICAL_IMPORT_MAX_SOURCE_BYTES,
   historicalImportContextResponseSchema,
   historicalImportMerchantRequestSchema,
@@ -41,9 +42,10 @@ export function createMerchantImportsAction(
           {
             method: "POST",
             signal: AbortSignal.timeout(
-              parsed.data.request.operation === "commit" ||
-                parsed.data.request.operation === "rollback"
-                ? 35_000
+              ["inspect", "stage", "reconcile", "commit", "rollback"].includes(
+                parsed.data.request.operation,
+              )
+                ? HISTORICAL_IMPORT_GATEWAY_TIMEOUT_MS
                 : 8_000,
             ),
             body: JSON.stringify({ actor, ...parsed.data }),

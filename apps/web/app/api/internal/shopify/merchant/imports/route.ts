@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import {
+  HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS,
   historicalImportContextRequestSchema,
   historicalImportExecutionRequestSchema,
   historicalImportHistoryRequestSchema,
@@ -127,7 +128,12 @@ export async function POST(request: Request) {
                     tx,
                     envelope: parsed.data.actor,
                   }),
-        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+          ...(parsed.data.request.operation === "reconcile"
+            ? { timeout: HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS }
+            : {}),
+        },
       );
       return reply(result, 200);
     }
@@ -148,7 +154,10 @@ export async function POST(request: Request) {
           request: parsed.data.request,
           bytes: upload,
         }),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        timeout: HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS,
+      },
     );
     return reply(result, 200);
   } catch (error) {

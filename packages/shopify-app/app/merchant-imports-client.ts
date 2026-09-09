@@ -1,4 +1,5 @@
 import {
+  HISTORICAL_IMPORT_CLIENT_TIMEOUT_MS,
   historicalImportContextResponseSchema,
   historicalImportExecutionRequestSchema,
   historicalImportHistoryRequestSchema,
@@ -22,7 +23,9 @@ export function createMerchantImportExecutionClient(
   fetcher: typeof fetch = fetch,
 ) {
   // Headroom for fresh authentication and the gateway's 35-second deadline.
-  const post = createMerchantJsonPost(getToken, fetcher, { timeoutMs: 40_000 });
+  const post = createMerchantJsonPost(getToken, fetcher, {
+    timeoutMs: HISTORICAL_IMPORT_CLIENT_TIMEOUT_MS,
+  });
   return async (request: unknown) => {
     const input = historicalImportExecutionRequestSchema.safeParse(request);
     if (!input.success || !expectedStoreId)
@@ -44,7 +47,9 @@ export function createMerchantImportReconciliationClient(
   expectedStoreId: string,
   fetcher: typeof fetch = fetch,
 ) {
-  const post = createMerchantJsonPost(getToken, fetcher);
+  const post = createMerchantJsonPost(getToken, fetcher, {
+    timeoutMs: HISTORICAL_IMPORT_CLIENT_TIMEOUT_MS,
+  });
   return async (request: unknown) => {
     const input =
       historicalImportReconciliationRequestSchema.safeParse(request);
@@ -129,7 +134,9 @@ export function createMerchantImportsClient(
   expectedStoreId: string,
   fetcher: typeof fetch = fetch,
 ) {
-  const post = createMerchantJsonPost(getToken, fetcher);
+  const post = createMerchantJsonPost(getToken, fetcher, {
+    timeoutMs: HISTORICAL_IMPORT_CLIENT_TIMEOUT_MS,
+  });
   return async (input: unknown) => {
     const parsed = historicalImportUploadSchema.safeParse(input);
     if (!parsed.success || !expectedStoreId)

@@ -1,6 +1,12 @@
 import { z } from "zod";
 
 export const HISTORICAL_IMPORT_MAX_ROWS = 1000;
+// Whole-source validation and reconciliation require more than the default
+// five-second transaction window. Outer deadlines retain authentication and
+// response headroom; none of these operations retries a write automatically.
+export const HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS = 30_000;
+export const HISTORICAL_IMPORT_GATEWAY_TIMEOUT_MS = 35_000;
+export const HISTORICAL_IMPORT_CLIENT_TIMEOUT_MS = 40_000;
 export const historicalImportContextRequestSchema = z
   .object({ operation: z.literal("context") })
   .strict();

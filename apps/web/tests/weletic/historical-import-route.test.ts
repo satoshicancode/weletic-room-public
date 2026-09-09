@@ -199,6 +199,10 @@ it("binds reconciliation revision to the signed body and performs no preparation
   };
   mocks.reconcile.mockResolvedValue({ reconciled: true });
   expect((await POST(request(body))).status).toBe(200);
+  expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
+    isolationLevel: "RepeatableRead",
+    timeout: 30_000,
+  });
   expect(mocks.verify).toHaveBeenCalledWith(
     expect.objectContaining({ body: JSON.stringify(body) }),
   );
@@ -238,6 +242,7 @@ it("signs actor, operation and file together and forwards exact decoded bytes", 
   });
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
     isolationLevel: "RepeatableRead",
+    timeout: 30_000,
   });
 });
 it.each(["", "W10", "W10=\n", "W10=!!!", "!!!!"])(

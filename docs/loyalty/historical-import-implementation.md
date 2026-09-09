@@ -2,7 +2,7 @@
 
 Status: implementation in progress, 2026-09-09. The three import tables have been
 approved and created only in isolated local MySQL. Both opt-in database suites
-pass (41 tests across the latest suite runs). Byte-derived inspection/staging
+pass (42 tests across the latest suite runs). Byte-derived inspection/staging
 persistence and commit/rollback orchestration are covered locally; authenticated
 browser journeys and live merchant acceptance remain unproven. Nothing is deployed
 to Shopify.
@@ -17,12 +17,40 @@ approved, applied and verified before this change can be merged or released;
 the isolated database approvals below do not authorize that rollout.
 
 Authenticated maximum-size upload/staging and full 50,000-row commit/rollback
-remain unverified. Upload/staging and read transactions currently use the default
-Prisma transaction timeout, with an eight-second upstream preparation deadline.
-The pending-manifest and 500-row worker measurements below do not prove these
-HTTP paths or performance against a populated production ledger. A source-specific
+remain unverified. The maximum-size isolated preparation checkpoint below
+reproduced and corrected the default transaction deadline failure. Preparation
+and reconciliation now have bounded 30-second transactions, 35-second gateway
+deadlines and 40-second browser deadlines. Context/status/history retain their
+short gateway deadlines. The isolated preparation, pending-manifest and 500-row
+worker measurements do not prove authenticated HTTP paths or performance against
+a populated production ledger. A source-specific
 ledger metadata lookup is not indexed; retain the orphan-discovery safety checks
 while evaluating load. No live acceptance checkbox is satisfied by this checkpoint.
+
+### Maximum-size preparation deadline correction
+
+After publishing draft PR #13, an opt-in real MySQL test used 50,000 existing
+synthetic shoppers and a valid JSON source padded with whitespace to exactly
+10 MiB. Inspection failed under the merchant route's default five-second Prisma
+transaction timeout, before any source or financial write. The test also exposed
+MySQL's prepared-statement placeholder ceiling in bulk fixture deletion. The
+exact failed fixture was recovered with bounded shopper deletes; the suite now
+uses fixture-scoped batches of 500 and a bounded 120-second cleanup hook.
+
+With the shared 30-second transaction limit, inspection completed in 11,951 ms
+and staging in 18,706 ms. One maximum-size test passed (32 unrelated cases skipped).
+The database contained all 50,000 snapshots, and no row executions, ledger entries,
+loyalty accounts or outbox jobs for the fixture. Cleanup completed; an independent
+read-only check found zero source-suite fixtures across ten affected models.
+
+Preparation and reconciliation transport deadlines now preserve headroom around
+that transaction budget, matching the existing execution deadline pattern.
+Eleven new regression cases verify long-operation gateway deadlines, unchanged
+short reads, and browser cancellation at 40 seconds without retries. The focused
+transport selection passes 106 cases. Independent review found no actionable
+blocker. This is real byte-derived persistence plus isolated transport-contract
+evidence, not authenticated HTTP/browser throughput, privacy live acceptance,
+full-source commit/rollback, or a shared-schema rollout approval.
 
 ## Approved isolated database execution
 
@@ -32,7 +60,7 @@ The reviewed generated DDL SHA-256 is
 `c3a4017125ca45d444767bafdc7e3a3c0e04ea07b657af7714303b5a64c1a547`.
 No existing tables were altered. See [ADR 0021](../adr/0021-isolated-loyalty-import-tables.md).
 
-The source suite passed 32 cases across normal and opt-in load runs, including atomic rollback, actual outbox dispatch, competing claims and recovery,
+The source suite passed 33 cases across normal and opt-in load runs, including atomic rollback, actual outbox dispatch, competing claims and recovery,
 exact >safe-integer opening balance, concurrent row replay, source finalization,
 stale installation rejection and cross-store snapshot rejection. The accounting
 suite passed all nine cases, including append-only correction, later-activity
@@ -63,7 +91,7 @@ actionable issue. This proves transaction abort and retry, not user-requested
 append-only rollback orchestration, tier rollback or live-store acceptance.
 
 This document records incremental checkpoints; later sections supersede earlier
-implementation counts and diagnoses. Current verification: 828 focused
+implementation counts and diagnoses. Current verification: 839 focused
 import/outbox/staff-client tests, Prisma validation, focused lint, web/Shopify
 typechecking and both web and Shopify production builds pass.
 Installed source/ledger table tests are verified as above; authenticated browser
