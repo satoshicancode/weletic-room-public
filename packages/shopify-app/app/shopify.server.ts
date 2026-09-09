@@ -8,6 +8,7 @@ import {
 } from "@shopify/shopify-app-remix/server";
 import { CoordinatedWeleticSessionStorage } from "./coordinated-session-storage.server";
 import { createMerchantAuthenticator } from "./merchant-authentication.server";
+import { getShopifyRequestedScopes } from "./shopify-scopes";
 import { requireEnv, requireUrlEnv } from "./weletic-api.server";
 
 const coordinatedStorage = new CoordinatedWeleticSessionStorage();
@@ -33,23 +34,7 @@ const shopify = shopifyApp({
   apiSecretKey: requireEnv("SHOPIFY_API_SECRET"),
   apiVersion: ApiVersion.July26,
   sessionStorage: coordinatedStorage,
-  scopes: process.env.SCOPES?.split(",") || [
-    "read_products",
-    "write_products",
-    "read_markets",
-    "read_orders",
-    "read_translations",
-    "read_discounts",
-    "write_discounts",
-    "read_price_rules",
-    "write_price_rules",
-    "read_customers",
-    "write_customers",
-    "read_gift_cards",
-    "write_gift_cards",
-    "read_store_credit_accounts",
-    "write_store_credit_account_transactions",
-  ],
+  scopes: getShopifyRequestedScopes(process.env.SCOPES),
   appUrl: requireUrlEnv("SHOPIFY_APP_URL").toString(),
   authPathPrefix: "/auth",
   distribution: appDistribution,
