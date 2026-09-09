@@ -3,6 +3,7 @@ import { verifyVipCampaignAcknowledgement } from "../../lib/weletic/loyalty/vip-
 import {
   bonusCampaignFieldsSchema,
   vipCampaignRequestSchema,
+  vipCampaignResponseSchema,
   vipTierFieldsSchema,
   type BonusCampaignFields,
   type VipTierFields,
@@ -50,6 +51,24 @@ const response = {
 };
 
 describe("VIP and campaign merchant contract", () => {
+  it("preserves an explicit no-tier history destination", () => {
+    const parsed = vipCampaignResponseSchema.parse({
+      ...response,
+      tierHistory: [
+        {
+          id: "wtier_history1",
+          fromTierId: "wtier_gold1",
+          fromTierName: "Gold",
+          toTierId: null,
+          toTierName: null,
+          changeReason: "manual_override",
+          effectiveAt: "2026-09-09T00:00:00.000Z",
+        },
+      ],
+    });
+    expect(parsed.tierHistory[0].toTierId).toBeNull();
+    expect(parsed.tierHistory[0].toTierName).toBeNull();
+  });
   it("preserves the supported integer threshold without float conversion", () => {
     expect(
       vipTierFieldsSchema.parse({

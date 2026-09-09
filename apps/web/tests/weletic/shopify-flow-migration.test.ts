@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("Shopify Flow migration preserves the native-review outbox contract", () => {
-  it("retains every Prisma outbox enum label in the same MySQL enum order", () => {
+  it("preserves historical enum ordinals and only appends the approved import types", () => {
     const schema = readFileSync(
       new URL("../../prisma/schema/weletic-loyalty.prisma", import.meta.url),
       "utf8",
@@ -31,7 +31,13 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
       sqlEnum[1].matchAll(/'([^']+)'/g),
       (match) => match[1],
     );
-    expect(sqlLabels).toEqual(prismaLabels);
+    // Historical migrations stay immutable. Later additive enum changes must
+    // retain every old ordinal; shared deployment of the new labels is gated.
+    expect(prismaLabels.slice(0, sqlLabels.length)).toEqual(sqlLabels);
+    expect(prismaLabels.slice(sqlLabels.length)).toEqual([
+      "HISTORICAL_IMPORT_COMMIT",
+      "HISTORICAL_IMPORT_ROLLBACK",
+    ]);
     const expansion = readFileSync(
       new URL(
         "../../../../infra/shopify-development/migrations/20260907_shopper_coupon_outbox.sql",
@@ -43,7 +49,7 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
     if (!expandedEnum) throw new Error("Shopper coupon enum expansion missing");
     expect(
       Array.from(expandedEnum[1].matchAll(/'([^']+)'/g), (match) => match[1]),
-    ).toEqual(prismaLabels);
+    ).toEqual(sqlLabels);
     expect(sqlLabels).toEqual(
       expect.arrayContaining([
         "REVIEW_REQUEST_EMAIL",

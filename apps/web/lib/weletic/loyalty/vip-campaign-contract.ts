@@ -162,7 +162,7 @@ export const vipCampaignResponseSchema = z
           id: identifier,
           fromTierId: tierId.nullable(),
           fromTierName: z.string().min(1).max(80).nullable(),
-          toTierId: tierId,
+          toTierId: tierId.nullable(),
           toTierName: z.string().min(1).max(80).nullable(),
           changeReason: z.string().min(1).max(64),
           effectiveAt: z.string().datetime(),

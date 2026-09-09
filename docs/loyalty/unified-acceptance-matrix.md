@@ -247,9 +247,11 @@ live gate. Do not infer a completion percentage from checked code paths.
 
 External Shopify deployment, schema application, App Store submission,
 protected-data/network requests, real email delivery and old-app uninstall remain
-separate execution gates. Approval for the three isolated import tables did not
-authorize shared/production schema changes, an import outbox enum expansion,
-store-approval schema rollout or nullable no-tier rollback history.
+separate execution gates. In addition to the three isolated import tables,
+[ADR 0023](../adr/0023-durable-import-jobs-and-no-tier-rollback.md) records approval
+for import outbox enum values and nullable no-tier history, applied only to local
+weletic_loyalty_dev. This does not authorize shared/production schema changes or
+store-approval schema rollout, and does not prove working import dispatch/rollback.
 
 The points-adjustment Flow action awaits Hiro's choice between an audited,
 revocable bounded automation authorization and approval of every adjustment.

@@ -45,6 +45,8 @@ export type WeleticIdPrefix =
   | "wcamp_"
   | "wpolicy_"
   | "wbackfill_"
+  | "wlimp_"
+  | "wlimpr_"
   | "wbfsnap_"
   | "wbfcredit_"
   | "wlineearn_"

@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
   customerFindUnique: vi.fn(),
   customerUpdateMany: vi.fn(),
   ledgerFindMany: vi.fn(),
+  importSnapshotFindMany: vi.fn(),
+  importExecutionFindMany: vi.fn(),
+  importCustomerRedact: vi.fn(),
+  importStorePurge: vi.fn(),
   nativeReviewFindMany: vi.fn(),
   nativeRequestFindMany: vi.fn(),
   nativeMediaFindMany: vi.fn(),
@@ -127,6 +131,10 @@ vi.mock("@/lib/storage", () => ({
 vi.mock("@/lib/weletic/loyalty/earn-policy-revision", () => ({
   publishLoyaltyEarnPolicyRevision: mocks.publishPolicyRevision,
 }));
+vi.mock("@/lib/weletic/loyalty/historical-import-privacy", () => ({
+  redactHistoricalImportCustomerBatch: mocks.importCustomerRedact,
+  purgeHistoricalImportStoreBatch: mocks.importStorePurge,
+}));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     weleticMerchantSettings: { deleteMany: mocks.merchantSettingsDeleteMany },
@@ -141,6 +149,10 @@ vi.mock("@/lib/prisma", () => ({
       updateMany: mocks.customerUpdateMany,
     },
     weleticPointsLedgerEntry: { findMany: mocks.ledgerFindMany },
+    weleticLoyaltyImportRowSnapshot: { findMany: mocks.importSnapshotFindMany },
+    weleticLoyaltyImportRowExecution: {
+      findMany: mocks.importExecutionFindMany,
+    },
     weleticProductReview: { findMany: mocks.nativeReviewFindMany },
     weleticReviewRequest: { findMany: mocks.nativeRequestFindMany },
     weleticReviewIncentiveClaim: { findMany: mocks.incentiveClaimFindMany },
@@ -377,6 +389,13 @@ describe("durable compliance worker boundaries", () => {
     mocks.customerUpdateMany.mockResolvedValue({ count: 0 });
     mocks.shopperUpdate.mockResolvedValue({});
     mocks.ledgerFindMany.mockResolvedValue([]);
+    mocks.importSnapshotFindMany.mockResolvedValue([]);
+    mocks.importExecutionFindMany.mockResolvedValue([]);
+    mocks.importStorePurge.mockResolvedValue({ kind: "completed", count: 0 });
+    mocks.importCustomerRedact.mockResolvedValue({
+      snapshotsRedacted: 0,
+      executionsRedacted: 0,
+    });
     mocks.nativeReviewFindMany.mockResolvedValue([]);
     mocks.nativeRequestFindMany.mockResolvedValue([]);
     mocks.nativeMediaFindMany.mockResolvedValue([]);
@@ -816,7 +835,7 @@ describe("durable compliance worker boundaries", () => {
       ["export_review_media", "export_review_incentive_claims"],
       ["export_review_incentive_claims", "export_coupon_uses"],
       ["export_coupon_uses", "export_review_incentive_invalidations"],
-      ["export_review_incentive_invalidations", "export_manifest"],
+      ["export_review_incentive_invalidations", "export_import_snapshots"],
     ]) {
       const result = await processCustomerDataRequestStep({
         id: "wcomp_native",
@@ -954,6 +973,107 @@ describe("durable compliance worker boundaries", () => {
     );
     expect(mocks.artifactStore.mock.calls[0][0].value).toHaveLength(100);
   });
+
+  it.each(["42", "gid://shopify/Customer/42"])(
+    "exports import snapshots for %s with bounded private artifacts",
+    async (shopifyCustomerId) => {
+      mocks.shopperFindUnique.mockResolvedValue({ shopifyCustomerId });
+      mocks.importSnapshotFindMany.mockResolvedValue(
+        Array.from({ length: 101 }, (_, index) => ({
+          id: `snapshot_${index}`,
+        })),
+      );
+      const result = await processCustomerDataRequestStep({
+        id: "import_export",
+        storeId: "store_1",
+        lockedBy: "worker_1",
+        leaseVersion: 1,
+        phase: "export_import_snapshots",
+        cursor: null,
+        progress: {},
+        store: { projectId: "workspace_1" },
+        payloadCiphertext: JSON.stringify({
+          shopperId: "shopper_42",
+          orderExternalIds: [],
+        }),
+      });
+      expect(mocks.shopperFindUnique).toHaveBeenCalledWith({
+        where: { id: "shopper_42", storeId: "store_1" },
+        select: { shopifyCustomerId: true },
+      });
+      expect(mocks.importSnapshotFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 101,
+          where: {
+            storeId: "store_1",
+            redactedAt: null,
+            shopifyCustomerId: { in: ["42", "gid://shopify/Customer/42"] },
+          },
+          select: expect.objectContaining({
+            birthdayMonth: true,
+            openingBalance: true,
+          }),
+        }),
+      );
+      expect(result).toMatchObject({
+        phase: "export_import_snapshots",
+        cursor: { lastId: "snapshot_99", sequence: 1 },
+      });
+      expect(mocks.artifactStore.mock.calls[0][0].value).toHaveLength(100);
+    },
+  );
+
+  it("exports only account-owned import execution fields and advances to the manifest", async () => {
+    await processCustomerDataRequestStep({
+      id: "import_export",
+      storeId: "store_1",
+      lockedBy: "worker_1",
+      leaseVersion: 1,
+      phase: "export_import_executions",
+      cursor: { lastId: "prior", sequence: 1 },
+      progress: {},
+      store: { projectId: "workspace_1" },
+      payloadCiphertext: JSON.stringify({
+        accountId: "account_42",
+        orderExternalIds: [],
+      }),
+    }).then((result) => expect(result.phase).toBe("export_manifest"));
+    expect(mocks.importExecutionFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 101,
+        cursor: { id: "prior" },
+        skip: 1,
+        where: { storeId: "store_1", accountId: "account_42" },
+        select: expect.objectContaining({
+          fieldStateBefore: true,
+          fieldStateAfter: true,
+        }),
+      }),
+    );
+    expect(
+      mocks.importExecutionFindMany.mock.calls[0][0].select,
+    ).not.toHaveProperty("source");
+  });
+
+  it.each(["export_import_snapshots", "export_import_executions"])(
+    "does not query %s without an owner",
+    async (phase) => {
+      await processCustomerDataRequestStep({
+        id: "import_export",
+        storeId: "store_1",
+        lockedBy: "worker_1",
+        leaseVersion: 1,
+        phase,
+        cursor: null,
+        progress: {},
+        store: { projectId: "workspace_1" },
+        payloadCiphertext: JSON.stringify({ orderExternalIds: [] }),
+      });
+      expect(mocks.importSnapshotFindMany).not.toHaveBeenCalled();
+      expect(mocks.importExecutionFindMany).not.toHaveBeenCalled();
+      expect(mocks.artifactStore).not.toHaveBeenCalled();
+    },
+  );
 
   it("boundedly exports earn grants, order-line earns, and both backfill snapshot formats through their durable owner", async () => {
     mocks.earnGrantFindMany.mockResolvedValue(
@@ -2188,6 +2308,8 @@ describe("durable compliance worker boundaries", () => {
       .mockResolvedValueOnce([]);
     const request = {
       id: "wcomp_customer_backfill",
+      lockedBy: "worker_1",
+      leaseVersion: 1,
       storeId: "store_1",
       phase: "purge_customer_backfill_preview",
       payloadCiphertext: JSON.stringify({
@@ -2261,12 +2383,57 @@ describe("durable compliance worker boundaries", () => {
     expect(mocks.backfillPreviewDeleteMany).toHaveBeenCalledTimes(2);
   });
 
+  it("drains import privacy work under the mutation lease before backfill cleanup", async () => {
+    mocks.importCustomerRedact.mockResolvedValueOnce({
+      snapshotsRedacted: 100,
+      executionsRedacted: 50,
+    });
+    const request = {
+      id: "wcomp_import_redact",
+      storeId: "store_1",
+      lockedBy: "worker_1",
+      leaseVersion: 1,
+      phase: "purge_customer_backfill_preview",
+      cursor: null,
+      progress: {},
+      store: { projectId: "workspace_1" },
+      payloadCiphertext: JSON.stringify({
+        customerId: "42",
+        accountId: "account_42",
+        orderExternalIds: [],
+      }),
+    };
+    const result = await processCustomerRedactStep(request);
+    expect(result).toMatchObject({
+      phase: "purge_customer_backfill_preview",
+      progress: {
+        customerImportSnapshotsRedacted: 100,
+        customerImportExecutionsRedacted: 50,
+      },
+    });
+    expect(mocks.importCustomerRedact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storeId: "store_1",
+        shopifyCustomerId: "42",
+        accountId: "account_42",
+        tx: expect.any(Object),
+      }),
+    );
+    expect(mocks.backfillPreviewFindMany).not.toHaveBeenCalled();
+    await expect(
+      processCustomerRedactStep({ ...request, lockedBy: null }),
+    ).rejects.toThrow("lease");
+    expect(mocks.importCustomerRedact).toHaveBeenCalledTimes(1);
+  });
+
   it("deletes immutable customer backfill snapshots before legacy previews", async () => {
     mocks.backfillSnapshotFindMany
       .mockResolvedValueOnce([{ id: "snapshot_01" }])
       .mockResolvedValueOnce([]);
     const request = {
       id: "wcomp_customer_backfill_snapshot",
+      lockedBy: "worker_1",
+      leaseVersion: 1,
       storeId: "store_1",
       phase: "purge_customer_backfill_preview",
       payloadCiphertext: JSON.stringify({
@@ -2317,6 +2484,8 @@ describe("durable compliance worker boundaries", () => {
     mocks.backfillCreditFindMany.mockResolvedValueOnce([{ id: "credit_01" }]);
     const result = await processCustomerRedactStep({
       id: "wcomp_customer_backfill_credit",
+      lockedBy: "worker_1",
+      leaseVersion: 1,
       storeId: "store_1",
       phase: "purge_customer_backfill_preview",
       payloadCiphertext: JSON.stringify({
@@ -2722,6 +2891,46 @@ describe("durable compliance worker boundaries", () => {
       where: { id: "line_earn_1", storeId: "store_1" },
       data: { metadata: { retainedCalculation: "financial" } },
     });
+  });
+
+  it("drains imports before backfill and rejects active-store or stale-lease purge", async () => {
+    const request = {
+      id: "wcomp_import_shop",
+      storeId: "store_1",
+      lockedBy: "worker_1",
+      leaseVersion: 1,
+      phase: "purge_loyalty_backfill",
+      cursor: null,
+      progress: { loyaltyImportRecordsDeleted: 2 },
+      store: { projectId: "workspace_1" },
+      payloadCiphertext: JSON.stringify({
+        shopDomain: "target.myshopify.com",
+        orderExternalIds: [],
+      }),
+    };
+    mocks.importStorePurge.mockResolvedValueOnce({
+      kind: "executions",
+      count: 100,
+    });
+    expect(await processShopRedactStep(request)).toMatchObject({
+      phase: "purge_loyalty_backfill",
+      progress: { loyaltyImportRecordsDeleted: 102 },
+    });
+    expect(mocks.importStorePurge).toHaveBeenCalledWith({
+      tx: expect.any(Object),
+      storeId: "store_1",
+    });
+    expect(mocks.backfillCreditFindMany).not.toHaveBeenCalled();
+    mocks.storeQueryRaw.mockResolvedValue([
+      { id: "store_1", complianceState: "active" },
+    ]);
+    await expect(processShopRedactStep(request)).rejects.toThrow(
+      "frozen store",
+    );
+    await expect(
+      processShopRedactStep({ ...request, lockedBy: null }),
+    ).rejects.toThrow("lease");
+    expect(mocks.importStorePurge).toHaveBeenCalledTimes(1);
   });
 
   it("drains bounded backfill previews before jobs and converges idempotently", async () => {
