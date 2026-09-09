@@ -72,6 +72,7 @@ describe("shared merchant settings on isolated MySQL", () => {
     stores.push(storeId);
     await database.weleticShopifyStore.create({
       data: {
+        storeAccessState: "active",
         id: storeId,
         projectId: workspaceId,
         programId: `affiliate-${id}`,

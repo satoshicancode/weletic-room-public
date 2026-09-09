@@ -40,7 +40,7 @@ shopper flow. Tomorrow means work can start, not that all remaining work will fi
 | L10 | Communications            | PR #6/#8 merged; new policy delivery `not_connected`                                 | Preserve ten-entry reference; delivery integration later          |
 | L11 | Analytics                 | PR #7 merged; aggregate UI/export foundation                                         | Preserve catalog/definitions; funnel/cohorts/reconciliation later |
 | L12 | Imports                   | Draft PR #13 plus uncommitted optimization; not merged                               | Frozen tonight; schema/load decisions later                       |
-| L13 | Store approval            | PR #5 open, unmerged; onboarding gaps                                                | Document gates, no merge/application tonight                      |
+| L13 | Store approval            | PR #5 backend foundation; unknown-install provisioning/status UI incomplete          | Follow-on isolated merge/staging approved; live gates remain open |
 | L14 | Public-app identity       | Isolation/configuration/ownership/live install unproven                              | External gates, later                                             |
 | L15 | Flow                      | Trigger definitions/producers exist; publication/workflows/action incomplete         | Payload/auth specification now; execution later                   |
 | L16 | Operations/privacy        | Workers and guards exist; full supervised/race acceptance open                       | Exact rehearsals documented; later                                |
@@ -324,14 +324,17 @@ No task below silently authorizes an external gate or a new product policy.
 
 ### L13 — Company-store approval
 
-- **Scope/reference:** PR #5 is open/unmerged. Backend pending/active/suspended
-  fences and audited operator command exist in that branch; unknown-install
+- **Scope/reference:** PR #5 supplies backend pending/active/suspended
+  fences and the audited operator command; unknown-install
   provisioning and signed EN/JA/VI approval-status UI remain incomplete.
 - **Approach/subsystems:** installation provisioning, store-access contract,
   signed status projection, operator audit, customer sync and all writer/worker
   entry points. Pending installs may do required auth/privacy only, not loyalty.
-- **Dependencies/decisions:** shared schema merge/application approval, operator
-  authorization and company-store mapping; never autoapprove an unknown install.
+- **Dependencies/decisions:** September 9 follow-on approval covers PR #5 merge
+  after revalidation and isolated port-3307 staging/test databases only. Shared/
+  production application, operator activation and company-store mapping remain
+  separate gates; never autoapprove an unknown install. See the
+  [approval evidence](store-approval-implementation.md).
 - **Tests:** unmapped new install, pending/suspended every writer and worker,
   approved promotion, revoked operator, concurrent suspension/reinstall, safe
   privacy handling and no customer sync before activation.

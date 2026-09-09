@@ -1845,6 +1845,7 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
               shopCurrency: "USD",
               currencyVerifiedAt: new Date("2026-08-28T00:00:00.000Z"),
               installationGeneration: "sgen_pool_bound",
+              storeAccessState: "active",
             },
           ];
         }
@@ -1881,6 +1882,7 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
             shopCurrency: "USD",
             currencyVerifiedAt: new Date("2026-08-28T00:00:00.000Z"),
             installationGeneration: "sgen_pool_bound",
+            storeAccessState: "active",
           };
         },
       );
@@ -3265,104 +3267,155 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
       );
     });
 
-    it("deactivates and compensates instead of adopting when the program is disabled during recovery", async () => {
-      const storeId = "store_disabled_recovery";
-      const redemption = {
-        id: "wredemp_disabled_recovery",
-        storeId,
-        accountId: "acc_disabled_recovery",
-        rewardDefinitionId: "reward_disabled_recovery",
-        pointsSpent: BigInt(200),
-        shopifyDiscountCode: "WL-DISABLED-RECOVERY",
-        shopifyDiscountId: null,
-        status: WeleticRedemptionStatus.provisioning,
-        expiresAt: null,
-        metadata: {},
-      } as any;
-      vi.mocked(prisma.weleticRewardRedemption.findUnique).mockResolvedValue(
-        redemption,
-      );
-      queryRawMock.mockResolvedValue([
-        {
-          id: "program_disabled_recovery",
+    it.each(["disabled", "pending_approval", "suspended", "active"])(
+      "honors program and store eligibility during %s recovery",
+      async (accessState) => {
+        const storeId = "store_disabled_recovery";
+        const redemption = {
+          id: "wredemp_disabled_recovery",
           storeId,
-          status: "disabled",
-          killSwitchActive: true,
-        },
-      ] as never);
-      const customFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          data: {
-            discountCodeDeactivate: {
-              codeDiscountNode: {
-                id: "gid://shopify/DiscountCodeNode/disabled-recovery",
-                codeDiscount: { status: "INACTIVE" },
+          accountId: "acc_disabled_recovery",
+          rewardDefinitionId: "reward_disabled_recovery",
+          pointsSpent: BigInt(200),
+          shopifyDiscountCode: "WL-DISABLED-RECOVERY",
+          shopifyDiscountId: null,
+          status: WeleticRedemptionStatus.provisioning,
+          expiresAt: null,
+          metadata: {
+            provisioningSnapshot: createLoyaltyRedemptionProvisioningSnapshot({
+              reward: {
+                id: "reward_disabled_recovery",
+                name: "Voucher",
+                rewardType: WeleticRewardType.amount_off,
+                discountValue: 500,
+                usageLimit: 1,
+                usageLimitPerCustomer: 1,
               },
-              userErrors: [],
-            },
+              pointsCost: BigInt(200),
+              discountValue: 500,
+              expiresInDays: null,
+              shopCurrency: "USD",
+              currencyVerifiedAt: new Date("2026-08-28T00:00:00.000Z"),
+              customerSelectionDigest: getShopifyCustomerSelectionDigest({
+                storeId,
+                shopifyCustomerId: "gid://shopify/Customer/123",
+              }),
+              startsAt: new Date("2026-08-29T00:00:00.000Z"),
+              expiresAt: null,
+            }),
           },
-        }),
-      });
-
-      await expect(
-        reconcileGenericProvisioningDiscount({
+        } as any;
+        vi.mocked(prisma.weleticRewardRedemption.findUnique).mockResolvedValue(
           redemption,
-          remoteDiscount: {
-            id: "gid://shopify/DiscountCodeNode/disabled-recovery",
-            code: redemption.shopifyDiscountCode,
-            title: "Disabled recovery",
-            status: "ACTIVE",
-          },
-          accountIsActive: true,
-          configurationMatches: true,
-          shopDomain: "store.myshopify.com",
-          accessToken: "shpat_test_token",
-          customFetch: customFetch as any,
-        }),
-      ).resolves.toBe("compensated");
+        );
+        queryRawMock.mockImplementation(async (statement: any) => {
+          if (statement.sql.includes("FROM WeleticShopifyStore")) {
+            return [
+              {
+                id: storeId,
+                storeAccessState:
+                  accessState === "disabled" ? "active" : accessState,
+              },
+            ];
+          }
+          return [
+            {
+              id: "program_disabled_recovery",
+              storeId,
+              status: accessState === "disabled" ? "disabled" : "active",
+              killSwitchActive: accessState === "disabled",
+            },
+          ];
+        });
+        const customFetch = vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            data: {
+              discountCodeDeactivate: {
+                codeDiscountNode: {
+                  id: "gid://shopify/DiscountCodeNode/disabled-recovery",
+                  codeDiscount: { status: "INACTIVE" },
+                },
+                userErrors: [],
+              },
+            },
+          }),
+        });
 
-      expect(customFetch).toHaveBeenCalledTimes(1);
-      expect(customFetch.mock.calls[0][1].body).toContain(
-        "DiscountCodeDeactivate",
-      );
-      expect(
-        vi
-          .mocked(prisma.weleticRewardRedemption.updateMany)
-          .mock.calls.some(
-            ([args]) =>
-              (args.data as any)?.status === WeleticRedemptionStatus.issued,
+        await expect(
+          reconcileGenericProvisioningDiscount({
+            redemption,
+            remoteDiscount: {
+              id: "gid://shopify/DiscountCodeNode/disabled-recovery",
+              code: redemption.shopifyDiscountCode,
+              title: "Disabled recovery",
+              status: "ACTIVE",
+            },
+            accountIsActive: true,
+            configurationMatches: true,
+            expectedCurrencyVerifiedAt: "2026-08-28T00:00:00.000Z",
+            shopDomain: "store.myshopify.com",
+            accessToken: "shpat_test_token",
+            customFetch: customFetch as any,
+          }),
+        ).resolves.toBe(accessState === "active" ? "healed" : "compensated");
+
+        if (accessState === "active") {
+          expect(customFetch).not.toHaveBeenCalled();
+          expect(
+            prisma.weleticRewardRedemption.updateMany,
+          ).toHaveBeenCalledWith(
+            expect.objectContaining({
+              data: expect.objectContaining({
+                status: WeleticRedemptionStatus.issued,
+              }),
+            }),
+          );
+          return;
+        }
+
+        expect(customFetch).toHaveBeenCalledTimes(1);
+        expect(customFetch.mock.calls[0][1].body).toContain(
+          "DiscountCodeDeactivate",
+        );
+        expect(
+          vi
+            .mocked(prisma.weleticRewardRedemption.updateMany)
+            .mock.calls.some(
+              ([args]) =>
+                (args.data as any)?.status === WeleticRedemptionStatus.issued,
+            ),
+        ).toBe(false);
+        expect(prisma.weleticRewardRedemption.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              id: redemption.id,
+              storeId,
+              accountId: redemption.accountId,
+              status: WeleticRedemptionStatus.provisioning,
+            }),
+            data: {
+              shopifyDiscountId:
+                "gid://shopify/DiscountCodeNode/disabled-recovery",
+            },
+          }),
+        );
+        expect(prisma.weleticRewardRedemption.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ id: redemption.id }),
+            data: expect.objectContaining({
+              status: WeleticRedemptionStatus.failed,
+            }),
+          }),
+        );
+        const [programLockStatement] = queryRawMock.mock.calls[0];
+        expect(
+          (programLockStatement as { strings: readonly string[] }).strings.join(
+            " ",
           ),
-      ).toBe(false);
-      expect(prisma.weleticRewardRedemption.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            id: redemption.id,
-            storeId,
-            accountId: redemption.accountId,
-            status: WeleticRedemptionStatus.provisioning,
-          }),
-          data: {
-            shopifyDiscountId:
-              "gid://shopify/DiscountCodeNode/disabled-recovery",
-          },
-        }),
-      );
-      expect(prisma.weleticRewardRedemption.updateMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({ id: redemption.id }),
-          data: expect.objectContaining({
-            status: WeleticRedemptionStatus.failed,
-          }),
-        }),
-      );
-      const [programLockStatement] = queryRawMock.mock.calls[0];
-      expect(
-        (programLockStatement as { strings: readonly string[] }).strings.join(
-          " ",
-        ),
-      ).toContain("FOR UPDATE");
-    });
+        ).toContain("FOR UPDATE");
+      },
+    );
 
     it("converges an owned inactive generic discount without another Shopify mutation", async () => {
       const storeId = "store_inactive_recovery";

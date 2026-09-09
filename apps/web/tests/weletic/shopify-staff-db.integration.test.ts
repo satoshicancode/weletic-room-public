@@ -137,6 +137,7 @@ describe("Shopify staff authorization with actual MySQL transactions", () => {
     const projectId = `staff_project_${suffix}`;
     await database.weleticShopifyStore.create({
       data: {
+        storeAccessState: "active",
         id: fixture.id,
         projectId,
         programId: `staff_program_${suffix}`,

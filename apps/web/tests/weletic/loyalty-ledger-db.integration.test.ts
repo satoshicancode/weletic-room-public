@@ -93,6 +93,7 @@ describe("loyalty ledger real database concurrency", () => {
     });
     await prisma.weleticShopifyStore.create({
       data: {
+        storeAccessState: "active",
         id: storeId,
         projectId: workspaceId,
         programId: affiliateProgramId,

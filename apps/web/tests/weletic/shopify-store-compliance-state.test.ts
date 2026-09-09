@@ -48,6 +48,7 @@ describe("Shopify store compliance-state operational guard", () => {
         shopCurrency: true,
         currencyVerifiedAt: true,
         installationGeneration: true,
+        storeAccessState: true,
       },
     });
   });
