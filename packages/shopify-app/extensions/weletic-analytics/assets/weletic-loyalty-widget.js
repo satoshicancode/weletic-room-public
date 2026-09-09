@@ -10,6 +10,175 @@
   var CONTROLLER_KEY = "__weleticLoyaltyWidgetController";
   var ROOT_SELECTOR = "[data-weletic-loyalty-root], #weletic-loyalty-root";
 
+  // Only interface copy is translated here. Merchant-authored names and branding
+  // remain unchanged; no customer data or executable templates enter this map.
+  var CORE_COPY = {
+    "Your balance may be out of date. Refresh it before retrying a redemption.":
+      [
+        "残高が最新でない可能性があります。交換を再試行する前に残高を更新してください。",
+        "Số dư có thể chưa được cập nhật. Hãy làm mới trước khi thử đổi thưởng lại.",
+      ],
+    Rewards: ["特典", "Phần thưởng"],
+    "Rewards Club": ["会員特典", "Chương trình phần thưởng"],
+    "Earn points, level up, and unlock rewards.": [
+      "ポイントを貯めて、ランクアップと特典を楽しみましょう。",
+      "Tích điểm, nâng hạng và nhận phần thưởng.",
+    ],
+    Close: ["閉じる", "Đóng"],
+    Home: ["ホーム", "Trang chủ"],
+    Earn: ["貯める", "Tích điểm"],
+    Redeem: ["交換する", "Đổi thưởng"],
+    Refer: ["紹介する", "Giới thiệu"],
+    "Available Points": ["利用可能ポイント", "Điểm khả dụng"],
+    " (+{points} pending)": ["（保留中：{points}）", " (+{points} đang chờ)"],
+    "Loading your rewards...": ["特典を読み込み中…", "Đang tải phần thưởng…"],
+    "Rewards are temporarily unavailable.": [
+      "特典は一時的にご利用いただけません。",
+      "Phần thưởng tạm thời không khả dụng.",
+    ],
+    "Try again": ["再試行", "Thử lại"],
+    "Refresh balance": ["残高を更新", "Làm mới số dư"],
+    "Confirm redemption": ["交換を確定", "Xác nhận đổi thưởng"],
+    "{points} points will be spent.": [
+      "{points}ポイントを使用します。",
+      "Bạn sẽ sử dụng {points} điểm.",
+    ],
+    Cancel: ["キャンセル", "Hủy"],
+    "Your session expired. Sign in again to view your balance and rewards.": [
+      "セッションの有効期限が切れました。残高と特典を確認するには再度ログインしてください。",
+      "Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại để xem số dư và phần thưởng.",
+    ],
+    "Your reward was issued, but the balance could not refresh. Refresh your balance before redeeming again.":
+      [
+        "特典は発行済みですが、残高を更新できませんでした。次の交換前に残高を更新してください。",
+        "Phần thưởng đã được phát hành nhưng chưa thể cập nhật số dư. Hãy làm mới số dư trước khi đổi tiếp.",
+      ],
+    "We could not confirm this redemption. Check your wallet before retrying. Retrying the same reward and points uses the same request.":
+      [
+        "交換結果を確認できませんでした。再試行前に特典一覧をご確認ください。同じ特典とポイント数での再試行は同じリクエストを使用します。",
+        "Chưa thể xác nhận kết quả đổi thưởng. Hãy kiểm tra ví trước khi thử lại. Thử lại cùng phần thưởng và số điểm sẽ dùng lại yêu cầu cũ.",
+      ],
+    "Your member balance is temporarily unavailable. Public program details remain available.":
+      [
+        "会員残高を一時的に取得できません。公開中のプログラム情報は引き続きご覧いただけます。",
+        "Số dư thành viên tạm thời không khả dụng. Bạn vẫn có thể xem thông tin chương trình công khai.",
+      ],
+    "Your member balance is temporarily unavailable.": [
+      "会員残高を一時的に取得できません。",
+      "Số dư thành viên tạm thời không khả dụng.",
+    ],
+    "Program details are temporarily unavailable. Member rewards already issued to your account remain visible.":
+      [
+        "プログラム情報を一時的に取得できません。発行済みの会員特典は引き続き確認できます。",
+        "Thông tin chương trình tạm thời không khả dụng. Bạn vẫn có thể xem phần thưởng đã được phát hành.",
+      ],
+    "We could not load your rewards. Please try again.": [
+      "特典を読み込めませんでした。再試行してください。",
+      "Không thể tải phần thưởng. Vui lòng thử lại.",
+    ],
+    "Rewards could not start. Please refresh this page.": [
+      "特典を表示できません。このページを再読み込みしてください。",
+      "Không thể khởi động phần thưởng. Vui lòng tải lại trang.",
+    ],
+    "Your loyalty account is currently unavailable for earning, redemption, and referrals. Existing wallet rewards and history remain visible.":
+      [
+        "現在、ポイント獲得・交換・紹介はご利用いただけません。発行済み特典と履歴は確認できます。",
+        "Tài khoản hiện không thể tích điểm, đổi thưởng hoặc giới thiệu. Phần thưởng và lịch sử hiện có vẫn được hiển thị.",
+      ],
+    "This rewards program is currently unavailable.": [
+      "この特典プログラムは現在ご利用いただけません。",
+      "Chương trình phần thưởng hiện không khả dụng.",
+    ],
+    "Join the Rewards Club": [
+      "特典プログラムに参加",
+      "Tham gia chương trình phần thưởng",
+    ],
+    "Become a VIP Member": ["会員になる", "Trở thành thành viên VIP"],
+    "Your signed-in account is not enrolled in rewards yet. Join the program before earning or redeeming points.":
+      [
+        "このアカウントは特典プログラムに未参加です。ポイントの獲得・交換には参加が必要です。",
+        "Tài khoản của bạn chưa tham gia chương trình. Hãy tham gia trước khi tích điểm hoặc đổi thưởng.",
+      ],
+    "Join our rewards program to earn points on every purchase and unlock exclusive vouchers.":
+      [
+        "特典プログラムに参加して、お買い物でポイントを貯め、限定特典を獲得しましょう。",
+        "Tham gia chương trình để tích điểm khi mua hàng và nhận ưu đãi dành riêng cho thành viên.",
+      ],
+    "Create Account & Earn Points": [
+      "アカウントを作成",
+      "Tạo tài khoản và tích điểm",
+    ],
+    "Sign In": ["ログイン", "Đăng nhập"],
+    "Reward Redeemed!": ["特典を交換しました！", "Đổi thưởng thành công!"],
+    "Store credit was added to your Shopify customer balance.": [
+      "ストアクレジットをShopifyアカウントの残高に追加しました。",
+      "Tín dụng cửa hàng đã được cộng vào số dư tài khoản Shopify của bạn.",
+    ],
+    "Use this gift card at checkout": [
+      "お支払い時にこのギフトカードをご利用ください",
+      "Sử dụng thẻ quà tặng này khi thanh toán",
+    ],
+    "Use this discount code at checkout": [
+      "お支払い時にこの割引コードをご利用ください",
+      "Sử dụng mã giảm giá này khi thanh toán",
+    ],
+    "Your Rewards": ["保有特典", "Phần thưởng của bạn"],
+    "You have no available coupons.": [
+      "利用可能なクーポンはありません。",
+      "Bạn chưa có mã ưu đãi khả dụng.",
+    ],
+    Available: ["利用可能", "Khả dụng"],
+    Used: ["使用済み", "Đã sử dụng"],
+    Expired: ["期限切れ", "Đã hết hạn"],
+    Cancelled: ["キャンセル済み", "Đã hủy"],
+    "Gift card code": ["ギフトカードコード", "Mã thẻ quà tặng"],
+    "Shopify store credit": [
+      "Shopifyストアクレジット",
+      "Tín dụng cửa hàng Shopify",
+    ],
+    "Discount code": ["割引コード", "Mã giảm giá"],
+    "Added to your customer balance": [
+      "アカウント残高に追加済み",
+      "Đã cộng vào số dư tài khoản",
+    ],
+    "Available in your account": [
+      "アカウントで確認できます",
+      "Có trong tài khoản của bạn",
+    ],
+    "{points} points": ["{points}ポイント", "{points} điểm"],
+    " · Expires {date}": ["・有効期限：{date}", " · Hết hạn {date}"],
+    "Copy code": ["コードをコピー", "Sao chép mã"],
+    "Copied!": ["コピーしました", "Đã sao chép!"],
+    "Copy unavailable — select manually": [
+      "コピーできません。手動で選択してください",
+      "Không thể sao chép — hãy chọn thủ công",
+    ],
+    "Use reward": ["特典を使う", "Sử dụng phần thưởng"],
+    "Reward History": ["特典履歴", "Lịch sử phần thưởng"],
+    " · Order {order}": ["・注文：{order}", " · Đơn hàng {order}"],
+    "Quick Rewards": ["おすすめの特典", "Đổi thưởng nhanh"],
+    "From ": ["必要ポイント：", "Từ "],
+    "Points to redeem": ["交換するポイント数", "Số điểm muốn đổi"],
+    "Redeeming…": ["交換中…", "Đang đổi thưởng…"],
+    "Account unavailable": ["アカウント利用不可", "Tài khoản không khả dụng"],
+    "Balance unavailable": ["残高取得不可", "Số dư không khả dụng"],
+    "Members only": ["会員限定", "Chỉ dành cho thành viên"],
+    "Need more pts": ["ポイント不足", "Chưa đủ điểm"],
+    "Need pts": ["ポイント不足", "Chưa đủ điểm"],
+    "Redeem Points for Rewards": [
+      "ポイントを特典に交換",
+      "Đổi điểm lấy phần thưởng",
+    ],
+    "Ways to Earn Points": ["ポイントの貯め方", "Cách tích điểm"],
+    "VIP Tier Benefits": ["VIPランク特典", "Quyền lợi hạng VIP"],
+    "Amount off": ["金額割引", "Giảm tiền"],
+    "{amount} off": ["{amount}割引", "Giảm {amount}"],
+    "Choose a valid points amount within the reward limits.": [
+      "特典の範囲内で有効なポイント数を選択してください。",
+      "Chọn số điểm hợp lệ trong giới hạn của phần thưởng.",
+    ],
+  };
+
   if (window[RUNTIME_KEY]) {
     window[RUNTIME_KEY].mountAll(document);
     return;
@@ -18,6 +187,27 @@
   function initLoyaltyWidget(root) {
     if (!root) return null;
     var shared = window.WeleticLoyaltyShared;
+    var requestedLocale = String(
+      root.getAttribute("data-locale") || document.documentElement.lang || "en",
+    )
+      .toLowerCase()
+      .split(/[-_]/)[0];
+    var locale =
+      requestedLocale === "ja" || requestedLocale === "vi"
+        ? requestedLocale
+        : "en";
+    function translate(message, values) {
+      var variants = CORE_COPY[message];
+      var result =
+        variants && locale !== "en"
+          ? variants[locale === "ja" ? 0 : 1]
+          : message;
+      return result.replace(/\{(\w+)\}/g, function (match, key) {
+        return values && Object.prototype.hasOwnProperty.call(values, key)
+          ? String(values[key])
+          : match;
+      });
+    }
     var destroyed = false;
     var abortController =
       typeof window.AbortController === "function"
@@ -50,7 +240,8 @@
     var position = root.getAttribute("data-position") || "bottom_right";
     var primaryColor = root.getAttribute("data-primary-color") || "#6366f1";
     var headerTextColor = "#ffffff";
-    var launcherText = root.getAttribute("data-launcher-text") || "Rewards";
+    var launcherText =
+      root.getAttribute("data-launcher-text") || translate("Rewards");
     var launcherIcon = "sparkles";
     var proxyPrefix = root.getAttribute("data-proxy-prefix") || "/apps/weletic";
     var referralStorageKey = "weletic_referral_code";
@@ -92,7 +283,7 @@
 
     function formatMinorMoney(amount, currencyCode) {
       return shared
-        ? shared.formatMinorMoney(amount, currencyCode || currency)
+        ? shared.formatMinorMoney(amount, currencyCode || currency, locale)
         : (currencyCode || currency) + " " + formatNumber(amount);
     }
 
@@ -119,7 +310,7 @@
       if (!value) return "";
       var date = new Date(value);
       if (Number.isNaN(date.getTime())) return "";
-      return new Intl.DateTimeFormat(undefined, {
+      return new Intl.DateTimeFormat(locale, {
         year: "numeric",
         month: "short",
         day: "numeric",
@@ -127,10 +318,10 @@
     }
 
     function rewardStatusLabel(status) {
-      if (status === "available") return "Available";
-      if (status === "used") return "Used";
-      if (status === "expired") return "Expired";
-      return "Cancelled";
+      if (status === "available") return translate("Available");
+      if (status === "used") return translate("Used");
+      if (status === "expired") return translate("Expired");
+      return translate("Cancelled");
     }
 
     function rewardArtifactKind(reward) {
@@ -151,9 +342,27 @@
 
     function rewardArtifactLabel(reward) {
       var kind = rewardArtifactKind(reward);
-      if (kind === "gift_card") return "Gift card code";
-      if (kind === "store_credit") return "Shopify store credit";
-      return "Discount code";
+      if (kind === "gift_card") return translate("Gift card code");
+      if (kind === "store_credit") return translate("Shopify store credit");
+      return translate("Discount code");
+    }
+
+    function formatShopperRewardValue(reward) {
+      if (
+        reward.rewardType === "amount_off" &&
+        reward.exchangeType !== "incremental"
+      ) {
+        return translate("{amount} off", {
+          amount: formatMinorMoney(
+            reward.discountValue,
+            state.program?.currency || currency,
+          ),
+        });
+      }
+      return shared.formatRewardValue(
+        reward,
+        state.program?.currency || currency,
+      );
     }
 
     function isOnlineStoreReward(reward) {
@@ -323,7 +532,7 @@
           if (destroyed) return;
           button.textContent = copied
             ? successLabel
-            : "Copy unavailable — select manually";
+            : translate("Copy unavailable — select manually");
           if (copied) {
             scheduleTimeout(function () {
               button.textContent = idleLabel;
@@ -353,9 +562,15 @@
       lastRedeemedArtifact: null,
       friendClaim: null,
       activityMessage: null,
+      confirmation: null,
+      redemptionMessage: null,
+      authenticationExpired: false,
     };
     var programRequest = null;
     var customerRequest = null;
+    // A response started before a newer read or redemption cannot restore a
+    // stale spendable balance. This is UI ordering, not a backend ledger fence.
+    var customerSummaryEpoch = 0;
     var redemptionIntentKeys = {};
     var activityIntentKeys = {};
     var referralBindCodeInFlight = null;
@@ -384,6 +599,8 @@
       (position === "bottom_left" ? "weletic-pos-left" : "weletic-pos-right");
     drawer.setAttribute("role", "dialog");
     drawer.setAttribute("aria-modal", "true");
+    drawer.setAttribute("tabindex", "-1");
+    drawer.hidden = true;
 
     document.body.appendChild(launcherBtn);
     document.body.appendChild(overlay);
@@ -427,7 +644,10 @@
         (position === "bottom_left" ? "weletic-pos-left" : "weletic-pos-right");
       drawer.className =
         "weletic-drawer " +
-        (position === "bottom_left" ? "weletic-pos-left" : "weletic-pos-right");
+        (position === "bottom_left"
+          ? "weletic-pos-left"
+          : "weletic-pos-right") +
+        (state.isOpen ? " weletic-open" : "");
       launcherBtn.setAttribute("aria-label", launcherText);
       launcherBtn.innerHTML =
         '<span class="weletic-launcher-icon">' +
@@ -447,7 +667,9 @@
     function loadProgramMetadata() {
       if (!shared) {
         return Promise.reject(
-          new Error("Rewards could not start. Please refresh this page."),
+          new Error(
+            translate("Rewards could not start. Please refresh this page."),
+          ),
         );
       }
       if (state.program) return Promise.resolve(state.program);
@@ -474,12 +696,20 @@
 
     function loadCustomerSummary() {
       if (!isLoggedIn) return Promise.resolve(null);
-      if (!shared) {
+      if (state.authenticationExpired) {
         return Promise.reject(
-          new Error("Rewards could not start. Please refresh this page."),
+          new Error("Please sign in again to view rewards."),
         );
       }
-      if (state.customer) return Promise.resolve(state.customer);
+      if (!shared) {
+        return Promise.reject(
+          new Error(
+            translate("Rewards could not start. Please refresh this page."),
+          ),
+        );
+      }
+      if (state.customer && !state.customerError)
+        return Promise.resolve(state.customer);
       if (!customerRequest) {
         customerRequest = shared
           .fetchJson(
@@ -489,6 +719,8 @@
           .then(shared.normalizeCustomer)
           .catch(function (error) {
             customerRequest = null;
+            if (error?.status === 401 || error?.status === 403)
+              expireAuthentication();
             throw error;
           });
       }
@@ -506,10 +738,47 @@
 
     launcherBtn.addEventListener("click", handleLauncherClick);
     overlay.addEventListener("click", handleOverlayClick);
+    document.addEventListener("keydown", handleDrawerKeydown);
+
+    function drawerFocusables() {
+      return Array.from(
+        drawer.querySelectorAll(
+          'button:not([disabled]), a[href], input:not([disabled]), [tabindex="0"]',
+        ),
+      ).filter(function (element) {
+        return !element.hidden;
+      });
+    }
+
+    function handleDrawerKeydown(event) {
+      if (!state.isOpen || destroyed) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (state.confirmation) {
+          cancelRedemption();
+        } else {
+          toggleDrawer(false);
+        }
+      } else if (event.key === "Tab") {
+        var elements = drawerFocusables();
+        var first = elements[0] || drawer;
+        var last = elements[elements.length - 1] || drawer;
+        if (
+          !drawer.contains(document.activeElement) ||
+          (event.shiftKey && document.activeElement === first) ||
+          (!event.shiftKey && document.activeElement === last)
+        ) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
+      }
+    }
 
     function toggleDrawer(open) {
       if (destroyed) return;
       state.isOpen = open;
+      drawer.hidden = !open;
+      launcherBtn.setAttribute("aria-expanded", String(open));
       if (open) {
         overlay.classList.add("weletic-open");
         drawer.classList.add("weletic-open");
@@ -520,9 +789,26 @@
           bindCapturedReferral();
         }
       } else {
+        state.confirmation = null;
         overlay.classList.remove("weletic-open");
         drawer.classList.remove("weletic-open");
+        if (!launcherBtn.hidden) launcherBtn.focus();
       }
+    }
+
+    function cancelRedemption() {
+      var rewardId = state.confirmation?.rewardId;
+      state.confirmation = null;
+      render();
+      var origin = Array.from(drawer.querySelectorAll("[data-redeem-id]")).find(
+        function (button) {
+          return (
+            button.getAttribute("data-redeem-id") === rewardId &&
+            !button.disabled
+          );
+        },
+      );
+      if (origin) origin.focus();
     }
 
     function fetchProgramData() {
@@ -533,12 +819,15 @@
 
       if (!shared) {
         state.loading = false;
-        state.error = "Rewards could not start. Please refresh this page.";
+        state.error = translate(
+          "Rewards could not start. Please refresh this page.",
+        );
         render();
         return;
       }
 
       var programPromise = loadProgramMetadata();
+      var summaryEpoch = ++customerSummaryEpoch;
 
       // Customer loyalty summary endpoint: /api/shopify/loyalty/customer (accessed via App Proxy /customer)
       var customerPromise = loadCustomerSummary();
@@ -548,15 +837,22 @@
           if (destroyed) return;
           var programResult = results[0];
           var customerResult = results[1];
-          if (customerResult.status === "fulfilled") {
+          if (state.authenticationExpired) {
+            expireAuthentication();
+          } else if (
+            summaryEpoch === customerSummaryEpoch &&
+            customerResult.status === "fulfilled"
+          ) {
             state.customer = customerResult.value;
             state.customerError = null;
-          } else {
+          } else if (summaryEpoch === customerSummaryEpoch) {
             state.customer = null;
             state.customerError =
               programResult.status === "fulfilled"
-                ? "Your member balance is temporarily unavailable. Public program details remain available."
-                : "Your member balance is temporarily unavailable.";
+                ? translate(
+                    "Your member balance is temporarily unavailable. Public program details remain available.",
+                  )
+                : translate("Your member balance is temporarily unavailable.");
           }
           if (programResult.status === "fulfilled") {
             state.program = programResult.value;
@@ -568,8 +864,9 @@
               programResult.reason,
             );
             state.program = null;
-            state.programError =
-              "Program details are temporarily unavailable. Member rewards already issued to your account remain visible.";
+            state.programError = translate(
+              "Program details are temporarily unavailable. Member rewards already issued to your account remain visible.",
+            );
             launcherBtn.hidden = !isLoggedIn;
           }
           state.loading = false;
@@ -581,7 +878,9 @@
           if (destroyed) return;
           console.warn("[Weletic Loyalty Widget] Fetch error:", err);
           state.loading = false;
-          state.error = "We could not load your rewards. Please try again.";
+          state.error = translate(
+            "We could not load your rewards. Please try again.",
+          );
           render();
         });
     }
@@ -590,15 +889,22 @@
     programPreload.catch(function (error) {
       if (destroyed) return;
       console.warn("[Weletic Loyalty Widget] Program preload failed:", error);
-      state.programError =
-        "Program details are temporarily unavailable. Member rewards already issued to your account remain visible.";
+      state.programError = translate(
+        "Program details are temporarily unavailable. Member rewards already issued to your account remain visible.",
+      );
       launcherBtn.hidden = !isLoggedIn;
     });
 
     if (isLoggedIn && capturedReferralCode) {
+      var preloadSummaryEpoch = ++customerSummaryEpoch;
       Promise.all([programPreload, loadCustomerSummary()])
         .then(function (results) {
-          if (destroyed) return;
+          if (
+            destroyed ||
+            state.authenticationExpired ||
+            preloadSummaryEpoch !== customerSummaryEpoch
+          )
+            return;
           state.program = results[0];
           state.customer = results[1];
           state.customerError = null;
@@ -690,9 +996,17 @@
         return;
       }
       if (!customerCanParticipate(state.customer, true)) return;
-      if (state.mutationPending) return;
+      if (
+        state.mutationPending ||
+        state.customerError ||
+        state.authenticationExpired
+      )
+        return;
 
       state.mutationPending = true;
+      customerSummaryEpoch++;
+      customerRequest = null;
+      state.redemptionMessage = null;
       render();
 
       var intentId =
@@ -723,14 +1037,16 @@
           }),
         )
         .then(function (data) {
-          if (destroyed) return;
+          if (destroyed || state.authenticationExpired) return;
           if (data && data.success) {
             delete redemptionIntentKeys[intentId];
             state.lastRedeemedArtifact = {
               artifactKind: rewardArtifactKind(data),
               artifactCode: rewardArtifactCode(data),
             };
+            state.activeTab = "home";
             // Refetch customer balance
+            var refreshEpoch = ++customerSummaryEpoch;
             return shared
               .fetchJson(
                 proxyPrefix + "/customer?shop=" + encodeURIComponent(shop),
@@ -738,14 +1054,30 @@
               )
               .then(shared.normalizeCustomer)
               .then(function (customer) {
-                if (destroyed) return;
+                if (
+                  destroyed ||
+                  state.authenticationExpired ||
+                  refreshEpoch !== customerSummaryEpoch
+                )
+                  return;
                 if (!customer) {
                   throw new Error("Unable to refresh rewards summary");
                 }
                 state.customer = customer;
+                state.customerError = null;
+                customerRequest = null;
               })
               .catch(function (err) {
-                if (destroyed) return;
+                if (destroyed || state.authenticationExpired) return;
+                if (err?.status === 401 || err?.status === 403) {
+                  expireAuthentication();
+                  return;
+                }
+                if (refreshEpoch !== customerSummaryEpoch) return;
+                customerRequest = null;
+                state.customerError = translate(
+                  "Your reward was issued, but the balance could not refresh. Refresh your balance before redeeming again.",
+                );
                 // Redemption already succeeded. Keep the issued code visible
                 // even if refreshing the balance temporarily fails.
                 console.warn(
@@ -760,14 +1092,42 @@
           }
         })
         .catch(function (error) {
-          if (destroyed) return;
-          alert(error?.message || "Network error redeeming reward.");
+          if (destroyed || state.authenticationExpired) return;
+          if (error?.status === 401 || error?.status === 403) {
+            expireAuthentication();
+          } else {
+            // Keep this intent's key after an unknown outcome. Never auto-resend
+            // or substitute a fresh key for a manual retry of the same selection.
+            state.redemptionMessage = translate(
+              "We could not confirm this redemption. Check your wallet before retrying. Retrying the same reward and points uses the same request.",
+            );
+            customerRequest = null;
+            customerSummaryEpoch++;
+            state.customerError = translate(
+              "Your balance may be out of date. Refresh it before retrying a redemption.",
+            );
+          }
         })
         .finally(function () {
           if (destroyed) return;
           state.mutationPending = false;
           render();
         });
+    }
+
+    function expireAuthentication() {
+      customerSummaryEpoch++;
+      state.authenticationExpired = true;
+      state.customer = null;
+      customerRequest = null;
+      state.lastRedeemedArtifact = null;
+      state.friendClaim = null;
+      state.confirmation = null;
+      state.redemptionMessage = null;
+      state.activityMessage = null;
+      state.customerError = translate(
+        "Your session expired. Sign in again to view your balance and rewards.",
+      );
     }
 
     function claimFriendReward(email) {
@@ -822,6 +1182,7 @@
     }
 
     function claimCustomerActivity(rule) {
+      if (state.authenticationExpired || state.customerError) return;
       if (!isProgramActive(state.program)) return;
       if (!isLoggedIn) {
         window.location.href = loginUrl;
@@ -848,20 +1209,30 @@
         .then(function (response) {
           return response.json().then(function (payload) {
             if (!response.ok) {
-              throw new Error(
+              var error = new Error(
                 payload?.error?.message ||
                   "Unable to complete this earning action.",
               );
+              error.status = response.status;
+              throw error;
             }
             return payload?.data || payload;
           });
         })
         .then(function (result) {
-          if (destroyed) return;
+          if (destroyed || state.authenticationExpired) return;
           delete activityIntentKeys[rule.id];
           state.activityMessage = result.alreadyCompleted
             ? rule.name + " was already completed for this earning period."
             : "+" + result.pointsAwarded + " points added.";
+          var activitySummaryEpoch = ++customerSummaryEpoch;
+          customerRequest = null;
+          // This read may supersede a post-redemption read. Until the newest
+          // authoritative summary succeeds, no cached balance is spendable.
+          state.customerError = translate(
+            "Your member balance is temporarily unavailable.",
+          );
+          render();
           return shared
             .fetchJson(
               proxyPrefix + "/customer?shop=" + encodeURIComponent(shop),
@@ -869,12 +1240,22 @@
             )
             .then(shared.normalizeCustomer)
             .then(function (customer) {
-              if (destroyed) return;
+              if (
+                destroyed ||
+                state.authenticationExpired ||
+                activitySummaryEpoch !== customerSummaryEpoch
+              )
+                return;
               state.customer = customer;
+              state.customerError = null;
             });
         })
         .catch(function (error) {
-          if (destroyed) return;
+          if (destroyed || state.authenticationExpired) return;
+          if (error?.status === 401 || error?.status === 403) {
+            expireAuthentication();
+            return;
+          }
           state.activityMessage =
             error.message || "Unable to complete this earning action.";
         })
@@ -927,7 +1308,7 @@
           '<div class="weletic-wallet-actions">' +
           '<button type="button" class="weletic-btn-redeem" data-copy-code="' +
           escapeHtml(state.friendClaim.discountCode) +
-          '">Copy code</button>' +
+          ('">' + translate("Copy code") + "</button>") +
           '<a class="weletic-wallet-apply" href="' +
           escapeHtml(state.friendClaim.applyUrl) +
           '">Apply reward</a>' +
@@ -977,6 +1358,12 @@
 
     function render() {
       if (destroyed) return;
+      var focused = drawer.contains(document.activeElement)
+        ? document.activeElement
+        : null;
+      var focusedId = focused?.id;
+      var focusedTab = focused?.getAttribute("data-tab");
+      var focusedReward = focused?.getAttribute("data-redeem-id");
       var loyaltyData = state.customer;
       var customerSummary = shared?.customerView(loyaltyData) || null;
       var isMember = isLoggedIn && Boolean(customerSummary);
@@ -991,16 +1378,13 @@
         customerSummary?.pointNamePlural ||
         state.program?.program?.pointNamePlural ||
         "Points";
-      var shopperFirstName =
-        loyaltyData && loyaltyData.shopper && loyaltyData.shopper.firstName
-          ? loyaltyData.shopper.firstName
-          : "";
-      var panelTitle = state.program?.branding?.panelTitle || "Rewards Club";
+      var panelTitle =
+        state.program?.branding?.panelTitle || translate("Rewards Club");
       var configuredSubtitle = state.program?.branding?.panelWelcomeSubtitle;
       var subtitle =
         typeof configuredSubtitle === "string"
           ? configuredSubtitle
-          : "Earn points, level up, and unlock rewards.";
+          : translate("Earn points, level up, and unlock rewards.");
       var programActive = isProgramActive(state.program);
       var canParticipate = customerCanParticipate(loyaltyData, programActive);
       var referralOffer = activeReferralOffer(state.program);
@@ -1033,16 +1417,16 @@
       // Header
       html += '<div class="weletic-drawer-header">';
       html +=
-        '<button type="button" class="weletic-close-btn" aria-label="Close">&times;</button>';
-      var greetingHeader =
-        isLoggedIn && shopperFirstName
-          ? "Hi, " + escapeHtml(shopperFirstName) + "!"
-          : escapeHtml(panelTitle);
+        '<button type="button" class="weletic-close-btn" aria-label="' +
+        escapeHtml(translate("Close")) +
+        '">&times;</button>';
+      var greetingHeader = escapeHtml(panelTitle);
+      drawer.setAttribute("aria-label", panelTitle);
       html += '<h3 class="weletic-header-title">' + greetingHeader + "</h3>";
       html +=
         '<p class="weletic-header-subtitle">' + escapeHtml(subtitle) + "</p>";
 
-      if (isMember) {
+      if (isMember && !state.customerError) {
         html += '<div class="weletic-user-card">';
         html += "  <div>";
         html +=
@@ -1050,8 +1434,15 @@
           formatNumber(points) +
           "</div>";
         html +=
-          '    <div class="weletic-points-lbl">Available Points' +
-          (pending > 0 ? " (+" + formatNumber(pending) + " pending)" : "") +
+          '    <div class="weletic-points-lbl">' +
+          translate("Available Points") +
+          (pending > 0
+            ? escapeHtml(
+                translate(" (+{points} pending)", {
+                  points: formatNumber(pending),
+                }),
+              )
+            : "") +
           "</div>";
         html += "  </div>";
         html +=
@@ -1066,12 +1457,18 @@
         state.loading && (!state.program || (isLoggedIn && !customerSummary));
       if (isInitialLoading) {
         html +=
-          '<div class="weletic-drawer-body"><div class="weletic-load-state" role="status"><div class="weletic-spinner"></div><span>Loading your rewards...</span></div></div>';
+          '<div class="weletic-drawer-body"><div class="weletic-load-state" role="status"><div class="weletic-spinner"></div><span>' +
+          translate("Loading your rewards...") +
+          "</span></div></div>";
       } else if (state.error) {
         html +=
-          '<div class="weletic-drawer-body"><div class="weletic-load-state weletic-load-error" role="alert"><strong>Rewards are temporarily unavailable.</strong><span>' +
+          '<div class="weletic-drawer-body"><div class="weletic-load-state weletic-load-error" role="alert"><strong>' +
+          translate("Rewards are temporarily unavailable.") +
+          "</strong><span>" +
           escapeHtml(state.error) +
-          '</span><button type="button" class="weletic-btn-load-retry" id="weletic-widget-retry">Try again</button></div></div>';
+          ('</span><button type="button" class="weletic-btn-load-retry" id="weletic-widget-retry">' +
+            translate("Try again") +
+            "</button></div></div>");
       } else {
         // Navigation tabs (if logged in or exploring)
         if (programActive) {
@@ -1079,15 +1476,15 @@
           html +=
             '<button type="button" class="weletic-tab-btn ' +
             (state.activeTab === "home" ? "weletic-active" : "") +
-            '" data-tab="home">Home</button>';
+            ('" data-tab="home">' + translate("Home") + "</button>");
           html +=
             '<button type="button" class="weletic-tab-btn ' +
             (state.activeTab === "earn" ? "weletic-active" : "") +
-            '" data-tab="earn">Earn</button>';
+            ('" data-tab="earn">' + translate("Earn") + "</button>");
           html +=
             '<button type="button" class="weletic-tab-btn ' +
             (state.activeTab === "redeem" ? "weletic-active" : "") +
-            '" data-tab="redeem">Redeem</button>';
+            ('" data-tab="redeem">' + translate("Redeem") + "</button>");
           html +=
             '<button type="button" class="weletic-tab-btn ' +
             (state.activeTab === "vip" ? "weletic-active" : "") +
@@ -1096,7 +1493,7 @@
             html +=
               '<button type="button" class="weletic-tab-btn ' +
               (state.activeTab === "refer" ? "weletic-active" : "") +
-              '" data-tab="refer">Refer</button>';
+              ('" data-tab="refer">' + translate("Refer") + "</button>");
           }
           html += "</div>";
         }
@@ -1109,24 +1506,73 @@
             '<div class="weletic-load-error weletic-member-load-error" role="alert">' +
             escapeHtml(state.customerError) +
             "</div>";
+          html += state.authenticationExpired
+            ? '<a class="weletic-btn-secondary" href="' +
+              escapeHtml(loginUrl) +
+              ('">' + translate("Sign In") + "</a>")
+            : '<button type="button" class="weletic-btn-load-retry" id="weletic-customer-retry">' +
+              translate("Refresh balance") +
+              "</button>";
+        }
+
+        if (state.redemptionMessage) {
+          html +=
+            '<div class="weletic-load-error" role="alert">' +
+            escapeHtml(state.redemptionMessage) +
+            "</div>";
+        }
+
+        if (state.confirmation) {
+          html +=
+            '<section class="weletic-redemption-confirmation" aria-label="' +
+            escapeHtml(translate("Confirm redemption")) +
+            '">' +
+            ("<h4>" + translate("Confirm redemption") + "</h4><p>") +
+            escapeHtml(state.confirmation.name) +
+            "</p><p>" +
+            escapeHtml(
+              translate("{points} points will be spent.", {
+                points: formatNumber(state.confirmation.pointsCost),
+              }),
+            ) +
+            "</p>" +
+            ('<button type="button" class="weletic-btn-primary" id="weletic-confirm-redemption">' +
+              translate("Confirm redemption") +
+              "</button>") +
+            ('<button type="button" class="weletic-btn-secondary" id="weletic-cancel-redemption">' +
+              translate("Cancel") +
+              "</button></section>");
         }
 
         if (isMember && !canParticipate) {
           html +=
-            '<div class="weletic-load-error weletic-account-restricted" role="status">Your loyalty account is currently unavailable for earning, redemption, and referrals. Existing wallet rewards and history remain visible.</div>';
+            '<div class="weletic-load-error weletic-account-restricted" role="status">' +
+            translate(
+              "Your loyalty account is currently unavailable for earning, redemption, and referrals. Existing wallet rewards and history remain visible.",
+            ) +
+            "</div>";
         }
 
         if (state.programError) {
           html +=
             '<div class="weletic-load-error weletic-program-load-error" role="alert">' +
             escapeHtml(state.programError) +
-            '<button type="button" class="weletic-btn-load-retry" id="weletic-widget-retry">Try again</button></div>';
+            ('<button type="button" class="weletic-btn-load-retry" id="weletic-widget-retry">' +
+              translate("Try again") +
+              "</button></div>");
         } else if (state.program && !programActive) {
           html +=
-            '<div class="weletic-load-error weletic-program-paused" role="status">This rewards program is currently unavailable.</div>';
+            '<div class="weletic-load-error weletic-program-paused" role="status">' +
+            translate("This rewards program is currently unavailable.") +
+            "</div>";
         }
 
-        if (!isMember && state.activeTab === "home") {
+        if (
+          !isMember &&
+          state.activeTab === "home" &&
+          !state.customerError &&
+          !state.authenticationExpired
+        ) {
           if (!isLoggedIn && programActive && capturedReferralCode) {
             html += renderFriendClaim();
           }
@@ -1134,37 +1580,56 @@
             html += '<div class="weletic-guest-box">';
             html +=
               '  <h4 class="weletic-guest-title">' +
-              (isLoggedIn ? "Join the Rewards Club" : "Become a VIP Member") +
+              (isLoggedIn
+                ? translate("Join the Rewards Club")
+                : translate("Become a VIP Member")) +
               "</h4>";
             html +=
               '  <p class="weletic-guest-desc">' +
               (isLoggedIn
-                ? "Your signed-in account is not enrolled in rewards yet. Join the program before earning or redeeming points."
-                : "Join our rewards program to earn points on every purchase and unlock exclusive vouchers.") +
+                ? translate(
+                    "Your signed-in account is not enrolled in rewards yet. Join the program before earning or redeeming points.",
+                  )
+                : translate(
+                    "Join our rewards program to earn points on every purchase and unlock exclusive vouchers.",
+                  )) +
               "</p>";
             if (!isLoggedIn) {
               html +=
                 '  <a href="' +
                 escapeHtml(registerUrl) +
-                '" class="weletic-btn-primary">Create Account & Earn Points</a>';
+                ('" class="weletic-btn-primary">' +
+                  translate("Create Account & Earn Points") +
+                  "</a>");
               html +=
                 '  <a href="' +
                 escapeHtml(loginUrl) +
-                '" class="weletic-btn-secondary">Sign In</a>';
+                ('" class="weletic-btn-secondary">' +
+                  translate("Sign In") +
+                  "</a>");
             }
             html += "</div>";
           }
-        } else if (state.activeTab === "home") {
+        } else if (
+          state.activeTab === "home" &&
+          (isMember || state.lastRedeemedArtifact)
+        ) {
           if (state.lastRedeemedArtifact) {
             var redeemedKind = state.lastRedeemedArtifact.artifactKind;
             var redeemedCode = state.lastRedeemedArtifact.artifactCode;
             html +=
-              '<div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:12px;border-radius:12px;margin-bottom:12px;text-align:center;">';
+              '<div role="status" style="background:#f0fdf4;border:1px solid #bbf7d0;padding:12px;border-radius:12px;margin-bottom:12px;text-align:center;">';
             html +=
-              '  <div style="font-size:11px;color:#166534;font-weight:600;">Reward Redeemed!</div>';
+              '  <div style="font-size:11px;color:#166534;font-weight:600;">' +
+              translate("Reward Redeemed!") +
+              "</div>";
             if (redeemedKind === "store_credit") {
               html +=
-                '  <div style="font-size:12px;color:#166534;margin-top:4px;">Store credit was added to your Shopify customer balance.</div>';
+                '  <div style="font-size:12px;color:#166534;margin-top:4px;">' +
+                translate(
+                  "Store credit was added to your Shopify customer balance.",
+                ) +
+                "</div>";
             } else if (redeemedCode) {
               html +=
                 '  <div style="font-size:16px;font-weight:800;font-family:monospace;color:#15803d;margin:4px 0;">' +
@@ -1173,8 +1638,8 @@
               html +=
                 '  <div style="font-size:10px;color:#166534;">' +
                 (redeemedKind === "gift_card"
-                  ? "Use this gift card at checkout"
-                  : "Use this discount code at checkout") +
+                  ? translate("Use this gift card at checkout")
+                  : translate("Use this discount code at checkout")) +
                 "</div>";
             }
             html += "</div>";
@@ -1182,10 +1647,14 @@
 
           if (!state.customerError) {
             html +=
-              '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">Your Rewards</div>';
+              '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">' +
+              translate("Your Rewards") +
+              "</div>";
             if (availableWallet.length === 0) {
               html +=
-                '<div class="weletic-wallet-empty">You have no available coupons.</div>';
+                '<div class="weletic-wallet-empty">' +
+                translate("You have no available coupons.") +
+                "</div>";
             }
             availableWallet.forEach(function (reward) {
               var expiryDate = formatRewardDate(reward.expiresAt);
@@ -1198,7 +1667,9 @@
                 escapeHtml(reward.rewardName) +
                 "</div>";
               html +=
-                '<div class="weletic-wallet-status weletic-wallet-available">Available</div>';
+                '<div class="weletic-wallet-status weletic-wallet-available">' +
+                translate("Available") +
+                "</div>";
               html += "</div>";
               html +=
                 '<div class="weletic-card-desc">' +
@@ -1207,14 +1678,23 @@
               html +=
                 '<div class="weletic-wallet-code">' +
                 (artifactKind === "store_credit"
-                  ? "Added to your customer balance"
-                  : escapeHtml(artifactCode || "Available in your account")) +
+                  ? translate("Added to your customer balance")
+                  : escapeHtml(
+                      artifactCode || translate("Available in your account"),
+                    )) +
                 "</div>";
               html +=
                 '<div class="weletic-card-desc">' +
-                formatNumber(reward.pointsSpent) +
-                " points" +
-                (expiryDate ? " · Expires " + escapeHtml(expiryDate) : "") +
+                escapeHtml(
+                  translate("{points} points", {
+                    points: formatNumber(reward.pointsSpent),
+                  }),
+                ) +
+                (expiryDate
+                  ? escapeHtml(
+                      translate(" · Expires {date}", { date: expiryDate }),
+                    )
+                  : "") +
                 "</div>";
               if (canParticipate && (artifactCode || reward.applyUrl)) {
                 html += '<div class="weletic-wallet-actions">';
@@ -1222,13 +1702,15 @@
                   html +=
                     '<button type="button" class="weletic-btn-redeem" data-copy-code="' +
                     escapeHtml(artifactCode) +
-                    '">Copy code</button>';
+                    ('">' + translate("Copy code") + "</button>");
                 }
                 if (reward.applyUrl) {
                   html +=
                     '<a class="weletic-wallet-apply" href="' +
                     escapeHtml(reward.applyUrl) +
-                    '" target="_blank" rel="noopener">Use reward</a>';
+                    ('" target="_blank" rel="noopener">' +
+                      translate("Use reward") +
+                      "</a>");
                 }
                 html += "</div>";
               }
@@ -1237,7 +1719,9 @@
 
             if (rewardHistory.length > 0) {
               html +=
-                '<div style="font-size:12px;font-weight:700;margin:14px 0 8px;color:#111827;">Reward History</div>';
+                '<div style="font-size:12px;font-weight:700;margin:14px 0 8px;color:#111827;">' +
+                translate("Reward History") +
+                "</div>";
               rewardHistory.forEach(function (reward) {
                 var activityDate = formatRewardDate(reward.statusDate);
                 var artifactCode = rewardArtifactCode(reward);
@@ -1258,7 +1742,11 @@
                   (artifactCode ? " " + escapeHtml(artifactCode) : "") +
                   (activityDate ? " · " + escapeHtml(activityDate) : "") +
                   (reward.orderName
-                    ? " · Order " + escapeHtml(reward.orderName)
+                    ? escapeHtml(
+                        translate(" · Order {order}", {
+                          order: reward.orderName,
+                        }),
+                      )
                     : "") +
                   "</div>";
                 html += "</div>";
@@ -1268,13 +1756,14 @@
 
           if (programActive) {
             html +=
-              '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">Quick Rewards</div>';
+              '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">' +
+              translate("Quick Rewards") +
+              "</div>";
             rewardsList.slice(0, 2).forEach(function (rew) {
-              var rewardValue = shared.formatRewardValue(
-                rew,
-                state.program?.currency || currency,
+              var rewardValue = formatShopperRewardValue(rew);
+              var rewardType = translate(
+                shared.rewardTypeLabel(rew.rewardType),
               );
-              var rewardType = shared.rewardTypeLabel(rew.rewardType);
               var rewardSummary =
                 rewardValue === rewardType
                   ? rewardType
@@ -1300,12 +1789,18 @@
                 "</div>";
               html +=
                 '    <div class="weletic-card-desc">' +
-                (isIncremental ? "From " : "") +
-                formatNumber(minimumPoints) +
-                " points</div>";
+                (isIncremental ? translate("From ") : "") +
+                escapeHtml(
+                  translate("{points} points", {
+                    points: formatNumber(minimumPoints),
+                  }),
+                ) +
+                "</div>";
               if (isIncremental) {
                 html +=
-                  '    <input class="weletic-reward-points-input" type="text" inputmode="numeric" pattern="[0-9]*" aria-label="Points to redeem" data-reward-points data-minimum-points="' +
+                  '    <input class="weletic-reward-points-input" type="text" inputmode="numeric" pattern="[0-9]*" aria-label="' +
+                  escapeHtml(translate("Points to redeem")) +
+                  '" data-reward-points data-minimum-points="' +
                   minimumPoints +
                   '" data-maximum-points="' +
                   maximumPoints +
@@ -1320,28 +1815,32 @@
               html += "  </div>";
               html +=
                 '  <button type="button" class="weletic-btn-redeem" ' +
-                (state.mutationPending || !canRedeem ? "disabled" : "") +
+                (state.mutationPending || state.confirmation || !canRedeem
+                  ? "disabled"
+                  : "") +
                 ' data-redeem-id="' +
                 escapeHtml(rew.id) +
                 '">' +
                 (state.mutationPending
-                  ? "Redeeming…"
+                  ? translate("Redeeming…")
                   : canRedeem
-                    ? "Redeem"
+                    ? translate("Redeem")
                     : !canParticipate && isMember
-                      ? "Account unavailable"
+                      ? translate("Account unavailable")
                       : state.customerError
-                        ? "Balance unavailable"
+                        ? translate("Balance unavailable")
                         : !isMember
-                          ? "Members only"
-                          : "Need more pts") +
+                          ? translate("Members only")
+                          : translate("Need more pts")) +
                 "</button>";
               html += "</div>";
             });
           }
         } else if (state.activeTab === "earn") {
           html +=
-            '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">Ways to Earn Points</div>';
+            '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">' +
+            translate("Ways to Earn Points") +
+            "</div>";
           if (state.activityMessage) {
             html +=
               '<div class="weletic-wallet-empty" role="status">' +
@@ -1387,7 +1886,9 @@
                   "</a>"
                 : isLoggedIn
                   ? '    <span class="weletic-card-desc">' +
-                    (isMember ? "Account unavailable" : "Members only") +
+                    (isMember
+                      ? translate("Account unavailable")
+                      : translate("Members only")) +
                     "</span>"
                   : '    <a class="weletic-wallet-apply" href="' +
                     escapeHtml(loginUrl) +
@@ -1402,13 +1903,12 @@
           });
         } else if (state.activeTab === "redeem") {
           html +=
-            '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">Redeem Points for Rewards</div>';
+            '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">' +
+            translate("Redeem Points for Rewards") +
+            "</div>";
           rewardsList.forEach(function (rew) {
-            var rewardValue = shared.formatRewardValue(
-              rew,
-              state.program?.currency || currency,
-            );
-            var rewardType = shared.rewardTypeLabel(rew.rewardType);
+            var rewardValue = formatShopperRewardValue(rew);
+            var rewardType = translate(shared.rewardTypeLabel(rew.rewardType));
             var rewardSummary =
               rewardValue === rewardType
                 ? rewardType
@@ -1432,12 +1932,18 @@
               "</div>";
             html +=
               '    <div class="weletic-card-desc">' +
-              (isIncremental ? "From " : "") +
-              formatNumber(minimumPoints) +
-              " points</div>";
+              (isIncremental ? translate("From ") : "") +
+              escapeHtml(
+                translate("{points} points", {
+                  points: formatNumber(minimumPoints),
+                }),
+              ) +
+              "</div>";
             if (isIncremental) {
               html +=
-                '    <input class="weletic-reward-points-input" type="text" inputmode="numeric" pattern="[0-9]*" aria-label="Points to redeem" data-reward-points data-minimum-points="' +
+                '    <input class="weletic-reward-points-input" type="text" inputmode="numeric" pattern="[0-9]*" aria-label="' +
+                escapeHtml(translate("Points to redeem")) +
+                '" data-reward-points data-minimum-points="' +
                 minimumPoints +
                 '" data-maximum-points="' +
                 maximumPoints +
@@ -1452,27 +1958,31 @@
             html += "  </div>";
             html +=
               '  <button type="button" class="weletic-btn-redeem" ' +
-              (state.mutationPending || !canRedeem ? "disabled" : "") +
+              (state.mutationPending || state.confirmation || !canRedeem
+                ? "disabled"
+                : "") +
               ' data-redeem-id="' +
               escapeHtml(rew.id) +
               '">' +
               (state.mutationPending
-                ? "Redeeming…"
+                ? translate("Redeeming…")
                 : canRedeem
-                  ? "Redeem"
+                  ? translate("Redeem")
                   : !canParticipate && isMember
-                    ? "Account unavailable"
+                    ? translate("Account unavailable")
                     : state.customerError
-                      ? "Balance unavailable"
+                      ? translate("Balance unavailable")
                       : !isMember
-                        ? "Members only"
-                        : "Need pts") +
+                        ? translate("Members only")
+                        : translate("Need pts")) +
               "</button>";
             html += "</div>";
           });
         } else if (state.activeTab === "vip") {
           html +=
-            '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">VIP Tier Benefits</div>';
+            '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">' +
+            translate("VIP Tier Benefits") +
+            "</div>";
           var tiersList = state.program?.tiers || [];
           tiersList.forEach(function (t) {
             html += '<div class="weletic-card-item">';
@@ -1558,10 +2068,26 @@
       if (retryButton) {
         retryButton.addEventListener("click", fetchProgramData);
       }
+      var customerRetry = drawer.querySelector("#weletic-customer-retry");
+      if (customerRetry)
+        customerRetry.addEventListener("click", fetchProgramData);
+
+      var confirmButton = drawer.querySelector("#weletic-confirm-redemption");
+      if (confirmButton)
+        confirmButton.addEventListener("click", function () {
+          var selection = state.confirmation;
+          if (!selection || state.mutationPending) return;
+          state.confirmation = null;
+          redeemReward(selection.rewardId, selection.pointsRequested);
+        });
+      var cancelButton = drawer.querySelector("#weletic-cancel-redemption");
+      if (cancelButton)
+        cancelButton.addEventListener("click", cancelRedemption);
 
       var tabButtons = drawer.querySelectorAll(".weletic-tab-btn");
       tabButtons.forEach(function (btn) {
         btn.addEventListener("click", function () {
+          state.confirmation = null;
           state.activeTab = btn.getAttribute("data-tab");
           render();
         });
@@ -1570,6 +2096,8 @@
       var redeemButtons = drawer.querySelectorAll("[data-redeem-id]");
       redeemButtons.forEach(function (btn) {
         btn.addEventListener("click", function () {
+          if (btn.disabled || state.mutationPending || state.confirmation)
+            return;
           var rewId = btn.getAttribute("data-redeem-id");
           var card = btn.closest(".weletic-card-item");
           var pointsInput = card?.querySelector("[data-reward-points]");
@@ -1584,11 +2112,29 @@
                 pointsInput.getAttribute("data-points-step"),
               )
             ) {
-              alert("Choose a valid points amount within the reward limits.");
+              alert(
+                translate(
+                  "Choose a valid points amount within the reward limits.",
+                ),
+              );
               return;
             }
           }
-          redeemReward(rewId, pointsRequested);
+          var selectedReward = rewardsList.find(function (reward) {
+            return reward.id === rewId;
+          });
+          if (!selectedReward || !canParticipate || state.customerError) return;
+          state.confirmation = {
+            rewardId: rewId,
+            name: selectedReward.name,
+            pointsRequested: pointsRequested,
+            pointsCost:
+              pointsRequested === undefined
+                ? selectedReward.pointsCost
+                : pointsRequested,
+          };
+          render();
+          drawer.querySelector("#weletic-cancel-redemption")?.focus();
         });
       });
 
@@ -1606,7 +2152,13 @@
       var couponCopyButtons = drawer.querySelectorAll("[data-copy-code]");
       couponCopyButtons.forEach(function (btn) {
         var code = btn.getAttribute("data-copy-code");
-        if (code) bindCopyButton(btn, code, "Copied!", "Copy code");
+        if (code)
+          bindCopyButton(
+            btn,
+            code,
+            translate("Copied!"),
+            translate("Copy code"),
+          );
       });
 
       var copyBtn = drawer.querySelector("#weletic-copy-referral-btn");
@@ -1629,6 +2181,20 @@
           claimFriendReward(emailInput?.value || "");
         });
       }
+      if (state.isOpen) {
+        var restore = Array.from(
+          drawer.querySelectorAll("button, a, input"),
+        ).find(function (element) {
+          return (
+            !element.disabled &&
+            ((focusedId && element.id === focusedId) ||
+              (focusedTab && element.getAttribute("data-tab") === focusedTab) ||
+              (focusedReward &&
+                element.getAttribute("data-redeem-id") === focusedReward))
+          );
+        });
+        (restore || closeBtn || drawer).focus();
+      }
     }
 
     function escapeHtml(str) {
@@ -1642,7 +2208,9 @@
 
     function formatNumber(num) {
       if (num === undefined || num === null) return "0";
-      return shared ? shared.formatInteger(num) : Number(num).toLocaleString();
+      return shared
+        ? shared.formatInteger(num, locale)
+        : Number(num).toLocaleString(locale);
     }
 
     function destroy() {
@@ -1655,6 +2223,7 @@
       timeoutIds = [];
       launcherBtn.removeEventListener("click", handleLauncherClick);
       overlay.removeEventListener("click", handleOverlayClick);
+      document.removeEventListener("keydown", handleDrawerKeydown);
       [launcherBtn, overlay, drawer].forEach(function (node) {
         if (node.parentNode) node.parentNode.removeChild(node);
       });

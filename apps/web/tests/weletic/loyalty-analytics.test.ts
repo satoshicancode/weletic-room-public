@@ -491,6 +491,43 @@ describe("Weletic Customer Loyalty Analytics & Points Liability Engine (Mileston
   // 4. VIP Tier Distribution & Dashboard Overview Aggregation
   // =========================================================================
   describe("VIP Tier Distribution & Dashboard Overview", () => {
+    it("retains unassigned and deleted-tier members without inferring entry-tier enrollment", async () => {
+      vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValueOnce({
+        id: "prog_yamax",
+        tiers: [{ id: "tier_bronze", name: "Bronze", tierOrder: 1 }],
+      } as any);
+      vi.mocked(prisma.weleticLoyaltyAccount.findMany).mockResolvedValueOnce([
+        {
+          currentTierId: null,
+          cachedPointsBalance: BigInt(12),
+          tierSpendRolling12Months: BigInt(30),
+        },
+        {
+          currentTierId: "deleted-tier",
+          cachedPointsBalance: BigInt(15),
+          tierSpendRolling12Months: BigInt(40),
+        },
+        {
+          currentTierId: "tier_bronze",
+          cachedPointsBalance: BigInt(20),
+          tierSpendRolling12Months: BigInt(50),
+        },
+      ] as any);
+      const rows = await getLoyaltyTierDistribution({ storeId: "store_yamax" });
+      expect(
+        rows.map((row) => [
+          row.assignment,
+          row.memberCount,
+          row.totalPointsBalance,
+        ]),
+      ).toEqual([
+        ["configured", 1, BigInt(20)],
+        ["unassigned", 1, BigInt(12)],
+        ["unavailable", 1, BigInt(15)],
+      ]);
+      expect(rows.reduce((sum, row) => sum + row.memberCount, 0)).toBe(3);
+    });
+
     it("aggregates member counts, points balances, and rolling spend per VIP tier", async () => {
       vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValueOnce({
         id: "prog_yamax",

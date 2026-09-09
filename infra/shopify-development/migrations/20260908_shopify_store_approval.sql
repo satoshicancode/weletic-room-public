@@ -1,6 +1,8 @@
 -- Apply only after target review and a recoverable snapshot. No activation is
 -- performed by checking in this migration. Retained stores keep their previous
 -- operational eligibility; every subsequently created store requires approval.
+-- Quiesce installation/store-creation writers through all statements and any
+-- recovery: the initial active default is temporary; MySQL DDL is not atomic.
 ALTER TABLE WeleticShopifyStore
   ADD COLUMN storeAccessState ENUM('pending_approval', 'active', 'suspended') NOT NULL DEFAULT 'active',
   ADD COLUMN storeAccessRevision INTEGER NOT NULL DEFAULT 1;

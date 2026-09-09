@@ -32,6 +32,12 @@ before application: only an empty isolated public database or a reviewed set of
 already-authorized company stores is eligible for this compatibility behavior.
 Do not copy custom-app store/session rows into the public database.
 
+Quiesce installation and store-creation writers for the entire migration. The
+first ALTER temporarily sets an `active` default before the second changes it to
+`pending_approval`; a concurrent insert between them would inherit `active`.
+MySQL DDL is not atomic. If interrupted, keep writers stopped until the exact
+columns, final default and audit table have been inspected and completed.
+
 Deploy the code only after its columns and audit table exist. Do not remove them
 while this code is deployed. Suspending access is containment, not ledger rollback.
 
@@ -75,3 +81,19 @@ Before public release:
   intentionally permitted privacy/financial cleanup, against the public identity.
 - Verify fresh install/reinstall, company activation, suspension and stale-worker
   rejection on `yamaxdev`; record exact app/version and cleanup evidence.
+
+## September 9 public-main refresh
+
+Hiro explicitly approved revalidation and merge of PR #5, applying its reviewed
+schema only to `127.0.0.1:3307/weletic_loyalty_dev`, and creating fresh isolated
+test databases on that instance. This does not authorize legacy/production schema
+changes, public exposure, installation, orders, emails or real store activation.
+
+The refreshed branch preserves both approval locking and the newer referral Flow
+completion assertion. All 132 focused unit tests passed. Eight production-service
+MySQL tests passed in `weletic_loyalty_it_access_20260909105529950`; independent
+store/program/audit counts were all zero afterward. The fixture schema remains
+available for inspection; it is not live acceptance. A read-only preflight found
+zero store rows and no approval columns/audit table in the retained isolated
+development database before staging. Final build/CI and post-merge isolated
+snapshot/migration evidence are recorded on PR #5.

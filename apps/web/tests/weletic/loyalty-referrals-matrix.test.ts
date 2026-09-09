@@ -1283,6 +1283,14 @@ describe("Loyalty Referrals Matrix Test Suite (Requirement R2 / Nhóm 1.2)", () 
   // ===========================================================================
   describe("Pillar 4: Advocate Reward Fulfillment & Refund Clawback", () => {
     it("4.1 Fulfills advocate points reward with monotonic ledger sequence and tier review trigger", async () => {
+      // Both sides must be points-only for completion in this transaction.
+      // The shared fixture otherwise gives the referee an asynchronous coupon.
+      const pointsRule = {
+        ...Array.from(dbState.rules.values())[0],
+        refereeRewardKind: "points" as const,
+        refereeRewardDefinitionId: null,
+      };
+      dbState.rules.set(pointsRule.id, pointsRule);
       const { account: advocate } = createTestLoyaltyAccount({
         id: "acc_advocate_p4_1",
         email: "advocate.points@yamax.com",
@@ -1322,6 +1330,24 @@ describe("Loyalty Referrals Matrix Test Suite (Requirement R2 / Nhóm 1.2)", () 
           accountId: advocate.id,
         }),
       );
+      const completedReferral = Array.from(dbState.referrals.values())[0];
+      const completionCalls =
+        outboxMocks.enqueueFlowTriggerJob.mock.calls.filter(
+          ([input]) => input.payload.handle === "weletic-referral-completed",
+        );
+      expect(completionCalls).toHaveLength(1);
+      expect(completionCalls[0][0]).toMatchObject({
+        storeId: "store_matrix_1",
+        eventId: completedReferral.id,
+        payload: {
+          handle: "weletic-referral-completed",
+          referralId: completedReferral.id,
+          accountId: advocate.id,
+          orderId: "order_qual_401",
+          advocatePoints: completedReferral.advocatePointsAwarded.toString(),
+          friendPoints: completedReferral.refereePointsAwarded.toString(),
+        },
+      });
       expect(enqueueOutboxJob).toHaveBeenCalledWith(
         expect.objectContaining({
           jobType: "METAFIELD_SYNC",
@@ -1378,6 +1404,11 @@ describe("Loyalty Referrals Matrix Test Suite (Requirement R2 / Nhóm 1.2)", () 
 
       const referral = Array.from(dbState.referrals.values())[0];
       expect(referral.status).toBe(WeleticLoyaltyReferralStatus.qualified);
+      expect(
+        outboxMocks.enqueueFlowTriggerJob.mock.calls.filter(
+          ([input]) => input.payload.handle === "weletic-referral-completed",
+        ),
+      ).toHaveLength(0);
     });
 
     it("4.3 Smile Parity Invariant: Partial refund preserves referral intact (no clawback)", async () => {

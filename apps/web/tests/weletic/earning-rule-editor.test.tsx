@@ -56,6 +56,73 @@ async function send() {
   });
 }
 describe("rendered shared earning-rule form", () => {
+  it.each(["en", "ja", "vi"] as const)(
+    "clears hidden subscription terms when selecting one-time purchases in %s",
+    async (locale) => {
+      await render(
+        {
+          ...newEarningRuleForm(),
+          name: "Purchase earning",
+          purchaseType: "subscription",
+          subscriptionCadence: "first_n_payments",
+          subscriptionPaymentLimit: "3",
+        },
+        locale,
+      );
+      const control = container.querySelector<HTMLSelectElement>(
+        '[name="purchaseType"]',
+      )!;
+      await act(async () => {
+        control.value = "one_time";
+        control.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      expect(
+        container.querySelector('[name="subscriptionCadence"]'),
+      ).toBeNull();
+      expect(
+        container.querySelector('[name="subscriptionPaymentLimit"]'),
+      ).toBeNull();
+      await send();
+      expect(submit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          purchaseType: "one_time",
+          subscriptionCadence: "first_payment",
+          subscriptionPaymentLimit: null,
+        }),
+      );
+      submit.mockClear();
+      await act(async () => {
+        control.value = "both";
+        control.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await send();
+      expect(submit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          purchaseType: "both",
+          subscriptionCadence: "first_payment",
+          subscriptionPaymentLimit: null,
+        }),
+      );
+    },
+  );
+  it("can save one-time eligibility after the default every-renewal policy", async () => {
+    await render({ ...newEarningRuleForm(), name: "Purchase earning" });
+    const control = container.querySelector<HTMLSelectElement>(
+      '[name="purchaseType"]',
+    )!;
+    await act(async () => {
+      control.value = "one_time";
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await send();
+    expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        purchaseType: "one_time",
+        subscriptionCadence: "first_payment",
+        subscriptionPaymentLimit: null,
+      }),
+    );
+  });
   it.each([
     [
       "en",
