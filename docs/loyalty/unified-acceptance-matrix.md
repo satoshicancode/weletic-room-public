@@ -1,6 +1,6 @@
 # Weletic company-store loyalty — acceptance matrix
 
-Updated 2026-09-09 (Asia/Tokyo). This is the execution checklist for Hiro's
+Updated 2026-09-10 (Asia/Tokyo). This is the execution checklist for Hiro's
 approved **Loyalty Completion Plan for Weletic Stores**. It supersedes the older
 mixed loyalty/reviews checklist for this stream; it does not activate excluded
 review features or waive any external execution gate.
@@ -32,7 +32,9 @@ level, not substitutes for named journeys on yamaxdev.
 
 ## Public implementation checkpoints — not live acceptance
 
-Snapshot verified from public GitHub PR state on 2026-09-09:
+Initial snapshot verified on September 9; PRs #14–#16 rechecked against public
+GitHub state on September 10. Bootstrap is a subsequent draft PR #15 update;
+earlier public CI does not certify that update.
 
 | Public PR                                                                                                                              | Implementation checkpoint                                | Evidence boundary                                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -45,6 +47,25 @@ Snapshot verified from public GitHub PR state on 2026-09-09:
 | [#5](https://github.com/satoshicancode/weletic-room-public/pull/5)                                                                     | Audited company-store approval                           | Backend foundation; isolated-only merge/staging approved September 9; install/status UI open   |
 | [#12](https://github.com/satoshicancode/weletic-room-public/pull/12)                                                                   | Manifest/runtime fallback scope alignment                | Merged code; installed public scope acceptance remains open                                    |
 | [#13](https://github.com/satoshicancode/weletic-room-public/pull/13)                                                                   | Historical opening-balance imports                       | Draft, unmerged; frozen tonight with separate uncommitted optimization preserved               |
+
+September 10 additions:
+
+- [PR #14](https://github.com/satoshicancode/weletic-room-public/pull/14), merged
+  as `4b1e8965a7aa96648883b6a220ef27eb5fad0162`: reference preservation and bounded
+  core shopper work; no live lifecycle acceptance inferred.
+- [PR #15](https://github.com/satoshicancode/weletic-room-public/pull/15), draft
+  at `2e4949a56fe98ec97cee5c1db9abd5022ddb78b6`: store-owned authentication,
+  pending admission/status and retained-map reconnect. Public CI passed; runtime
+  schema, public identity and live installation remain gated.
+- [PR #16](https://github.com/satoshicancode/weletic-room-public/pull/16), merged
+  as `98ec37645ce78f934d8121cbb415d8f441db9ad3`: sanitized expiry-provider errors;
+  no new delivery integration or real send.
+- [ADR 0026](../adr/0026-audited-company-store-bootstrap.md) approves operator-only
+  first-store bootstrap. Its [local checkpoint](company-store-bootstrap-implementation.md)
+  records 25 contract and 13 isolated SQL tests, signed-handler stale publication
+  rejection, privacy handling and exact fixture reconciliation. The source-frozen
+  full regression passed: 394 files, 6,020 tests passed and six skipped. Fresh
+  public CI remains required. This does not check E4/E5/G3 or authorize runtime migrations.
 
 Historical import work is now draft public PR #13, not merely the earlier local
 19-test checkpoint. Its source/commit/rollback/orchestration have isolated proof,
@@ -229,56 +250,56 @@ it does not replace their detailed wording or close a live gate. R1–R6 and S01
 refer to the dated benchmark addendum. Q records tonight's actual verification.
 Public PR state was read on September 9; merged code is not installed evidence.
 
-| Requirement | Evidence / present boundary                                                          | Outstanding task                                   |
-| ----------- | ------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| A1          | September 8 benchmark + September 9 R1–R6; explicit unknowns/locked reports          | L00 reference completeness/review                  |
-| A2          | Tonight's separate branch starts from public main `6a277373`; import unchanged       | L00 repository-wide provenance/stale references    |
-| A3          | Public registration identified; no reviewed deployed configuration proof             | L14                                                |
-| A4          | Existing extensions are not proof of public ownership/new UIDs                       | L14                                                |
-| A5          | Local environment notes are not public runtime isolation proof                       | L14, L16                                           |
-| B1          | Shared control-plane code and PR #2 navigation exist                                 | L07, L09, Q signed/browser acceptance              |
-| B2          | PR #2 merged; R5 preserves VIP semantic conflicts                                    | L04                                                |
-| B3          | PR #2 merged; R5 scheduling observed, targeting is Weletic requirement               | L05                                                |
-| B4          | VIP/campaign/communications/analytics gateways exist; import is draft                | L04, L05, L10, L11, L12, Q authorization/races     |
-| B5          | PR #4/#9 immutable contracts merged                                                  | L03                                                |
-| B6          | Policy revision/snapshot implementation exists; live interpretation open             | L03, L06                                           |
-| B7          | No real distinct renewal evidence tonight                                            | L03                                                |
-| C1          | Existing lifecycle implementation; R1 points timing                                  | L01, Q                                             |
-| C2          | Immutable allocation code; no new named order/refund evidence                        | L01, L05, Q                                        |
-| C3          | Tier lifecycle code and R5 reference, not live progression proof                     | L04                                                |
-| C4          | Existing referral paths; R1/R2 previews are not claim proof                          | L06                                                |
-| C5          | Reward implementations exist; core fixture is a bounded subset                       | L02, Q                                             |
-| C6          | Capability guards require real store reasons/readback                                | L02, L17                                           |
-| C7          | Native Basic discount strategy retained; Plus target remains disabled                | L02, L17                                           |
-| C8          | Stored-value financial/earning activation decisions unresolved                       | L02, L17                                           |
-| C9          | Existing signed shopper APIs retained, no new public writes tonight                  | L06, L09, Q privacy/ownership checks               |
-| D1          | PR #6/#8 nine-policy editors; R4 records ten Smile entries                           | L10, L09                                           |
-| D2          | New policy integration is explicitly `not_connected`                                 | L10                                                |
-| D3          | No timezone replacement or real delivery authorized                                  | L01, L05, L10                                      |
-| D4          | PR #7 exact aggregates/exports; R6 report catalog; funnel/cohorts incomplete         | L11                                                |
-| D5          | Exact analytics contracts/local tests, not independent live reconciliation           | L11, Q                                             |
-| D6          | PR #13 draft; generic import rather than Smile migration                             | L12                                                |
-| D7          | Draft opening-balance/provenance implementation, no fabricated history               | L12                                                |
-| D8          | Draft durable orchestration has local proof; scale/supervision open                  | L12, L16                                           |
-| D9          | Draft append-only rollback/containment; preserved optimization not full-scale proof  | L12                                                |
-| E1          | Theme/account surfaces exist; R2 inventory and preview only                          | L02, L06, L08, L09                                 |
-| E2          | Previous local component evidence is partial; tonight's result recorded in Q         | L07, L08, L09, Q                                   |
-| E3          | Workers exist; no supervised public runtime/alert rehearsal                          | L16                                                |
-| E4          | PR #5 backend foundation and isolated approval; unknown-install/status UI incomplete | L13                                                |
-| E5          | No fresh public install/reinstall acceptance                                         | L13, L14, L16                                      |
-| E6          | Existing privacy guards; new-record UPDATE races/scan costs remain open              | L06, L10, L12, L16                                 |
-| F1          | Existing trigger definitions; PR #10 referral producer merged, unpublished           | L15                                                |
-| F2          | Authorization semantics undecided; callback is not an online staff session           | L15 decision before coding                         |
-| F3          | No new real public workflow evidence                                                 | L15                                                |
-| F4          | PR #12 fallback scope fix merged, public grants/least privilege still open           | L14, L17                                           |
-| F5          | Protected-data/network access request and live access are external gates             | L17                                                |
-| F6          | Internal-company limited-visibility strategy approved; release checklist open        | L13, L14, L17                                      |
-| F7          | No submission/production rollout/custom-app uninstall tonight                        | L17                                                |
-| G1          | Q will record focused checks/review/CI; no completion inferred from drafts           | Q                                                  |
-| G2          | Existing isolated suites only at their stated scope; imports frozen                  | L01–L06, L10, L12, L16, Q                          |
-| G3          | All named yamaxdev lifecycle/workflow/SQL evidence remains open                      | L01–L06, L10–L17, Q                                |
-| G4          | One-writer activation/containment requires approved environment rehearsal            | L14, L16, L17, Q                                   |
-| G5          | Overall loyalty acceptance remains incomplete                                        | Q closure only after all applicable named evidence |
+| Requirement | Evidence / present boundary                                                              | Outstanding task                                   |
+| ----------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| A1          | September 8 benchmark + September 9 R1–R6; explicit unknowns/locked reports              | L00 reference completeness/review                  |
+| A2          | Tonight's separate branch starts from public main `6a277373`; import unchanged           | L00 repository-wide provenance/stale references    |
+| A3          | Public registration identified; no reviewed deployed configuration proof                 | L14                                                |
+| A4          | Existing extensions are not proof of public ownership/new UIDs                           | L14                                                |
+| A5          | Local environment notes are not public runtime isolation proof                           | L14, L16                                           |
+| B1          | Shared control-plane code and PR #2 navigation exist                                     | L07, L09, Q signed/browser acceptance              |
+| B2          | PR #2 merged; R5 preserves VIP semantic conflicts                                        | L04                                                |
+| B3          | PR #2 merged; R5 scheduling observed, targeting is Weletic requirement                   | L05                                                |
+| B4          | VIP/campaign/communications/analytics gateways exist; import is draft                    | L04, L05, L10, L11, L12, Q authorization/races     |
+| B5          | PR #4/#9 immutable contracts merged                                                      | L03                                                |
+| B6          | Policy revision/snapshot implementation exists; live interpretation open                 | L03, L06                                           |
+| B7          | No real distinct renewal evidence tonight                                                | L03                                                |
+| C1          | Existing lifecycle implementation; R1 points timing                                      | L01, Q                                             |
+| C2          | Immutable allocation code; no new named order/refund evidence                            | L01, L05, Q                                        |
+| C3          | Tier lifecycle code and R5 reference, not live progression proof                         | L04                                                |
+| C4          | Existing referral paths; R1/R2 previews are not claim proof                              | L06                                                |
+| C5          | Reward implementations exist; core fixture is a bounded subset                           | L02, Q                                             |
+| C6          | Capability guards require real store reasons/readback                                    | L02, L17                                           |
+| C7          | Native Basic discount strategy retained; Plus target remains disabled                    | L02, L17                                           |
+| C8          | Stored-value financial/earning activation decisions unresolved                           | L02, L17                                           |
+| C9          | Existing signed shopper APIs retained, no new public writes tonight                      | L06, L09, Q privacy/ownership checks               |
+| D1          | PR #6/#8 nine-policy editors; R4 records ten Smile entries                               | L10, L09                                           |
+| D2          | New policy integration is explicitly `not_connected`                                     | L10                                                |
+| D3          | No timezone replacement or real delivery authorized                                      | L01, L05, L10                                      |
+| D4          | PR #7 exact aggregates/exports; R6 report catalog; funnel/cohorts incomplete             | L11                                                |
+| D5          | Exact analytics contracts/local tests, not independent live reconciliation               | L11, Q                                             |
+| D6          | PR #13 draft; generic import rather than Smile migration                                 | L12                                                |
+| D7          | Draft opening-balance/provenance implementation, no fabricated history                   | L12                                                |
+| D8          | Draft durable orchestration has local proof; scale/supervision open                      | L12, L16                                           |
+| D9          | Draft append-only rollback/containment; preserved optimization not full-scale proof      | L12                                                |
+| E1          | Theme/account surfaces exist; R2 inventory and preview only                              | L02, L06, L08, L09                                 |
+| E2          | Previous local component evidence is partial; tonight's result recorded in Q             | L07, L08, L09, Q                                   |
+| E3          | Workers exist; no supervised public runtime/alert rehearsal                              | L16                                                |
+| E4          | PR #5 foundation; PR #15 admission/status draft; ADR 0026 bootstrap has local proof only | L13; bootstrap checkpoint                          |
+| E5          | No fresh public install/reinstall acceptance                                             | L13, L14, L16                                      |
+| E6          | Existing privacy guards; new-record UPDATE races/scan costs remain open                  | L06, L10, L12, L16                                 |
+| F1          | Existing trigger definitions; PR #10 referral producer merged, unpublished               | L15                                                |
+| F2          | Authorization semantics undecided; callback is not an online staff session               | L15 decision before coding                         |
+| F3          | No new real public workflow evidence                                                     | L15                                                |
+| F4          | PR #12 fallback scope fix merged, public grants/least privilege still open               | L14, L17                                           |
+| F5          | Protected-data/network access request and live access are external gates                 | L17                                                |
+| F6          | Internal-company limited-visibility strategy approved; release checklist open            | L13, L14, L17                                      |
+| F7          | No submission/production rollout/custom-app uninstall tonight                            | L17                                                |
+| G1          | Q will record focused checks/review/CI; no completion inferred from drafts               | Q                                                  |
+| G2          | Existing isolated suites only at their stated scope; imports frozen                      | L01–L06, L10, L12, L16, Q                          |
+| G3          | All named yamaxdev lifecycle/workflow/SQL evidence remains open                          | L01–L06, L10–L17, Q                                |
+| G4          | One-writer activation/containment requires approved environment rehearsal                | L14, L16, L17, Q                                   |
+| G5          | Overall loyalty acceptance remains incomplete                                            | Q closure only after all applicable named evidence |
 
 ## G — Verification and completion record
 

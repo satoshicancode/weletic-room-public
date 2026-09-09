@@ -1,6 +1,8 @@
 # First company-store bootstrap — decision proposal
 
-Status: **proposed, not approved or implemented**. September 10, 2026.
+Status: **Option B approved; local implementation in progress**. September 10, 2026.
+Decision: [ADR 0026](../adr/0026-audited-company-store-bootstrap.md).
+Evidence: [implementation checkpoint](company-store-bootstrap-implementation.md).
 Related: [ADR 0025](../adr/0025-shopify-native-store-installation-identity.md).
 
 ## Why a decision is needed
@@ -28,7 +30,7 @@ Neither option is a Shopify mandate. Shopify supplies authentication; the intern
 workspace policy is Weletic's architectural choice. Unknown App Store installs
 remain pending and never trigger this operator command automatically.
 
-## Proposed implementation scope for B
+## Approved implementation scope for B
 
 - Add a dedicated service and strict local CLI under `lib/weletic/shopify` and
   `scripts/loyalty`; no unauthenticated or merchant self-approval API.
