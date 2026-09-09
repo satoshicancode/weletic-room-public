@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   installIntentDeleteMany: vi.fn(),
   integrationFindMany: vi.fn(),
   integrationDeleteMany: vi.fn(),
+  nativeCredentialDeleteMany: vi.fn(),
   projectFindUnique: vi.fn(),
   projectUpdateMany: vi.fn(),
   queryRaw: vi.fn(),
@@ -79,8 +80,11 @@ const baseStep = {
 };
 
 describe("durable Shopify app-uninstalled lifecycle", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("SHOPIFY_API_KEY", "public-app-test");
+    mocks.nativeCredentialDeleteMany.mockResolvedValue({ count: 1 });
     mocks.storeFindUnique.mockResolvedValue({
       id: "store_a",
       projectId: "workspace_a",
@@ -108,6 +112,9 @@ describe("durable Shopify app-uninstalled lifecycle", () => {
     mocks.transaction.mockImplementation(async (callback: any) =>
       callback({
         $queryRaw: mocks.queryRaw,
+        weleticShopifyInstallationCredential: {
+          deleteMany: mocks.nativeCredentialDeleteMany,
+        },
         project: {
           findUnique: mocks.projectFindUnique,
           updateMany: mocks.projectUpdateMany,
@@ -253,6 +260,13 @@ describe("durable Shopify app-uninstalled lifecycle", () => {
         id: { in: ["installation_1"] },
       },
     });
+    expect(mocks.nativeCredentialDeleteMany).toHaveBeenCalledWith({
+      where: {
+        storeId: "store_a",
+        appId: "public-app-test",
+        installationGeneration: "sgen_one",
+      },
+    });
     expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({
         id: "workspace_a",
@@ -319,6 +333,69 @@ describe("durable Shopify app-uninstalled lifecycle", () => {
 
     expect(mocks.invalidateCache).toHaveBeenCalledTimes(1);
   });
+  it("scrubs native credentials even when no generic installer row remains", async () => {
+    mocks.integrationFindMany.mockResolvedValue([]);
+    mocks.voucherStep.mockResolvedValue({
+      completed: false,
+      phase: "credential_scrub",
+      progress: { outstanding: 0 },
+    });
+    await expect(
+      processAppUninstalledComplianceStep({
+        ...baseStep,
+        phase: "credential_scrub",
+      }),
+    ).resolves.toMatchObject({ phase: "finalize" });
+    expect(mocks.nativeCredentialDeleteMany).toHaveBeenCalledWith({
+      where: {
+        storeId: baseStep.storeId,
+        appId: "public-app-test",
+        installationGeneration: baseStep.installationGeneration,
+      },
+    });
+  });
+  it("does not finish credential scrub when native erasure fails", async () => {
+    mocks.voucherStep.mockResolvedValue({
+      completed: false,
+      phase: "credential_scrub",
+      progress: { outstanding: 0 },
+    });
+    mocks.nativeCredentialDeleteMany.mockRejectedValueOnce(
+      new Error("native erasure unavailable"),
+    );
+    await expect(
+      processAppUninstalledComplianceStep({
+        ...baseStep,
+        phase: "credential_scrub",
+      }),
+    ).rejects.toThrow("native erasure unavailable");
+    expect(mocks.projectUpdateMany).not.toHaveBeenCalled();
+  });
+  it("cannot erase a newer generation through an older uninstall", async () => {
+    mocks.queryRaw.mockResolvedValue([
+      {
+        id: baseStep.storeId,
+        projectId: baseStep.workspaceId,
+        shopDomain: baseStep.shopDomain,
+        complianceState: "frozen",
+        uninstalledAt: baseStep.receivedAt,
+        installationGeneration: "newer-generation",
+      },
+    ]);
+    mocks.voucherStep.mockResolvedValue({
+      completed: false,
+      phase: "credential_scrub",
+      progress: { outstanding: 0 },
+    });
+    await expect(
+      processAppUninstalledComplianceStep({
+        ...baseStep,
+        phase: "credential_scrub",
+      }),
+    ).rejects.toThrow("different Shopify installation generation");
+    expect(mocks.nativeCredentialDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.sessionDeleteMany).not.toHaveBeenCalled();
+  });
 
   it("keeps the legacy webhook helper freeze-only", async () => {
     await appUninstalled({
@@ -333,6 +410,7 @@ describe("durable Shopify app-uninstalled lifecycle", () => {
     expect(mocks.freezeStore).toHaveBeenCalledOnce();
     expect(mocks.sessionDeleteMany).not.toHaveBeenCalled();
     expect(mocks.integrationDeleteMany).not.toHaveBeenCalled();
+    expect(mocks.nativeCredentialDeleteMany).not.toHaveBeenCalled();
   });
 
   it("fails closed when the retained store does not match the request", async () => {

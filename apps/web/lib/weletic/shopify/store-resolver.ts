@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { Prisma } from "@prisma/client";
 import { createHash } from "crypto";
+import { readShopifyCredentialSource } from "./credential-source";
+import { advanceLegacyShopifySessionRevision } from "./session-coordination";
+import { configuredShopifySessionScope } from "./session-snapshot";
 
 export interface ResolvedShopifyStore {
   shopId: string;
@@ -153,6 +156,10 @@ export async function verifyAndBindShopifyIntegrationCredential({
   const expectedShop = canonicalizeShopifyDomain(expectedShopDomain);
   const expectedGeneration = expectedStore.installationGeneration;
   if (!expectedShop || !expectedGeneration) return null;
+  // Domain-only consumers must not eagerly load the server request-error layer.
+  const { lockLegacyShopifyConnection } = await import(
+    "./legacy-connection-fence"
+  );
 
   let credentials: ReturnType<typeof integrationCredentialsSchema.parse>;
   try {
@@ -184,23 +191,33 @@ export async function verifyAndBindShopifyIntegrationCredential({
         Array<{
           id: string;
           projectId: string;
+          shopDomain: string;
+          complianceState: string;
           installationGeneration: string | null;
         }>
       >(Prisma.sql`
-        SELECT id, projectId, installationGeneration
+        SELECT id, projectId, shopDomain, complianceState, installationGeneration
         FROM WeleticShopifyStore
         WHERE id = ${expectedStore.id}
         LIMIT 1
         FOR UPDATE
       `);
       const store = stores[0];
-      if (!store || store.installationGeneration !== expectedGeneration) {
+      if (
+        !store ||
+        store.complianceState !== "active" ||
+        store.installationGeneration !== expectedGeneration
+      ) {
         return null;
       }
-      const currentInstallation = await tx.installedIntegration.findUnique({
-        where: { id: installation.id },
-        select: { id: true, projectId: true, credentials: true },
+      await lockLegacyShopifyConnection(tx, {
+        workspaceId: store.projectId,
+        shop: store.shopDomain,
       });
+      const [currentInstallation] = await tx.$queryRaw<
+        Array<{ id: string; projectId: string; credentials: Prisma.JsonValue }>
+      >(Prisma.sql`
+        SELECT id, projectId, credentials FROM InstalledIntegration WHERE id=${installation.id} LIMIT 1 FOR UPDATE`);
       if (
         !currentInstallation ||
         currentInstallation.projectId !== store.projectId
@@ -242,23 +259,33 @@ export async function verifyAndBindShopifyIntegrationCredential({
       Array<{
         id: string;
         projectId: string;
+        shopDomain: string;
+        complianceState: string;
         installationGeneration: string | null;
       }>
     >(Prisma.sql`
-      SELECT id, projectId, installationGeneration
+      SELECT id, projectId, shopDomain, complianceState, installationGeneration
       FROM WeleticShopifyStore
       WHERE id = ${expectedStore.id}
       LIMIT 1
       FOR UPDATE
     `);
     const store = stores[0];
-    if (!store || store.installationGeneration !== expectedGeneration) {
+    if (
+      !store ||
+      store.complianceState !== "active" ||
+      store.installationGeneration !== expectedGeneration
+    ) {
       return { kind: "rejected" as const };
     }
-    const currentInstallation = await tx.installedIntegration.findUnique({
-      where: { id: installation.id },
-      select: { id: true, projectId: true, credentials: true },
+    await lockLegacyShopifyConnection(tx, {
+      workspaceId: store.projectId,
+      shop: store.shopDomain,
     });
+    const [currentInstallation] = await tx.$queryRaw<
+      Array<{ id: string; projectId: string; credentials: Prisma.JsonValue }>
+    >(Prisma.sql`
+      SELECT id, projectId, credentials FROM InstalledIntegration WHERE id=${installation.id} LIMIT 1 FOR UPDATE`);
     if (
       !currentInstallation ||
       currentInstallation.projectId !== store.projectId
@@ -283,6 +310,10 @@ export async function verifyAndBindShopifyIntegrationCredential({
     ) {
       return { kind: "rejected" as const };
     }
+    await advanceLegacyShopifySessionRevision(
+      tx,
+      configuredShopifySessionScope(store.shopDomain),
+    );
     const upgradedCredentials = {
       ...(currentInstallation.credentials &&
       typeof currentInstallation.credentials === "object" &&
@@ -297,6 +328,7 @@ export async function verifyAndBindShopifyIntegrationCredential({
     await tx.installedIntegration.update({
       where: { id: currentInstallation.id },
       data: { credentials: upgradedCredentials },
+      select: { id: true },
     });
     return {
       kind: "bound" as const,
@@ -442,6 +474,30 @@ export async function resolveShopifyStoreByDomain(
   const storeShop = normalizeShopDomain(
     matchingProject.weleticShopifyStore?.shopDomain || "",
   );
+  const credentialStore = matchingProject.weleticShopifyStore;
+  if (credentialStore?.id) {
+    const source = await readShopifyCredentialSource({
+      storeId: credentialStore.id,
+      workspaceId: matchingProject.id,
+      shop: storeShop,
+      installationGeneration: credentialStore.installationGeneration ?? null,
+    });
+    if (source.source === "native") {
+      // Public credentials authenticate only their canonical shop. Never inherit
+      // a generic integration's alias or mutable Project alias as authority.
+      if (domain !== storeShop) return null;
+      return {
+        shopId: `shop_${matchingProject.id}`,
+        primaryDomain: storeShop,
+        myshopifyDomain: storeShop,
+        allDomains: [storeShop],
+        workspaceId: matchingProject.id,
+        programId: matchingProject.defaultProgramId,
+        accessToken: source.accessToken,
+        storeId: credentialStore.id,
+      };
+    }
+  }
   let accessToken: string | null = null;
   let installedShop = "";
 
@@ -473,23 +529,13 @@ export async function resolveShopifyStoreByDomain(
   // exists. Once InstalledIntegration exists it is the versioned credential
   // source; falling back to a possibly stale session would bypass its CAS.
   if (!accessToken && !exactIntegration) {
-    const offlineSession = await prisma.weleticShopifyAppSession.findFirst({
-      where: {
-        isOnline: false,
-        shop: domain,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-      },
-      orderBy: { updatedAt: "desc" },
-      select: { shop: true, payload: true },
+    accessToken = await readLegacyBootstrapSession({
+      storeId: credentialStore?.id,
+      workspaceId: matchingProject.id,
+      shop: domain,
+      installationGeneration: credentialStore?.installationGeneration,
     });
-
-    if (
-      offlineSession?.payload &&
-      normalizeShopDomain(offlineSession.shop || "") === domain
-    ) {
-      accessToken = readOfflineSessionAccessToken(offlineSession.payload);
-      installedShop = domain;
-    }
+    if (accessToken) installedShop = domain;
   }
 
   if (!accessToken) {
@@ -510,4 +556,58 @@ export async function resolveShopifyStoreByDomain(
   };
 
   return resolved;
+}
+
+/** Legacy compatibility only, never first-store provisioning. Source selection
+ * above is a separate transaction; repeat ownership checks before reading SDK
+ * credentials so public admission cannot appear between selection and use. */
+export async function readLegacyBootstrapSession(input: {
+  storeId?: string;
+  workspaceId: string;
+  shop: string;
+  installationGeneration?: string | null;
+}) {
+  if (!input.storeId || !input.installationGeneration) return null;
+  const { lockLegacyShopifyConnection } = await import(
+    "./legacy-connection-fence"
+  );
+  return prisma.$transaction(async (tx) => {
+    const [store] = await tx.$queryRaw<
+      Array<{
+        id: string;
+        projectId: string;
+        shopDomain: string;
+        complianceState: string;
+        installationGeneration: string | null;
+      }>
+    >(Prisma.sql`
+      SELECT id, projectId, shopDomain, complianceState, installationGeneration
+      FROM WeleticShopifyStore WHERE id=${input.storeId} LIMIT 1 FOR UPDATE`);
+    if (
+      !store ||
+      store.projectId !== input.workspaceId ||
+      store.shopDomain !== input.shop ||
+      store.complianceState !== "active" ||
+      store.installationGeneration !== input.installationGeneration
+    )
+      return null;
+    await lockLegacyShopifyConnection(tx, {
+      workspaceId: store.projectId,
+      shop: store.shopDomain,
+    });
+    const integrations = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT id FROM InstalledIntegration
+      WHERE projectId=${store.projectId} AND integrationId=${SHOPIFY_INTEGRATION_ID}
+      LIMIT 1 FOR UPDATE`);
+    if (integrations.length) return null;
+    const [session] = await tx.$queryRaw<
+      Array<{ shop: string; payload: string }>
+    >(Prisma.sql`
+      SELECT shop, payload FROM WeleticShopifyAppSession
+      WHERE shop=${store.shopDomain} AND isOnline=FALSE
+        AND (expiresAt IS NULL OR expiresAt > CURRENT_TIMESTAMP(3))
+      ORDER BY updatedAt DESC, id ASC LIMIT 1 FOR UPDATE`);
+    if (!session?.payload || session.shop !== store.shopDomain) return null;
+    return readOfflineSessionAccessToken(session.payload);
+  });
 }

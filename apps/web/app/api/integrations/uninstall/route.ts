@@ -3,7 +3,11 @@ import { withWorkspace } from "@/lib/auth";
 import { googleAdsInstalledWorkspaces } from "@/lib/integrations/google-ads/installed-workspaces";
 import { slackOAuthProvider } from "@/lib/integrations/slack/oauth";
 import { prisma } from "@/lib/prisma";
-import { GOOGLE_ADS_INTEGRATION_ID, SLACK_INTEGRATION_ID } from "@dub/utils";
+import {
+  GOOGLE_ADS_INTEGRATION_ID,
+  SHOPIFY_INTEGRATION_ID,
+  SLACK_INTEGRATION_ID,
+} from "@dub/utils";
 import { waitUntil } from "@vercel/functions";
 import { NextResponse } from "next/server";
 
@@ -31,6 +35,16 @@ export const DELETE = withWorkspace(
         code: "unauthorized",
         message:
           "You are not authorized to uninstall this integration. Only the user who installed it can uninstall it.",
+      });
+    }
+
+    // A generic row deletion skips Shopify's generation-fenced freeze and
+    // privacy/voucher cleanup. This endpoint must never report it as uninstall.
+    if (installation.integrationId === SHOPIFY_INTEGRATION_ID) {
+      throw new DubApiError({
+        code: "conflict",
+        message:
+          "Manage app removal in Shopify Admin, or use the Shopify connection settings to request a safe disconnect.",
       });
     }
 

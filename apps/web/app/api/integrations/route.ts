@@ -1,30 +1,18 @@
 import { withWorkspace } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { readWorkspaceIntegrationInventory } from "@/lib/weletic/shopify/integration-inventory";
 import { installedIntegrationSchema } from "@/lib/zod/schemas/integration";
 import { NextResponse } from "next/server";
 
-// GET /api/integrations - get all active integrations
+// Configuration inventory, not installation health or loyalty approval.
 export const GET = withWorkspace(
   async ({ workspace }) => {
-    const integrations = await prisma.integration.findMany({
-      where: {
-        installations: {
-          some: {
-            project: {
-              slug: workspace.slug,
-            },
-          },
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    const integrations = await readWorkspaceIntegrationInventory(workspace.id);
 
     return NextResponse.json(
       integrations.map((integration) =>
         installedIntegrationSchema.parse(integration),
       ),
+      { headers: { "Cache-Control": "private, no-store" } },
     );
   },
   {

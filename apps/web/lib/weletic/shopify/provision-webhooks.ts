@@ -96,12 +96,14 @@ async function auditExactWebhookSubscriptions({
   callbackUrl,
   topics,
   expectedFilters,
+  allowSdkFallback = true,
 }: {
   shopDomain: string;
   accessToken: string;
   callbackUrl: string;
   topics: readonly string[];
   expectedFilters?: ReadonlyMap<string, string | null>;
+  allowSdkFallback?: boolean;
 }) {
   if (topics.length === 0) return new Set<string>();
   const response = await shopifyAdminGraphql<{
@@ -112,6 +114,7 @@ async function auditExactWebhookSubscriptions({
     apiVersion: "2026-07",
     query: AUDIT_WEBHOOK_SUBSCRIPTIONS_QUERY,
     variables: { first: 250, topics },
+    allowSdkFallback,
   });
   const nodes = response.webhookSubscriptions?.nodes;
   if (!Array.isArray(nodes)) {
@@ -138,10 +141,14 @@ export async function ensureShopifyWebhooksRegistered({
   shopDomain,
   accessToken,
   callbackUrl: explicitCallbackUrl,
+  allowSdkFallback = true,
 }: {
   shopDomain: string;
   accessToken: string;
   callbackUrl?: string;
+  /** Disable when the caller holds installation/session locks: SDK recovery
+   * needs those locks and must not substitute a different credential. */
+  allowSdkFallback?: boolean;
 }): Promise<ProvisionWebhooksResult> {
   const callbackUrl = resolveShopifyWebhookCallbackUrl(explicitCallbackUrl);
   const registered: string[] = [];
@@ -160,6 +167,7 @@ export async function ensureShopifyWebhooksRegistered({
         accessToken,
         apiVersion: "2026-07",
         query: CREATE_WEBHOOK_MUTATION,
+        allowSdkFallback,
         variables: {
           topic,
           webhookSubscription: {
@@ -217,6 +225,7 @@ export async function ensureShopifyWebhooksRegistered({
         accessToken,
         callbackUrl,
         topics: candidates,
+        allowSdkFallback,
       });
       for (const topic of candidates) {
         if (!verified.has(topic)) {

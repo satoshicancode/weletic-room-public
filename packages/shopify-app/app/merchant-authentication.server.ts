@@ -4,8 +4,8 @@ import {
   type Shopify,
 } from "@shopify/shopify-api";
 import type { ShopifyMerchantActorEnvelope } from "../../../apps/web/lib/weletic/shopify/staff-contract";
-import { shopifyStaffUserIdSchema } from "../../../apps/web/lib/weletic/shopify/staff-contract";
 import type { CoordinatedWeleticSessionStorage } from "./coordinated-session-storage.server";
+import { verifyShopifyMerchantIdentity } from "./merchant-identity.server";
 import { WeleticGatewayError } from "./weletic-api.server";
 
 /** SDK-verifies the browser bearer token, then performs a fresh online exchange
@@ -26,46 +26,8 @@ export function createMerchantAuthenticator({
       session: Session;
     }) => Promise<T>,
   ): Promise<T> {
-    const header = request.headers.get("Authorization");
-    const match =
-      header && header.length <= 8192
-        ? /^Bearer ([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/i.exec(
-            header,
-          )
-        : null;
-    if (!match)
-      throw new WeleticGatewayError("Shopify authentication is required", 401);
-    const token = match[1];
-    let identity: { shop: string; userId: string };
-    try {
-      // This SDK method verifies HS256 and audience; it is not decode-only.
-      const claims = await sdk.session.decodeSessionToken(token);
-      const userId = shopifyStaffUserIdSchema.parse(claims.sub);
-      const destination = new URL(claims.dest);
-      const now = Math.floor(Date.now() / 1000);
-      if (
-        destination.protocol !== "https:" ||
-        destination.port ||
-        destination.username ||
-        destination.password ||
-        !/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(destination.hostname) ||
-        claims.dest !== destination.origin ||
-        claims.iss !== `${destination.origin}/admin` ||
-        ![claims.iat, claims.nbf, claims.exp].every(
-          (time) => Number.isSafeInteger(time) && time > 0,
-        ) ||
-        claims.iat > now ||
-        claims.nbf > now ||
-        claims.exp <= now ||
-        claims.iat >= claims.exp ||
-        claims.nbf >= claims.exp
-      )
-        throw new Error("Invalid Shopify identity");
-      identity = { shop: destination.hostname, userId };
-    } catch {
-      // InvalidJwtError embeds the original JWT. Never propagate or log it.
-      throw new WeleticGatewayError("Invalid Shopify authentication", 401);
-    }
+    const identity = await verifyShopifyMerchantIdentity(request, sdk);
+    const { token } = identity;
     return storage.runOperation(async () => {
       let session: Session;
       try {

@@ -35,6 +35,11 @@ const mocks = vi.hoisted(() => ({
   invalidateCache: vi.fn(),
   queryRaw: vi.fn(),
   publishPolicyRevision: vi.fn(),
+  legacyConnection: vi.fn(),
+}));
+
+vi.mock("@/lib/weletic/shopify/legacy-connection-fence", () => ({
+  lockLegacyShopifyConnection: mocks.legacyConnection,
 }));
 
 vi.mock("server-only", () => ({}));
@@ -152,6 +157,7 @@ describe("Shopify integration lifecycle boundary", () => {
       "shopify-integration-callback-lifecycle-test-only-key",
     );
     vi.clearAllMocks();
+    mocks.legacyConnection.mockReset().mockResolvedValue(undefined);
     mocks.complianceCount.mockResolvedValue(0);
     mocks.cleanupCount.mockResolvedValue(0);
     mocks.storeFindFirst.mockResolvedValue(null);
@@ -347,6 +353,53 @@ describe("Shopify integration lifecycle boundary", () => {
     ).rejects.toThrow("blocked while an uninstall or shop-redact request");
   });
 
+  it.each(["preflight", "publication"])(
+    "rejects public authority at callback %s",
+    async (phase) => {
+      mocks.storeFindUnique.mockResolvedValue(null);
+      mocks.queryRaw.mockResolvedValue([]);
+      if (phase === "publication")
+        mocks.legacyConnection.mockResolvedValueOnce(undefined);
+      mocks.legacyConnection.mockRejectedValue(new Error("managed by Shopify"));
+      await expect(
+        (PATCH as any)({
+          req: new Request(
+            "https://room.test/api/shopify/integration/callback",
+            {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                action: "connect",
+                shopifyStoreId: "same.myshopify.com",
+                accessToken: "synthetic-token",
+                scope: "write_discounts",
+              }),
+            },
+          ),
+          workspace: {
+            id: "workspace_1",
+            shopifyStoreId: null,
+            defaultProgramId: "program",
+          },
+          session: { user: { id: "user_1" } },
+        }),
+      ).rejects.toThrow("managed by Shopify");
+      expect(mocks.legacyConnection).toHaveBeenCalledTimes(
+        phase === "preflight" ? 1 : 2,
+      );
+      if (phase === "preflight") {
+        expect(mocks.fetchVerifiedShop).not.toHaveBeenCalled();
+        expect(mocks.ensureWebhooks).not.toHaveBeenCalled();
+      }
+      expect(mocks.storeCreate).not.toHaveBeenCalled();
+      expect(mocks.storeUpdateMany).not.toHaveBeenCalled();
+      expect(mocks.projectUpdate).not.toHaveBeenCalled();
+      expect(mocks.installIntegration).not.toHaveBeenCalled();
+      expect(mocks.installationUpdate).not.toHaveBeenCalled();
+      expect(mocks.syncCatalog).not.toHaveBeenCalled();
+    },
+  );
+
   it("rejects connect before verification or provisioning when no default program exists", async () => {
     await expect(
       (PATCH as any)({
@@ -501,7 +554,8 @@ describe("Shopify integration lifecycle boundary", () => {
     ).rejects.toThrow("authoritative shop currency could not be verified");
 
     expect(mocks.ensureWebhooks).not.toHaveBeenCalled();
-    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.legacyConnection).toHaveBeenCalledOnce();
     expect(mocks.storeCreate).not.toHaveBeenCalled();
   });
 
@@ -927,7 +981,7 @@ describe("Shopify integration lifecycle boundary", () => {
       }),
     );
     expect(mocks.ensureWebhooks).toHaveBeenCalledOnce();
-    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
     expect(mocks.installIntegration).toHaveBeenCalledWith(
       expect.objectContaining({
         credentials: expect.objectContaining({
@@ -979,7 +1033,8 @@ describe("Shopify integration lifecycle boundary", () => {
       }),
     ).rejects.toThrow("Shopify webhook provisioning failed");
     expect(mocks.installIntegration).not.toHaveBeenCalled();
-    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.legacyConnection).toHaveBeenCalledOnce();
   });
 
   it("rejects an incomplete provisioning result even when its success flag is true", async () => {
@@ -1227,9 +1282,11 @@ describe("Shopify integration lifecycle boundary", () => {
 
   it("rejects a new connection when final redaction wins before the write-point tombstone recheck", async () => {
     mocks.storeFindUnique.mockResolvedValue(null);
-    mocks.queryRaw
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: "shop_tombstone_after_finalize" }]);
+    mocks.legacyConnection
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(
+        new Error("retained by a redacted privacy lifecycle"),
+      );
 
     await expect(
       (PATCH as any)({
@@ -1252,53 +1309,85 @@ describe("Shopify integration lifecycle boundary", () => {
       }),
     ).rejects.toThrow("retained by a redacted privacy lifecycle");
 
-    expect(mocks.queryRaw).toHaveBeenCalledTimes(2);
-    const firstSql =
-      mocks.queryRaw.mock.calls[0]?.[0]?.strings?.join(" ") ?? "";
-    const secondSql =
-      mocks.queryRaw.mock.calls[1]?.[0]?.strings?.join(" ") ?? "";
-    expect(firstSql).toContain("WeleticShopifyStore");
-    expect(secondSql).toContain("WeleticShopifyShopPrivacyTombstone");
+    expect(mocks.legacyConnection).toHaveBeenCalledTimes(2);
+    expect(mocks.queryRaw).not.toHaveBeenCalled();
     expect(mocks.projectUpdate).not.toHaveBeenCalled();
     expect(mocks.installIntegration).not.toHaveBeenCalled();
   });
 
-  it("manual disconnect durably freezes without deleting authority synchronously", async () => {
-    mocks.storeFindUnique.mockResolvedValue({
-      id: "wstore_disconnect",
+  it.each([null, { id: "installation_lifecycle_1" }])(
+    "manual disconnect durably freezes without generic ownership (%j)",
+    async (installation) => {
+      mocks.storeFindUnique.mockResolvedValue({
+        id: "wstore_disconnect",
+        shopDomain: "same.myshopify.com",
+        complianceState: "active",
+        installationGeneration: "sgen_disconnect",
+      });
+      mocks.installationFindFirst.mockResolvedValue(installation);
+
+      const response = await (PATCH as any)({
+        req: new Request("https://room.test/api/shopify/integration/callback", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "disconnect", shopifyStoreId: null }),
+        }),
+        workspace: {
+          id: "workspace_1",
+          shopifyStoreId: "same.myshopify.com",
+          defaultProgramId: null,
+        },
+        session: { user: { id: "user_1" } },
+      });
+
+      await expect(response.json()).resolves.toEqual({
+        shopifyStoreId: null,
+        complianceState: "frozen",
+        disconnectRequestId: "wcomp_disconnect",
+      });
+      expect(persistAndQueueInternalShopifyDisconnect).toHaveBeenCalledWith({
+        storeId: "wstore_disconnect",
+        canonicalShopDomain: "same.myshopify.com",
+        expectedInstallationGeneration: "sgen_disconnect",
+        idempotencyKey: expect.stringMatching(/^[a-f0-9]{64}$/),
+      });
+      expect(mocks.installationFindFirst).not.toHaveBeenCalled();
+      expect(mocks.installationDeleteMany).not.toHaveBeenCalled();
+      expect(prisma.project.update).not.toHaveBeenCalled();
+    },
+  );
+  it("keeps disconnect idempotency stable through credential deletion but changes it after reinstall", async () => {
+    const store = {
+      id: "store",
       shopDomain: "same.myshopify.com",
       complianceState: "active",
-      installationGeneration: "sgen_disconnect",
+      installationGeneration: "first-generation",
+    };
+    mocks.storeFindUnique.mockResolvedValue(store);
+    const invoke = () =>
+      (PATCH as any)({
+        req: new Request("https://room.test/api/shopify/integration/callback", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "disconnect", shopifyStoreId: null }),
+        }),
+        workspace: { id: "workspace_1" },
+        session: { user: { id: "user_1" } },
+      });
+    await invoke();
+    mocks.installationFindFirst.mockResolvedValue(null);
+    await invoke();
+    expect(mocks.persistDisconnect.mock.calls[0][0]).toEqual(
+      mocks.persistDisconnect.mock.calls[1][0],
+    );
+    mocks.storeFindUnique.mockResolvedValue({
+      ...store,
+      installationGeneration: "second-generation",
     });
-    mocks.installationFindFirst.mockResolvedValue({
-      id: "installation_lifecycle_1",
-    });
-
-    const response = await (PATCH as any)({
-      req: new Request("https://room.test/api/shopify/integration/callback", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "disconnect", shopifyStoreId: null }),
-      }),
-      workspace: {
-        id: "workspace_1",
-        shopifyStoreId: "same.myshopify.com",
-        defaultProgramId: null,
-      },
-      session: { user: { id: "user_1" } },
-    });
-
-    await expect(response.json()).resolves.toEqual({
-      shopifyStoreId: null,
-      complianceState: "frozen",
-      disconnectRequestId: "wcomp_disconnect",
-    });
-    expect(persistAndQueueInternalShopifyDisconnect).toHaveBeenCalledWith({
-      storeId: "wstore_disconnect",
-      canonicalShopDomain: "same.myshopify.com",
-      idempotencyKey: "installation_lifecycle_1:sgen_disconnect",
-    });
-    expect(mocks.installationDeleteMany).not.toHaveBeenCalled();
-    expect(prisma.project.update).not.toHaveBeenCalled();
+    await invoke();
+    expect(mocks.persistDisconnect.mock.calls[2][0].idempotencyKey).not.toBe(
+      mocks.persistDisconnect.mock.calls[0][0].idempotencyKey,
+    );
+    expect(mocks.installationFindFirst).not.toHaveBeenCalled();
   });
 });

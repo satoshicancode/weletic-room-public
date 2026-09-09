@@ -20,10 +20,14 @@ const mocks = vi.hoisted(() => ({
   voucherCleanupFindMany: vi.fn(),
   outboxFindMany: vi.fn(),
   webhookEventFindMany: vi.fn(),
+  pendingInstallationFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    weleticShopifyPendingInstallation: {
+      findMany: mocks.pendingInstallationFindMany,
+    },
     weleticShopifyCustomerPrivacyTombstone: {
       findMany: mocks.customerTombstoneFindMany,
     },
@@ -64,6 +68,24 @@ describe("Shopify privacy HMAC key-retirement audit", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+  it("retains keys needed by pre-workspace installations", async () => {
+    mocks.pendingInstallationFindMany.mockResolvedValue([
+      { id: "pending-1", identityKeyId: "previous-2025" },
+    ]);
+    const result = await auditShopifyPrivacyKeyRetirementBatch({
+      retiringKeyIds: ["previous-2025"],
+      cursor: { sourceIndex: 11 },
+      batchSize: 2,
+    });
+    expect(result.dependencies).toEqual([
+      {
+        source: "pending_installations",
+        keyId: "previous-2025",
+        count: 1,
+        sampleRecordIds: ["pending-1"],
+      },
+    ]);
   });
 
   it("paginates one bounded source and reports only internal record ids", async () => {

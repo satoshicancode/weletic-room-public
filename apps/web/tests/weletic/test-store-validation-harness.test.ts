@@ -1,3 +1,5 @@
+import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   runTestStoreValidation,
@@ -8,6 +10,13 @@ import {
   validateStaticCustomerAccountClaimChecks,
   validateWebhookProvisioningPhase,
 } from "../../scripts/loyalty/validate-test-store";
+import { legacyCredentialSqlFixture } from "./helpers/legacy-credential-sql-fixture";
+vi.mock("server-only", () => ({}));
+// The validator characterization below uses retained legacy credentials;
+// it is not native authentication or real-store acceptance evidence.
+vi.mock("@/lib/weletic/shopify/credential-source", () => ({
+  readShopifyCredentialSource: vi.fn(async () => ({ source: "legacy" })),
+}));
 
 const validationMockState = vi.hoisted(() => ({
   lookupCounts: new Map<string, number>(),
@@ -97,45 +106,28 @@ vi.mock("@/lib/prisma", () => ({
         id: "wstore_test_store",
         projectId: "proj_test_store",
         shopDomain: "n0pvef-cs.myshopify.com",
+        complianceState: "active",
         installationGeneration: "sgen_test_store",
         program: { id: "wprog_test_store", status: "active" },
       }),
       findFirst: vi.fn(),
     },
-    $queryRaw: vi.fn().mockResolvedValue([
-      {
-        id: "wstore_test_store",
-        projectId: "proj_test_store",
-        installationGeneration: "sgen_test_store",
-      },
-    ]),
+    $queryRaw: vi.fn((query: Prisma.Sql) => legacySql.queryRaw(query)),
+    $executeRaw: vi.fn((query: Prisma.Sql) => legacySql.executeRaw(query)),
     $transaction: vi.fn(async (callback: (tx: any) => unknown) =>
-      callback({
-        $queryRaw: vi.fn().mockResolvedValue([
-          {
-            id: "wstore_test_store",
-            projectId: "proj_test_store",
-            installationGeneration: "sgen_test_store",
-          },
-        ]),
-        installedIntegration: {
-          findUnique: vi.fn().mockResolvedValue({
-            id: "inst_1",
-            projectId: "proj_test_store",
-            credentials: {
-              shop: "n0pvef-cs.myshopify.com",
-              accessToken: "shpat_mock_test_token_12345",
-              installationGeneration: "sgen_test_store",
-              shopVerifiedAt: "2026-08-28T00:00:00.000Z",
-              shopVerificationTokenHash:
-                "6e9adad2553121938c7243c850b3f9e9c122bb43bdb449e1bbde5b0da6bd9bcb",
-            },
-          }),
-        },
-      }),
+      callback(prisma),
     ),
   },
 }));
+
+const legacySql = legacyCredentialSqlFixture({
+  readStore: () =>
+    prisma.weleticShopifyStore.findUnique({
+      where: { id: "wstore_test_store" },
+    }),
+  readInstallation: (id) =>
+    prisma.installedIntegration.findUnique({ where: { id } }),
+});
 
 vi.mock("@/lib/encryption", () => ({
   decryptOrPassthrough: vi.fn((val: string) => val),
@@ -438,7 +430,7 @@ describe("Milestone 6: Mocked Test Store Validator Characterization Suite", () =
       const result = await validateDomainResolution(TEST_STORE, {
         dryRun: true,
       });
-      expect(result.passed).toBe(true);
+      expect(result.passed, JSON.stringify(result.checks)).toBe(true);
       expect(result.checks).toHaveLength(2);
       expect(result.checks[0].name).toBe("Domain String Normalization");
       expect(result.checks[0].passed).toBe(true);
@@ -449,7 +441,7 @@ describe("Milestone 6: Mocked Test Store Validator Characterization Suite", () =
         dryRun: false,
         mockShopify: true,
       });
-      expect(result.passed).toBe(true);
+      expect(result.passed, JSON.stringify(result.checks)).toBe(true);
       expect(result.checks[1].name).toBe(
         "Canonical Store Resolution (DB / InstalledIntegration)",
       );

@@ -18,6 +18,7 @@ import {
   resolveShopifyOfflineCredentials,
   ShopifyDiscountError,
 } from "@/lib/weletic/loyalty/shopify-discounts";
+import { readFrozenStoreOwnedVoucherCredential } from "@/lib/weletic/shopify/store-owned-credential";
 import { normalizeShopDomain } from "@/lib/weletic/shopify/store-resolver";
 import {
   Prisma,
@@ -237,59 +238,60 @@ async function withShopperCleanupFence<T>({
   lockOwner,
   leaseVersion,
   operation,
+  tx: existingTx,
 }: {
   cleanup: WeleticShopifyVoucherCleanup;
   snapshot: VoucherCleanupOwnershipSnapshot;
   lockOwner: string;
   leaseVersion: number;
   operation: (tx?: Prisma.TransactionClient) => Promise<T>;
+  tx?: Prisma.TransactionClient;
 }): Promise<T> {
   if (snapshot.kind !== "shopper") return operation();
   // No automatic transaction retry around provider I/O. Each call rechecks the
   // durable owner, quarantine, generation and winning lease before using tokens.
-  return prisma.$transaction(
-    async (tx) => {
-      const store = await lockCleanupStore(tx, cleanup.storeId);
-      if (store.installationGeneration !== snapshot.installationGeneration)
-        throw new VoucherCleanupManualReconciliationError(
-          "Shopper voucher cleanup belongs to an earlier installation.",
-        );
-      const redemption = await tx.weleticRewardRedemption.findUnique({
-        where: { id: cleanup.redemptionId },
-      });
-      if (
-        !redemption ||
-        redemption.storeId !== cleanup.storeId ||
-        !redemption.settlementQuarantinedAt
-      )
-        throw new VoucherCleanupManualReconciliationError(
-          "Shopper voucher is not durably quarantined for cleanup.",
-        );
-      assertShopperSnapshotOwner(redemption, snapshot);
-      const leases = await tx.$queryRaw<VoucherCleanupLeaseRow[]>(Prisma.sql`
+  const run = async (tx: Prisma.TransactionClient) => {
+    const store = await lockCleanupStore(tx, cleanup.storeId);
+    if (store.installationGeneration !== snapshot.installationGeneration)
+      throw new VoucherCleanupManualReconciliationError(
+        "Shopper voucher cleanup belongs to an earlier installation.",
+      );
+    const redemption = await tx.weleticRewardRedemption.findUnique({
+      where: { id: cleanup.redemptionId },
+    });
+    if (
+      !redemption ||
+      redemption.storeId !== cleanup.storeId ||
+      !redemption.settlementQuarantinedAt
+    )
+      throw new VoucherCleanupManualReconciliationError(
+        "Shopper voucher is not durably quarantined for cleanup.",
+      );
+    assertShopperSnapshotOwner(redemption, snapshot);
+    const leases = await tx.$queryRaw<VoucherCleanupLeaseRow[]>(Prisma.sql`
       SELECT id, storeId, source, status, lockedBy, leaseVersion
       FROM WeleticShopifyVoucherCleanup WHERE id = ${cleanup.id} LIMIT 1 FOR UPDATE
     `);
-      const lease = leases[0];
-      if (
-        !lease ||
-        lease.storeId !== cleanup.storeId ||
-        lease.source !== cleanup.source ||
-        lease.status !== "processing" ||
-        lease.lockedBy !== lockOwner ||
-        lease.leaseVersion !== leaseVersion
-      )
-        throw new VoucherCleanupRetryableError(
-          "Shopper voucher cleanup lost its lease before the fenced operation.",
-        );
-      return operation(tx);
-    },
-    {
-      maxWait: 10_000,
-      timeout: 120_000,
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    },
-  );
+    const lease = leases[0];
+    if (
+      !lease ||
+      lease.storeId !== cleanup.storeId ||
+      lease.source !== cleanup.source ||
+      lease.status !== "processing" ||
+      lease.lockedBy !== lockOwner ||
+      lease.leaseVersion !== leaseVersion
+    )
+      throw new VoucherCleanupRetryableError(
+        "Shopper voucher cleanup lost its lease before the fenced operation.",
+      );
+    return operation(tx);
+  };
+  if (existingTx) return run(existingTx);
+  return prisma.$transaction(run, {
+    maxWait: 10_000,
+    timeout: 120_000,
+    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  });
 }
 
 function createOwnershipSnapshot(
@@ -1512,11 +1514,57 @@ export async function handleVoucherPrivacyCleanup(
     await fence(async () => undefined);
     // The integration credential resolver takes its own store-row lock. Never
     // call it inside our transaction; recheck generation after it returns.
-    const credentials = await resolveShopifyOfflineCredentials({ storeId });
-    const remote = await fence(async () => {
+    const credentialStore = await prisma.weleticShopifyStore.findUnique({
+      where: { id: storeId },
+      select: { complianceState: true },
+    });
+    const frozen = credentialStore?.complianceState === "frozen";
+    const credentials = frozen
+      ? null
+      : await resolveShopifyOfflineCredentials({ storeId });
+    const remoteOperation = <T>(
+      operation: (credential: {
+        shopDomain: string;
+        accessToken: string;
+      }) => Promise<T>,
+    ) => {
+      if (!frozen) return fence(() => operation(credentials!));
+      return prisma.$transaction(
+        async (tx) => {
+          const cleanupCredential = await readFrozenStoreOwnedVoucherCredential(
+            tx,
+            {
+              storeId,
+              cleanupId: cleanup.id,
+              redemptionId,
+              lockOwner,
+              leaseVersion,
+              source: cleanup.source,
+              expectedCode: cleanup.expectedDiscountCodeCanonical,
+            },
+          );
+          // Reuse the same transaction; never open a nested Store lock while
+          // resolving frozen credentials. Retain shopper ownership checks too.
+          return withShopperCleanupFence({
+            cleanup,
+            snapshot,
+            lockOwner,
+            leaseVersion,
+            tx,
+            operation: () => operation(cleanupCredential),
+          });
+        },
+        {
+          maxWait: 10_000,
+          timeout: 120_000,
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
+      );
+    };
+    const remote = await remoteOperation(async (credential) => {
       return lookupDiscountByCode(
-        credentials.shopDomain,
-        credentials.accessToken,
+        credential.shopDomain,
+        credential.accessToken,
         cleanup.expectedDiscountCodeCanonical,
       );
     });
@@ -1639,10 +1687,10 @@ export async function handleVoucherPrivacyCleanup(
       const alreadyInactive =
         remoteStatus === "INACTIVE" || remoteStatus === "EXPIRED";
       if (!alreadyInactive) {
-        const deactivated = await fence(async () => {
+        const deactivated = await remoteOperation(async (credential) => {
           return deactivateDiscount(
-            credentials.shopDomain,
-            credentials.accessToken,
+            credential.shopDomain,
+            credential.accessToken,
             remote.id,
           );
         });

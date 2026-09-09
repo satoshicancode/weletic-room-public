@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   discountsUpdate: vi.fn(),
   segmentMembershipChanged: vi.fn(),
   captureWebhookLog: vi.fn(),
+  pendingPrivacy: vi.fn(),
 }));
 
 vi.mock("@/lib/api/environment", () => ({ isLocalDev: true }));
@@ -45,8 +46,12 @@ vi.mock("@/lib/weletic/shopify/compliance-store-resolver", () => ({
 vi.mock("@/lib/weletic/shopify/compliance-ingress", () => ({
   persistAndQueueShopifyComplianceRequest: mocks.persistAndQueue,
 }));
-vi.mock("@/lib/weletic/shopify/store-resolver", () => ({
+vi.mock("@/lib/weletic/shopify/store-resolver", async (original) => ({
+  ...(await original<typeof import("@/lib/weletic/shopify/store-resolver")>()),
   resolveShopifyStoreByDomain: mocks.resolveOperationalStore,
+}));
+vi.mock("@/lib/weletic/shopify/pending-installation-privacy", () => ({
+  handlePendingInstallationPrivacy: mocks.pendingPrivacy,
 }));
 vi.mock("@/lib/weletic/loyalty/shopify-discounts", () => ({
   shopifyAdminGraphqlRequest: mocks.shopifyAdminGraphqlRequest,
@@ -253,6 +258,54 @@ describe("central durable Shopify compliance ingress", () => {
     mocks.transaction.mockImplementation((callback, client) =>
       callback(client),
     );
+  });
+
+  it("handles an authenticated unmapped privacy request without customer ingestion", async () => {
+    vi.stubEnv("SHOPIFY_API_KEY", "public-app");
+    mocks.resolveComplianceStore.mockResolvedValue(null);
+    mocks.pendingPrivacy.mockResolvedValue({ disposition: "no_customer_data" });
+    const response = await POST(
+      signedRequest({
+        body: {
+          shop_domain: "a.myshopify.com",
+          customer: { id: 42 },
+          orders_requested: [],
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.pendingPrivacy).toHaveBeenCalledWith(
+      expect.anything(),
+      { appId: "public-app", shop: "a.myshopify.com" },
+      "customers/data_request",
+      null,
+    );
+    expect(mocks.persistAndQueue).not.toHaveBeenCalled();
+    expect(mocks.customersSync).not.toHaveBeenCalled();
+    expect(mocks.publishJSON).not.toHaveBeenCalled();
+  });
+
+  it("rejects a mismatched unknown header/body tenant before pending privacy", async () => {
+    mocks.resolveComplianceStore.mockResolvedValue(null);
+    const request = signedRequest({
+      body: { shop_domain: "a.myshopify.com", customer: { id: 42 } },
+    });
+    request.headers.set("x-shopify-shop-domain", "b.myshopify.com");
+    expect((await POST(request)).status).toBe(401);
+    expect(mocks.pendingPrivacy).not.toHaveBeenCalled();
+  });
+
+  it("retries a pending privacy request if company mapping wins the race", async () => {
+    vi.stubEnv("SHOPIFY_API_KEY", "public-app");
+    mocks.resolveComplianceStore.mockResolvedValue(null);
+    mocks.pendingPrivacy.mockResolvedValue({ disposition: "mapped" });
+    const response = await POST(
+      signedRequest({
+        body: { shop_domain: "a.myshopify.com", customer: { id: 42 } },
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("5");
   });
 
   it("accepts the next signing key only during configured overlap", async () => {

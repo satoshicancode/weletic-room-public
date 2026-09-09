@@ -84,6 +84,7 @@ import {
 } from "./compliance-ingress";
 import { deleteExpiredShopifyPrivacyTombstonesBatch } from "./compliance-retention";
 import type { DurableComplianceSubject } from "./compliance-types";
+import { redactMappedInstallationAdmission } from "./mapped-installation-privacy";
 import { SHOPIFY_SESSION_MISSING_ISSUE_KIND } from "./session-health-contract";
 import { purgeShopifyStaffPrivacyBatch } from "./staff-privacy";
 
@@ -2995,9 +2996,10 @@ export async function processShopRedactStep(request: any): Promise<StepState> {
           complianceState: string;
           redactedAt: Date | null;
           financialRetentionUntil: Date | null;
+          installationGeneration: string | null;
         }>
       >(Prisma.sql`
-        SELECT id, projectId, shopDomain, complianceState, redactedAt, financialRetentionUntil
+        SELECT id, projectId, shopDomain, complianceState, redactedAt, financialRetentionUntil, installationGeneration
         FROM WeleticShopifyStore
         WHERE id = ${request.storeId}
         LIMIT 1
@@ -3074,6 +3076,13 @@ export async function processShopRedactStep(request: any): Promise<StepState> {
       const financialRetentionUntil =
         lockedStore.financialRetentionUntil ??
         addRetentionDays(redactedAt, getShopifyFinancialRetentionDays());
+      await redactMappedInstallationAdmission(tx, {
+        storeId: lockedStore.id,
+        shop: subject.shopDomain,
+        installationGeneration: lockedStore.installationGeneration,
+        redactedAt,
+        expiresAt: financialRetentionUntil,
+      });
       const tombstone = await upsertShopifyShopPrivacyTombstone({
         storeId: request.storeId,
         shopDomain: subject.shopDomain,
@@ -3122,6 +3131,9 @@ export async function processShopRedactStep(request: any): Promise<StepState> {
       // acquire the same store row before their final lifecycle checks, so a
       // writer either commits first and is swept here or observes the redacted
       // state/tombstone after this transaction commits.
+      await tx.weleticShopifyInstallationCredential.deleteMany({
+        where: { storeId: lockedStore.id },
+      });
       await tx.weleticMerchantSettings.deleteMany({
         where: { storeId: request.storeId },
       });

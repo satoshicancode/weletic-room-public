@@ -10,6 +10,27 @@ import {
 } from "vitest";
 
 vi.mock("server-only", () => ({}));
+const legacy = vi.hoisted(() => ({
+  lock: vi.fn(),
+  advance: vi.fn(),
+  queryRaw: vi.fn(),
+}));
+vi.mock("@/lib/weletic/shopify/legacy-connection-fence", () => ({
+  lockLegacyShopifyConnection: legacy.lock,
+}));
+vi.mock("@/lib/weletic/shopify/session-coordination", () => ({
+  advanceLegacyShopifySessionRevision: legacy.advance,
+}));
+vi.mock("@/lib/weletic/shopify/session-snapshot", () => ({
+  configuredShopifySessionScope: (shop: string) => ({
+    appId: "legacy-app",
+    shop,
+  }),
+}));
+// This suite retains the pre-admission custom credential/alias contract.
+vi.mock("@/lib/weletic/shopify/credential-source", () => ({
+  readShopifyCredentialSource: vi.fn(async () => ({ source: "legacy" })),
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -28,7 +49,7 @@ vi.mock("@/lib/prisma", () => ({
     weleticShopifyStore: {
       findUnique: vi.fn(),
     },
-    $queryRaw: vi.fn(),
+    $queryRaw: legacy.queryRaw,
     $transaction: vi.fn(),
   },
 }));
@@ -39,8 +60,10 @@ import {
   canonicalizeShopifyDomain,
   invalidateShopifyStoreDomainCache,
   normalizeShopDomain,
+  readLegacyBootstrapSession,
   resolveShopifyStoreByDomain,
   shopifyCredentialVerificationHash,
+  verifyAndBindShopifyIntegrationCredential,
   verifyShopifyAccessTokenForDomain,
 } from "@/lib/weletic/shopify/store-resolver";
 
@@ -67,6 +90,8 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    legacy.lock.mockReset().mockResolvedValue(undefined);
+    legacy.advance.mockReset().mockResolvedValue(undefined);
     mockFetch.mockReset().mockRejectedValue(new Error("Unexpected network"));
     vi.stubGlobal("fetch", mockFetch);
     vi.mocked(prisma.project.findUnique).mockReset().mockResolvedValue(null);
@@ -80,15 +105,33 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
     vi.mocked(prisma.installedIntegration.update)
       .mockReset()
       .mockResolvedValue({} as any);
-    vi.mocked(prisma.$queryRaw)
-      .mockReset()
-      .mockResolvedValue([
+    legacy.queryRaw.mockReset().mockImplementation(async (query: any) => {
+      if (query.strings.join("").includes("FROM WeleticShopifyAppSession")) {
+        const row = await prisma.weleticShopifyAppSession.findFirst({
+          where: { shop: query.values[0], isOnline: false },
+        });
+        return row ? [row] : [];
+      }
+      if (query.strings.join("").includes("FROM InstalledIntegration")) {
+        const row = await prisma.installedIntegration.findUnique({
+          where: { id: query.values[0] },
+        });
+        return row ? [row] : [];
+      }
+      const configuredStore = await prisma.weleticShopifyStore.findUnique({
+        where: { id: query.values[0] },
+      });
+      if (configuredStore) return [configuredStore];
+      return [
         {
           id: "wstore_123",
           projectId: workspaceId,
+          shopDomain: "yamaxdev.myshopify.com",
+          complianceState: "active",
           installationGeneration: "sgen_one",
         },
-      ] as any);
+      ] as any;
+    });
     vi.mocked(prisma.$transaction).mockImplementation(async (callback: any) =>
       callback({
         $queryRaw: prisma.$queryRaw,
@@ -108,6 +151,81 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it.each([true, false])(
+    "rejects ownership appearing after source selection (verified=%s)",
+    async (verified) => {
+      const credentials = {
+        shop: "alias.myshopify.com",
+        accessToken: encryptedToken,
+        installationGeneration: "sgen_one",
+        ...(verified
+          ? {
+              shopVerificationTokenHash:
+                shopifyCredentialVerificationHash(testAccessToken),
+            }
+          : {}),
+      };
+      mockFetch.mockResolvedValueOnce(
+        Response.json({
+          data: {
+            shop: { myshopifyDomain: credentials.shop, currencyCode: "USD" },
+          },
+        }),
+      );
+      legacy.lock.mockRejectedValueOnce(new Error("Managed by Shopify"));
+      await expect(
+        verifyAndBindShopifyIntegrationCredential({
+          installation: { id: "integration", credentials },
+          expectedStore: {
+            id: "wstore_123",
+            installationGeneration: "sgen_one",
+          },
+          expectedShopDomain: credentials.shop,
+        }),
+      ).rejects.toThrow("Managed by Shopify");
+      expect(legacy.lock).toHaveBeenCalledWith(expect.anything(), {
+        workspaceId,
+        shop: "yamaxdev.myshopify.com",
+      });
+      expect(prisma.installedIntegration.findUnique).not.toHaveBeenCalled();
+      expect(prisma.installedIntegration.update).not.toHaveBeenCalled();
+      expect(legacy.advance).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects metadata publication after SDK promotion", async () => {
+    const credentials = {
+      shop: "alias.myshopify.com",
+      accessToken: encryptedToken,
+      installationGeneration: "sgen_one",
+    };
+    mockFetch.mockResolvedValueOnce(
+      Response.json({
+        data: {
+          shop: { myshopifyDomain: credentials.shop, currencyCode: "USD" },
+        },
+      }),
+    );
+    vi.mocked(prisma.installedIntegration.findUnique).mockResolvedValueOnce({
+      id: "integration",
+      projectId: workspaceId,
+      credentials,
+    } as any);
+    legacy.advance.mockRejectedValueOnce(new Error("stale_session"));
+    await expect(
+      verifyAndBindShopifyIntegrationCredential({
+        installation: { id: "integration", credentials },
+        expectedStore: { id: "wstore_123", installationGeneration: "sgen_one" },
+        expectedShopDomain: credentials.shop,
+      }),
+    ).rejects.toThrow("stale_session");
+    expect(legacy.advance).toHaveBeenCalledWith(expect.anything(), {
+      appId: "legacy-app",
+      shop: "yamaxdev.myshopify.com",
+    });
+    expect(prisma.installedIntegration.update).not.toHaveBeenCalled();
   });
 
   it("1.1: normalizes shop domains correctly (removes protocols, paths, trailing slashes)", () => {
@@ -391,6 +509,13 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
   });
 
   it("1.5: resolves the exact workspace through its encrypted offline app session", async () => {
+    vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
+      id: "wstore_session",
+      projectId: workspaceId,
+      shopDomain: "session-shop.myshopify.com",
+      complianceState: "active",
+      installationGeneration: "sgen_one",
+    } as any);
     vi.mocked(prisma.project.findFirst).mockResolvedValueOnce({
       id: workspaceId,
       shopifyStoreId: "session-shop.myshopify.com",
@@ -479,6 +604,7 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
     expect(result?.accessToken).toBe(testAccessToken);
     expect(prisma.installedIntegration.update).toHaveBeenCalledWith({
       where: { id: "integration_legacy_unbound" },
+      select: { id: true },
       data: {
         credentials: expect.objectContaining({
           shop: "legacy-unbound.myshopify.com",
@@ -541,6 +667,13 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
   });
 
   it("1.9: rejects a corrupt offline-session alias belonging to another shop", async () => {
+    vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
+      id: "wstore_expected_session",
+      projectId: workspaceId,
+      shopDomain: "expected-session.myshopify.com",
+      complianceState: "active",
+      installationGeneration: "sgen_one",
+    } as any);
     vi.mocked(prisma.project.findFirst).mockResolvedValueOnce({
       id: workspaceId,
       shopifyStoreId: "expected-session.myshopify.com",
@@ -563,6 +696,78 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
     await expect(
       resolveShopifyStoreByDomain("expected-session.myshopify.com"),
     ).resolves.toBeNull();
+    expect(prisma.weleticShopifyAppSession.findFirst).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a public admission appearing before legacy session consumption", async () => {
+    legacy.lock.mockRejectedValueOnce(new Error("Managed by Shopify"));
+    await expect(
+      readLegacyBootstrapSession({
+        storeId: "wstore_123",
+        workspaceId,
+        shop: "yamaxdev.myshopify.com",
+        installationGeneration: "sgen_one",
+      }),
+    ).rejects.toThrow("Managed by Shopify");
+    expect(prisma.weleticShopifyAppSession.findFirst).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { projectId: "foreign-workspace" },
+    { shopDomain: "foreign.myshopify.com" },
+    { complianceState: "uninstalled" },
+    { installationGeneration: "sgen_new" },
+  ])("rejects changed bootstrap Store authority: %j", async (change) => {
+    legacy.queryRaw.mockResolvedValueOnce([
+      {
+        id: "wstore_123",
+        projectId: workspaceId,
+        shopDomain: "yamaxdev.myshopify.com",
+        complianceState: "active",
+        installationGeneration: "sgen_one",
+        ...change,
+      },
+    ]);
+    await expect(
+      readLegacyBootstrapSession({
+        storeId: "wstore_123",
+        workspaceId,
+        shop: "yamaxdev.myshopify.com",
+        installationGeneration: "sgen_one",
+      }),
+    ).resolves.toBeNull();
+    expect(legacy.lock).not.toHaveBeenCalled();
+    expect(prisma.weleticShopifyAppSession.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects an integration created after initial source selection", async () => {
+    vi.mocked(prisma.installedIntegration.findUnique).mockResolvedValue({
+      id: "new-integration",
+    } as any);
+    await expect(
+      readLegacyBootstrapSession({
+        storeId: "wstore_123",
+        workspaceId,
+        shop: "yamaxdev.myshopify.com",
+        installationGeneration: "sgen_one",
+      }),
+    ).resolves.toBeNull();
+    expect(legacy.lock).toHaveBeenCalledOnce();
+    expect(prisma.weleticShopifyAppSession.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("never bootstraps an unprovisioned Store or missing generation", async () => {
+    for (const identity of [{}, { storeId: "wstore_123" }]) {
+      await expect(
+        readLegacyBootstrapSession({
+          workspaceId,
+          shop: "yamaxdev.myshopify.com",
+          ...identity,
+        }),
+      ).resolves.toBeNull();
+    }
+    expect(legacy.queryRaw).not.toHaveBeenCalled();
+    expect(prisma.weleticShopifyAppSession.findFirst).not.toHaveBeenCalled();
   });
 
   it("1.10: preserves a concurrently rotated OAuth token during legacy binding", async () => {
@@ -688,16 +893,23 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
           credentials: currentCredentials(),
         }) as any,
     );
-    (prisma.$queryRaw as any).mockImplementation(
-      async () =>
-        [
-          {
-            id: "wstore_cache_rotation",
-            projectId: workspaceId,
-            installationGeneration: currentGeneration,
-          },
-        ] as any,
-    );
+    (prisma.$queryRaw as any).mockImplementation(async (query: any) => {
+      if (query.strings.join("").includes("FROM InstalledIntegration"))
+        return [
+          await prisma.installedIntegration.findUnique({
+            where: { id: query.values[0] },
+          }),
+        ];
+      return [
+        {
+          id: "wstore_cache_rotation",
+          projectId: workspaceId,
+          shopDomain: domain,
+          complianceState: "active",
+          installationGeneration: currentGeneration,
+        },
+      ] as any;
+    });
 
     const first = await resolveShopifyStoreByDomain(domain);
     expect(first?.accessToken).toBe(testAccessToken);

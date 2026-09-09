@@ -1,4 +1,6 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { installationBootstrapError } from "../app/installation-bootstrap-error";
 import {
   action as homepageAction,
   loader as homepageLoader,
@@ -15,6 +17,7 @@ import {
   action as earningAction,
   loader as earningLoader,
 } from "../app/routes/earning-rules";
+import { loader as installationLoader } from "../app/routes/installation";
 import {
   action as loyaltyAction,
   loader as loyaltyLoader,
@@ -37,6 +40,29 @@ import {
 } from "../app/routes/settings";
 
 const mocks = vi.hoisted(() => ({ admin: vi.fn(), gateway: vi.fn() }));
+it("renders safe recovery text for ordinary bootstrap errors without rethrowing or leaking details", () => {
+  const markup = renderToStaticMarkup(
+    installationBootstrapError(new Error("private-provider-token")),
+  );
+  expect(markup).toContain("Open installation status to recover");
+  expect(markup).not.toContain("private-provider-token");
+});
+it("keeps the identifier-free status shell reachable when ordinary bootstrap rejects uninstall", async () => {
+  vi.clearAllMocks();
+  mocks.admin.mockRejectedValue(new Error("stale_session"));
+  const response = installationLoader();
+  expect(await response.json()).toBeNull();
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(mocks.admin).not.toHaveBeenCalled();
+  expect(mocks.gateway).not.toHaveBeenCalled();
+  await expect(
+    homepageLoader({
+      request: new Request("https://app.invalid/"),
+      context: {},
+      params: {},
+    }),
+  ).rejects.toThrow("stale_session");
+});
 vi.mock("../app/shopify.server", () => ({
   authenticate: { admin: mocks.admin },
 }));

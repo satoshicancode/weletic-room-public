@@ -1,11 +1,13 @@
 import { decryptOrPassthrough } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
+import { ShopifyCredentialUnavailableError } from "@/lib/weletic/shopify/credential-errors";
+import { readShopifyCredentialSource } from "@/lib/weletic/shopify/credential-source";
 import {
   normalizeShopDomain,
   verifyAndBindShopifyIntegrationCredential,
 } from "@/lib/weletic/shopify/store-resolver";
 import { SHOPIFY_INTEGRATION_ID, nanoid } from "@dub/utils";
-import { Discount, Project } from "@prisma/client";
+import { Discount, Prisma, Project } from "@prisma/client";
 import {
   ShopifyAdminGraphqlError,
   shopifyAdminGraphql,
@@ -125,9 +127,57 @@ interface ShopifyDiscountCodeDelete {
 
 const MAX_ATTEMPTS = 3;
 
-async function requireInstalledIntegration(
+async function requireShopifyCredential(
   workspace: Pick<Project, "id" | "shopifyStoreId">,
 ) {
+  const credentialStore = await prisma.weleticShopifyStore.findUnique({
+    where: { projectId: workspace.id },
+    select: { id: true, shopDomain: true, installationGeneration: true },
+  });
+  if (credentialStore) {
+    const source = await readShopifyCredentialSource({
+      storeId: credentialStore.id,
+      workspaceId: workspace.id,
+      shop: credentialStore.shopDomain,
+      installationGeneration: credentialStore.installationGeneration,
+    }).catch((error: unknown) => {
+      if (error instanceof ShopifyCredentialUnavailableError)
+        throw new DiscountProviderError(
+          "shopify",
+          "AUTH_EXPIRED",
+          "Reconnect the Shopify app before accessing this store.",
+        );
+      throw error;
+    });
+    if (source.source === "native") {
+      if (
+        !source.scope
+          .split(",")
+          .map((value) => value.trim())
+          .includes("write_discounts")
+      )
+        throw new DiscountProviderError(
+          "shopify",
+          "PERMISSIONS_REQUIRED",
+          "The Shopify app requires write_discounts permission.",
+        );
+      // No fabricated generic installation ID or installer account. Public
+      // authority belongs to the canonical Store/app, not a Project alias.
+      return {
+        nativeStore: {
+          id: credentialStore.id,
+          workspaceId: workspace.id,
+          shop: credentialStore.shopDomain,
+          installationGeneration: source.installationGeneration,
+        },
+        credentials: {
+          shop: credentialStore.shopDomain,
+          scope: source.scope,
+          accessToken: source.accessToken,
+        },
+      };
+    }
+  }
   if (!workspace.shopifyStoreId) {
     throw new DiscountProviderError(
       "shopify",
@@ -153,9 +203,8 @@ async function requireInstalledIntegration(
     };
   }
 
-  // InstalledIntegration is the single versioned credential authority. The
-  // app-session row is updated in the same transaction as this row, but reading
-  // it directly would let a stale same-generation session bypass the token CAS.
+  // Only pre-admission custom installations use this legacy credential path.
+  // Never substitute an SDK payload after versioned authority fails.
   if (!workspace.shopifyStoreId) {
     throw new DiscountProviderError(
       "shopify",
@@ -179,14 +228,6 @@ async function requireInstalledIntegration(
     );
   }
 
-  const credentialStore = await prisma.weleticShopifyStore.findUnique({
-    where: { projectId: workspace.id },
-    select: {
-      id: true,
-      shopDomain: true,
-      installationGeneration: true,
-    },
-  });
   if (
     !credentialStore ||
     normalizeShopDomain(credentialStore.shopDomain) !== shopDomain
@@ -282,7 +323,54 @@ function createShopifyDiscountProvider() {
     code,
     shouldRetry = true,
   }: CreateShopifyDiscountParams) => {
-    const { credentials } = await requireInstalledIntegration(workspace);
+    const installation = await requireShopifyCredential(workspace);
+    const { credentials } = installation;
+    const nativeStore =
+      "nativeStore" in installation ? installation.nativeStore : null;
+    const requestShopify = async <T>(
+      options: Parameters<typeof shopifyAdminGraphql>[0],
+    ): Promise<T> => {
+      if (!nativeStore) return shopifyAdminGraphql<T>(options);
+      // No automatic transaction retry around provider I/O. Suspension and
+      // uninstall use the same Store lock; recheck before every remote request.
+      return prisma.$transaction(
+        async (tx) => {
+          const rows = await tx.$queryRaw<
+            Array<{
+              id: string;
+              projectId: string;
+              shopDomain: string;
+              installationGeneration: string | null;
+              complianceState: string;
+              storeAccessState: string;
+            }>
+          >(Prisma.sql`
+          SELECT id, projectId, shopDomain, installationGeneration, complianceState, storeAccessState
+          FROM WeleticShopifyStore WHERE id = ${nativeStore.id} LIMIT 1 FOR UPDATE
+        `);
+          const store = rows[0];
+          if (
+            !store ||
+            store.projectId !== nativeStore.workspaceId ||
+            store.shopDomain !== nativeStore.shop ||
+            store.installationGeneration !==
+              nativeStore.installationGeneration ||
+            store.complianceState !== "active" ||
+            store.storeAccessState !== "active"
+          )
+            throw new DiscountProviderError(
+              "shopify",
+              "PERMISSIONS_REQUIRED",
+              "This company store is not approved for discount creation.",
+            );
+          return shopifyAdminGraphql<T>({
+            ...options,
+            allowSdkFallback: false,
+          });
+        },
+        { maxWait: 5_000, timeout: 30_000 },
+      );
+    };
     const config = parseShopifyDiscountConfig(discount);
 
     // Map Dub's maxDuration (months) to Shopify's recurringCycleLimit
@@ -313,7 +401,7 @@ function createShopifyDiscountProvider() {
 
       if (!parentGid) {
         try {
-          const lookup = await shopifyAdminGraphql<{
+          const lookup = await requestShopify<{
             codeDiscountNodeByCode: { id: string } | null;
           }>({
             shopifyStoreId: targetShop,
@@ -346,7 +434,7 @@ function createShopifyDiscountProvider() {
             }
           }`;
 
-          const bulkAddRes = await shopifyAdminGraphql<{
+          const bulkAddRes = await requestShopify<{
             discountRedeemCodeBulkAdd: {
               bulkCreation: { id: string } | null;
               userErrors: { field: string[]; message: string; code?: string }[];
@@ -384,7 +472,7 @@ function createShopifyDiscountProvider() {
             if (isDuplicate) {
               // Check if this code already exists under this EXACT parent discount node on Shopify
               try {
-                const existingCheck = await shopifyAdminGraphql<{
+                const existingCheck = await requestShopify<{
                   codeDiscountNodeByCode: { id: string } | null;
                 }>({
                   shopifyStoreId: targetShop,
@@ -534,7 +622,7 @@ function createShopifyDiscountProvider() {
           };
 
           const data =
-            await shopifyAdminGraphql<ShopifyDiscountCodeBxgyCreateResponse>({
+            await requestShopify<ShopifyDiscountCodeBxgyCreateResponse>({
               shopifyStoreId: credentials.shop,
               accessToken: credentials.accessToken!,
               query: /* GraphQL */ `
@@ -603,7 +691,7 @@ function createShopifyDiscountProvider() {
           }
 
           const data =
-            await shopifyAdminGraphql<ShopifyDiscountCodeFreeShippingCreateResponse>(
+            await requestShopify<ShopifyDiscountCodeFreeShippingCreateResponse>(
               {
                 shopifyStoreId: credentials.shop,
                 accessToken: credentials.accessToken!,
@@ -674,7 +762,7 @@ function createShopifyDiscountProvider() {
               : { all: true };
 
           const data =
-            await shopifyAdminGraphql<ShopifyDiscountCodeBasicCreateResponse>({
+            await requestShopify<ShopifyDiscountCodeBasicCreateResponse>({
               shopifyStoreId: credentials.shop,
               accessToken: credentials.accessToken!,
               query: /* GraphQL */ `
@@ -831,12 +919,20 @@ function createShopifyDiscountProvider() {
     workspace: Pick<Project, "id" | "shopifyStoreId">;
     code: string;
   }) => {
-    const { credentials } = await requireInstalledIntegration(workspace);
+    const installation = await requireShopifyCredential(workspace);
+    const { credentials } = installation;
+    const requestShopify = <T>(
+      options: Parameters<typeof shopifyAdminGraphql>[0],
+    ) =>
+      shopifyAdminGraphql<T>({
+        ...options,
+        ...("nativeStore" in installation ? { allowSdkFallback: false } : {}),
+      });
     const targetShop = credentials.shop || workspace.shopifyStoreId || "";
     const targetToken = credentials.accessToken || "";
 
     try {
-      const lookup = await shopifyAdminGraphql<{
+      const lookup = await requestShopify<{
         codeDiscountNodeByCode: {
           id: string;
           codeDiscount?: {
@@ -917,7 +1013,7 @@ function createShopifyDiscountProvider() {
 
       // If code is inside a multi-code bulk parent discount node, delete only the redeem code
       if (codes.length > 1 && matchingCodeNode?.id) {
-        const bulkDeleteData = await shopifyAdminGraphql<{
+        const bulkDeleteData = await requestShopify<{
           discountCodeRedeemCodeBulkDelete: {
             job?: { id: string; done: boolean } | null;
             userErrors: Array<{
@@ -974,7 +1070,7 @@ function createShopifyDiscountProvider() {
       }
 
       // Otherwise delete standalone discount node
-      const data = await shopifyAdminGraphql<{
+      const data = await requestShopify<{
         discountCodeDelete: ShopifyDiscountCodeDelete;
       }>({
         shopifyStoreId: targetShop,
@@ -1023,7 +1119,7 @@ function createShopifyDiscountProvider() {
   }: {
     workspace: Pick<Project, "id" | "stripeConnectId" | "shopifyStoreId">;
   }) => {
-    await requireInstalledIntegration(workspace);
+    await requireShopifyCredential(workspace);
   };
 
   return {
