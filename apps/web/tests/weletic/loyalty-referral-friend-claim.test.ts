@@ -11,6 +11,10 @@ import {
   redactReferralFriendClaimsForShopBatch,
 } from "@/lib/weletic/loyalty/referral-friend-claim";
 import {
+  createReferralPrivacySnapshot,
+  readReferralPrivacySnapshot,
+} from "@/lib/weletic/loyalty/referral-privacy-snapshot";
+import {
   provisionLoyaltyRewardDiscount,
   shopifyAdminGraphqlRequest,
 } from "@/lib/weletic/loyalty/shopify-discounts";
@@ -864,6 +868,38 @@ describe("Smile-compatible anonymous referral friend claims", () => {
     });
     expect(state.referral.status).toBe(WeleticLoyaltyReferralStatus.rewarded);
     expect(state.referral.refereePointsAwarded).toBe(BigInt(0));
+    expect(
+      readReferralPrivacySnapshot({
+        value: state.referral.metadata.friendPrivacySnapshot,
+        storeId: "store_1",
+        referralId: state.referral.id,
+        friendEmailDigest: state.referral.friendEmailDigest,
+      }),
+    ).toEqual([expect.objectContaining({ identityKind: "customer_email" })]);
+    expect(JSON.stringify(state.referral.metadata)).not.toContain(
+      "friend@example.com",
+    );
+    expect(
+      vi
+        .mocked(enqueueFlowTriggerJob)
+        .mock.calls.filter(
+          ([input]) => input.payload.handle === "weletic-referral-completed",
+        ),
+    ).toHaveLength(1);
+    expect(enqueueFlowTriggerJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storeId: "store_1",
+        eventId: state.referral.id,
+        payload: {
+          handle: "weletic-referral-completed",
+          referralId: state.referral.id,
+          accountId: "account_advocate",
+          orderId: "order_1",
+          advocatePoints: "500",
+          friendPoints: "0",
+        },
+      }),
+    );
     expect(appendPointsLedgerEntry).toHaveBeenCalledWith(
       expect.objectContaining({
         accountId: "account_advocate",
@@ -958,6 +994,13 @@ describe("Smile-compatible anonymous referral friend claims", () => {
       friendEmail: "friend@example.com",
       clientIp: "203.0.113.16",
     });
+    state.referral.metadata.friendPrivacySnapshot =
+      createReferralPrivacySnapshot({
+        storeId: "store_1",
+        referralId: state.referral.id,
+        friendEmailDigest: state.referral.friendEmailDigest,
+        email: "friend@example.com",
+      });
     discountMocks.deactivate.mockResolvedValueOnce(true);
 
     await expect(
@@ -974,6 +1017,7 @@ describe("Smile-compatible anonymous referral friend claims", () => {
       "gid://shopify/DiscountCodeNode/friend-1",
     );
     expect(state.referral.friendEmailDigest).toBeNull();
+    expect(state.referral.metadata).not.toHaveProperty("friendPrivacySnapshot");
     expect(state.referral.ipHash).toBeNull();
     expect(state.referral.status).toBe(WeleticLoyaltyReferralStatus.cancelled);
   });
@@ -1090,6 +1134,13 @@ describe("Smile-compatible anonymous referral friend claims", () => {
       friendEmail: "friend@example.com",
       clientIp: "203.0.113.18",
     });
+    state.referral.metadata.friendPrivacySnapshot =
+      createReferralPrivacySnapshot({
+        storeId: "store_1",
+        referralId: state.referral.id,
+        friendEmailDigest: state.referral.friendEmailDigest,
+        email: "friend@example.com",
+      });
     discountMocks.deactivate.mockResolvedValueOnce(true);
 
     await expect(
@@ -1099,6 +1150,7 @@ describe("Smile-compatible anonymous referral friend claims", () => {
         redactedAt: new Date("2026-08-31T13:00:00.000Z"),
       }),
     ).resolves.toMatchObject({ scrubbed: 1, hasMore: false });
+    expect(state.referral.metadata).not.toHaveProperty("friendPrivacySnapshot");
 
     expect(discountMocks.deactivate).toHaveBeenCalledWith(
       "yamax.myshopify.com",

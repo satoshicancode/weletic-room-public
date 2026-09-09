@@ -200,6 +200,17 @@ export const FlowTriggerPayloadSchema = z.discriminatedUnion("handle", [
   z
     .object({
       accountId: z.string().min(1),
+      handle: z.literal(SHOPIFY_FLOW_TRIGGER_HANDLES.REFERRAL_COMPLETED),
+      referralId: z.string().min(1).max(191),
+      orderId: z.string().min(1).max(255),
+      advocatePoints: z.string().regex(/^\d+$/),
+      friendPoints: z.string().regex(/^\d+$/),
+      installationGeneration: FlowInstallationGenerationSchema,
+    })
+    .strict(),
+  z
+    .object({
+      accountId: z.string().min(1),
       handle: z.literal(SHOPIFY_FLOW_TRIGGER_HANDLES.POINTS_EARNED),
       pointsDelta: FlowPositiveIntegerStringSchema,
       pointsBalance: FlowIntegerStringSchema,

@@ -10,6 +10,7 @@ export const SHOPIFY_FLOW_TRIGGER_HANDLES = {
   VIP_TIER_CHANGED: "weletic-vip-tier-changed",
   REWARD_REDEEMED: "weletic-reward-redeemed",
   POINTS_EXPIRING_SOON: "weletic-points-expiring-soon",
+  REFERRAL_COMPLETED: "weletic-referral-completed",
 } as const;
 
 export type ShopifyFlowTriggerHandle =
@@ -69,6 +70,16 @@ export const PointsEarnedFlowPayloadSchema = z
   })
   .strict();
 
+export const ReferralCompletedFlowPayloadSchema = z
+  .object({
+    customerGid: CustomerGidSchema,
+    referralId: z.string().min(1).max(191),
+    orderId: z.string().min(1).max(255),
+    advocatePoints: NonNegativeIntegerLikeSchema,
+    friendPoints: NonNegativeIntegerLikeSchema,
+  })
+  .strict();
+
 export const VipTierChangedFlowPayloadSchema = z
   .object({
     previousTier: z.string().max(255),
@@ -112,6 +123,16 @@ export type PointsExpiringSoonFlowPayload = z.infer<
 const FlowCustomValueSchema = z.string().max(5_000);
 const PreparedCustomerReferenceSchema = z.number().int().positive().safe();
 
+export const PreparedReferralCompletedFlowPayloadSchema = z
+  .object({
+    customer_id: PreparedCustomerReferenceSchema,
+    "Referral id": FlowCustomValueSchema,
+    "Order id": FlowCustomValueSchema,
+    "Advocate points": FlowCustomValueSchema,
+    "Friend points": FlowCustomValueSchema,
+  })
+  .strict();
+
 export const PreparedPointsEarnedFlowPayloadSchema = z
   .object({
     customer_id: PreparedCustomerReferenceSchema,
@@ -147,6 +168,7 @@ export const PreparedPointsExpiringSoonFlowPayloadSchema = z
   .strict();
 
 export type PreparedShopifyFlowPayload =
+  | z.infer<typeof PreparedReferralCompletedFlowPayloadSchema>
   | z.infer<typeof PreparedPointsEarnedFlowPayloadSchema>
   | z.infer<typeof PreparedVipTierChangedFlowPayloadSchema>
   | z.infer<typeof PreparedRewardRedeemedFlowPayloadSchema>
@@ -185,6 +207,10 @@ export function validatePreparedShopifyFlowPayload(
   handle: ShopifyFlowTriggerHandle,
   payload: unknown,
 ): PreparedShopifyFlowPayload {
+  if (handle === SHOPIFY_FLOW_TRIGGER_HANDLES.REFERRAL_COMPLETED)
+    return assertPayloadSize(
+      PreparedReferralCompletedFlowPayloadSchema.parse(payload),
+    );
   const parsed =
     handle === SHOPIFY_FLOW_TRIGGER_HANDLES.POINTS_EARNED
       ? PreparedPointsEarnedFlowPayloadSchema.parse(payload)
@@ -201,6 +227,16 @@ export function validateAndNormalizeFlowPayload(
   handle: ShopifyFlowTriggerHandle,
   rawPayload: unknown,
 ): PreparedShopifyFlowPayload {
+  if (handle === SHOPIFY_FLOW_TRIGGER_HANDLES.REFERRAL_COMPLETED) {
+    const payload = ReferralCompletedFlowPayloadSchema.parse(rawPayload);
+    return assertPayloadSize({
+      customer_id: shopifyCustomerLegacyId(payload.customerGid),
+      "Referral id": payload.referralId,
+      "Order id": payload.orderId,
+      "Advocate points": integerString(payload.advocatePoints),
+      "Friend points": integerString(payload.friendPoints),
+    });
+  }
   if (handle === SHOPIFY_FLOW_TRIGGER_HANDLES.POINTS_EARNED) {
     const payload = PointsEarnedFlowPayloadSchema.parse(rawPayload);
     return assertPayloadSize({
