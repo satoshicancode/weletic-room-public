@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { enqueueFlowTriggerJob } from "@/lib/weletic/loyalty/flow-trigger-outbox";
 import { createLoyaltyMaintenanceLeaseMetadata } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import {
   getReferralCouponDiscountCode,
@@ -53,6 +54,9 @@ vi.mock("@/lib/weletic/loyalty/shopify-discounts", async (importOriginal) => ({
 }));
 
 const storeId = "store_coupon";
+vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
+  enqueueFlowTriggerJob: vi.fn().mockResolvedValue({ created: true }),
+}));
 const referralId = "wreferral_coupon";
 const qualificationOrderId = "worder_coupon";
 const accountId = "wacc_coupon";
@@ -191,6 +195,8 @@ function mockProvisioningDependencies() {
     id: referralId,
     storeId,
     advocateAccountId: accountId,
+    advocatePointsAwarded: BigInt(0),
+    refereePointsAwarded: BigInt(0),
     refereeAccountId: "wacc_referee_coupon",
     status: WeleticLoyaltyReferralStatus.qualified,
     metadata: { requiredCouponSides: ["advocate"] },
@@ -747,6 +753,20 @@ describe("referral coupon provisioning", () => {
     ).resolves.toBe(issuedRedemption);
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(enqueueFlowTriggerJob).toHaveBeenCalledWith({
+      storeId,
+      eventId: referralId,
+      payload: {
+        handle: "weletic-referral-completed",
+        accountId,
+        referralId,
+        orderId: qualificationOrderId,
+        advocatePoints: "0",
+        friendPoints: "0",
+      },
+      loyaltyMaintenancePermit: undefined,
+      tx: prisma,
+    });
     expect(prisma.weleticRewardRedemption.create).not.toHaveBeenCalled();
     expect(lookupDiscountByCode).not.toHaveBeenCalled();
     expect(provisionLoyaltyRewardDiscount).not.toHaveBeenCalled();
@@ -770,6 +790,8 @@ describe("referral coupon provisioning", () => {
       id: referralId,
       storeId,
       advocateAccountId: accountId,
+      advocatePointsAwarded: BigInt(0),
+      refereePointsAwarded: BigInt(0),
       refereeAccountId: "wacc_referee_coupon",
       status: WeleticLoyaltyReferralStatus.qualified,
       metadata: {
@@ -856,6 +878,54 @@ describe("referral coupon provisioning", () => {
       }),
     );
   });
+
+  it.each(["coupon_pending", "lost_completion_claim"] as const)(
+    "does not emit completion for %s",
+    async (scenario) => {
+      const snapshot = createTestReferralCouponSnapshot();
+      vi.mocked(prisma.weleticRewardRedemption.findUnique).mockResolvedValue({
+        id: "wredemp_completion_guard",
+        storeId,
+        accountId,
+        rewardDefinitionId,
+        status: WeleticRedemptionStatus.issued,
+        shopifyDiscountCode: snapshot.discountCode,
+        shopifyDiscountId: "gid://shopify/DiscountCodeNode/already-issued",
+        expiresAt: new Date(snapshot.expiresAt!),
+        metadata: immutableReferralCouponMetadata(snapshot),
+      } as any);
+      vi.mocked(prisma.weleticRewardRedemption.count).mockResolvedValue(
+        scenario === "coupon_pending" ? 0 : 1,
+      );
+      vi.mocked(prisma.weleticLoyaltyReferral.updateMany).mockResolvedValue({
+        count: 0,
+      });
+      await issueReferralRewardCoupon({
+        storeId,
+        referralId,
+        qualificationOrderId,
+        accountId,
+        rewardDefinitionId,
+        side: "advocate",
+      });
+      expect(enqueueFlowTriggerJob).not.toHaveBeenCalled();
+      expect(provisionLoyaltyRewardDiscount).not.toHaveBeenCalled();
+      if (scenario === "coupon_pending") {
+        expect(prisma.weleticLoyaltyReferral.updateMany).not.toHaveBeenCalled();
+      } else {
+        expect(prisma.weleticLoyaltyReferral.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              id: referralId,
+              storeId,
+              qualifyingOrderId: qualificationOrderId,
+              status: WeleticLoyaltyReferralStatus.qualified,
+            }),
+          }),
+        );
+      }
+    },
+  );
 
   it("snapshots the immutable Shopify context and clears stale entire-order entitlements", () => {
     const snapshot = createTestReferralCouponSnapshot();
@@ -971,6 +1041,8 @@ describe("referral coupon provisioning", () => {
       id: referralId,
       storeId,
       advocateAccountId: accountId,
+      advocatePointsAwarded: BigInt(0),
+      refereePointsAwarded: BigInt(0),
       refereeAccountId: "wacc_referee_coupon",
       status: WeleticLoyaltyReferralStatus.qualified,
       metadata: {
@@ -1323,6 +1395,8 @@ describe("referral coupon provisioning", () => {
       id: referralId,
       storeId,
       advocateAccountId: accountId,
+      advocatePointsAwarded: BigInt(0),
+      refereePointsAwarded: BigInt(0),
       refereeAccountId: "wacc_referee_coupon",
       status: WeleticLoyaltyReferralStatus.qualified,
       metadata: {
@@ -2137,6 +2211,8 @@ describe("referral coupon provisioning", () => {
       id: referralId,
       storeId,
       advocateAccountId: "wacc_advocate_coupon",
+      advocatePointsAwarded: BigInt(0),
+      refereePointsAwarded: BigInt(0),
       refereeAccountId: accountId,
       status: WeleticLoyaltyReferralStatus.qualified,
       metadata: { requiredCouponSides: ["advocate", "referee"] },

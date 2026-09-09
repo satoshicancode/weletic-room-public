@@ -1,3 +1,5 @@
+import { createReferralPrivacySnapshot } from "@/lib/weletic/loyalty/referral-privacy-snapshot";
+import { createShopifyDerivedPrivacyDigest } from "@/lib/weletic/shopify/privacy-identity";
 import {
   SHOPIFY_PRIVACY_KEY_RETIREMENT_MIN_OVERLAP_MS,
   auditShopifyPrivacyKeyRetirement,
@@ -175,6 +177,53 @@ describe("Shopify privacy HMAC key-retirement audit", () => {
     expect(serializeShopifyPrivacyKeyRetirementAudit(result)).toEqual(
       expect.objectContaining({ ready: false }),
     );
+  });
+
+  it("blocks retiring a key retained only inside a referral privacy snapshot", async () => {
+    const email = "friend@example.test";
+    const snapshot = createReferralPrivacySnapshot({
+      storeId: "store_1",
+      referralId: "referral_snapshot_1",
+      email,
+      friendEmailDigest: createShopifyDerivedPrivacyDigest({
+        purpose: "referral_email",
+        values: ["store_1", email],
+      }),
+    });
+    mocks.referralFindMany.mockResolvedValue([
+      {
+        id: "referral_snapshot_1",
+        metadata: { friendPrivacySnapshot: snapshot },
+      },
+    ]);
+    const result = await auditShopifyPrivacyKeyRetirementBatch({
+      retiringKeyIds: ["previous-2025"],
+      cursor: { sourceIndex: 7 },
+      batchSize: 10,
+    });
+    expect(result.dependencies).toEqual([
+      {
+        source: "referral_signals",
+        keyId: "previous-2025",
+        count: 1,
+        sampleRecordIds: ["referral_snapshot_1"],
+      },
+    ]);
+    expect(result.legacyDebt).toEqual([]);
+    for (const digest of snapshot.customerEmailIdentities)
+      expect(JSON.stringify(result)).not.toContain(digest);
+    mocks.referralFindMany.mockResolvedValue([
+      {
+        id: "referral_snapshot_1",
+        metadata: { privacyRedactedAt: new Date().toISOString() },
+      },
+    ]);
+    const erased = await auditShopifyPrivacyKeyRetirementBatch({
+      retiringKeyIds: ["previous-2025"],
+      cursor: { sourceIndex: 7 },
+      batchSize: 10,
+    });
+    expect(erased.dependencies).toEqual([]);
   });
 
   it("includes authenticated compliance and operational webhook body digests", async () => {

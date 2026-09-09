@@ -11,19 +11,78 @@ import {
   validateAndNormalizeFlowPayload,
 } from "@/lib/weletic/loyalty/flow-triggers";
 import { FlowTriggerPayloadSchema } from "@/lib/weletic/loyalty/outbox";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 const asFetch = (implementation: ReturnType<typeof vi.fn>) =>
   implementation as unknown as typeof fetch;
 
 describe("native Shopify Flow contracts", () => {
-  it("uses the four immutable published handles", () => {
+  it("matches the referral extension fields to the actual GraphQL payload", () => {
+    // Shopify CLI validates TOML syntax/schema; this assertion prevents drift
+    // between the declared custom field names and the runtime payload keys.
+    const manifest = readFileSync(
+      new URL(
+        "../../../../packages/shopify-app/extensions/weletic-referral-completed/shopify.extension.toml",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    expect(manifest).toContain(
+      `handle = "${SHOPIFY_FLOW_TRIGGER_HANDLES.REFERRAL_COMPLETED}"`,
+    );
+    // Temporary release fence: update only with named public-registration
+    // ownership evidence. Even config validation can auto-insert a local UID.
+    expect(manifest).not.toMatch(/^\s*uid\s*=/m);
+    expect(manifest.match(/type = "customer_reference"/g)).toHaveLength(1);
+    const declaredKeys = Array.from(
+      manifest.matchAll(/^\s*key = "([^"]+)"$/gm),
+      (match) => match[1],
+    );
+    const payload = validateAndNormalizeFlowPayload(
+      SHOPIFY_FLOW_TRIGGER_HANDLES.REFERRAL_COMPLETED,
+      {
+        customerGid: "gid://shopify/Customer/42",
+        referralId: "referral_1",
+        orderId: "order_1",
+        advocatePoints: "100",
+        friendPoints: "0",
+      },
+    );
+    expect(["customer_id", ...declaredKeys].sort()).toEqual(
+      Object.keys(payload).sort(),
+    );
+    expect(declaredKeys).toHaveLength(4);
+  });
+
+  it("preserves existing handles and adds referral completion", () => {
     expect(Object.values(SHOPIFY_FLOW_TRIGGER_HANDLES)).toEqual([
       "weletic-points-earned",
       "weletic-vip-tier-changed",
       "weletic-reward-redeemed",
       "weletic-points-expiring-soon",
+      "weletic-referral-completed",
     ]);
+  });
+
+  it("maps referral completion without rounding points or exposing the friend identity", () => {
+    const payload = validateAndNormalizeFlowPayload(
+      SHOPIFY_FLOW_TRIGGER_HANDLES.REFERRAL_COMPLETED,
+      {
+        customerGid: "gid://shopify/Customer/42",
+        referralId: "referral_1",
+        orderId: "order_1",
+        advocatePoints: BigInt("9007199254740993"),
+        friendPoints: "0",
+      },
+    );
+    expect(payload).toEqual({
+      customer_id: 42,
+      "Referral id": "referral_1",
+      "Order id": "order_1",
+      "Advocate points": "9007199254740993",
+      "Friend points": "0",
+    });
   });
 
   it("maps point events to exact Flow keys without losing BigInt precision", () => {

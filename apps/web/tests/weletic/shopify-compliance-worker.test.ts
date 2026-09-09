@@ -295,7 +295,10 @@ vi.mock("@/lib/weletic/loyalty/referral-friend-claim", () => ({
   redactReferralFriendClaimsForEmail: mocks.redactFriendEmail,
   redactReferralFriendClaimsForShopBatch: mocks.redactFriendShopBatch,
 }));
-vi.mock("@/lib/weletic/shopify/privacy-identity", () => ({
+vi.mock("@/lib/weletic/shopify/privacy-identity", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/lib/weletic/shopify/privacy-identity")
+  >()),
   ShopifyCustomerPrivacyOwnerConflictError: mocks.CustomerOwnerConflictError,
   upsertShopifyCustomerPrivacyTombstones: mocks.tombstoneCustomer,
   upsertShopifyShopPrivacyTombstone: mocks.tombstoneShop,

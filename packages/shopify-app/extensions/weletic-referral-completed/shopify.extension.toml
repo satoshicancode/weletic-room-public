@@ -1,0 +1,30 @@
+# Public-app registration/deployment is a separate approved execution gate.
+# Generate this extension's UID only after selecting the reviewed public app;
+# never copy a UID from an existing custom-app extension.
+[[extensions]]
+name = "Weletic referral completed"
+type = "flow_trigger"
+handle = "weletic-referral-completed"
+description = "Starts a workflow after all rewards for a qualified Weletic referral are fulfilled."
+
+[settings]
+
+  [[settings.fields]]
+  type = "customer_reference"
+  description = "The advocate whose referral completed."
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Referral id"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Order id"
+
+  [[settings.fields]]
+  type = "number_decimal"
+  key = "Advocate points"
+
+  [[settings.fields]]
+  type = "number_decimal"
+  key = "Friend points"

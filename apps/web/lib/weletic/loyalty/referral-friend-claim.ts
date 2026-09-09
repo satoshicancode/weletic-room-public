@@ -9,6 +9,7 @@ import { lockLoyaltyProgramRow } from "@/lib/weletic/loyalty/program-write-fence
 import { canonicalizeLoyaltyDiscountCode } from "@/lib/weletic/loyalty/redemption-discount-identity";
 import { getReferralCouponIdempotencyKey } from "@/lib/weletic/loyalty/referral-coupon";
 import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
+import { createReferralPrivacySnapshot } from "@/lib/weletic/loyalty/referral-privacy-snapshot";
 import {
   getAbuseSignalLookupDigests,
   getReferralEmailSimilarityKey,
@@ -1327,7 +1328,7 @@ export async function evaluateReferralFriendClaimQualification({
         },
         include: { advocateAccount: true },
       });
-      if (!referral) {
+      if (!referral || !referral.friendEmailDigest) {
         return { qualified: false as const, reason: "No pending friend claim" };
       }
       const persistedShopper = refereeShopperId
@@ -1487,6 +1488,13 @@ export async function evaluateReferralFriendClaimQualification({
             qualificationOrderId: orderId,
             qualificationReferralRuleId: rule.id,
             qualificationPurchasePolicy,
+            friendPrivacySnapshot: createReferralPrivacySnapshot({
+              storeId,
+              referralId: referral.id,
+              friendEmailDigest: referral.friendEmailDigest,
+              email,
+              now: qualifiedAt,
+            }),
             eligibleSubtotal: eligibleSubtotal.toString(),
             requiredCouponSides: couponSnapshot ? ["advocate"] : [],
             referralCouponRewardSnapshots: couponSnapshot
@@ -1551,6 +1559,22 @@ export async function evaluateReferralFriendClaimQualification({
           accountId: referral.advocateAccountId,
           activityKey: ledgerKey,
           reason: "referral_friend_points_earned",
+          loyaltyMaintenancePermit,
+          tx,
+        });
+      }
+      if (!couponSnapshot) {
+        await enqueueFlowTriggerJob({
+          storeId,
+          eventId: referral.id,
+          payload: {
+            handle: "weletic-referral-completed",
+            accountId: referral.advocateAccountId,
+            referralId: referral.id,
+            orderId,
+            advocatePoints: advocateAwarded.toString(),
+            friendPoints: "0",
+          },
           loyaltyMaintenancePermit,
           tx,
         });

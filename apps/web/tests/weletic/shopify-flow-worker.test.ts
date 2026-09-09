@@ -3,13 +3,17 @@ import {
   createLoyaltyMaintenanceOwnerPermit,
   LoyaltyMaintenanceBlockedError,
 } from "@/lib/weletic/loyalty/maintenance-write-fence";
+import { createReferralPrivacySnapshot } from "@/lib/weletic/loyalty/referral-privacy-snapshot";
 import { ShopifyDiscountError } from "@/lib/weletic/loyalty/shopify-discounts";
+import { createShopifyDerivedPrivacyDigest } from "@/lib/weletic/shopify/privacy-identity";
 import { ShopifyStoreOperationalWritesBlockedError } from "@/lib/weletic/shopify/store-compliance-state";
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   accountFindFirst: vi.fn(),
+  referralFindFirst: vi.fn(),
+  tombstoneFindFirst: vi.fn(),
   shouldDispatch: vi.fn(),
   dispatch: vi.fn(),
   resolveCredentials: vi.fn(),
@@ -19,6 +23,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     weleticLoyaltyAccount: { findFirst: mocks.accountFindFirst },
+    weleticLoyaltyReferral: { findFirst: mocks.referralFindFirst },
+    weleticShopifyCustomerPrivacyTombstone: {
+      findFirst: mocks.tombstoneFindFirst,
+    },
   },
 }));
 
@@ -76,6 +84,7 @@ describe("Shopify Flow outbox worker", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.shouldDispatch.mockResolvedValue(true);
+    mocks.tombstoneFindFirst.mockResolvedValue(null);
     mocks.accountFindFirst.mockResolvedValue({
       cachedPointsBalance: BigInt(150),
       nextExpiryDate: new Date("2026-10-01T00:00:00.000Z"),
@@ -113,6 +122,107 @@ describe("Shopify Flow outbox worker", () => {
     });
   });
 
+  const referralPayload = {
+    accountId: "wacc_1",
+    handle: "weletic-referral-completed",
+    referralId: "referral_1",
+    orderId: "order_1",
+    advocatePoints: "9007199254740993",
+    friendPoints: "0",
+    installationGeneration: "g1",
+  };
+
+  it("dispatches completion only for a rewarded referral with both active store-owned accounts", async () => {
+    mocks.referralFindFirst.mockResolvedValue({
+      advocatePointsAwarded: BigInt("9007199254740993"),
+      refereePointsAwarded: BigInt(0),
+      refereeAccountId: "friend_account",
+    });
+    await handleFlowTrigger("wstore_1", referralPayload);
+    expect(mocks.referralFindFirst).toHaveBeenCalledWith({
+      where: {
+        id: "referral_1",
+        storeId: "wstore_1",
+        advocateAccountId: "wacc_1",
+        qualifyingOrderId: "order_1",
+        status: "rewarded",
+        advocateAccount: { storeId: "wstore_1", status: "active" },
+        OR: [
+          { refereeAccount: { storeId: "wstore_1", status: "active" } },
+          { refereeAccountId: null },
+        ],
+      },
+      select: {
+        advocatePointsAwarded: true,
+        refereePointsAwarded: true,
+        refereeAccountId: true,
+        refereeShopperId: true,
+        friendEmailDigest: true,
+        metadata: true,
+      },
+    });
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        handle: referralPayload.handle,
+        payload: {
+          customerGid: "gid://shopify/Customer/42",
+          referralId: "referral_1",
+          orderId: "order_1",
+          advocatePoints: "9007199254740993",
+          friendPoints: "0",
+        },
+      }),
+    );
+  });
+
+  it.each([
+    null,
+    { advocatePointsAwarded: BigInt(1), refereePointsAwarded: BigInt(0) },
+  ])(
+    "drops missing, ineligible or inconsistent completion evidence (case %#)",
+    async (referral) => {
+      mocks.referralFindFirst.mockResolvedValue(referral);
+      await handleFlowTrigger("wstore_1", referralPayload);
+      expect(mocks.resolveCredentials).not.toHaveBeenCalled();
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("drops completion invalidated by a refund or closure during credential refresh", async () => {
+    mocks.referralFindFirst
+      .mockResolvedValueOnce({
+        advocatePointsAwarded: BigInt("9007199254740993"),
+        refereePointsAwarded: BigInt(0),
+        refereeAccountId: "friend_account",
+      })
+      .mockResolvedValueOnce(null);
+    await handleFlowTrigger("wstore_1", referralPayload);
+    expect(mocks.resolveCredentials).toHaveBeenCalledTimes(1);
+    expect(mocks.referralFindFirst).toHaveBeenCalledTimes(2);
+    expect(mocks.referralFindFirst.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.resolveCredentials.mock.invocationCallOrder[0],
+    );
+    expect(mocks.referralFindFirst.mock.invocationCallOrder[1]).toBeGreaterThan(
+      mocks.resolveCredentials.mock.invocationCallOrder[0],
+    );
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("propagates a failed post-refresh eligibility lookup without dispatch", async () => {
+    const failure = new Error("Synthetic database availability failure");
+    mocks.referralFindFirst
+      .mockResolvedValueOnce({
+        advocatePointsAwarded: BigInt("9007199254740993"),
+        refereePointsAwarded: BigInt(0),
+        refereeAccountId: "friend_account",
+      })
+      .mockRejectedValueOnce(failure);
+    await expect(handleFlowTrigger("wstore_1", referralPayload)).rejects.toBe(
+      failure,
+    );
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
   it("completes without dispatch when the store has no enabled workflow", async () => {
     mocks.shouldDispatch.mockResolvedValue(false);
     await handleFlowTrigger("wstore_1", {
@@ -125,6 +235,88 @@ describe("Shopify Flow outbox worker", () => {
     expect(mocks.accountFindFirst).not.toHaveBeenCalled();
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
+
+  function anonymousReferral(advocatePoints = "9007199254740993") {
+    const email = "friend@example.test";
+    const friendEmailDigest = createShopifyDerivedPrivacyDigest({
+      purpose: "referral_email",
+      values: ["wstore_1", email],
+    });
+    return {
+      advocatePointsAwarded: BigInt(advocatePoints),
+      refereePointsAwarded: BigInt(0),
+      refereeAccountId: null,
+      refereeShopperId: null,
+      friendEmailDigest,
+      metadata: {
+        friendPrivacySnapshot: createReferralPrivacySnapshot({
+          storeId: "wstore_1",
+          referralId: "referral_1",
+          friendEmailDigest,
+          email,
+        }),
+      },
+    };
+  }
+
+  it.each(["9007199254740993", "0"])(
+    "dispatches an unenrolled friend completion with advocate points %s",
+    async (advocatePoints) => {
+      const referral = anonymousReferral(advocatePoints);
+      mocks.referralFindFirst.mockResolvedValue(referral);
+      await handleFlowTrigger("wstore_1", {
+        ...referralPayload,
+        advocatePoints,
+      });
+      expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+      expect(mocks.tombstoneFindFirst).toHaveBeenCalledTimes(2);
+      expect(mocks.tombstoneFindFirst).toHaveBeenCalledWith({
+        where: {
+          storeId: "wstore_1",
+          OR: [
+            {
+              expiresAt: { gt: expect.any(Date) },
+              OR: [expect.objectContaining({ identityKind: "customer_email" })],
+            },
+          ],
+        },
+        select: { id: true },
+      });
+      expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+        "friendPrivacySnapshot",
+      );
+      expect(JSON.stringify(mocks.dispatch.mock.calls)).not.toContain(
+        referral.friendEmailDigest,
+      );
+    },
+  );
+
+  it("drops an anonymous completion when its tombstone appears during refresh", async () => {
+    mocks.referralFindFirst.mockResolvedValue(anonymousReferral());
+    mocks.tombstoneFindFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: "tombstone_1" });
+    await handleFlowTrigger("wstore_1", referralPayload);
+    expect(mocks.resolveCredentials).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each(["missing", "redacted", "wrong_store"])(
+    "drops anonymous proof that is %s",
+    async (kind) => {
+      const referral = anonymousReferral();
+      const metadata: Record<string, unknown> = referral.metadata;
+      if (kind === "missing") delete metadata.friendPrivacySnapshot;
+      if (kind === "redacted")
+        metadata.privacyRedactedAt = new Date().toISOString();
+      if (kind === "wrong_store")
+        referral.metadata.friendPrivacySnapshot.storeId = "other_store";
+      mocks.referralFindFirst.mockResolvedValue(referral);
+      await handleFlowTrigger("wstore_1", referralPayload);
+      expect(mocks.dispatch).not.toHaveBeenCalled();
+      expect(mocks.resolveCredentials).not.toHaveBeenCalled();
+    },
+  );
 
   it("drops a stale expiry warning after the policy deadline changes", async () => {
     await handleFlowTrigger("wstore_1", {

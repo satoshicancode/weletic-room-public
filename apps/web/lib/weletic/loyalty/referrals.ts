@@ -1594,6 +1594,23 @@ export async function evaluateReferralQualification(
         });
       }
 
+      if (couponJobs.length === 0) {
+        await enqueueFlowTriggerJob({
+          storeId: input.storeId,
+          eventId: referral.id,
+          payload: {
+            handle: "weletic-referral-completed",
+            accountId: referral.advocateAccountId,
+            referralId: referral.id,
+            orderId: input.orderId,
+            advocatePoints: advocateAwarded.toString(),
+            friendPoints: refereeAwarded.toString(),
+          },
+          loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
+          tx,
+        });
+      }
+
       for (const [index, couponJob] of couponJobs.entries()) {
         await enqueueOutboxJob({
           storeId: input.storeId,

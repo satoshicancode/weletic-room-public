@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { createWeleticId } from "@/lib/weletic/ids";
+import { enqueueFlowTriggerJob } from "@/lib/weletic/loyalty/flow-trigger-outbox";
 import {
   assertLoyaltyMaintenanceWriteAllowed,
   isLoyaltyMaintenanceBlockedError,
@@ -936,7 +937,7 @@ async function completeReferralWhenCouponsAreFulfilled(params: {
           })
         : 0;
       if (requiredKeys.length > 0 && fulfilledCoupons === requiredKeys.length) {
-        await tx.weleticLoyaltyReferral.updateMany({
+        const completed = await tx.weleticLoyaltyReferral.updateMany({
           where: {
             id: params.referralId,
             storeId: params.storeId,
@@ -948,6 +949,22 @@ async function completeReferralWhenCouponsAreFulfilled(params: {
             rewardedAt: new Date(),
           },
         });
+        if (completed.count === 1) {
+          await enqueueFlowTriggerJob({
+            storeId: params.storeId,
+            eventId: referral.id,
+            payload: {
+              handle: "weletic-referral-completed",
+              accountId: referral.advocateAccountId,
+              referralId: referral.id,
+              orderId: params.qualificationOrderId,
+              advocatePoints: referral.advocatePointsAwarded.toString(),
+              friendPoints: referral.refereePointsAwarded.toString(),
+            },
+            loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+            tx,
+          });
+        }
       }
     },
     params.loyaltyMaintenancePermit,
