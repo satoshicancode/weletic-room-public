@@ -556,34 +556,43 @@ describe("Smile-parity rolling points expiry", () => {
     },
   );
 
-  it("keeps the outbox retryable when no email provider accepts the reminder", async () => {
-    const expiryAt = "2026-09-30T00:00:00.000Z";
-    vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue({
-      id: "wlacc_expiry",
-      cachedPointsBalance: BigInt(500),
-      nextExpiryDate: new Date(expiryAt),
-      pointsExpiryPolicyVersion: 2,
-      shopper: {
-        email: "member@example.com",
-        firstName: "Mai",
-        locale: "en",
-        acceptsMarketing: true,
-        ordersCount: 1,
-      },
-      program: {
-        ...policy,
-        name: "Yamax Points",
-        pointNamePlural: "Points",
-      },
-      store: { shopDomain: "yamax.myshopify.com" },
-    } as any);
-    vi.mocked(sendBatchEmail).mockResolvedValue({
-      data: null,
-      error: null,
-    } as any);
+  it.each(["empty", "returned", "thrown"])(
+    "keeps provider failure %s retryable without exposing private details",
+    async (mode) => {
+      const expiryAt = "2026-09-30T00:00:00.000Z";
+      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue({
+        id: "wlacc_expiry",
+        cachedPointsBalance: BigInt(500),
+        nextExpiryDate: new Date(expiryAt),
+        pointsExpiryPolicyVersion: 2,
+        shopper: {
+          email: "member@example.com",
+          firstName: "Mai",
+          locale: "en",
+          acceptsMarketing: true,
+          ordersCount: 1,
+        },
+        program: {
+          ...policy,
+          name: "Yamax Points",
+          pointNamePlural: "Points",
+        },
+        store: { shopDomain: "yamax.myshopify.com" },
+      } as any);
+      const privateProviderDetails =
+        "member@example.com synthetic-provider-secret";
+      if (mode === "thrown")
+        vi.mocked(sendBatchEmail).mockRejectedValue(
+          new Error(privateProviderDetails),
+        );
+      else
+        vi.mocked(sendBatchEmail).mockResolvedValue({
+          data: null,
+          error:
+            mode === "returned" ? { message: privateProviderDetails } : null,
+        } as any);
 
-    await expect(
-      sendPointsExpiryNotification({
+      const failure = await sendPointsExpiryNotification({
         storeId: "wstore_expiry",
         payload: {
           accountId: "wlacc_expiry",
@@ -594,7 +603,16 @@ describe("Smile-parity rolling points expiry", () => {
           policyVersion: 2,
         },
         now: new Date("2026-09-01T00:00:00.000Z"),
-      }),
-    ).rejects.toThrow("email provider unavailable");
-  });
+      }).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toBe(
+        "Failed to send points expiry warning: email provider unavailable",
+      );
+      expect(failure).not.toHaveProperty("cause");
+      expect((failure as Error).stack).not.toMatch(
+        /member@example\.com|synthetic-provider-secret|wlacc_expiry/,
+      );
+      expect(sendBatchEmail).toHaveBeenCalledTimes(1);
+    },
+  );
 });

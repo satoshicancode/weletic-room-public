@@ -3,24 +3,24 @@
 Decision: [ADR 0023](../adr/0023-pending-public-installations.md), approved by
 Hiro on September 9, 2026. This feature is **in progress, not release-ready**.
 
-## Current delivery boundary — September 10, 02:20 JST
+## Current delivery boundary — September 10, public-main refresh
 
 The dated checkpoints below preserve historical evidence, including failures and
 superseded limitations. They are not a cumulative list of current blockers. Use
 this table and the newest relevant checkpoint when assessing readiness.
 
-| Gate                                                                                 | Current disposition                                                                                                                       |
-| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Store/app-owned authentication, pending admission, retained-map reconnect            | Implemented locally; not published or deployed.                                                                                           |
-| Latest offline fallback security fix                                                 | Reviewed; 56 focused tests and 38 isolated MySQL tests passed.                                                                            |
-| Latest local code checks                                                             | Web typecheck, lint, changed-file formatting and full-schema build passed. Full web regression: 393 files, 5,993 passed and 6 skipped.    |
-| Merchant installation UI                                                             | Partial actual-component browser evidence with synthetic identity/transport; no live embedded acceptance.                                 |
-| Public repository review/CI                                                          | No PR for this draft yet. PR #13 is the separate frozen import stream.                                                                    |
-| New runtime migrations                                                               | Not applied. Earlier PR #5 approval does not authorize the two new migrations.                                                            |
-| First company-store provisioning in an empty environment                             | Policy decision outstanding; current mapper requires existing records. See the [bootstrap proposal](first-install-bootstrap-proposal.md). |
-| Public HTTPS identity and extension ownership                                        | Hostnames proposed only; no approved endpoints, public configuration deployment or UID reconciliation acceptance.                         |
-| Named `yamaxdev` installation and loyalty lifecycle                                  | Outstanding; local tests do not establish points, checkout, redemption or refund acceptance.                                              |
-| Communications, appearance/nudges, remaining surfaces, analytics, operations/release | Remain in the broader loyalty backlog; this installation draft does not complete them.                                                    |
+| Gate                                                                                 | Current disposition                                                                                                                               |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Store/app-owned authentication, pending admission, retained-map reconnect            | Published as draft PR #15; not merged or deployed.                                                                                                |
+| Latest offline fallback security fix                                                 | Reviewed; 56 focused tests and 38 isolated MySQL tests passed.                                                                                    |
+| Latest local code checks                                                             | Web typecheck, lint, changed-file formatting and full-schema build passed. Full web regression: 393 files, 5,993 passed and 6 skipped.            |
+| Merchant installation UI                                                             | Partial actual-component browser evidence with synthetic identity/transport; no live embedded acceptance.                                         |
+| Public repository review/CI                                                          | PR #15 passed all six checks at `713527a93a`; the subsequent public-main refresh needs fresh validation. PR #13 remains the frozen import stream. |
+| New runtime migrations                                                               | Not applied. Earlier PR #5 approval does not authorize the two new migrations.                                                                    |
+| First company-store provisioning in an empty environment                             | Policy decision outstanding; current mapper requires existing records. See the [bootstrap proposal](first-install-bootstrap-proposal.md).         |
+| Public HTTPS identity and extension ownership                                        | Hostnames proposed only; no approved endpoints, public configuration deployment or UID reconciliation acceptance.                                 |
+| Named `yamaxdev` installation and loyalty lifecycle                                  | Outstanding; local tests do not establish points, checkout, redemption or refund acceptance.                                                      |
+| Communications, appearance/nudges, remaining surfaces, analytics, operations/release | Remain in the broader loyalty backlog; this installation draft does not complete them.                                                            |
 
 Publication must describe these gaps explicitly. First-store provisioning,
 runtime schema application, public exposure and live operations are separate
@@ -74,6 +74,22 @@ decisions, not implicit consequences of passing tests or approving ADR 0025.
   recovery after provider failure. Embedded query context is preserved.
 
 ## Required before publication
+
+### September 10 — publication and public-main refresh
+
+- [Draft PR #15](https://github.com/satoshicancode/weletic-room-public/pull/15)
+  published commit `713527a93a5369bd83b848aea70d8091315b0b11`. All six checks
+  passed in [CI run 34382415061](https://github.com/satoshicancode/weletic-room-public/actions/runs/34382415061).
+  It remains a draft because first-store provisioning, runtime schema, public
+  configuration and live acceptance gates are unresolved.
+- Public main advanced through [PR #16](https://github.com/satoshicancode/weletic-room-public/pull/16),
+  merged as `98ec37645ce78f934d8121cbb415d8f441db9ad3`. It sanitizes existing
+  points-expiry provider exceptions without activating delivery or changing
+  eligibility/idempotency. Its full pre-merge CI passed; post-merge CI is running.
+- The draft incorporates that exact main commit with a normal, conflict-free
+  merge, not a force-push. The combined tree passed all 74 focused expiry tests
+  across four files and the full web typecheck. Fresh public CI is still required;
+  prior green checks do not prove the refreshed head. No runtime changes occur.
 
 ### September 10, 02:20 JST — current full regression passed
 

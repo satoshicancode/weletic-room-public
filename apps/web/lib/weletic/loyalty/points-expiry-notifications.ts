@@ -113,7 +113,7 @@ export async function sendPointsExpiryNotification({
   });
   if (notificationAt.getTime() > now.getTime()) {
     throw new Error(
-      `Points expiry ${stage} notification for ${account.id} ran before its configured threshold.`,
+      `Points expiry ${stage} notification ran before its configured threshold.`,
     );
   }
 
@@ -158,6 +158,10 @@ export async function sendPointsExpiryNotification({
 
   const accountUrl = `https://${account.store.shopDomain}/account`;
   const pointsBalance = `${account.cachedPointsBalance.toString()} ${account.program.pointNamePlural}`;
+  const deliveryFailure = () =>
+    new Error(
+      `Failed to send points expiry ${stage}: email provider unavailable`,
+    );
   const delivery = await sendBatchEmail(
     [
       {
@@ -188,12 +192,14 @@ export async function sendPointsExpiryNotification({
     {
       idempotencyKey: `loyalty-expiry-${stage}-${account.id}-${expiryAt.toISOString()}`,
     },
-  );
+  ).catch(() => {
+    // Provider exceptions may contain recipient addresses or request details.
+    // Do not persist those in outbox lastError, logs, or an Error cause.
+    throw deliveryFailure();
+  });
 
   if (delivery?.error || !delivery?.data) {
-    throw new Error(
-      `Failed to send points expiry ${stage} notification for ${account.id}: ${JSON.stringify(delivery?.error || "email provider unavailable")}`,
-    );
+    throw deliveryFailure();
   }
   return "sent";
 }
