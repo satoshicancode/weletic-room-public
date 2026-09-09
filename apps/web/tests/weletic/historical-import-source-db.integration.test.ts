@@ -731,13 +731,16 @@ async function queuedWorkerFixture(rowCount = 1, withFields = false) {
       shopifyCustomerId: "123",
     },
   });
-  if (rowCount > 1)
+  for (let offset = 1; offset < rowCount; offset += 1000)
     await database.weleticShopper.createMany({
-      data: Array.from({ length: rowCount - 1 }, (_, index) => ({
-        id: `shopper-${index + 2}-${source.storeId}`,
-        storeId: source.storeId,
-        shopifyCustomerId: String(124 + index),
-      })),
+      data: Array.from(
+        { length: Math.min(1000, rowCount - offset) },
+        (_, index) => ({
+          id: `shopper-${offset + index + 1}-${source.storeId}`,
+          storeId: source.storeId,
+          shopifyCustomerId: String(123 + offset + index),
+        }),
+      ),
     });
   await database.$transaction(
     (tx) => queueHistoricalImportCommitInTransaction({ tx, request }),
@@ -836,6 +839,80 @@ async function queuedRollbackWorkerFixture(rowCount = 1, withFields = false) {
     });
   return { ...fixture, source, job, run };
 }
+it.skipIf(process.env.HISTORICAL_IMPORT_MAX_SOURCE_WORKER_INTEGRATION !== "1")(
+  "continues two real worker deliveries on a 50,000-row source without claiming completion",
+  async () => {
+    const fixture = await queuedWorkerFixture(50_000);
+    await releaseFixtureJobToRealWorker(fixture.job.id);
+    const batchMs: number[] = [];
+    for (let batch = 1; batch <= 2; batch++) {
+      const started = performance.now();
+      expect(
+        await processOutboxJobsBatch({
+          storeId: fixture.source.storeId,
+          jobIds: [fixture.job.id],
+          workerId: "isolated-maximum-source-worker",
+        }),
+      ).toMatchObject({
+        processed: 1,
+        failed: 0,
+        deadLettered: 0,
+        succeeded: 0,
+      });
+      batchMs.push(Math.round(performance.now() - started));
+      expect(
+        await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+          where: { id: fixture.job.id },
+        }),
+      ).toMatchObject({
+        status: "pending",
+        attempts: 0,
+        lockedAt: null,
+        lockedBy: null,
+      });
+      expect(
+        await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+          where: { id: fixture.source.id },
+        }),
+      ).toMatchObject({ status: "committing" });
+      expect(
+        await database.weleticLoyaltyImportRowExecution.count({
+          where: { sourceId: fixture.source.id, status: "committed" },
+        }),
+      ).toBe(50 * batch);
+    }
+    const proof = await database.$transaction(
+      (tx) =>
+        readHistoricalImportExecutionProofInTransaction({
+          tx,
+          sourceId: fixture.source.id,
+          storeId: fixture.source.storeId,
+          programId: fixture.source.programId,
+        }),
+      { ...options, timeout: HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS },
+    );
+    expect(proof.summary).toMatchObject({
+      rowCount: 50_000,
+      reconciled: true,
+      fullyCommitted: false,
+      observedNetPoints: (BigInt(100) * BigInt("9007199254740993")).toString(),
+    });
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: fixture.source.storeId },
+      }),
+    ).toBe(100);
+    console.log(
+      JSON.stringify({
+        event: "isolated_maximum_source_continuation",
+        sourceRows: 50_000,
+        committedRows: 100,
+        batchMs,
+      }),
+    );
+  },
+  180_000,
+);
 it.skipIf(process.env.HISTORICAL_IMPORT_WORKER_LOAD_INTEGRATION !== "1")(
   "commits and rolls back 500 real rows across durable worker continuations",
   async () => {

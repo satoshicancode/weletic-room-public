@@ -2,7 +2,7 @@
 
 Status: implementation in progress, 2026-09-09. The three import tables have been
 approved and created only in isolated local MySQL. Both opt-in database suites
-pass (42 tests across the latest suite runs). Byte-derived inspection/staging
+pass (43 tests across the latest suite runs). Byte-derived inspection/staging
 persistence and commit/rollback orchestration are covered locally; authenticated
 browser journeys and live merchant acceptance remain unproven. Nothing is deployed
 to Shopify.
@@ -52,6 +52,30 @@ blocker. This is real byte-derived persistence plus isolated transport-contract
 evidence, not authenticated HTTP/browser throughput, privacy live acceptance,
 full-source commit/rollback, or a shared-schema rollout approval.
 
+### Maximum-source worker continuation diagnostic
+
+A separate opt-in real MySQL test exercised two actual outbox deliveries against
+a 50,000-row source. Each delivery committed 50 rows, taking 8,101 ms and 7,725 ms.
+Between deliveries, the real continuation returned the same job to `pending`
+with zero attempts and cleared ownership; no manual rescheduling or lease reset
+was used after initial fixture eligibility. The source remained `committing`.
+Independent whole-source proof reconciled exactly 100 opening entries and the
+exact BigInt total, while explicitly reporting `fullyCommitted: false`.
+
+The diagnostic passed (33 unrelated source cases skipped). Shopper seeding is
+now batched in groups of 1,000 to stay below driver parameter limits. Exact fixture
+cleanup completed, and independent read-only counts were zero across ten affected
+models. Web typechecking, focused lint and independent review passed.
+
+This does not establish the remaining 49,900 commits, finalization, or rollback
+performance on a fully populated 50,000-row source. Rollback currently rechecks
+whole-source evidence in each row transaction. Moving that proof to claim and
+finalization alone would weaken detection between row transactions; do not do so
+as a performance shortcut. Measure a populated rollback fixture before choosing
+an optimization, retaining foreign-entry and orphan discovery. A multi-row locked
+transaction would change contention and containment granularity and requires an
+explicit architectural decision, not an inferred performance allowance.
+
 ## Approved isolated database execution
 
 After verifying `weletic_loyalty_dev` and principal `loyalty_dev@%` at
@@ -60,7 +84,7 @@ The reviewed generated DDL SHA-256 is
 `c3a4017125ca45d444767bafdc7e3a3c0e04ea07b657af7714303b5a64c1a547`.
 No existing tables were altered. See [ADR 0021](../adr/0021-isolated-loyalty-import-tables.md).
 
-The source suite passed 33 cases across normal and opt-in load runs, including atomic rollback, actual outbox dispatch, competing claims and recovery,
+The source suite passed 34 cases across normal and opt-in load runs, including atomic rollback, actual outbox dispatch, competing claims and recovery,
 exact >safe-integer opening balance, concurrent row replay, source finalization,
 stale installation rejection and cross-store snapshot rejection. The accounting
 suite passed all nine cases, including append-only correction, later-activity
