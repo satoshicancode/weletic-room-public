@@ -9,9 +9,11 @@ import {
 import { CoordinatedWeleticSessionStorage } from "./coordinated-session-storage.server";
 import { createMerchantAuthenticator } from "./merchant-authentication.server";
 import { verifyShopifyMerchantIdentity } from "./merchant-identity.server";
+import { assertPublicShopifyRuntime } from "./public-runtime-policy.mjs";
 import { getShopifyRequestedScopes } from "./shopify-scopes";
 import { requireEnv, requireUrlEnv } from "./weletic-api.server";
 
+assertPublicShopifyRuntime(process.env);
 const coordinatedStorage = new CoordinatedWeleticSessionStorage();
 // This is the SDK's supported transport adapter, not a replacement of global
 // fetch. Ownership remains in MySQL; async context only carries its proof.

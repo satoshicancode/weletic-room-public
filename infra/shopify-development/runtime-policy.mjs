@@ -1,3 +1,4 @@
+import { hasPublicLoyaltyScopes } from "../../packages/shopify-app/app/public-runtime-policy.mjs";
 import { isLocalServiceTarget } from "./verify.mjs";
 
 const WEB_KEYS = [
@@ -56,6 +57,8 @@ export function buildRuntimeEnvironment(app, web, shopify, ambient) {
     shopify.SHOPIFY_APP_URL !== web.SHOPIFY_APP_URL ||
     shopify.PORT !== "3002" ||
     shopify.SHOPIFY_API_KEY !== "c7d49cebb06e445db345bb200f966a03" ||
+    shopify.SHOPIFY_APP_DISTRIBUTION !== "app_store" ||
+    !hasPublicLoyaltyScopes(shopify.SCOPES) ||
     web.WELETIC_ENFORCE_CRON_AUTH !== "1"
   )
     throw new Error("Unsafe runtime target");

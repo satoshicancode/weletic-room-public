@@ -25,6 +25,7 @@ describe("Shopify runtime requested scopes", () => {
       "write_customers",
       "write_app_proxy",
     ]);
+    expect(required!.split(",")).toEqual([...DEVELOPMENT_SHOPIFY_SCOPES]);
     const optional = JSON.parse(
       publicManifest.match(/^optional_scopes = (\[.*\])/m)![1],
     );
@@ -65,7 +66,7 @@ describe("Shopify runtime requested scopes", () => {
     );
   });
 
-  it("matches the checked-in manifest and isolated development preflight", () => {
+  it("preserves the custom-app fallback and its original manifest", () => {
     const manifest = readFileSync(
       resolve(process.cwd(), "../../packages/shopify-app/shopify.app.toml"),
       "utf8",
@@ -80,7 +81,6 @@ describe("Shopify runtime requested scopes", () => {
     expect(runtime).toContain("write_app_proxy");
     expect(new Set(runtime).size).toBe(runtime.length);
     expect([...runtime].sort()).toEqual(declared!.split(",").sort());
-    expect([...runtime].sort()).toEqual([...DEVELOPMENT_SHOPIFY_SCOPES].sort());
   });
 
   it.each(["read_orders", "read_orders,read_products", ""])(

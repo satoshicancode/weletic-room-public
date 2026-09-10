@@ -5,6 +5,12 @@ Hiro on September 9, 2026. This feature is **in progress, not release-ready**.
 
 ## Current delivery boundary — September 10, public-main refresh
 
+The [public configuration receipt](public-config-validation-2026-09-10.md) and
+[runtime policy receipt](public-runtime-validation-2026-09-10.md) record ADR 0029:
+separate loyalty-only manifest, SDK/gateway configuration guards, narrowed isolated
+scopes and repeated successful loopback HTTP checks. These do not satisfy public
+HTTPS deployment, extension ownership, backend isolation or live installation gates.
+
 The [local runtime smoke receipt](local-runtime-smoke-2026-09-10.md) records
 separately approved loopback startup: all seven HTTP checks passed, and both
 temporary app processes were stopped afterward. This is not Shopify acceptance.
