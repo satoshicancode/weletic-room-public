@@ -19,6 +19,7 @@ import {
   WeleticLoyaltyOutboxJobType,
 } from "@prisma/client";
 import { z } from "zod";
+import { loyaltyExpiryCommunicationSnapshotSchema } from "./communications-contract";
 
 export type EnqueueOutboxJobResult = {
   job: WeleticLoyaltyOutboxJob;
@@ -59,6 +60,9 @@ export const InactivityExpiryPayloadSchema = z.object({
   stage: z.enum(["warning", "last_chance", "expire"]).optional(),
   policyVersion: z.number().int().nonnegative().optional(),
   pointsToExpire: z.string().optional(), // BigInt string
+  communicationSnapshot: loyaltyExpiryCommunicationSnapshotSchema
+    .nullable()
+    .optional(),
   installationGeneration: z.string().min(1).max(64).nullable().optional(),
 });
 export type InactivityExpiryPayload = z.infer<

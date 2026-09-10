@@ -30,6 +30,7 @@ const BIRTHDAY_JOB_STATUSES_TO_CANCEL = new Set<WeleticLoyaltyOutboxJobStatus>([
 ]);
 
 const CUSTOMER_CONTEXT_JSON_KEYS = new Set([
+  "expiryDeliverySnapshot",
   "birthDate",
   "birthday",
   "registeredAt",

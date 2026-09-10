@@ -8,6 +8,7 @@ import {
   SHOPIFY_CUSTOMER_REDACTION_TOMBSTONE_KEY,
   SHOPPER_DATA_EXPORT_RECORD_LIMIT,
   scrubBirthdayRewardOutboxJobs,
+  scrubCustomerContextJsonValue,
 } from "@/lib/weletic/loyalty/shopper-privacy";
 import {
   Prisma,
@@ -826,86 +827,112 @@ describe("Shopify GDPR & Privacy Compliance", () => {
       });
     });
 
-    it("re-reads an account-scoped job after a CAS miss and scrubs the terminal row in place", async () => {
-      const processingUpdatedAt = new Date("2026-08-29T04:00:00.000Z");
-      const completedUpdatedAt = new Date("2026-08-29T04:01:00.000Z");
-      const scheduledFor = new Date("2026-08-29T03:00:00.000Z");
-      vi.mocked(prisma.weleticShopper.findUnique).mockResolvedValueOnce({
-        id: "shop_outbox_cas_retry",
-      } as any);
-      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValueOnce({
-        id: "account_outbox_cas_retry",
-        metadata: null,
-        updatedAt: new Date("2026-08-29T03:30:00.000Z"),
-      } as any);
-      vi.mocked(prisma.weleticLoyaltyAccount.updateMany).mockResolvedValueOnce({
-        count: 1,
-      });
-      vi.mocked(prisma.weleticShopper.updateMany).mockResolvedValueOnce({
-        count: 1,
-      });
-      vi.mocked(prisma.weleticLoyaltyOutboxJob.findMany)
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ id: "account_job_racing_worker" }] as any);
-      vi.mocked(prisma.weleticLoyaltyOutboxJob.findFirst)
-        .mockResolvedValueOnce({
-          id: "account_job_racing_worker",
-          jobType: WeleticLoyaltyOutboxJobType.METAFIELD_SYNC,
-          status: WeleticLoyaltyOutboxJobStatus.processing,
-          payload: {
-            accountId: "account_outbox_cas_retry",
-            shopifyCustomerId: "customer_private",
-            customerEmail: "private@example.com",
-            triggerReason: "redeem",
-          },
-          scheduledFor,
-          updatedAt: processingUpdatedAt,
-        } as any)
-        .mockResolvedValueOnce({
-          id: "account_job_racing_worker",
-          jobType: WeleticLoyaltyOutboxJobType.METAFIELD_SYNC,
-          status: WeleticLoyaltyOutboxJobStatus.completed,
-          payload: {
-            accountId: "account_outbox_cas_retry",
-            shopifyCustomerId: "customer_private",
-            customerEmail: "private@example.com",
-            triggerReason: "redeem",
-          },
-          scheduledFor,
-          updatedAt: completedUpdatedAt,
+    it.each([
+      WeleticLoyaltyOutboxJobType.METAFIELD_SYNC,
+      WeleticLoyaltyOutboxJobType.INACTIVITY_EXPIRY,
+    ])(
+      "re-reads a %s job after a CAS miss and scrubs the terminal row in place",
+      async (jobType) => {
+        const processingUpdatedAt = new Date("2026-08-29T04:00:00.000Z");
+        const completedUpdatedAt = new Date("2026-08-29T04:01:00.000Z");
+        const scheduledFor = new Date("2026-08-29T03:00:00.000Z");
+        vi.mocked(prisma.weleticShopper.findUnique).mockResolvedValueOnce({
+          id: "shop_outbox_cas_retry",
         } as any);
-      vi.mocked(prisma.weleticLoyaltyOutboxJob.updateMany)
-        .mockResolvedValueOnce({ count: 0 })
-        .mockResolvedValueOnce({ count: 1 });
+        vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValueOnce(
+          {
+            id: "account_outbox_cas_retry",
+            metadata: null,
+            updatedAt: new Date("2026-08-29T03:30:00.000Z"),
+          } as any,
+        );
+        vi.mocked(
+          prisma.weleticLoyaltyAccount.updateMany,
+        ).mockResolvedValueOnce({
+          count: 1,
+        });
+        vi.mocked(prisma.weleticShopper.updateMany).mockResolvedValueOnce({
+          count: 1,
+        });
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.findMany)
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([{ id: "account_job_racing_worker" }] as any);
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.findFirst)
+          .mockResolvedValueOnce({
+            id: "account_job_racing_worker",
+            jobType,
+            status: WeleticLoyaltyOutboxJobStatus.processing,
+            payload: {
+              accountId: "account_outbox_cas_retry",
+              shopifyCustomerId: "customer_private",
+              customerEmail: "private@example.com",
+              expiryDeliverySnapshot: "encrypted-customer-envelope",
+              triggerReason: "redeem",
+            },
+            scheduledFor,
+            updatedAt: processingUpdatedAt,
+          } as any)
+          .mockResolvedValueOnce({
+            id: "account_job_racing_worker",
+            jobType,
+            status: WeleticLoyaltyOutboxJobStatus.completed,
+            payload: {
+              accountId: "account_outbox_cas_retry",
+              shopifyCustomerId: "customer_private",
+              customerEmail: "private@example.com",
+              expiryDeliverySnapshot: "encrypted-customer-envelope",
+              triggerReason: "redeem",
+            },
+            scheduledFor,
+            updatedAt: completedUpdatedAt,
+          } as any);
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.updateMany)
+          .mockResolvedValueOnce({ count: 0 })
+          .mockResolvedValueOnce({ count: 1 });
 
-      await anonymizeWeleticShopper({
-        storeId: "store_gdpr_1",
-        shopifyCustomerId: "customer_private",
-      });
-
-      expect(prisma.weleticLoyaltyOutboxJob.findFirst).toHaveBeenCalledTimes(2);
-      expect(
-        prisma.weleticLoyaltyOutboxJob.updateMany,
-      ).toHaveBeenLastCalledWith({
-        where: {
-          id: "account_job_racing_worker",
+        await anonymizeWeleticShopper({
           storeId: "store_gdpr_1",
-          status: WeleticLoyaltyOutboxJobStatus.completed,
-          updatedAt: completedUpdatedAt,
-          payload: {
-            path: "$.accountId",
-            equals: "account_outbox_cas_retry",
+          shopifyCustomerId: "customer_private",
+        });
+
+        expect(prisma.weleticLoyaltyOutboxJob.findFirst).toHaveBeenCalledTimes(
+          2,
+        );
+        expect(
+          prisma.weleticLoyaltyOutboxJob.updateMany,
+        ).toHaveBeenLastCalledWith({
+          where: {
+            id: "account_job_racing_worker",
+            storeId: "store_gdpr_1",
+            status: WeleticLoyaltyOutboxJobStatus.completed,
+            updatedAt: completedUpdatedAt,
+            payload: {
+              path: "$.accountId",
+              equals: "account_outbox_cas_retry",
+            },
           },
-        },
-        data: {
-          payload: {
-            accountId: "account_outbox_cas_retry",
-            triggerReason: "redeem",
+          data: {
+            payload: {
+              accountId: "account_outbox_cas_retry",
+              triggerReason: "redeem",
+            },
+            lastError: null,
+            errorLog: Prisma.DbNull,
           },
-          lastError: null,
-          errorLog: Prisma.DbNull,
-        },
-      });
+        });
+      },
+    );
+
+    it("scrubs encrypted delivery evidence recursively without retaining ciphertext", () => {
+      expect(
+        scrubCustomerContextJsonValue({
+          accountId: "account",
+          expiryDeliverySnapshot: "ciphertext",
+          nested: [
+            { expiryDeliverySnapshot: "nested-ciphertext", stage: "warning" },
+          ],
+        }),
+      ).toEqual({ accountId: "account", nested: [{ stage: "warning" }] });
     });
 
     it("fails redaction after bounded CAS misses leave an account-scoped job unsanitized", async () => {

@@ -2,6 +2,7 @@ import { resend } from "./resend";
 import { ResendBulkEmailOptions, ResendEmailOptions } from "./resend/types";
 import { sendViaNodeMailer } from "./send-via-nodemailer";
 import { sendBatchEmailViaResend, sendEmailViaResend } from "./send-via-resend";
+export { prepareResendEmail, sendPreparedResendEmail } from "./send-via-resend";
 
 export const sendEmail = async (opts: ResendEmailOptions) => {
   if (resend) {

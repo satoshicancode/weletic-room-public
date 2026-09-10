@@ -145,6 +145,11 @@ proof only.
       quiet hours, frequency limits, bounce/complaint handling and communication
       history. Check Shopify/native/Flow duplicate notices. Ambiguous transport
       acceptance must not cause an automatic alternate-provider resend.
+      Partial local evidence: [expiry communications integration](expiry-communications-integration-2026-09-10.md)
+      connects warning/last-chance policies with immutable encrypted delivery
+      requests, claim fencing and bounded retries. Four isolated MySQL cases pass;
+      remaining journeys, complete privacy-worker races and live delivery remain
+      unaccepted. This does not complete D1 or D2.
 - [ ] D3: Confirm the intended timezone before birthday/campaign/expiry/email
       activation. Do not silently replace a retained store timezone with Tokyo.
       Prove boundary timing and approved real inbox delivery.

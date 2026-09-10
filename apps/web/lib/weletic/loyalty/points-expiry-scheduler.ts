@@ -14,6 +14,7 @@ import {
 import { ShopifyStoreOperationalWritesBlockedError } from "@/lib/weletic/shopify/store-compliance-state";
 import { Prisma } from "@prisma/client";
 import { addDays } from "date-fns";
+import { snapshotLoyaltyCommunicationPolicy } from "./communications-service";
 
 export type PointsExpirySweepResult = {
   programsScanned: number;
@@ -69,6 +70,7 @@ export async function enqueuePointsExpiryLifecycleJobs({
               where: { storeId: candidate.storeId },
               select: {
                 id: true,
+                metadata: true,
                 status: true,
                 killSwitchActive: true,
                 pointsExpiryDays: true,
@@ -227,6 +229,20 @@ export async function enqueuePointsExpiryLifecycleJobs({
                     expiryAt: expiryAt.toISOString(),
                     stage,
                     policyVersion: program.pointsExpiryPolicyVersion,
+                    ...(stage === "expire"
+                      ? {}
+                      : {
+                          communicationSnapshot:
+                            snapshotLoyaltyCommunicationPolicy({
+                              storeId: candidate.storeId,
+                              programId: program.id,
+                              metadata: program.metadata ?? null,
+                              journey:
+                                stage === "warning"
+                                  ? "points_warning"
+                                  : "points_last_chance",
+                            }),
+                        }),
                   },
                   scheduledFor: scheduledFor < now ? now : scheduledFor,
                   // Policy version is part of the identity because threshold-only

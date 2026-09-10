@@ -1,5 +1,10 @@
 export const communicationsCopy = {
   en: {
+    expiryConnected:
+      "Expiry templates apply to newly scheduled notices. Queued notices keep their saved content. Disabling stops queued notices too. Existing timing, consent and email pause controls still apply; saving does not send an email.",
+    expirySaved: "Saved for future expiry notices. No email was sent.",
+    expiryEnabled:
+      "Allow this expiry notice (requires existing timing and consent)",
     title: "Loyalty communications",
     language: "Editor language",
     journey: "Journey",
@@ -28,6 +33,10 @@ export const communicationsCopy = {
     dirty: "Unsaved changes. Save or discard before changing journeys.",
   },
   ja: {
+    expiryConnected:
+      "失効通知のテンプレートは新しく予約される通知に適用されます。予約済み通知の内容は維持されます。無効化すると予約済み通知も停止します。既存の配信時期、同意、メール一時停止の条件は引き続き適用され、保存だけでは送信されません。",
+    expirySaved: "今後の失効通知用に保存しました。メールは送信していません。",
+    expiryEnabled: "この失効通知を許可（既存の配信時期と同意が必要）",
     title: "ロイヤルティ通知",
     language: "編集画面の言語",
     journey: "通知の種類",
@@ -57,6 +66,11 @@ export const communicationsCopy = {
       "未保存の変更があります。通知を切り替える前に保存または破棄してください。",
   },
   vi: {
+    expiryConnected:
+      "Mẫu hết hạn áp dụng cho thông báo được lên lịch mới. Thông báo đã xếp hàng giữ nội dung đã lưu. Tắt cũng ngăn thông báo đang xếp hàng. Thời điểm, sự đồng ý và chế độ tạm dừng email hiện có vẫn được áp dụng; lưu không gửi email.",
+    expirySaved: "Đã lưu cho thông báo hết hạn sau này. Chưa gửi email.",
+    expiryEnabled:
+      "Cho phép thông báo hết hạn này (cần thời điểm và sự đồng ý hiện có)",
     title: "Thông báo khách hàng thân thiết",
     language: "Ngôn ngữ trình chỉnh sửa",
     journey: "Loại thông báo",
