@@ -25,27 +25,27 @@ shopper flow. Tomorrow means work can start, not that all remaining work will fi
 
 ## Priority and current disposition
 
-| ID  | Workstream                | Current state                                                                        | Tonight / next execution                                          |
-| --- | ------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| L00 | Reference and repository  | Six reference areas and 34 included + 2 locked reports documented; unknowns explicit | Capture complete; retain normalized specification                 |
-| L01 | Core points lifecycle     | Existing implementation; named lifecycle acceptance open                             | Existing isolated tests tonight; remaining live coverage later    |
-| L02 | Rewards and wallet        | Existing implementation; complete reward-state acceptance open                       | Fixed-amount drawer/wallet tonight; other types later             |
-| L03 | Subscription policies     | PR #4/#9 merged; real classifications unproven                                       | Preserve reference; reconcile/test later                          |
-| L04 | VIP                       | PR #2 merged; lifecycle and semantic decisions open                                  | Preserve reference; lifecycle later                               |
-| L05 | Campaigns                 | PR #2 merged; targeting/boundary/refund acceptance open                              | Specify now; test later                                           |
-| L06 | Referrals                 | Existing core and PR #10 Flow producer; full claim/funnel acceptance open            | Preserve terms/states; finish later                               |
-| L07 | Merchant appearance       | Basic branding exists; embedded and advanced controls incomplete                     | Field-level specification now                                     |
-| L08 | Nudges                    | Full editor/runtime set not found                                                    | Specify all three plus campaign-prompt disposition                |
-| L09 | Other storefront surfaces | Implementations exist; complete language/accessibility/live coverage open            | Core drawer only tonight; surface matrix later                    |
-| L10 | Communications            | PR #6/#8 merged; new policy delivery `not_connected`                                 | Preserve ten-entry reference; delivery integration later          |
-| L11 | Analytics                 | PR #7 merged; aggregate UI/export foundation                                         | Preserve catalog/definitions; funnel/cohorts/reconciliation later |
-| L12 | Imports                   | Draft PR #13 plus uncommitted optimization; not merged                               | Frozen tonight; schema/load decisions later                       |
-| L13 | Store approval            | PR #5 backend foundation; unknown-install provisioning/status UI incomplete          | Follow-on isolated merge/staging approved; live gates remain open |
-| L14 | Public-app identity       | Isolation/configuration/ownership/live install unproven                              | External gates, later                                             |
-| L15 | Flow                      | Trigger definitions/producers exist; publication/workflows/action incomplete         | Payload/auth specification now; execution later                   |
-| L16 | Operations/privacy        | Workers and guards exist; full supervised/race acceptance open                       | Exact rehearsals documented; later                                |
-| L17 | Platform/release          | Permissions, listing and production gates open                                       | Not promised tonight                                              |
-| Q   | Verification/closure      | No new live acceptance                                                               | Record actual local/browser/CI result separately                  |
+| ID  | Workstream                | Current state                                                                          | Tonight / next execution                                          |
+| --- | ------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| L00 | Reference and repository  | Six reference areas and 34 included + 2 locked reports documented; unknowns explicit   | Capture complete; retain normalized specification                 |
+| L01 | Core points lifecycle     | Existing implementation; named lifecycle acceptance open                               | Existing isolated tests tonight; remaining live coverage later    |
+| L02 | Rewards and wallet        | Existing implementation; complete reward-state acceptance open                         | Fixed-amount drawer/wallet tonight; other types later             |
+| L03 | Subscription policies     | PR #4/#9 merged; real classifications unproven                                         | Preserve reference; reconcile/test later                          |
+| L04 | VIP                       | PR #2 merged; lifecycle and semantic decisions open                                    | Preserve reference; lifecycle later                               |
+| L05 | Campaigns                 | PR #2 merged; targeting/boundary/refund acceptance open                                | Specify now; test later                                           |
+| L06 | Referrals                 | Existing core and PR #10 Flow producer; full claim/funnel acceptance open              | Preserve terms/states; finish later                               |
+| L07 | Merchant appearance       | Basic branding exists; embedded and advanced controls incomplete                       | Field-level specification now                                     |
+| L08 | Nudges                    | Full editor/runtime set not found                                                      | Specify all three plus campaign-prompt disposition                |
+| L09 | Other storefront surfaces | Implementations exist; complete language/accessibility/live coverage open              | Core drawer only tonight; surface matrix later                    |
+| L10 | Communications            | Expiry integration merged; purchase-source local evidence; other journeys disconnected | Complete remaining integration and named live delivery            |
+| L11 | Analytics                 | PR #7 merged; aggregate UI/export foundation                                           | Preserve catalog/definitions; funnel/cohorts/reconciliation later |
+| L12 | Imports                   | Draft PR #13 plus uncommitted optimization; not merged                                 | Frozen tonight; schema/load decisions later                       |
+| L13 | Store approval            | PR #5 backend foundation; unknown-install provisioning/status UI incomplete            | Follow-on isolated merge/staging approved; live gates remain open |
+| L14 | Public-app identity       | Isolation/configuration/ownership/live install unproven                                | External gates, later                                             |
+| L15 | Flow                      | Trigger definitions/producers exist; publication/workflows/action incomplete           | Payload/auth specification now; execution later                   |
+| L16 | Operations/privacy        | Workers and guards exist; full supervised/race acceptance open                         | Exact rehearsals documented; later                                |
+| L17 | Platform/release          | Permissions, listing and production gates open                                         | Not promised tonight                                              |
+| Q   | Verification/closure      | No new live acceptance                                                                 | Record actual local/browser/CI result separately                  |
 
 Every task below requires current-source inspection before coding. Reuse shared
 contracts and thin signed Shopify adapters. Writes retain generation/revision
@@ -254,7 +254,10 @@ No task below silently authorizes an external gate or a new product policy.
 ### L10 — Connect communications safely
 
 - **Scope/reference:** R4 ten-entry inventory versus nine existing policies.
-  PR #6/#8 merged; policy-to-delivery integration remains `not_connected`.
+  PR #6/#8 merged. September 10 follow-up: expiry policies have merged local
+  integration; [purchase-source integration](points-earned-communications-2026-09-10.md)
+  has local transactional/worker/editor evidence. Other points sources and
+  remaining journeys are not connected; no live-delivery acceptance is implied.
 - **Approach/subsystems:** connect existing producers/outbox to immutable event
   and policy-revision evidence, trusted recipient/code/CTA/sender context, locale
   fallback, consent/suppression, pause controls, leased delivery, history, retry/

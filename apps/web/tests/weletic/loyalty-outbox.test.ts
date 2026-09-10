@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { CommunicationDeliveryReconciliationRequiredError } from "@/lib/weletic/loyalty/communication-delivery-snapshot";
 import {
   createAuthenticatedFixtureCustomerCreateMaintenancePermit,
   createLoyaltyMaintenanceLeaseMetadata,
@@ -21,8 +22,10 @@ import {
   reapStaleOutboxLocks,
   validateOutboxPayload,
 } from "@/lib/weletic/loyalty/outbox";
+import { sendPointsEarnedNotification } from "@/lib/weletic/loyalty/points-earned-notifications";
 import { createLoyaltyDiscountProvisioningIdentity } from "@/lib/weletic/loyalty/redemption-discount-identity";
 import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
+import { ShopperEmailPausedError } from "@/lib/weletic/merchant-settings/communications";
 import {
   Prisma,
   WeleticLoyaltyOutboxJobStatus,
@@ -81,6 +84,12 @@ vi.mock("@/lib/weletic/redis-lock", () => ({
 
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
+  enqueuePurchasePointsCommunication: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("@/lib/weletic/loyalty/points-earned-notifications", () => ({
+  sendPointsEarnedNotification: vi.fn(),
 }));
 
 const TEST_STORE_ID = "wstore_test_m2";
@@ -487,6 +496,93 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
   // 2. Worker Polling, Concurrency Locking & Backoff
   // =========================================================================
   describe("2. Worker Polling, Concurrency Locking & Backoff", () => {
+    it.each(["pause", "reconcile", "success"])(
+      "handles communication %s with the winning claim fence",
+      async (outcome) => {
+        const job = {
+          id: "communication_batch",
+          storeId: TEST_STORE_ID,
+          jobType: "LOYALTY_COMMUNICATION" as const,
+          status: "pending" as const,
+          payload: { installationGeneration: "sgen_outbox_two" },
+          attempts: 0,
+          maxAttempts: 5,
+          scheduledFor: new Date(0),
+          nextRetryAt: null,
+          lockedAt: null,
+          lockedBy: null,
+          errorLog: [],
+        };
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.findMany)
+          .mockResolvedValueOnce([job as never])
+          .mockResolvedValueOnce([]);
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.updateMany).mockResolvedValue({
+          count: 1,
+        });
+        vi.mocked(sendPointsEarnedNotification).mockImplementationOnce(
+          async ({ claim }) => {
+            if (outcome === "pause") throw new ShopperEmailPausedError();
+            if (outcome === "reconcile")
+              throw new CommunicationDeliveryReconciliationRequiredError();
+            claim.candidate.payload = {
+              installationGeneration: "sgen_outbox_two",
+              communicationDeliverySnapshot: "synthetic-ciphertext",
+            };
+            return "sent";
+          },
+        );
+        const result = await processOutboxJobsBatch({
+          storeId: TEST_STORE_ID,
+          jobIds: [job.id],
+        });
+        expect(sendPointsEarnedNotification).toHaveBeenCalledTimes(1);
+        if (outcome === "pause")
+          expect(result).toMatchObject({
+            processed: 0,
+            skipped: 1,
+            failed: 0,
+            deadLettered: 0,
+          });
+        if (outcome === "reconcile")
+          expect(result).toMatchObject({
+            processed: 1,
+            deadLettered: 1,
+            succeeded: 0,
+          });
+        if (outcome === "success")
+          expect(result).toMatchObject({ processed: 1, succeeded: 1 });
+        const transitions = vi
+          .mocked(prisma.weleticLoyaltyOutboxJob.updateMany)
+          .mock.calls.map(([args]) => args);
+        expect(transitions).toContainEqual(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              id: job.id,
+              status: "processing",
+              attempts: 1,
+              lockedBy: expect.any(String),
+              ...(outcome === "success"
+                ? {
+                    payload: {
+                      equals: expect.objectContaining({
+                        communicationDeliverySnapshot: "synthetic-ciphertext",
+                      }),
+                    },
+                  }
+                : {}),
+            }),
+            data: expect.objectContaining(
+              outcome === "pause"
+                ? { status: "pending", attempts: 0 }
+                : {
+                    status:
+                      outcome === "reconcile" ? "dead_letter" : "completed",
+                  },
+            ),
+          }),
+        );
+      },
+    );
     it("2.1: Calculates exponential backoff with full jitter accurately", () => {
       const delay1 = calculateExponentialBackoff(1, 2000, 3600000);
       expect(delay1).toBeGreaterThanOrEqual(2000);
@@ -569,6 +665,7 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
           NOT: {
             store: { merchantSettings: { is: { shopperEmailPaused: true } } },
             OR: [
+              { jobType: "LOYALTY_COMMUNICATION" },
               { jobType: "REVIEW_REQUEST_EMAIL" },
               {
                 jobType: "INACTIVITY_EXPIRY",

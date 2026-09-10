@@ -24,6 +24,9 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
+  enqueuePurchasePointsCommunication: vi.fn().mockResolvedValue(null),
+}));
 
 describe("Challenger 1 Final Milestone: Financial Ledger, Arithmetic & Concurrency Adversarial Suite", () => {
   // ==========================================================================

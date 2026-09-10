@@ -1,5 +1,11 @@
 export const communicationsCopy = {
   en: {
+    purchaseConnected:
+      "Connected for newly available purchase points, including matured holds. Signup, manual, birthday and other point sources are not connected. Delivery requires an approved sender, running worker, customer consent and an active program. Queued notices keep saved content; disabling also stops queued notices. Saving does not send email.",
+    purchaseSaved:
+      "Saved for future purchase-point notices. No email was sent.",
+    purchaseEnabled:
+      "Allow purchase-point notices (requires consent and configured delivery)",
     expiryConnected:
       "Expiry templates apply to newly scheduled notices. Queued notices keep their saved content. Disabling stops queued notices too. Existing timing, consent and email pause controls still apply; saving does not send an email.",
     expirySaved: "Saved for future expiry notices. No email was sent.",
@@ -33,6 +39,11 @@ export const communicationsCopy = {
     dirty: "Unsaved changes. Save or discard before changing journeys.",
   },
   ja: {
+    purchaseConnected:
+      "購入で新たに利用可能になったポイント（保留期間終了分を含む）に接続されています。会員登録、手動付与、誕生日などのポイントは未接続です。配信には承認済み送信元、稼働中のワーカー、お客様の同意、有効なプログラムが必要です。予約済み通知の内容は維持され、無効化すると予約済み通知も停止します。保存だけでは送信されません。",
+    purchaseSaved:
+      "今後の購入ポイント通知用に保存しました。メールは送信していません。",
+    purchaseEnabled: "購入ポイント通知を許可（同意と配信設定が必要）",
     expiryConnected:
       "失効通知のテンプレートは新しく予約される通知に適用されます。予約済み通知の内容は維持されます。無効化すると予約済み通知も停止します。既存の配信時期、同意、メール一時停止の条件は引き続き適用され、保存だけでは送信されません。",
     expirySaved: "今後の失効通知用に保存しました。メールは送信していません。",
@@ -66,6 +77,12 @@ export const communicationsCopy = {
       "未保存の変更があります。通知を切り替える前に保存または破棄してください。",
   },
   vi: {
+    purchaseConnected:
+      "Đã kết nối cho điểm mua hàng mới khả dụng, bao gồm điểm hết thời gian chờ. Điểm đăng ký, thủ công, sinh nhật và các nguồn khác chưa được kết nối. Cần người gửi được phê duyệt, worker đang chạy, sự đồng ý của khách hàng và chương trình hoạt động. Thông báo đã xếp hàng giữ nội dung đã lưu; tắt cũng ngăn các thông báo này. Lưu không gửi email.",
+    purchaseSaved:
+      "Đã lưu cho thông báo điểm mua hàng sau này. Chưa gửi email.",
+    purchaseEnabled:
+      "Cho phép thông báo điểm mua hàng (cần sự đồng ý và cấu hình gửi)",
     expiryConnected:
       "Mẫu hết hạn áp dụng cho thông báo được lên lịch mới. Thông báo đã xếp hàng giữ nội dung đã lưu. Tắt cũng ngăn thông báo đang xếp hàng. Thời điểm, sự đồng ý và chế độ tạm dừng email hiện có vẫn được áp dụng; lưu không gửi email.",
     expirySaved: "Đã lưu cho thông báo hết hạn sau này. Chưa gửi email.",

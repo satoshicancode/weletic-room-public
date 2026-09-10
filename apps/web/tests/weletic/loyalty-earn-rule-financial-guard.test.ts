@@ -50,7 +50,14 @@ vi.mock("@/lib/prisma", () => {
 
 vi.mock("@/lib/weletic/loyalty/ledger", () => ({
   appendPointsLedgerEntry: domainMocks.appendPointsLedgerEntry,
+  appendPointsLedgerEntryWithReceipt: async (params: unknown) => ({
+    entry: await domainMocks.appendPointsLedgerEntry(params),
+    created: true,
+  }),
   OptimisticConcurrencyError: class OptimisticConcurrencyError extends Error {},
+}));
+vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
+  enqueuePurchasePointsCommunication: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({

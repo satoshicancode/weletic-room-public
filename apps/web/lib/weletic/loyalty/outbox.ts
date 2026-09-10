@@ -20,6 +20,7 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { loyaltyExpiryCommunicationSnapshotSchema } from "./communications-contract";
+import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
 
 export type EnqueueOutboxJobResult = {
   job: WeleticLoyaltyOutboxJob;
@@ -261,6 +262,7 @@ export type FlowTriggerPayload = z.infer<typeof FlowTriggerPayloadSchema>;
  * Union of all valid outbox payloads
  */
 export type LoyaltyOutboxPayloadMap = {
+  LOYALTY_COMMUNICATION: z.infer<typeof loyaltyCommunicationJobPayloadSchema>;
   SHOPPER_REWARD_PROVISION: z.infer<typeof ShopperRewardProvisionPayloadSchema>;
   REVIEW_REQUEST_EMAIL: z.infer<typeof ReviewRequestEmailPayloadSchema>;
   REVIEW_SUMMARY_SYNC: z.infer<typeof ReviewSummarySyncPayloadSchema>;
@@ -429,6 +431,7 @@ function isInstallationBoundOperationalJob({
 }) {
   if (
     [
+      "LOYALTY_COMMUNICATION",
       "HOLDING_PERIOD_RELEASE",
       "INACTIVITY_EXPIRY",
       "TIER_REVIEW",
@@ -468,7 +471,10 @@ async function bindOperationalJobToInstallationGeneration({
 
   const storeDelegate = (db as typeof prisma).weleticShopifyStore;
   if (!storeDelegate?.findUnique) {
-    if (process.env.NODE_ENV === "test") {
+    if (
+      process.env.NODE_ENV === "test" &&
+      jobType !== "LOYALTY_COMMUNICATION"
+    ) {
       return {
         ...payload,
         installationGeneration: null,
@@ -487,6 +493,13 @@ async function bindOperationalJobToInstallationGeneration({
       `Cannot bind ${jobType} outbox work to missing Shopify store ${storeId}.`,
     );
   }
+  if (
+    jobType === "LOYALTY_COMMUNICATION" &&
+    store.installationGeneration !==
+      (payload as Record<string, unknown>).installationGeneration
+  ) {
+    throw new Error("Loyalty communication installation changed");
+  }
   return {
     ...payload,
     installationGeneration: store.installationGeneration ?? null,
@@ -501,6 +514,9 @@ export function validateOutboxPayload(
   payload: unknown,
 ): void {
   switch (jobType) {
+    case "LOYALTY_COMMUNICATION":
+      loyaltyCommunicationJobPayloadSchema.parse(payload);
+      break;
     case "SHOPPER_REWARD_PROVISION":
       ShopperRewardProvisionPayloadSchema.parse(payload);
       break;
@@ -571,6 +587,12 @@ export async function enqueueOutboxJob<
 
   // Validate payload matches schema
   validateOutboxPayload(jobType, payload);
+  if (
+    jobType === "LOYALTY_COMMUNICATION" &&
+    (payload as Record<string, unknown>).storeId !== storeId
+  ) {
+    throw new Error("Loyalty communication store mismatch");
+  }
 
   const maintenanceGated = isMaintenanceGatedOutboxJob({ jobType, payload });
   if (maintenanceGated && !tx) {

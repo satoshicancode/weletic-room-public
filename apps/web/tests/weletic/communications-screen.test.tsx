@@ -54,6 +54,57 @@ async function submit() {
   });
 }
 
+it.each(["en", "ja", "vi"])(
+  "reports purchase-only readiness without enabling other journeys in %s",
+  async (locale) => {
+    const request = vi.fn().mockResolvedValue({
+      ...response,
+      deliveryIntegration: "purchase_and_expiry_policies",
+    });
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    const purchaseCopy = node.querySelector("article > p")?.textContent;
+    expect(purchaseCopy).toContain(
+      {
+        en: "Signup, manual, birthday",
+        ja: "会員登録、手動付与、誕生日",
+        vi: "Điểm đăng ký, thủ công, sinh nhật",
+      }[locale],
+    );
+    await select(1, "reward_redeemed");
+    expect(node.querySelector("article > p")?.textContent).not.toBe(
+      purchaseCopy,
+    );
+    expect(node.textContent).toContain(
+      {
+        en: "Delivery is not connected",
+        ja: "まだ配信に接続されていません",
+        vi: "chưa được kết nối",
+      }[locale],
+    );
+    await select(1, "points_warning");
+    expect(node.textContent).toContain(
+      {
+        en: "Expiry templates",
+        ja: "失効通知のテンプレート",
+        vi: "Mẫu hết hạn",
+      }[locale],
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+  },
+);
+it("does not infer purchase readiness from an older expiry-only response", async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValue({ ...response, deliveryIntegration: "expiry_policies" });
+  await act(async () =>
+    root.render(createElement(CommunicationsScreen, { request })),
+  );
+  expect(node.textContent).toContain("Delivery is not connected");
+});
+
 it.each([
   ["en", "Loyalty communications"],
   ["ja", "ロイヤルティ通知"],

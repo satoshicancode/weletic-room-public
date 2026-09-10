@@ -42,9 +42,26 @@ export function CommunicationsScreen({
   const [mobile, setMobile] = useState(true);
   const epoch = useRef(0);
   const copy = communicationsCopy[locale];
-  const connected =
-    state?.deliveryIntegration === "expiry_policies" &&
+  const purchaseConnected =
+    state?.deliveryIntegration === "purchase_and_expiry_policies" &&
+    journey === "points_earned";
+  const expiryConnected =
+    (state?.deliveryIntegration === "expiry_policies" ||
+      state?.deliveryIntegration === "purchase_and_expiry_policies") &&
     (journey === "points_warning" || journey === "points_last_chance");
+  const connectedCopy = purchaseConnected
+    ? {
+        description: copy.purchaseConnected,
+        saved: copy.purchaseSaved,
+        enabled: copy.purchaseEnabled,
+      }
+    : expiryConnected
+      ? {
+          description: copy.expiryConnected,
+          saved: copy.expirySaved,
+          enabled: copy.expiryEnabled,
+        }
+      : null;
   React.useEffect(() => {
     onNavigationStateChange?.({ dirty, locale });
   }, [dirty, locale, onNavigationStateChange]);
@@ -190,11 +207,13 @@ export function CommunicationsScreen({
           {languageOptions}
         </select>
       </label>
-      <p>{connected ? copy.expiryConnected : copy.disconnected}</p>
+      <p>{connectedCopy?.description ?? copy.disconnected}</p>
       {busy && <p role="status">{copy.loading}</p>}
       {message && (
         <p role={message === "saved" ? "status" : "alert"}>
-          {message === "saved" && connected ? copy.expirySaved : copy[message]}
+          {message === "saved" && connectedCopy
+            ? connectedCopy.saved
+            : copy[message]}
         </p>
       )}
       {state && !state.capabilities.configure && <p>{copy.readonly}</p>}
@@ -259,7 +278,7 @@ export function CommunicationsScreen({
                     setMessage(null);
                   }}
                 />
-                {connected ? copy.expiryEnabled : copy.enabled}
+                {connectedCopy?.enabled ?? copy.enabled}
               </label>
               {(["subject", "heading", "body", "actionLabel"] as const).map(
                 (field) => (

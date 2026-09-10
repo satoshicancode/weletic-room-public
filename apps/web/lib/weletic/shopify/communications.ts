@@ -58,7 +58,7 @@ export async function manageShopifyCommunicationsInTransaction({
     storeId: actor.storeId,
     installationGeneration: actor.installationGeneration,
     capabilities: { configure: capabilities.loyalty },
-    deliveryIntegration: "expiry_policies",
+    deliveryIntegration: "purchase_and_expiry_policies",
     ...state,
   });
 }
