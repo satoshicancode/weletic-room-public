@@ -6,6 +6,7 @@ import {
   appendPointsLedgerEntryWithReceipt,
 } from "@/lib/weletic/loyalty/ledger";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
+import { enqueueSignupPointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
 import { scheduleTierReviewAfterQualifyingActivity } from "@/lib/weletic/loyalty/tier-review-scheduling";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import {
@@ -264,7 +265,7 @@ export async function awardSignupWelcomeBonus(
 
   const idempotencyKey = `signup:${accountId}`;
 
-  const entry = await appendPointsLedgerEntry({
+  const receipt = await appendPointsLedgerEntryWithReceipt({
     storeId,
     accountId,
     entryType: WeleticPointsLedgerEntryType.EARN_BONUS,
@@ -278,6 +279,13 @@ export async function awardSignupWelcomeBonus(
       ...(metadata ?? {}),
     },
     tx,
+  });
+  const entry = receipt.entry;
+  await enqueueSignupPointsCommunication({
+    tx: tx!,
+    storeId,
+    receipt,
+    loyaltyMaintenancePermit,
   });
   await enqueueFlowTriggerJob({
     storeId,

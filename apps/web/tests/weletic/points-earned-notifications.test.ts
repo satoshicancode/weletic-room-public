@@ -140,6 +140,54 @@ function accountRow() {
     store: { shopDomain: "synthetic.myshopify.com" },
   };
 }
+function signupFixture() {
+  const value = fixture();
+  const { orderId: _orderId, ...payload } = value.claim.candidate.payload;
+  return {
+    claim: {
+      ...value.claim,
+      candidate: {
+        ...value.claim.candidate,
+        payload: {
+          ...payload,
+          source: "signup_points_available",
+          points: "20",
+        },
+      },
+    },
+  };
+}
+it("delivers a signup notice using exact signup ledger evidence without an order", async () => {
+  mocks.ledger.mockResolvedValue({
+    grantId: null,
+    pointsDelta: BigInt(20),
+    createdAt: at,
+  });
+  expect(await sendPointsEarnedNotification(signupFixture())).toBe("sent");
+  expect(mocks.ledger).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({
+        entryType: "EARN_BONUS",
+        referenceType: "SIGNUP_BONUS",
+        referenceId: "account",
+      }),
+    }),
+  );
+  expect(mocks.order).not.toHaveBeenCalled();
+  expect(mocks.grant).not.toHaveBeenCalled();
+  expect(mocks.send).toHaveBeenCalledTimes(1);
+});
+it.each([
+  null,
+  { grantId: "foreign-grant", pointsDelta: BigInt(20), createdAt: at },
+  { grantId: null, pointsDelta: BigInt(19), createdAt: at },
+])("suppresses missing or mismatched signup ledger %#", async (ledger) => {
+  mocks.ledger.mockResolvedValue(ledger);
+  expect(await sendPointsEarnedNotification(signupFixture())).toBe(
+    "ineligible",
+  );
+  expect(mocks.send).not.toHaveBeenCalled();
+});
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.account.mockResolvedValue(accountRow());

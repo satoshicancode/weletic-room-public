@@ -8,6 +8,7 @@ import {
   getBirthdayRewardDateForYear,
   getNextBirthdayRewardSchedule,
 } from "@/lib/weletic/loyalty/non-purchase-earn";
+import { enqueueSignupPointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
 import { WeleticPointsLedgerEntryType } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -43,6 +44,9 @@ vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
 // This suite mocks communication persistence; SQL acceptance remains separate.
 vi.mock("@/lib/weletic/loyalty/birthday-communication-producer", () => ({
   enqueueBirthdayCommunication: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
+  enqueueSignupPointsCommunication: vi.fn().mockResolvedValue(null),
 }));
 
 describe("Non-Purchase Earning Engine & Anti-Gaming Rules (M1 / Smile.io Parity)", () => {
@@ -258,6 +262,13 @@ describe("Non-Purchase Earning Engine & Anti-Gaming Rules (M1 / Smile.io Parity)
       expect(entry?.pointsDelta).toBe(BigInt(100));
       expect(entry?.entryType).toBe(WeleticPointsLedgerEntryType.EARN_BONUS);
       expect(entry?.idempotencyKey).toBe(`signup:${accountId}`);
+      expect(enqueueSignupPointsCommunication).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storeId,
+          tx: prisma,
+          receipt: { created: true, entry },
+        }),
+      );
       expect(prisma.weleticPointsLedgerEntry.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -363,6 +374,11 @@ describe("Non-Purchase Earning Engine & Anti-Gaming Rules (M1 / Smile.io Parity)
       });
 
       expect(res?.id).toBe("wledger_signup_exist");
+      expect(enqueueSignupPointsCommunication).toHaveBeenCalledWith(
+        expect.objectContaining({
+          receipt: { created: false, entry: existingEntry },
+        }),
+      );
       expect(prisma.weleticPointsLedgerEntry.create).not.toHaveBeenCalled();
       expect(prisma.weleticLoyaltyAccount.update).not.toHaveBeenCalled();
     });

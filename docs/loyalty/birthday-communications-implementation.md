@@ -68,9 +68,29 @@ The final corrected-snapshot web typecheck also passed.
 The production source was unchanged during the build; subsequent corrections
 affected only test fixtures and documentation.
 
-Still required: final integration review,
-public CI, merchant integration-status accuracy and named live acceptance. No code
-has been published; the verified draft is retained as a local checkpoint.
-On integration with signup PR #22, preserve all
-three source variants (purchase, signup, birthday); this branch currently contains
-only the public-main purchase source and the birthday draft.
+## Combined signup/birthday checkpoint
+
+Signup PR #22 merged as `3427d1e3c649dcf019f736f599a95c50b156eaa1` after all
+six public checks passed. This local integration retains purchase, signup and
+birthday source variants. The combined SQL suite passed 24 tests, adding birthday
+retained-request erasure before and after worker completion. Ten fixture tables
+reconciled to zero and the temporary grant was revoked. The SQL sender and Redis
+lock remain synthetic; these tests do not prove real delivery or lock contention.
+
+The merchant response now explicitly reports
+`purchase_signup_birthday_and_expiry_policies`. EN/JA/VI copy separates the Birthday
+journey from purchase/signup notices and leaves other journeys disconnected.
+Older readiness values retain their meaning. Strict merchant readers must be
+upgraded before this backend value is emitted, or deploy both in the coordinated
+drained rollout with updated workers. No activation or deployment is implied.
+
+All 51 editor/contract/client/action tests passed after correcting the new save
+fixture to return the saved policy and a changed revision. The first integrated
+focused run passed 239 tests but failed three UI fixture cases; those failures
+were not production defects or waived checks. Combined web typecheck passed.
+Independent integration review found no financial/privacy/source blocker.
+
+Still required: combined full regression/build/lint, public CI, browser acceptance
+and named live acceptance. Birthday code has not been published. The preceding
+birthday-only build and full-suite counts are historical checkpoint evidence,
+not proof of this combined snapshot.

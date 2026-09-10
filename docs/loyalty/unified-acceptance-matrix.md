@@ -178,11 +178,16 @@ No checkbox below is promoted solely by these local checks.
       and delayed partial refunds. Other points sources, remaining journeys,
       completion/redaction races and named live delivery remain open. D1/D2 are
       still unchecked; follow the client/schema/worker/producer release ordering.
+      Signup follow-up: [signup communication evidence](signup-communications-implementation.md)
+      covers fresh signup ledger events, no retrospective opt-in, and atomic
+      rollback on outbox failure in isolated MySQL. Delivery remains mocked;
+      remaining sources and named live inbox evidence remain open.
       Separate draft evidence: [birthday communications](birthday-communications-implementation.md)
       covers exact annual provenance, replay/opt-in containment, atomic rollback,
-      localized source rendering and retained-request policy admission. Seventeen
-      isolated SQL tests pass; merchant readiness, signup integration, publication
-      and named live delivery remain open. D1/D2 are not complete.
+      localized source rendering and retained-request policy admission. Twenty-four
+      combined isolated SQL tests pass; merchant readiness now separates birthday
+      from purchase/signup. Publication and named live delivery remain open.
+      D1/D2 are not complete.
 - [ ] D3: Confirm the intended timezone before birthday/campaign/expiry/email
       activation. Do not silently replace a retained store timezone with Tokyo.
       Prove boundary timing and approved real inbox delivery.

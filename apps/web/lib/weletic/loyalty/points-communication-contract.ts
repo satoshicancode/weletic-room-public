@@ -53,7 +53,85 @@ export const loyaltyCommunicationJobPayloadSchema =
     })
     .strict()
     .refine(withinPostedPoints)
+    .or(
+      purchasePointsCommunicationBaseSchema
+        .omit({ orderId: true })
+        .extend({
+          source: z.literal("signup_points_available"),
+          communicationDeliverySnapshot: z.string().max(1_000_000).optional(),
+        })
+        .strict()
+        .refine((event) => event.points === event.ledgerPoints),
+    )
     .or(birthdayCommunicationJobSchema);
+
+export const signupPointsCommunicationSchema =
+  purchasePointsCommunicationBaseSchema
+    .omit({ orderId: true })
+    .extend({ source: z.literal("signup_points_available") })
+    .strict()
+    .refine((event) => event.points === event.ledgerPoints);
+
+export type SignupPointsCommunication = z.infer<
+  typeof signupPointsCommunicationSchema
+>;
+
+/** New signup ledger receipt only; never infer a welcome event from balances,
+ * imports, manual restoration or a replayed historic signup entry. */
+export function createSignupPointsCommunication(
+  input: Omit<
+    Parameters<typeof createPurchasePointsCommunication>[0],
+    "eligiblePoints"
+  >,
+): SignupPointsCommunication {
+  const {
+    ledger,
+    storeId,
+    accountId,
+    programId,
+    installationGeneration,
+    policySnapshot,
+  } = input;
+  if (
+    ledger.storeId !== storeId ||
+    ledger.accountId !== accountId ||
+    ledger.entryType !== "EARN_BONUS" ||
+    ledger.referenceType !== "SIGNUP_BONUS" ||
+    ledger.referenceId !== accountId ||
+    policySnapshot.storeId !== storeId ||
+    policySnapshot.programId !== programId
+  )
+    throw new Error("Signup communication evidence unavailable");
+  return signupPointsCommunicationSchema.parse({
+    version: 1,
+    journey: "points_earned",
+    source: "signup_points_available",
+    storeId,
+    programId,
+    accountId,
+    installationGeneration,
+    ledgerEntryId: ledger.id,
+    occurredAt: ledger.createdAt.toISOString(),
+    points: ledger.pointsDelta.toString(),
+    ledgerPoints: ledger.pointsDelta.toString(),
+    policyRevision: policySnapshot.revision,
+    policy: policySnapshot.policy,
+  });
+}
+
+export function signupPointsCommunicationKey(event: SignupPointsCommunication) {
+  const value = signupPointsCommunicationSchema.parse(event);
+  return `signup-points:${createHash("sha256")
+    .update(
+      JSON.stringify([
+        value.storeId,
+        value.installationGeneration,
+        value.accountId,
+        value.ledgerEntryId,
+      ]),
+    )
+    .digest("hex")}`;
+}
 
 /** Construct only in the transaction that posts a new eligible ledger event.
  * Callers must not use historical recovery, backfill or replay as fresh events.

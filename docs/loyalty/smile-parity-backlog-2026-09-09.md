@@ -256,12 +256,15 @@ No task below silently authorizes an external gate or a new product policy.
 - **Scope/reference:** R4 ten-entry inventory versus nine existing policies.
   PR #6/#8 merged. September 10 follow-up: expiry policies have merged local
   integration; [purchase-source integration](points-earned-communications-2026-09-10.md)
-  has local transactional/worker/editor evidence. Other points sources and
-  remaining journeys are not connected; no live-delivery acceptance is implied.
+  has local transactional/worker/editor evidence. The
+  [signup-source follow-up](signup-communications-implementation.md) adds local
+  replay and transaction rollback evidence. Manual sources and remaining
+  journeys are not connected; no live-delivery acceptance is implied.
   The separate [birthday draft](birthday-communications-implementation.md)
   adds annual-award transactional production and birthday-policy retained delivery,
-  with 17 isolated SQL tests. Merchant readiness, integration with signup,
-  publication and named live acceptance remain outstanding; this is not shipped.
+  with 24 combined isolated SQL tests and explicit EN/JA/VI readiness after signup
+  integration. Publication and named live acceptance remain outstanding; birthday
+  integration is not shipped.
 - **Approach/subsystems:** connect existing producers/outbox to immutable event
   and policy-revision evidence, trusted recipient/code/CTA/sender context, locale
   fallback, consent/suppression, pause controls, leased delivery, history, retry/

@@ -107,11 +107,17 @@ export async function sendPointsEarnedNotification({
             referenceId: String(event.calendarYear),
             idempotencyKey: `birthday:${event.accountId}:${event.calendarYear}`,
           }
-        : {
-            entryType: "EARN_ORDER",
-            referenceType: "COMMERCE_ORDER",
-            referenceId: event.orderId,
-          }),
+        : event.source === "signup_points_available"
+          ? {
+              entryType: "EARN_BONUS",
+              referenceType: "SIGNUP_BONUS",
+              referenceId: event.accountId,
+            }
+          : {
+              entryType: "EARN_ORDER",
+              referenceType: "COMMERCE_ORDER",
+              referenceId: event.orderId,
+            }),
     },
     select: { grantId: true, pointsDelta: true, createdAt: true },
   });
@@ -121,7 +127,7 @@ export async function sendPointsEarnedNotification({
     ledger.createdAt.toISOString() !== event.occurredAt
   )
     return "ineligible";
-  if (event.source === "birthday_points_available" && ledger.grantId)
+  if (event.source !== "purchase_points_available" && ledger.grantId)
     return "ineligible";
   if (event.source === "purchase_points_available") {
     if (!ledger.grantId) return "ineligible";

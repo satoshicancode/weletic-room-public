@@ -1,5 +1,19 @@
 export const communicationsCopy = {
   en: {
+    birthdayConnected:
+      "Connected after a fresh annual birthday points award. This is not an advance birthday reminder or a separate reward schedule. Delivery requires an approved sender, running worker, customer consent and an active program. Queued notices keep saved content; disabling also stops queued notices. Saving does not send email.",
+    birthdaySaved:
+      "Saved for future birthday award notices. No email was sent.",
+    birthdayEnabled:
+      "Allow birthday award notices (requires consent and configured delivery)",
+    signupWithBirthdayConnected:
+      "Connected for newly available purchase points (including matured holds) and new signup awards. Birthday notices use the separate Birthday journey. Manual and other point sources are not connected. Delivery requires an approved sender, running worker, customer consent and an active program. Queued notices keep saved content; disabling also stops queued notices. Saving does not send email.",
+    signupConnected:
+      "Connected for newly available purchase points (including matured holds) and new signup awards. Manual, birthday and other point sources are not connected. Delivery requires an approved sender, running worker, customer consent and an active program. Queued notices keep saved content; disabling also stops queued notices. Saving does not send email.",
+    signupSaved:
+      "Saved for future purchase-point and signup notices. No email was sent.",
+    signupEnabled:
+      "Allow purchase-point and signup notices (requires consent and configured delivery)",
     purchaseConnected:
       "Connected for newly available purchase points, including matured holds. Signup, manual, birthday and other point sources are not connected. Delivery requires an approved sender, running worker, customer consent and an active program. Queued notices keep saved content; disabling also stops queued notices. Saving does not send email.",
     purchaseSaved:
@@ -39,6 +53,18 @@ export const communicationsCopy = {
     dirty: "Unsaved changes. Save or discard before changing journeys.",
   },
   ja: {
+    birthdayConnected:
+      "新たな年次誕生日ポイント付与後の通知に接続されています。事前リマインダーや別の特典スケジュールではありません。配信には承認済み送信元、稼働中のワーカー、お客様の同意、有効なプログラムが必要です。予約済み通知の内容は維持され、無効化すると予約済み通知も停止します。保存だけでは送信されません。",
+    birthdaySaved:
+      "今後の誕生日ポイント付与通知用に保存しました。メールは送信していません。",
+    birthdayEnabled: "誕生日ポイント付与通知を許可（同意と配信設定が必要）",
+    signupWithBirthdayConnected:
+      "購入で新たに利用可能になったポイント（保留期間終了分を含む）と新規会員登録のポイント付与に接続されています。誕生日通知は別の誕生日ジャーニーを使用します。手動付与などのポイントは未接続です。配信には承認済み送信元、稼働中のワーカー、お客様の同意、有効なプログラムが必要です。予約済み通知の内容は維持され、無効化すると予約済み通知も停止します。保存だけでは送信されません。",
+    signupConnected:
+      "購入で新たに利用可能になったポイント（保留期間終了分を含む）と新規会員登録のポイント付与に接続されています。手動付与、誕生日などのポイントは未接続です。配信には承認済み送信元、稼働中のワーカー、お客様の同意、有効なプログラムが必要です。予約済み通知の内容は維持され、無効化すると予約済み通知も停止します。保存だけでは送信されません。",
+    signupSaved:
+      "今後の購入・会員登録ポイント通知用に保存しました。メールは送信していません。",
+    signupEnabled: "購入・会員登録ポイント通知を許可（同意と配信設定が必要）",
     purchaseConnected:
       "購入で新たに利用可能になったポイント（保留期間終了分を含む）に接続されています。会員登録、手動付与、誕生日などのポイントは未接続です。配信には承認済み送信元、稼働中のワーカー、お客様の同意、有効なプログラムが必要です。予約済み通知の内容は維持され、無効化すると予約済み通知も停止します。保存だけでは送信されません。",
     purchaseSaved:
@@ -77,6 +103,20 @@ export const communicationsCopy = {
       "未保存の変更があります。通知を切り替える前に保存または破棄してください。",
   },
   vi: {
+    birthdayConnected:
+      "Đã kết nối sau khi cấp điểm sinh nhật mới hằng năm. Đây không phải lời nhắc trước sinh nhật hoặc lịch thưởng riêng. Cần người gửi được phê duyệt, worker đang chạy, sự đồng ý của khách hàng và chương trình hoạt động. Thông báo đã xếp hàng giữ nội dung đã lưu; tắt cũng ngăn các thông báo này. Lưu không gửi email.",
+    birthdaySaved:
+      "Đã lưu cho thông báo thưởng sinh nhật sau này. Chưa gửi email.",
+    birthdayEnabled:
+      "Cho phép thông báo thưởng sinh nhật (cần sự đồng ý và cấu hình gửi)",
+    signupWithBirthdayConnected:
+      "Đã kết nối cho điểm mua hàng mới khả dụng (bao gồm điểm hết thời gian chờ) và điểm thưởng đăng ký mới. Thông báo sinh nhật dùng hành trình Sinh nhật riêng. Điểm thủ công và các nguồn khác chưa được kết nối. Cần người gửi được phê duyệt, worker đang chạy, sự đồng ý của khách hàng và chương trình hoạt động. Thông báo đã xếp hàng giữ nội dung đã lưu; tắt cũng ngăn các thông báo này. Lưu không gửi email.",
+    signupConnected:
+      "Đã kết nối cho điểm mua hàng mới khả dụng (bao gồm điểm hết thời gian chờ) và điểm thưởng đăng ký mới. Điểm thủ công, sinh nhật và các nguồn khác chưa được kết nối. Cần người gửi được phê duyệt, worker đang chạy, sự đồng ý của khách hàng và chương trình hoạt động. Thông báo đã xếp hàng giữ nội dung đã lưu; tắt cũng ngăn các thông báo này. Lưu không gửi email.",
+    signupSaved:
+      "Đã lưu cho thông báo điểm mua hàng và đăng ký sau này. Chưa gửi email.",
+    signupEnabled:
+      "Cho phép thông báo điểm mua hàng và đăng ký (cần sự đồng ý và cấu hình gửi)",
     purchaseConnected:
       "Đã kết nối cho điểm mua hàng mới khả dụng, bao gồm điểm hết thời gian chờ. Điểm đăng ký, thủ công, sinh nhật và các nguồn khác chưa được kết nối. Cần người gửi được phê duyệt, worker đang chạy, sự đồng ý của khách hàng và chương trình hoạt động. Thông báo đã xếp hàng giữ nội dung đã lưu; tắt cũng ngăn các thông báo này. Lưu không gửi email.",
     purchaseSaved:
