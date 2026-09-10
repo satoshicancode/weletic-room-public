@@ -256,8 +256,8 @@ The complete web regression rerun passes all 406 files: 6,384 tests passed and
 six skipped, with no failures. Prisma validation passes against the explicit
 `prisma/schema` directory using a synthetic URL; the initial command lacked the
 schema-directory argument and was corrected without applying any schema.
-The isolated web production build is still running. It uses temporary SELECT-only access to the empty VIP fixture,
-with revocation handled by the runner on exit. No PR publication, deployment,
-installation or real send is established by this checkpoint. The acceptance
+The isolated web production build passed. The runner independently confirmed all
+twelve fixture tables were empty and revoked its temporary SELECT-only grant.
+No deployment, installation or real send is established by this checkpoint. The acceptance
 matrix and backlog now identify birthday PR #23 as merged while retaining live
 gates and separating this still-local VIP work.
