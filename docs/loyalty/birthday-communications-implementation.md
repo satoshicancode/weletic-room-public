@@ -127,3 +127,9 @@ Still required: public CI, full browser acceptance
 and named live acceptance. Birthday code has not been published. The preceding
 birthday-only build and full-suite counts are historical checkpoint evidence,
 not proof of this combined snapshot.
+
+PR #23 is now open. Its first CI run `34486033496` flagged formatting in the
+editor test fixture. A whitespace-only correction passes a second formatting
+check and all 18 editor tests. No production source or assertion changed; the
+new head requires fresh green CI before merge. The earlier red result is not
+waived. Here, unpublished means not merged/released; the reviewed PR is public.

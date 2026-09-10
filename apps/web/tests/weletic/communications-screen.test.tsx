@@ -62,17 +62,15 @@ it.each(["en", "ja", "vi"] as const)(
       ...response,
       deliveryIntegration: "purchase_signup_birthday_and_expiry_policies",
     };
-    const request = vi
-      .fn()
-      .mockImplementation(async (input) =>
-        input.operation === "read"
-          ? connectedResponse
-          : {
-              ...connectedResponse,
-              revision: "b".repeat(64),
-              policies: [input.policy],
-            },
-      );
+    const request = vi.fn().mockImplementation(async (input) =>
+      input.operation === "read"
+        ? connectedResponse
+        : {
+            ...connectedResponse,
+            revision: "b".repeat(64),
+            policies: [input.policy],
+          },
+    );
     await act(async () =>
       root.render(createElement(CommunicationsScreen, { request })),
     );
