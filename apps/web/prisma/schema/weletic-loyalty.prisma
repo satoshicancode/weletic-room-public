@@ -146,6 +146,7 @@ enum WeleticLoyaltyOutboxJobType {
   REVIEW_MEDIA_CLEANUP
   FLOW_TRIGGER
   SHOPPER_REWARD_PROVISION
+  LOYALTY_COMMUNICATION
 }
 
 enum WeleticLoyaltyOutboxJobStatus {

@@ -81,10 +81,12 @@ import {
   WeleticRedemptionStatus,
   WeleticRewardArtifactKind,
 } from "@prisma/client";
+import { CommunicationDeliveryReconciliationRequiredError } from "./communication-delivery-snapshot";
 import {
   ExpiryDeliveryReconciliationRequiredError,
   type ExpiryDeliveryClaim,
 } from "./expiry-delivery-snapshot";
+import { sendPointsEarnedNotification } from "./points-earned-notifications";
 import {
   assertAccountBackedReward,
   assertRewardAccountRelation,
@@ -1159,6 +1161,7 @@ export async function processOutboxJobsBatch(
       NOT: {
         store: { merchantSettings: { is: { shopperEmailPaused: true } } },
         OR: [
+          { jobType: "LOYALTY_COMMUNICATION" },
           { jobType: "REVIEW_REQUEST_EMAIL" },
           {
             jobType: "INACTIVITY_EXPIRY",
@@ -1305,7 +1308,8 @@ export async function processOutboxJobsBatch(
         error instanceof VoucherCleanupRetryableError;
       const terminalOutboxFailure =
         (error instanceof ShopifyFlowDispatchError && !error.retryable) ||
-        error instanceof ExpiryDeliveryReconciliationRequiredError;
+        error instanceof ExpiryDeliveryReconciliationRequiredError ||
+        error instanceof CommunicationDeliveryReconciliationRequiredError;
       const isExhausted =
         terminalOutboxFailure ||
         (currentAttempt >= candidate.maxAttempts &&
@@ -1448,6 +1452,7 @@ export async function executeOutboxJob(
     typeof payload?.accountId === "string" ? payload.accountId : null;
   const operationalJob =
     [
+      "LOYALTY_COMMUNICATION",
       "HOLDING_PERIOD_RELEASE",
       "INACTIVITY_EXPIRY",
       "TIER_REVIEW",
@@ -1578,6 +1583,15 @@ async function executeOutboxJobUnlocked(
   deliveryClaim?: ExpiryDeliveryClaim,
 ): Promise<OutboxExecutionResult | undefined> {
   switch (job.jobType) {
+    case "LOYALTY_COMMUNICATION": {
+      if (!deliveryClaim || deliveryClaim.candidate !== job)
+        throw new Error("Loyalty communication requires its worker claim");
+      await sendPointsEarnedNotification({
+        claim: deliveryClaim,
+        loyaltyMaintenancePermit,
+      });
+      break;
+    }
     case "SHOPPER_REWARD_PROVISION": {
       const { provisionShopperReviewCoupon } = await import(
         "./shopper-coupon-worker"

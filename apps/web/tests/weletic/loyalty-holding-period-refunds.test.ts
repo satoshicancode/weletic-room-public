@@ -63,6 +63,15 @@ describe("Milestone 3: Holding Period Lifecycle & Exact Proportional Refunds Tes
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValue({
+      id: "program_m3_test",
+      storeId: TEST_STORE_ID,
+      status: "active",
+      killSwitchActive: false,
+      metadata: null,
+      pointsExpiryDays: null,
+      pointsExpiryMonths: null,
+    } as never);
   });
 
   // =========================================================================
@@ -227,6 +236,7 @@ describe("Milestone 3: Holding Period Lifecycle & Exact Proportional Refunds Tes
     it("releases pending grant to settled, decrements pending bucket, credits balance, and enqueues METAFIELD_SYNC", async () => {
       (prisma.weleticLoyaltyEarnGrant.findUnique as any).mockResolvedValueOnce({
         id: TEST_GRANT_ID,
+        programId: "program_m3_test",
         storeId: TEST_STORE_ID,
         accountId: TEST_ACCOUNT_ID,
         orderId: "ord_100",

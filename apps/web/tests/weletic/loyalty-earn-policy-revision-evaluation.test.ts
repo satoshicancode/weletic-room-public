@@ -10,6 +10,7 @@ const domainMocks = vi.hoisted(() => ({
   calculateNextPointsExpiryDate: vi.fn(),
   enqueueOutboxJob: vi.fn(),
   scheduleTierReview: vi.fn(),
+  enqueuePurchaseCommunication: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => {
@@ -21,7 +22,10 @@ vi.mock("@/lib/prisma", () => {
     weleticLoyaltyProgram: { findUnique: vi.fn() },
     weleticLoyaltyEarnPolicyRevision: { findFirst: vi.fn() },
     weleticLoyaltyTierHistory: { findFirst: vi.fn() },
-    weleticPointsLedgerEntry: { findUnique: vi.fn() },
+    weleticPointsLedgerEntry: {
+      findUnique: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
     weleticReconciliationIssue: {
       upsert: vi.fn(),
       updateMany: vi.fn(),
@@ -35,7 +39,14 @@ vi.mock("@/lib/prisma", () => {
 
 vi.mock("@/lib/weletic/loyalty/ledger", () => ({
   appendPointsLedgerEntry: domainMocks.appendPointsLedgerEntry,
+  appendPointsLedgerEntryWithReceipt: async (params: unknown) => ({
+    entry: await domainMocks.appendPointsLedgerEntry(params),
+    created: true,
+  }),
   OptimisticConcurrencyError: class OptimisticConcurrencyError extends Error {},
+}));
+vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
+  enqueuePurchasePointsCommunication: domainMocks.enqueuePurchaseCommunication,
 }));
 
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({
@@ -136,15 +147,17 @@ function historicalTier({
 
 function policyRevision({
   tiers = [],
+  holdingPeriodDays = 0,
 }: {
   tiers?: ReturnType<typeof historicalTier>[];
+  holdingPeriodDays?: number;
 } = {}) {
   const { snapshot, fingerprint } = buildLoyaltyEarnPolicySnapshot({
     id: PROGRAM_ID,
     storeId: STORE_ID,
     status: "active",
     pointsPerCurrencyUnit: new Prisma.Decimal(1),
-    holdingPeriodDays: 0,
+    holdingPeriodDays,
     pointsExpiryMonths: 0,
     pointsExpiryDays: 0,
     pointsExpiryWarningDays: 30,
@@ -302,6 +315,70 @@ describe("processOrderPointsEarn immutable event-time policy", () => {
     vi.mocked(prisma.weleticReconciliationIssue.updateMany).mockResolvedValue({
       count: 0,
     });
+  });
+
+  it("passes fresh immediate receipt and the caller transaction to communications", async () => {
+    await earn();
+    expect(domainMocks.enqueuePurchaseCommunication).toHaveBeenCalledTimes(1);
+    expect(domainMocks.enqueuePurchaseCommunication).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tx: prisma,
+        storeId: STORE_ID,
+        programId: PROGRAM_ID,
+        receipt: {
+          created: true,
+          entry: expect.objectContaining({ id: "ledger_policy_revision" }),
+        },
+      }),
+    );
+  });
+  it("does not enqueue a notice for existing-grant replay", async () => {
+    vi.mocked(prisma.weleticLoyaltyEarnGrant.findUnique).mockResolvedValueOnce({
+      id: "existing",
+      storeId: STORE_ID,
+      orderId: ORDER_ID,
+      accountId: ACCOUNT_ID,
+      shopperId: SHOPPER_ID,
+      programId: PROGRAM_ID,
+    } as never);
+    await earn();
+    expect(domainMocks.appendPointsLedgerEntry).not.toHaveBeenCalled();
+    expect(domainMocks.enqueuePurchaseCommunication).not.toHaveBeenCalled();
+  });
+  it("does not turn a legacy EARN_ORDER adoption into a fresh notice", async () => {
+    vi.mocked(prisma.weleticPointsLedgerEntry.findUnique).mockResolvedValueOnce(
+      {
+        id: "legacy_earn",
+        storeId: STORE_ID,
+        accountId: ACCOUNT_ID,
+        entryType: "EARN_ORDER",
+        pointsDelta: BigInt(100),
+        pendingDelta: BigInt(0),
+        balanceAfter: BigInt(100),
+        referenceType: "COMMERCE_ORDER",
+        referenceId: ORDER_ID,
+        grantId: null,
+        metadata: null,
+        createdAt: OCCURRED_AT,
+      } as never,
+    );
+    await earn();
+    expect(domainMocks.appendPointsLedgerEntry).not.toHaveBeenCalled();
+    expect(domainMocks.enqueuePurchaseCommunication).not.toHaveBeenCalled();
+  });
+  it("does not announce still-pending purchase points", async () => {
+    vi.mocked(
+      prisma.weleticLoyaltyEarnPolicyRevision.findFirst,
+    ).mockResolvedValueOnce(policyRevision({ holdingPeriodDays: 30 }) as never);
+    await earn();
+    expect(domainMocks.appendPointsLedgerEntry).not.toHaveBeenCalled();
+    expect(domainMocks.enqueuePurchaseCommunication).not.toHaveBeenCalled();
+  });
+  it("propagates communication enqueue failure out of the financial transaction", async () => {
+    domainMocks.enqueuePurchaseCommunication.mockRejectedValueOnce(
+      new Error("Synthetic enqueue failure"),
+    );
+    await expect(earn()).rejects.toThrow("Synthetic enqueue failure");
   });
 
   it("uses the bound historical rule and campaign after current rows are mutated or soft-deleted", async () => {
