@@ -100,40 +100,54 @@ export async function sendPointsEarnedNotification({
       id: event.ledgerEntryId,
       storeId: event.storeId,
       accountId: event.accountId,
-      entryType: "EARN_ORDER",
-      referenceType: "COMMERCE_ORDER",
-      referenceId: event.orderId,
+      entryType:
+        event.source === "signup_points_available"
+          ? "EARN_BONUS"
+          : "EARN_ORDER",
+      referenceType:
+        event.source === "signup_points_available"
+          ? "SIGNUP_BONUS"
+          : "COMMERCE_ORDER",
+      referenceId:
+        event.source === "signup_points_available"
+          ? event.accountId
+          : event.orderId,
     },
     select: { grantId: true, pointsDelta: true, createdAt: true },
   });
   if (
-    !ledger?.grantId ||
+    !ledger ||
     ledger.pointsDelta.toString() !== event.ledgerPoints ||
     ledger.createdAt.toISOString() !== event.occurredAt
   )
     return "ineligible";
-  const grant = await prisma.weleticLoyaltyEarnGrant.findFirst({
-    where: {
-      id: ledger.grantId,
-      storeId: event.storeId,
-      accountId: event.accountId,
-      programId: event.programId,
-      orderId: event.orderId,
-    },
-    select: { status: true, settledPoints: true },
-  });
-  if (
-    !grant ||
-    !["settled", "partially_reversed"].includes(grant.status) ||
-    grant.settledPoints < BigInt(event.points)
-  )
+  if (event.source === "signup_points_available" && ledger.grantId)
     return "ineligible";
-  const order = await prisma.weleticCommerceOrder.findFirst({
-    where: { id: event.orderId, storeId: event.storeId },
-    select: { status: true },
-  });
-  if (!order || !["paid", "partially_refunded"].includes(order.status))
-    return "ineligible";
+  if (event.source === "purchase_points_available") {
+    if (!ledger.grantId) return "ineligible";
+    const grant = await prisma.weleticLoyaltyEarnGrant.findFirst({
+      where: {
+        id: ledger.grantId,
+        storeId: event.storeId,
+        accountId: event.accountId,
+        programId: event.programId,
+        orderId: event.orderId,
+      },
+      select: { status: true, settledPoints: true },
+    });
+    if (
+      !grant ||
+      !["settled", "partially_reversed"].includes(grant.status) ||
+      grant.settledPoints < BigInt(event.points)
+    )
+      return "ineligible";
+    const order = await prisma.weleticCommerceOrder.findFirst({
+      where: { id: event.orderId, storeId: event.storeId },
+      select: { status: true },
+    });
+    if (!order || !["paid", "partially_refunded"].includes(order.status))
+      return "ineligible";
+  }
   const communications = await readShopperCommunicationSettings({
     storeId: event.storeId,
     legacyBrandName: account.program.name,

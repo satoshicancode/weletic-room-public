@@ -162,6 +162,10 @@ surface gates; advanced appearance controls and nudges remain outstanding.
       and delayed partial refunds. Other points sources, remaining journeys,
       completion/redaction races and named live delivery remain open. D1/D2 are
       still unchecked; follow the client/schema/worker/producer release ordering.
+      Signup follow-up: [signup communication evidence](signup-communications-implementation.md)
+      covers fresh signup ledger events, no retrospective opt-in, and atomic
+      rollback on outbox failure in isolated MySQL. Delivery remains mocked;
+      birthday/manual sources and named live inbox evidence remain open.
 - [ ] D3: Confirm the intended timezone before birthday/campaign/expiry/email
       activation. Do not silently replace a retained store timezone with Tokyo.
       Prove boundary timing and approved real inbox delivery.

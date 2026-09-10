@@ -4,7 +4,9 @@ import type { LoyaltyMaintenancePermit } from "./maintenance-write-fence";
 import { enqueueOutboxJobFromProgramTransaction } from "./outbox";
 import {
   createPurchasePointsCommunication,
+  createSignupPointsCommunication,
   purchasePointsCommunicationKey,
+  signupPointsCommunicationKey,
 } from "./points-communication-contract";
 
 /** Only call with the receipt from a new normal settlement, inside the same
@@ -130,6 +132,90 @@ export async function enqueuePurchasePointsCommunication({
     jobType: "LOYALTY_COMMUNICATION",
     payload: event,
     idempotencyKey: purchasePointsCommunicationKey(event),
+    loyaltyMaintenancePermit,
+  });
+}
+
+/** The signup award transaction already holds the operational store/program
+ * fences. Never call on historical adoption or with a reconstructed receipt. */
+export async function enqueueSignupPointsCommunication({
+  tx,
+  storeId,
+  receipt,
+  loyaltyMaintenancePermit,
+}: Omit<
+  Parameters<typeof enqueuePurchasePointsCommunication>[0],
+  "programId"
+>) {
+  if (!receipt.created) return null;
+  const ledger = receipt.entry;
+  if (
+    ledger.storeId !== storeId ||
+    ledger.entryType !== "EARN_BONUS" ||
+    ledger.referenceType !== "SIGNUP_BONUS" ||
+    ledger.referenceId !== ledger.accountId ||
+    ledger.grantId
+  )
+    throw new Error("Signup communication source unavailable");
+  if (ledger.pointsDelta <= BigInt(0)) return null;
+  const program = await tx.weleticLoyaltyProgram.findUnique({
+    where: { storeId },
+    select: {
+      id: true,
+      storeId: true,
+      status: true,
+      killSwitchActive: true,
+      metadata: true,
+    },
+  });
+  if (!program || program.storeId !== storeId)
+    throw new Error("Signup communication program unavailable");
+  if (program.status !== "active" || program.killSwitchActive) return null;
+  const policySnapshot = snapshotLoyaltyCommunicationPolicy({
+    storeId,
+    programId: program.id,
+    metadata: program.metadata,
+    journey: "points_earned",
+  });
+  if (!policySnapshot?.policy.enabled) return null;
+  const account = await tx.weleticLoyaltyAccount.findFirst({
+    where: {
+      id: ledger.accountId,
+      storeId,
+      programId: program.id,
+      status: "active",
+    },
+    select: { id: true },
+  });
+  if (!account) throw new Error("Signup communication account unavailable");
+  const store = await tx.weleticShopifyStore.findUnique({
+    where: { id: storeId },
+    select: {
+      installationGeneration: true,
+      storeAccessState: true,
+      complianceState: true,
+    },
+  });
+  if (
+    !store?.installationGeneration ||
+    store.storeAccessState !== "active" ||
+    store.complianceState !== "active"
+  )
+    throw new Error("Signup communication installation unavailable");
+  const event = createSignupPointsCommunication({
+    storeId,
+    programId: program.id,
+    accountId: account.id,
+    installationGeneration: store.installationGeneration,
+    ledger,
+    policySnapshot,
+  });
+  return enqueueOutboxJobFromProgramTransaction({
+    tx,
+    storeId,
+    jobType: "LOYALTY_COMMUNICATION",
+    payload: event,
+    idempotencyKey: signupPointsCommunicationKey(event),
     loyaltyMaintenancePermit,
   });
 }

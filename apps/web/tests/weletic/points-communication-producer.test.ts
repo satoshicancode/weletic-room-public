@@ -1,6 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import { beforeEach, expect, it, vi } from "vitest";
-import { enqueuePurchasePointsCommunication } from "../../lib/weletic/loyalty/points-communication-producer";
+import {
+  enqueuePurchasePointsCommunication,
+  enqueueSignupPointsCommunication,
+} from "../../lib/weletic/loyalty/points-communication-producer";
 
 const enqueue = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/weletic/loyalty/outbox", () => ({
@@ -74,6 +77,57 @@ beforeEach(() => {
     complianceState: "active",
   });
   enqueue.mockResolvedValue({ created: true });
+});
+function signupInput() {
+  const data = input();
+  return {
+    ...data,
+    receipt: {
+      ...data.receipt,
+      entry: {
+        ...data.receipt.entry,
+        entryType: "EARN_BONUS" as const,
+        referenceType: "SIGNUP_BONUS",
+        referenceId: "account",
+        grantId: null,
+      },
+    },
+  };
+}
+it("enqueues signup evidence without reading a purchase grant or order", async () => {
+  await enqueueSignupPointsCommunication(signupInput());
+  expect(enqueue).toHaveBeenCalledWith(
+    expect.objectContaining({
+      tx,
+      payload: expect.objectContaining({
+        source: "signup_points_available",
+        points: "20",
+      }),
+    }),
+  );
+  expect(grant).not.toHaveBeenCalled();
+  expect(order).not.toHaveBeenCalled();
+});
+it("never snapshots a replayed signup receipt under a newer policy", async () => {
+  const data = signupInput();
+  data.receipt.created = false;
+  expect(await enqueueSignupPointsCommunication(data)).toBeNull();
+  expect(program).not.toHaveBeenCalled();
+  expect(enqueue).not.toHaveBeenCalled();
+});
+it("does not enqueue signup for a disabled communication policy", async () => {
+  const row = programRow();
+  row.metadata.loyaltyCommunications.policies[0].enabled = false;
+  program.mockResolvedValue(row);
+  expect(await enqueueSignupPointsCommunication(signupInput())).toBeNull();
+  expect(enqueue).not.toHaveBeenCalled();
+});
+it("fails atomically when the signup account is outside the program", async () => {
+  account.mockResolvedValue(null);
+  await expect(
+    enqueueSignupPointsCommunication(signupInput()),
+  ).rejects.toThrow();
+  expect(enqueue).not.toHaveBeenCalled();
 });
 it("enqueues bound evidence using the caller transaction", async () => {
   await enqueuePurchasePointsCommunication(input());

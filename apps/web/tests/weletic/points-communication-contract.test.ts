@@ -1,8 +1,12 @@
 import { expect, it } from "vitest";
 import {
   createPurchasePointsCommunication,
+  createSignupPointsCommunication,
+  loyaltyCommunicationJobPayloadSchema,
   purchasePointsCommunicationKey,
   purchasePointsCommunicationSchema,
+  signupPointsCommunicationKey,
+  signupPointsCommunicationSchema,
 } from "../../lib/weletic/loyalty/points-communication-contract";
 
 const template = {
@@ -36,6 +40,60 @@ const input = () => ({
       templates: { en: template, ja: template, vi: template },
     },
   },
+});
+function signupInput() {
+  const data = input();
+  return {
+    ...data,
+    ledger: {
+      ...data.ledger,
+      entryType: "EARN_BONUS",
+      referenceType: "SIGNUP_BONUS",
+      referenceId: data.accountId,
+    },
+  };
+}
+it("binds exact signup points without inventing order evidence", () => {
+  const event = createSignupPointsCommunication(signupInput());
+  expect(event.points).toBe("9007199254740993");
+  expect(event).not.toHaveProperty("orderId");
+  expect(loyaltyCommunicationJobPayloadSchema.safeParse(event).success).toBe(
+    true,
+  );
+  expect(signupPointsCommunicationKey(event)).toBe(
+    signupPointsCommunicationKey({ ...event, policyRevision: "b".repeat(64) }),
+  );
+  expect(signupPointsCommunicationKey(event)).not.toBe(
+    signupPointsCommunicationKey({ ...event, installationGeneration: "g2" }),
+  );
+});
+it.each(["BACKFILL", "MANUAL_ADJUSTMENT", "EARN_ORDER"])(
+  "rejects %s as signup evidence",
+  (entryType) => {
+    const data = signupInput();
+    data.ledger.entryType = entryType;
+    expect(() => createSignupPointsCommunication(data)).toThrow();
+  },
+);
+it("rejects foreign signup references, extra recipient data and altered amount", () => {
+  const data = signupInput();
+  expect(() =>
+    createSignupPointsCommunication({
+      ...data,
+      ledger: { ...data.ledger, referenceId: "other" },
+    }),
+  ).toThrow();
+  const event = createSignupPointsCommunication(data);
+  expect(
+    signupPointsCommunicationSchema.safeParse({
+      ...event,
+      email: "synthetic@example.test",
+    }).success,
+  ).toBe(false);
+  expect(
+    signupPointsCommunicationSchema.safeParse({ ...event, points: "1" })
+      .success,
+  ).toBe(false);
 });
 it("retains posted provenance separately from reconciled eligible points", () => {
   const event = createPurchasePointsCommunication({
