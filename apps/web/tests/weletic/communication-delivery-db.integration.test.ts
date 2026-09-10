@@ -810,6 +810,30 @@ it("rolls back the real signup ledger and balance when communication insertion f
   ).toBe(BigInt(0));
 });
 
+async function seedVipPrivacy() {
+  const id = await seedVip();
+  await evaluateTierMaintenanceCycle(vipEvaluation(id));
+  const candidate = await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+    where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+  });
+  const now = new Date();
+  return {
+    id,
+    args: {
+      claim: {
+        candidate,
+        ownerToken: "fixture-owner",
+        claimedAt: now,
+        attempt: 1,
+      } satisfies CommunicationDeliveryClaim,
+      accountId: id,
+      expectedInstallationGeneration: "g1",
+      recipientEmail: request.to,
+      prepare: vi.fn().mockResolvedValue(request),
+    },
+  };
+}
+
 it.each([
   ["before_completion", "purchase_points_available"],
   ["after_completion", "purchase_points_available"],
@@ -817,12 +841,18 @@ it.each([
   ["after_completion", "signup_points_available"],
   ["before_completion", "birthday_points_available"],
   ["after_completion", "birthday_points_available"],
+  ["before_completion", "vip_threshold_promotion"],
+  ["after_completion", "vip_threshold_promotion"],
 ] as const)(
   "erases retained communication evidence when redaction wins %s for %s",
   async (ordering, source) => {
-    const { id, args } = await seed(source);
+    const { id, args } =
+      source === "vip_threshold_promotion"
+        ? await seedVipPrivacy()
+        : await seed(source);
+    const jobId = args.claim.candidate.id;
     await prisma.weleticLoyaltyOutboxJob.update({
-      where: { id },
+      where: { id: jobId },
       data: {
         status: "pending",
         attempts: 0,
@@ -849,7 +879,7 @@ it.each([
     workerSender.mockImplementation(async ({ claim }) => {
       await retainCommunicationDeliveryRequest({ ...args, claim });
       const retained = await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
-        where: { id },
+        where: { id: jobId },
       });
       expect(retained.status).toBe("processing");
       expect(retained.payload).toHaveProperty("communicationDeliverySnapshot");
@@ -858,7 +888,7 @@ it.each([
     });
     const result = await processOutboxJobsBatch({
       storeId: id,
-      jobIds: [id],
+      jobIds: [jobId],
       workerId: "synthetic-communication-privacy-worker",
       batchSize: 1,
     });
@@ -868,14 +898,14 @@ it.each([
     expect(result.skipped).toBe(ordering === "before_completion" ? 1 : 0);
     if (ordering === "after_completion") {
       const completed = await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
-        where: { id },
+        where: { id: jobId },
       });
       expect(completed.status).toBe("completed");
       expect(completed.payload).toHaveProperty("communicationDeliverySnapshot");
       await scrub();
     }
     const erased = await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
-      where: { id },
+      where: { id: jobId },
     });
     expect(erased.status).toBe(
       ordering === "before_completion" ? "cancelled" : "completed",
@@ -886,12 +916,16 @@ it.each([
     expect(erased.lockedAt).toBeNull();
     expect(erased.errorLog).toBeNull();
     // A later worker poll cannot resurrect the stale retained claim.
-    await processOutboxJobsBatch({ storeId: id, jobIds: [id], batchSize: 1 });
+    await processOutboxJobsBatch({
+      storeId: id,
+      jobIds: [jobId],
+      batchSize: 1,
+    });
     expect(workerSender).toHaveBeenCalledTimes(1);
     expect(
       (
         await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
-          where: { id },
+          where: { id: jobId },
         })
       ).payload,
     ).not.toHaveProperty("communicationDeliverySnapshot");

@@ -181,3 +181,21 @@ reconcile to zero and temporary access is revoked.
 These cases prove transition-first admission and retry suppression, not a forced
 concurrent lock-wait schedule or provider-delivery atomicity. VIP privacy cleanup
 and the remaining UI/release gates are still open.
+
+## SQL retained-privacy checkpoint
+
+The suite passes 33 SQL tests. The two VIP privacy cases use an outbox job created
+by the real promotion transaction, not a hand-authored VIP event. The existing
+privacy matrix now handles independent store/account and job identifiers.
+
+Both orderings retain encrypted delivery evidence first. When privacy cleanup
+wins before completion, the stale worker cannot complete or restore its cancelled
+job. When cleanup follows completion, the completed status remains but the
+retained request is erased. Locks and error data are cleared, and a later poll
+cannot resurrect the request. All 12 fixture tables are empty afterward and the
+temporary grant is revoked.
+
+This exercises the account-closure/outbox-scrub phase, not the full Shopify privacy
+webhook lifecycle. The sender and Redis mutex remain mocked; no actual provider
+send occurred. Merchant readiness/UI, forced SQL lock-wait coverage, combined
+regression/build, CI and live acceptance remain outstanding.
