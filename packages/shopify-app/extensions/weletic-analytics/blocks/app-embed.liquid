@@ -22,6 +22,8 @@
     data-weletic-instance-id="{{ block.id | escape }}"
     data-shop="{{ shop.permanent_domain | escape }}"
     data-logged-in="{% if customer %}true{% else %}false{% endif %}"
+    data-page-type="{{ request.page_type | escape }}"
+    data-locale-root="{{ routes.root_url | escape }}"
     data-currency="{{ cart.currency.iso_code | default: shop.currency | escape }}"
     data-login-url="{{ routes.account_login_url | escape }}"
     data-register-url="{{ routes.account_register_url | escape }}"

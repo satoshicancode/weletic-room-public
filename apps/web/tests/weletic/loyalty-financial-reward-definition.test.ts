@@ -140,6 +140,42 @@ describe("financial and POS reward definitions", () => {
     ).toBe(false);
   });
 
+  it.each(["fixed", "incremental"])(
+    "persists immutable %s exchange provenance",
+    (exchangeType) => {
+      const snapshot = createLoyaltyRedemptionProvisioningSnapshot({
+        reward: {
+          id: "reward_exchange",
+          name: "Reward",
+          rewardType: "amount_off",
+          exchangeType,
+        },
+        pointsCost: BigInt(500),
+        discountValue: "500",
+        expiresInDays: null,
+        shopCurrency: "USD",
+        currencyVerifiedAt: new Date("2026-09-01T00:00:00Z"),
+        customerSelectionDigest: "A".repeat(64),
+        startsAt: new Date("2026-09-01T00:00:00Z"),
+        expiresAt: null,
+      });
+      expect(
+        parseLoyaltyRedemptionProvisioningSnapshot(snapshot).exchangeType,
+      ).toBe(exchangeType);
+      expect(() =>
+        parseLoyaltyRedemptionProvisioningSnapshot({
+          ...snapshot,
+          exchangeType: exchangeType === "fixed" ? "incremental" : "fixed",
+        }),
+      ).toThrow();
+      const { exchangeType: omitted, ...stripped } = snapshot;
+      expect(omitted).toBe(exchangeType);
+      expect(() =>
+        parseLoyaltyRedemptionProvisioningSnapshot(stripped),
+      ).toThrow();
+    },
+  );
+
   it("persists immutable financial economics in the redemption snapshot", () => {
     const snapshot = createLoyaltyRedemptionProvisioningSnapshot({
       reward: {
@@ -167,6 +203,9 @@ describe("financial and POS reward definitions", () => {
       discountValue: "1000",
       shopCurrency: "USD",
     });
+    expect(
+      parseLoyaltyRedemptionProvisioningSnapshot(snapshot).exchangeType,
+    ).toBeUndefined();
   });
 
   it("keeps standard redemption snapshots without a legacy sales channel parse-compatible", () => {
@@ -214,6 +253,43 @@ describe("financial and POS reward definitions", () => {
     expect(
       parseReferralCouponRewardSnapshotForIdentity(snapshot, referralIdentity),
     ).toMatchObject({ salesChannel: "online_store" });
+  });
+  it.each(["fixed", "incremental"])(
+    "preserves immutable referral %s exchange provenance",
+    (exchangeType) => {
+      const snapshot = referralSnapshot({ exchangeType });
+      expect(
+        parseReferralCouponRewardSnapshotForIdentity(snapshot, referralIdentity)
+          .exchangeType,
+      ).toBe(exchangeType);
+      expect(() =>
+        parseReferralCouponRewardSnapshotForIdentity(
+          {
+            ...snapshot,
+            exchangeType: exchangeType === "fixed" ? "incremental" : "fixed",
+          },
+          referralIdentity,
+        ),
+      ).toThrow();
+      const { exchangeType: omitted, ...stripped } = snapshot;
+      expect(omitted).toBe(exchangeType);
+      expect(() =>
+        parseReferralCouponRewardSnapshotForIdentity(
+          stripped,
+          referralIdentity,
+        ),
+      ).toThrow();
+    },
+  );
+  it("keeps missing referral exchange unknown and refuses invalid values", () => {
+    expect(
+      parseReferralCouponRewardSnapshotForIdentity(
+        referralSnapshot(),
+        referralIdentity,
+      ).exchangeType,
+    ).toBeUndefined();
+    expect(() => referralSnapshot({ exchangeType: "variable" })).toThrow();
+    expect(() => referralSnapshot({ exchangeType: null })).toThrow();
   });
 
   it("keeps referral snapshots without a legacy sales channel parse-compatible", () => {

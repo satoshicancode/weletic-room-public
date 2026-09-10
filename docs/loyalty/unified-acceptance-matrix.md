@@ -92,6 +92,22 @@ adds the existing nine branding fields through a signed revision-fenced gateway.
 Its synthetic browser and contract evidence does not close B1/B4 or live shopper
 surface gates; advanced appearance controls and nudges remain outstanding.
 
+The September 10 [nudge implementation checkpoint](nudges-implementation-2026-09-10.md)
+adds draft editors and signup/spending/reward-use runtime paths, including a
+signed, throttled collection-membership read. Current EN/JA/VI real Chromium
+checks at 375px use synthetic cart/customer/membership responses and prove wallet
+keyboard access and unknown-membership suppression. Earlier checkpoints include
+6,185 passing full-suite tests (six skipped). Final membership-integration reruns
+passed 402 unit files/6,243 tests (six skipped), the isolated Next build, and three
+isolated MySQL revision/generation tests with fixture cleanup and grant revocation.
+This does not close B/E gates: uploaded
+icons/advanced appearance, live referral provenance, named live acceptance and
+publication remain outstanding. The initial web build failed without database
+configuration; an earlier isolated read-only retry passed with grant cleanup.
+Snapshot `exchangeType` additions require coordinated reader-before-producer
+deployment; old strict readers cannot safely consume new issuance snapshots.
+No checkbox below is promoted solely by these local checks.
+
 - [ ] B1: One Shopify-first navigation and shared settings, earning, reward and
       referral contracts/components; thin signed adapters, compatible redirects.
 - [ ] B2: Revision-fenced VIP tiers, thresholds, multipliers, entry rewards,

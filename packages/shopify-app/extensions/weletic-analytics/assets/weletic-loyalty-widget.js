@@ -574,6 +574,156 @@
     var redemptionIntentKeys = {};
     var activityIntentKeys = {};
     var referralBindCodeInFlight = null;
+    var nudge = null;
+    var cartNudgeInvalidated = false;
+    var cartNudgeVisible = false;
+    function invalidateCartNudge(event) {
+      if (
+        event &&
+        event.type === "click" &&
+        nudge &&
+        nudge.contains(event.target)
+      )
+        return;
+      cartNudgeInvalidated = true;
+      if (cartNudgeVisible) dismissNudge(false);
+    }
+    var cartNudgeEvents = [
+      "click",
+      "input",
+      "change",
+      "submit",
+      "cart:updated",
+      "visibilitychange",
+    ];
+    cartNudgeEvents.forEach(function (name) {
+      document.addEventListener(name, invalidateCartNudge, true);
+    });
+    var firstVisit = Promise.resolve(false);
+    try {
+      if (shared && shared.claimLoyaltyFirstVisit) {
+        firstVisit = shared.claimLoyaltyFirstVisit(
+          window.localStorage,
+          window.navigator.locks,
+        );
+      }
+    } catch (_) {
+      /* Optional prompts remain suppressed without storage. */
+    }
+
+    function dismissNudge(restoreFocus) {
+      if (!nudge) return;
+      var hadFocus = nudge.contains(document.activeElement);
+      nudge.remove();
+      nudge = null;
+      cartNudgeVisible = false;
+      if (restoreFocus && hadFocus && !launcherBtn.hidden) launcherBtn.focus();
+    }
+
+    async function showSignupNudge(program) {
+      if (
+        !shared ||
+        !shared.selectLoyaltyNudge ||
+        !shared.claimLoyaltyNudgeImpression
+      )
+        return;
+      var isFirstVisit = await firstVisit;
+      var policy =
+        program && program.nudges && Array.isArray(program.nudges.policies)
+          ? program.nudges.policies.find(function (item) {
+              return item.kind === "signup";
+            })
+          : null;
+      var template = policy && policy.templates && policy.templates[locale];
+      if (
+        !template ||
+        [template.title, template.description, template.actionLabel].some(
+          function (value) {
+            return typeof value !== "string" || !value.trim();
+          },
+        )
+      )
+        return;
+      function eligible() {
+        return (
+          !destroyed &&
+          !state.isOpen &&
+          !document.hidden &&
+          state.program === program &&
+          shared.selectLoyaltyNudge({
+            stateFresh: !state.programError,
+            programActive: isProgramActive(program),
+            launcherVisible: !launcherBtn.hidden,
+            authenticated:
+              root.getAttribute("data-logged-in") === "true"
+                ? true
+                : root.getAttribute("data-logged-in") === "false"
+                  ? false
+                  : undefined,
+            firstVisit: isFirstVisit,
+            enabled: { signup: policy.enabled === true },
+          }) === "signup"
+        );
+      }
+      if (!eligible()) return;
+      try {
+        if (
+          !(await shared.claimLoyaltyNudgeImpression({
+            kind: "signup",
+            nowMs: Date.now(),
+            storage: window.localStorage,
+            locks: window.navigator.locks,
+            isEligible: eligible,
+          })) ||
+          !eligible()
+        )
+          return;
+      } catch (_) {
+        return;
+      }
+      renderNudge(policy, template);
+    }
+
+    function renderNudge(policy, template) {
+      dismissNudge(false);
+      nudge = document.createElement("aside");
+      nudge.className =
+        "weletic-nudge " +
+        (position === "bottom_left" ? "weletic-pos-left" : "weletic-pos-right");
+      nudge.lang = locale;
+      nudge.setAttribute("aria-label", template.title);
+      var icon = document.createElement("span");
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = launcherIconGlyph(policy.icon);
+      var title = document.createElement("h2");
+      title.textContent = template.title;
+      var description = document.createElement("p");
+      description.textContent = template.description;
+      var action = document.createElement("button");
+      action.type = "button";
+      action.textContent = template.actionLabel;
+      action.addEventListener("click", function () {
+        dismissNudge(false);
+        if (policy.kind === "reward_usage") state.activeTab = "home";
+        toggleDrawer(true);
+      });
+      var close = document.createElement("button");
+      close.type = "button";
+      close.textContent =
+        locale === "ja" ? "閉じる" : locale === "vi" ? "Đóng" : "Dismiss";
+      close.addEventListener("click", function () {
+        dismissNudge(true);
+      });
+      nudge.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          dismissNudge(true);
+        }
+      });
+      nudge.append(icon, title, description, action, close);
+      document.body.appendChild(nudge);
+    }
 
     // DOM Elements
     var launcherBtn = document.createElement("button");
@@ -776,6 +926,7 @@
 
     function toggleDrawer(open) {
       if (destroyed) return;
+      if (open) dismissNudge(false);
       state.isOpen = open;
       drawer.hidden = !open;
       launcherBtn.setAttribute("aria-expanded", String(open));
@@ -886,6 +1037,12 @@
     }
 
     var programPreload = loadProgramMetadata();
+    programPreload.then(showMemberNudge).catch(function () {
+      /* Optional cart hint only. */
+    });
+    programPreload.then(showSignupNudge).catch(function () {
+      /* Optional prompt only. */
+    });
     programPreload.catch(function (error) {
       if (destroyed) return;
       console.warn("[Weletic Loyalty Widget] Program preload failed:", error);
@@ -914,6 +1071,245 @@
         .catch(function () {
           // Keep the captured code for the normal drawer retry or next load.
         });
+    }
+
+    async function showMemberNudge(program) {
+      if (
+        !shared ||
+        !shared.loyaltyCatalogNudgeEligible ||
+        !shared.loyaltyWalletNudgeEligible ||
+        !shared.loadLoyaltyNudgeCart ||
+        root.getAttribute("data-page-type") !== "cart" ||
+        root.getAttribute("data-logged-in") !== "true"
+      )
+        return;
+      var policies =
+        program && program.nudges && Array.isArray(program.nudges.policies)
+          ? program.nudges.policies
+          : [];
+      var enabled = {};
+      policies.forEach(function (item) {
+        if (
+          ["points_spending", "reward_usage"].includes(item.kind) &&
+          item.enabled === true &&
+          item.templates &&
+          item.templates[locale]
+        )
+          enabled[item.kind] = true;
+      });
+      if (!enabled.points_spending && !enabled.reward_usage) return;
+      var epoch = customerSummaryEpoch;
+      var started = Date.now();
+      var results = await Promise.all([
+        loadCustomerSummary(),
+        shared.loadLoyaltyNudgeCart(
+          root.getAttribute("data-locale-root"),
+          abortController && abortController.signal,
+        ),
+      ]);
+      var customer = results[0];
+      var cart = results[1];
+      var collectionsByProduct = null;
+      var scopedRewards =
+        customer && Array.isArray(customer.rewards)
+          ? customer.rewards.slice()
+          : [];
+      if (customer && Array.isArray(customer.rewardWallet))
+        customer.rewardWallet.forEach(function (reward) {
+          if (reward.termsSnapshot) scopedRewards.push(reward.termsSnapshot);
+        });
+      var needsMembership = scopedRewards.some(function (reward) {
+        return (
+          Array.isArray(reward.entitledCollectionIds) &&
+          reward.entitledCollectionIds.length > 0
+        );
+      });
+      if (
+        cart &&
+        needsMembership &&
+        customerCanParticipate(customer, isProgramActive(program))
+      ) {
+        var productIds = Array.from(
+          new Set(
+            cart.lines.map(function (line) {
+              return line.productId;
+            }),
+          ),
+        );
+        if (
+          productIds.length <= 50 &&
+          productIds.every(function (id) {
+            return typeof id === "string" && /^[1-9][0-9]{0,19}$/.test(id);
+          })
+        ) {
+          try {
+            var membershipResult = await shared.fetchJson(
+              proxyPrefix +
+                "/customer/nudge-collections?productIds=" +
+                encodeURIComponent(productIds.join(",")),
+              requestOptions({ method: "GET", cache: "no-store" }),
+            );
+            var membership = membershipResult && membershipResult.membership;
+            if (
+              membership &&
+              typeof membership === "object" &&
+              !Array.isArray(membership)
+            ) {
+              var normalized = {};
+              var valid = Object.keys(membership).length === productIds.length;
+              productIds.forEach(function (id) {
+                var values = membership["gid://shopify/Product/" + id];
+                if (
+                  !Array.isArray(values) ||
+                  values.length > 20 ||
+                  values.some(function (value) {
+                    return (
+                      typeof value !== "string" ||
+                      !/^gid:\/\/shopify\/Collection\/[1-9][0-9]{0,19}$/.test(
+                        value,
+                      )
+                    );
+                  })
+                )
+                  valid = false;
+                else normalized[id] = values;
+              });
+              if (valid) collectionsByProduct = normalized;
+            }
+          } catch (_) {
+            /* Unknown membership suppresses collection-scoped hints. */
+          }
+        }
+      }
+      function selectedKind() {
+        if (
+          destroyed ||
+          cartNudgeInvalidated ||
+          state.isOpen ||
+          state.authenticationExpired ||
+          state.customerError ||
+          state.programError ||
+          state.program !== program ||
+          customerSummaryEpoch !== epoch ||
+          document.hidden ||
+          Date.now() - started > 10000 ||
+          Date.now() < started ||
+          root.getAttribute("data-logged-in") !== "true" ||
+          !customerCanParticipate(customer, isProgramActive(program)) ||
+          !cart
+        )
+          return null;
+        var rewards = Array.isArray(customer.rewards)
+          ? customer.rewards.map(function (reward) {
+              return Object.assign({}, reward, {
+                eligible: shared.loyaltyCatalogNudgeEligible(
+                  cart,
+                  reward,
+                  customer.program,
+                  collectionsByProduct,
+                ),
+              });
+            })
+          : [];
+        var wallet = Array.isArray(customer.rewardWallet)
+          ? customer.rewardWallet.map(function (reward) {
+              return Object.assign({}, reward, {
+                exchangeType:
+                  reward.termsSnapshot && reward.termsSnapshot.exchangeType,
+                eligible: shared.loyaltyWalletNudgeEligible(
+                  cart,
+                  reward,
+                  Date.now(),
+                  collectionsByProduct,
+                ),
+              });
+            })
+          : [];
+        return shared.selectLoyaltyNudge({
+          stateFresh: true,
+          programActive: true,
+          launcherVisible: !launcherBtn.hidden,
+          authenticated: true,
+          cartPage: true,
+          cartHasItems: cart.lines.length > 0,
+          hasAppliedDiscount: cart.hasAppliedDiscount,
+          nowMs: Date.now(),
+          enabled: enabled,
+          rewards: rewards,
+          wallet: wallet,
+          availablePoints: customer.account.pointsBalance,
+        });
+      }
+      var kind = selectedKind();
+      if (!kind) return;
+      var policy = policies.find(function (item) {
+        return item.kind === kind;
+      });
+      function eligible() {
+        return selectedKind() === kind;
+      }
+      var source = policy.templates[locale];
+      var template = {};
+      ["title", "description", "actionLabel"].forEach(function (key) {
+        template[key] =
+          typeof source[key] === "string"
+            ? source[key]
+                .replace(/\{\{points_label\}\}/g, function () {
+                  return customer.program.pointNamePlural || "Points";
+                })
+                .replace(/\{\{points_balance\}\}/g, function () {
+                  return shared.formatInteger(
+                    customer.account.pointsBalance,
+                    locale,
+                  );
+                })
+            : "";
+      });
+      if (
+        !template.title.trim() ||
+        !template.description.trim() ||
+        !template.actionLabel.trim()
+      )
+        return;
+      if (
+        !(await shared.claimLoyaltyNudgeImpression({
+          kind: kind,
+          nowMs: Date.now(),
+          storage: window.localStorage,
+          locks: window.navigator.locks,
+          isEligible: eligible,
+        })) ||
+        !eligible()
+      )
+        return;
+      var visibleUntil = started + 10000;
+      var finalNow = Date.now();
+      if (kind === "reward_usage") {
+        var qualifyingWallet = customer.rewardWallet.filter(function (reward) {
+          return shared.loyaltyWalletNudgeEligible(
+            cart,
+            reward,
+            finalNow,
+            collectionsByProduct,
+          );
+        });
+        if (!qualifyingWallet.length) return;
+        qualifyingWallet.forEach(function (reward) {
+          if (reward.expiresAt !== null) {
+            visibleUntil = Math.min(visibleUntil, Date.parse(reward.expiresAt));
+          }
+        });
+      }
+      if (visibleUntil <= Date.now()) return;
+      renderNudge(policy, template);
+      cartNudgeVisible = true;
+      var shownNudge = nudge;
+      scheduleTimeout(
+        function () {
+          if (nudge === shownNudge) dismissNudge(true);
+        },
+        Math.max(0, visibleUntil - Date.now()),
+      );
     }
 
     function clearCapturedReferral() {
@@ -2214,8 +2610,12 @@
     }
 
     function destroy() {
+      cartNudgeEvents.forEach(function (name) {
+        document.removeEventListener(name, invalidateCartNudge, true);
+      });
       if (destroyed) return;
       destroyed = true;
+      dismissNudge(false);
       if (abortController) abortController.abort();
       timeoutIds.forEach(function (timeoutId) {
         window.clearTimeout(timeoutId);
