@@ -5,6 +5,10 @@ Hiro on September 9, 2026. This feature is **in progress, not release-ready**.
 
 ## Current delivery boundary — September 10, public-main refresh
 
+The [local runtime smoke receipt](local-runtime-smoke-2026-09-10.md) records
+separately approved loopback startup: all seven HTTP checks passed, and both
+temporary app processes were stopped afterward. This is not Shopify acceptance.
+
 The [purchase-policy schema receipt](isolated-purchase-policy-schema-2026-09-10.md)
 records ADR 0028's separately approved three-column application. Previously
 failing Prisma reads now pass; all ten retained-schema differences are unchanged.
