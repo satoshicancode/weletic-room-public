@@ -113,7 +113,11 @@ missing fixture favicon. This is not Shopify authentication, real gateway writes
 provider delivery or a live shopper journey. Fixture/artifacts remain outside the
 public repository at `/tmp/weletic-birthday-browser.kazbnK`.
 
-Still required: combined full regression/build, public CI, full browser acceptance
+The combined full regression passed all 404 files: 6,299 tests passed and six
+were skipped, in 456.73 seconds with two workers. This run covers the combined
+production/test snapshot `0a676c0336`; subsequent changes only record evidence.
+
+Still required: combined production build, public CI, full browser acceptance
 and named live acceptance. Birthday code has not been published. The preceding
 birthday-only build and full-suite counts are historical checkpoint evidence,
 not proof of this combined snapshot.
