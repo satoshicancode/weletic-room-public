@@ -1,0 +1,36 @@
+# Local configuration foundation only: not deployed or installed.
+# ADR 0029. Preserve shopify.app.toml for the existing custom app.
+client_id = "c7d49cebb06e445db345bb200f966a03"
+name = "Weletic Loyalty Reviews Dev"
+application_url = "https://loyalty-shopify-dev.weletic.com"
+embedded = true
+# Fail closed: public-owned extension identities are not reconciled yet.
+extension_directories = []
+
+[build]
+automatically_update_urls_on_dev = false
+
+[access_scopes]
+# Supply this exact required list as SCOPES when staging the public runtime.
+scopes = "read_products,read_markets,read_orders,read_translations,write_discounts,write_customers,write_app_proxy"
+optional_scopes = ["write_gift_cards", "read_store_credit_accounts", "write_store_credit_account_transactions"]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = ["https://loyalty-shopify-dev.weletic.com/auth/callback"]
+
+[webhooks]
+api_version = "2026-07"
+
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled", "products/create", "products/update", "products/delete", "markets/create", "markets/update", "markets/delete", "orders/paid", "orders/fulfilled", "orders/cancelled", "customers/create", "customers/update", "refunds/create", "discounts/create", "discounts/update", "discounts/delete"]
+uri = "https://loyalty-api-dev.weletic.com/api/shopify/integration/webhook"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "https://loyalty-api-dev.weletic.com/api/shopify/integration/webhook"
+
+[app_proxy]
+url = "https://loyalty-shopify-dev.weletic.com/apps/proxy"
+subpath = "weletic"
+prefix = "apps"
