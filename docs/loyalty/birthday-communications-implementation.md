@@ -90,7 +90,30 @@ focused run passed 239 tests but failed three UI fixture cases; those failures
 were not production defects or waived checks. Combined web typecheck passed.
 Independent integration review found no financial/privacy/source blocker.
 
-Still required: combined full regression/build/lint, public CI, browser acceptance
+Combined full lint passed. Signup main's post-merge run `34484412037` also passed;
+that is main evidence, not CI for this birthday branch.
+
+## Bounded local browser evidence — September 10, 22:50–22:54 JST
+
+The actual shared editor and Shopify CSS were bundled from the combined branch
+and served only on `127.0.0.1:4189`, with an in-memory synthetic transport. EN/JA/VI
+editor copy and corresponding birthday templates rendered at 375 × 812 without
+horizontal overflow or fixture store/generation identifiers in the DOM. Japanese
+and Vietnamese screenshots were visually inspected outside the repository.
+Keyboard Tab reached Save and Enter saved the edited birthday subject; dirty
+state locked journey selection and the saved message explicitly said no email
+was sent. Birthday enablement remained off throughout.
+
+Synthetic read-only permission disabled the form, loading disabled reload, and
+initial errors showed a sanitized reload instruction. An ambiguous save disabled
+the form/retry and did not expose the synthetic private error. These state checks
+were performed in English; full EN/JA/VI permission/error combinations and
+screen-reader testing remain unaccepted. The only browser resource error was a
+missing fixture favicon. This is not Shopify authentication, real gateway writes,
+provider delivery or a live shopper journey. Fixture/artifacts remain outside the
+public repository at `/tmp/weletic-birthday-browser.kazbnK`.
+
+Still required: combined full regression/build, public CI, full browser acceptance
 and named live acceptance. Birthday code has not been published. The preceding
 birthday-only build and full-suite counts are historical checkpoint evidence,
 not proof of this combined snapshot.
