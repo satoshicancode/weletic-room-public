@@ -11,6 +11,12 @@ import {
 import { evaluateTierMaintenanceCycle } from "@/lib/weletic/loyalty/tier-lifecycle";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Accounting/projection fixtures do not model notification provenance.
+// Actual promotion notification atomicity has separate SQL coverage.
+vi.mock("@/lib/weletic/loyalty/vip-achievement-communication-producer", () => ({
+  enqueueVipAchievementCommunication: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
 }));

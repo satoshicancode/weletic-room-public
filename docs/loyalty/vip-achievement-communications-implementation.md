@@ -220,3 +220,27 @@ Strict merchant response readers must be upgraded before the backend emits the
 new value, or rolled out together. Strict worker/event readers must likewise
 precede promotion-producing processes. No schema, public API, provider, scope,
 authentication, billing or deployment change is part of this branch.
+
+## Combined regression and browser checkpoint
+
+The first full web run completed with 6,375 passed, nine failed and six skipped
+across 406 files. Four older accounting/projection fixtures lacked the new
+notification history dependency; interrupted promotion calls also left queued
+mock state affecting later assertions. Explicit notification mocks preserve their
+existing assertions. All 72 tests in those four suites now pass, as do full web
+types, focused lint and formatting. The complete rerun is still running; focused
+passes do not replace it.
+
+Actual shared editor and Shopify CSS were bundled into a loopback-only fixture
+with an in-memory transport. At 375×812, EN/JA/VI had no horizontal overflow or
+private fixture identifiers in visible text. Japanese/Vietnamese message
+templates and controls were visually inspected. English keyboard navigation from
+the subject through four Tab presses saved with Enter and displayed the no-email
+confirmation. Notifications remained disabled. Only a missing favicon produced a
+console error. The browser and loopback server were closed after inspection.
+
+This is not live Shopify/browser acceptance. Complete locale-by-permission/error
+state coverage and assistive-technology checks remain open. Screenshots stay
+local and are not published as repository assets. The first fixture bundle failed
+to resolve the automatic JSX runtime outside the workspace; using React's classic
+JSX transform for the temporary entry resolved it without changing app source.
