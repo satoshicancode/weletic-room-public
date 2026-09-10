@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { enqueueBirthdayCommunication } from "@/lib/weletic/loyalty/birthday-communication-producer";
 import { enqueueFlowTriggerJob } from "@/lib/weletic/loyalty/flow-trigger-outbox";
-import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
+import {
+  appendPointsLedgerEntry,
+  appendPointsLedgerEntryWithReceipt,
+} from "@/lib/weletic/loyalty/ledger";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { scheduleTierReviewAfterQualifyingActivity } from "@/lib/weletic/loyalty/tier-review-scheduling";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
@@ -420,7 +424,7 @@ async function awardBirthdayRewardInTransaction(
   // 5. Append immutable ledger entry
   const nonPiiMetadata = { ...(metadata ?? {}) };
   delete nonPiiMetadata.birthDate;
-  const entry = await appendPointsLedgerEntry({
+  const receipt = await appendPointsLedgerEntryWithReceipt({
     storeId,
     accountId,
     entryType: WeleticPointsLedgerEntryType.EARN_BONUS,
@@ -436,6 +440,14 @@ async function awardBirthdayRewardInTransaction(
       ...nonPiiMetadata,
     },
     tx: db,
+  });
+  const entry = receipt.entry;
+  await enqueueBirthdayCommunication({
+    tx: db,
+    storeId,
+    calendarYear,
+    receipt,
+    loyaltyMaintenancePermit,
   });
   await enqueueFlowTriggerJob({
     storeId,
@@ -462,7 +474,7 @@ async function awardBirthdayRewardInTransaction(
   return {
     awarded: true,
     isLockedOut: false,
-    isDuplicate: false,
+    isDuplicate: !receipt.created,
     calendarYear,
     leadTimeDays: eligibility.leadTimeDays,
     ledgerEntry: entry,

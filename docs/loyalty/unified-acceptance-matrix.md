@@ -178,6 +178,11 @@ No checkbox below is promoted solely by these local checks.
       and delayed partial refunds. Other points sources, remaining journeys,
       completion/redaction races and named live delivery remain open. D1/D2 are
       still unchecked; follow the client/schema/worker/producer release ordering.
+      Separate draft evidence: [birthday communications](birthday-communications-implementation.md)
+      covers exact annual provenance, replay/opt-in containment, atomic rollback,
+      localized source rendering and retained-request policy admission. Seventeen
+      isolated SQL tests pass; merchant readiness, signup integration, publication
+      and named live delivery remain open. D1/D2 are not complete.
 - [ ] D3: Confirm the intended timezone before birthday/campaign/expiry/email
       activation. Do not silently replace a retained store timezone with Tokyo.
       Prove boundary timing and approved real inbox delivery.

@@ -6,6 +6,7 @@ import {
 import { releaseHoldingPeriodGrant } from "@/lib/weletic/loyalty/holding-period";
 import { appendPointsLedgerEntryWithReceipt } from "@/lib/weletic/loyalty/ledger";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
+import { awardBirthdayReward } from "@/lib/weletic/loyalty/non-purchase-earn";
 import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox-worker";
 import { enqueuePurchasePointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
 import { processWeleticLoyaltyAccountPrivacyScrubStep } from "@/lib/weletic/loyalty/shopper-privacy";
@@ -227,6 +228,131 @@ async function seed() {
     },
   };
 }
+
+async function seedBirthday() {
+  const { id } = await seed();
+  await prisma.weleticLoyaltyOutboxJob.delete({ where: { id } });
+  await prisma.weleticLoyaltyAccount.update({
+    where: { id },
+    data: { enrolledAt: new Date("2025-01-01T00:00:00Z") },
+  });
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: {
+      metadata: {
+        loyaltyCommunications: {
+          version: 1,
+          sequence: 1,
+          policies: [{ ...policy, journey: "birthday" }],
+        },
+      },
+    },
+  });
+  return id;
+}
+const birthdayAward = (id: string) => ({
+  storeId: id,
+  accountId: id,
+  birthDate: "1990-09-10",
+  now: new Date("2026-09-10T00:00:00Z"),
+  rewardPoints: BigInt(100),
+});
+
+it("commits one annual birthday award and notification under concurrent replay", async () => {
+  const id = await seedBirthday();
+  const results = await Promise.all([
+    awardBirthdayReward(birthdayAward(id)),
+    awardBirthdayReward(birthdayAward(id)),
+  ]);
+  expect(results.every((result) => result.awarded)).toBe(true);
+  expect(results.filter((result) => result.isDuplicate)).toHaveLength(1);
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(1);
+  const jobs = await prisma.weleticLoyaltyOutboxJob.findMany({
+    where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+  });
+  expect(jobs).toHaveLength(1);
+  expect(jobs[0].payload).toMatchObject({
+    journey: "birthday",
+    calendarYear: 2026,
+    points: "100",
+    ledgerEntryId: results[0].ledgerEntry?.id,
+  });
+  expect(jobs[0].payload).not.toHaveProperty("birthDate");
+  expect(
+    (await prisma.weleticLoyaltyAccount.findUniqueOrThrow({ where: { id } }))
+      .cachedPointsBalance,
+  ).toBe(BigInt(100));
+});
+
+it("does not backfill a birthday notice after policy opt-in, but announces the next annual award", async () => {
+  const id = await seedBirthday();
+  const enabled = (
+    await prisma.weleticLoyaltyProgram.findUniqueOrThrow({ where: { id } })
+  ).metadata as Prisma.InputJsonObject;
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: { metadata: {} },
+  });
+  await awardBirthdayReward(birthdayAward(id));
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: { metadata: enabled },
+  });
+  await awardBirthdayReward(birthdayAward(id));
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({
+      where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+    }),
+  ).toBe(0);
+  await awardBirthdayReward({
+    ...birthdayAward(id),
+    now: new Date("2027-09-10T00:00:00Z"),
+  });
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({
+      where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+    }),
+  ).toBe(1);
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(2);
+});
+
+it("rolls back the real birthday ledger and account when notification insertion fails", async () => {
+  const id = await seedBirthday();
+  await expect(
+    prisma.$transaction(async (tx) => {
+      const failingTx = new Proxy(tx, {
+        get(target, property) {
+          if (property !== "weleticLoyaltyOutboxJob")
+            return Reflect.get(target, property);
+          return new Proxy(target.weleticLoyaltyOutboxJob, {
+            get(delegate, operation) {
+              if (operation !== "create")
+                return Reflect.get(delegate, operation);
+              return async () => {
+                throw new Error("Injected birthday outbox failure");
+              };
+            },
+          });
+        },
+      });
+      await awardBirthdayReward({ ...birthdayAward(id), tx: failingTx });
+    }),
+  ).rejects.toThrow("Injected birthday outbox failure");
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(0);
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(0);
+  expect(
+    (await prisma.weleticLoyaltyAccount.findUniqueOrThrow({ where: { id } }))
+      .cachedPointsBalance,
+  ).toBe(BigInt(0));
+});
 
 it.each(["before_completion", "after_completion"] as const)(
   "erases retained communication evidence when redaction wins %s",

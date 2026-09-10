@@ -129,7 +129,7 @@ export async function retainCommunicationDeliveryRequest({
           storeId: job.storeId,
           programId: program.id,
           metadata: program.metadata,
-          journey: "points_earned",
+          journey: parsed.data.journey,
         })?.policy.enabled
       )
         throw new CommunicationDeliveryIneligibleError();

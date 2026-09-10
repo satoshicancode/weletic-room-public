@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { birthdayCommunicationJobSchema } from "./birthday-communication-contract";
 import { loyaltyCommunicationPolicySchema } from "./communications-contract";
 
 const identifier = z.string().min(1).max(191);
@@ -51,7 +52,8 @@ export const loyaltyCommunicationJobPayloadSchema =
       communicationDeliverySnapshot: z.string().max(1_000_000).optional(),
     })
     .strict()
-    .refine(withinPostedPoints);
+    .refine(withinPostedPoints)
+    .or(birthdayCommunicationJobSchema);
 
 /** Construct only in the transaction that posts a new eligible ledger event.
  * Callers must not use historical recovery, backfill or replay as fresh events.

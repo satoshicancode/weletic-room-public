@@ -40,6 +40,10 @@ vi.mock("@/lib/weletic/loyalty/tier-review-scheduling", () => ({
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
 }));
+// This suite mocks communication persistence; SQL acceptance remains separate.
+vi.mock("@/lib/weletic/loyalty/birthday-communication-producer", () => ({
+  enqueueBirthdayCommunication: vi.fn().mockResolvedValue(null),
+}));
 
 describe("Non-Purchase Earning Engine & Anti-Gaming Rules (M1 / Smile.io Parity)", () => {
   beforeEach(() => {

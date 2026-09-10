@@ -258,6 +258,10 @@ No task below silently authorizes an external gate or a new product policy.
   integration; [purchase-source integration](points-earned-communications-2026-09-10.md)
   has local transactional/worker/editor evidence. Other points sources and
   remaining journeys are not connected; no live-delivery acceptance is implied.
+  The separate [birthday draft](birthday-communications-implementation.md)
+  adds annual-award transactional production and birthday-policy retained delivery,
+  with 17 isolated SQL tests. Merchant readiness, integration with signup,
+  publication and named live acceptance remain outstanding; this is not shipped.
 - **Approach/subsystems:** connect existing producers/outbox to immutable event
   and policy-revision evidence, trusted recipient/code/CTA/sender context, locale
   fallback, consent/suppression, pause controls, leased delivery, history, retry/

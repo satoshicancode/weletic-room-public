@@ -169,6 +169,81 @@ beforeEach(() => {
   mocks.retain.mockImplementation(async ({ prepare }) => prepare());
   mocks.send.mockResolvedValue({ data: { id: "synthetic-provider-id" } });
 });
+function birthdayFixture() {
+  const args = fixture();
+  const { orderId: _order, ...payload } = args.claim.candidate.payload;
+  const birthdayPolicy = structuredClone(policy);
+  birthdayPolicy.journey = "birthday";
+  for (const locale of ["en", "ja", "vi"] as const)
+    birthdayPolicy.templates[locale].subject =
+      `${locale} birthday {{reward_name}}`;
+  const row = accountRow();
+  row.program.metadata.loyaltyCommunications.policies = [birthdayPolicy];
+  mocks.account.mockResolvedValue(row);
+  mocks.ledger.mockResolvedValue({
+    grantId: null,
+    pointsDelta: BigInt(20),
+    createdAt: at,
+  });
+  return {
+    row,
+    args: {
+      claim: {
+        ...args.claim,
+        candidate: {
+          ...args.claim.candidate,
+          payload: {
+            ...payload,
+            source: "birthday_points_available",
+            journey: "birthday",
+            calendarYear: 2026,
+            points: "20",
+            policy: birthdayPolicy,
+          },
+        },
+      },
+    },
+  };
+}
+it.each(["en", "ja", "vi"])(
+  "renders committed birthday rewards in %s without purchase evidence",
+  async (locale) => {
+    const { row, args } = birthdayFixture();
+    row.shopper.locale = locale;
+    expect(await sendPointsEarnedNotification(args)).toBe("sent");
+    expect(mocks.ledger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          referenceType: "BIRTHDAY_REWARD",
+          referenceId: "2026",
+          idempotencyKey: "birthday:account:2026",
+        }),
+      }),
+    );
+    expect(mocks.prepare.mock.calls[0][0].subject).toBe(
+      `${locale} birthday 20 Points`,
+    );
+    expect(mocks.order).not.toHaveBeenCalled();
+    expect(mocks.grant).not.toHaveBeenCalled();
+  },
+);
+it("does not substitute an enabled points-earned policy for birthday consent", async () => {
+  const { args } = birthdayFixture();
+  mocks.account.mockResolvedValue(accountRow());
+  expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+it("rejects a grant-backed birthday ledger", async () => {
+  const { args } = birthdayFixture();
+  mocks.ledger.mockResolvedValue({
+    grantId: "grant",
+    pointsDelta: BigInt(20),
+    createdAt: at,
+  });
+  expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+
 it("uses the posted eligible amount, scoped identities and stable provider key", async () => {
   expect(await sendPointsEarnedNotification(fixture())).toBe("sent");
   expect(mocks.account).toHaveBeenCalledWith(
