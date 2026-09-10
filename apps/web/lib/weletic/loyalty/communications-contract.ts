@@ -167,6 +167,7 @@ export const loyaltyCommunicationsResponseSchema = z
       "expiry_policies",
       "purchase_and_expiry_policies",
       "purchase_signup_and_expiry_policies",
+      "purchase_signup_birthday_and_expiry_policies",
     ]),
     policies: z.array(loyaltyCommunicationPolicySchema).max(9),
   })

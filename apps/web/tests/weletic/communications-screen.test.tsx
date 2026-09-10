@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { LoyaltyCommunicationsResponse } from "../../lib/weletic/loyalty/communications-contract";
+import { communicationsCopy } from "../../ui/weletic/loyalty/communications-copy";
 import { CommunicationsScreen } from "../../ui/weletic/loyalty/communications-screen";
 
 (
@@ -53,6 +54,56 @@ async function submit() {
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 }
+
+it.each(["en", "ja", "vi"] as const)(
+  "separates birthday readiness from points-earned and unconnected journeys in %s",
+  async (locale) => {
+    const connectedResponse = {
+      ...response,
+      deliveryIntegration: "purchase_signup_birthday_and_expiry_policies",
+    };
+    const request = vi.fn().mockImplementation(async (input) =>
+      input.operation === "read"
+        ? connectedResponse
+        : {
+            ...connectedResponse,
+            revision: "b".repeat(64),
+            policies: [input.policy],
+          },
+    );
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].signupWithBirthdayConnected,
+    );
+    await select(1, "birthday");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].birthdayConnected,
+    );
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].birthdayEnabled,
+    );
+    await editSubject("Birthday award");
+    await submit();
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[1][0].policy.journey).toBe("birthday");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].birthdaySaved,
+    );
+    await select(1, "points_warning");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].expiryConnected,
+    );
+    await select(1, "vip_achieved");
+    expect(node.textContent).toContain(communicationsCopy[locale].disconnected);
+    expect(node.textContent).not.toContain(
+      communicationsCopy[locale].birthdayConnected,
+    );
+    expect(node.textContent).not.toContain("private-store");
+  },
+);
 
 it.each(["en", "ja", "vi"])(
   "reports signup readiness only for the new capability in %s",

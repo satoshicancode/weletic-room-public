@@ -7,6 +7,7 @@ import {
   retainCommunicationDeliveryRequest,
   type CommunicationDeliveryClaim,
 } from "../../lib/weletic/loyalty/communication-delivery-snapshot";
+import { purchasePointsCommunicationSchema } from "../../lib/weletic/loyalty/points-communication-contract";
 
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
@@ -127,6 +128,66 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllEnvs());
+
+function birthdayFixture(enabled = true) {
+  const args = fixture();
+  const { orderId: _order, ...payload } =
+    purchasePointsCommunicationSchema.parse(args.claim.candidate.payload);
+  const policy = { ...payload.policy, journey: "birthday", enabled };
+  args.claim.candidate.payload = {
+    ...payload,
+    journey: "birthday",
+    source: "birthday_points_available",
+    calendarYear: 2026,
+    policy,
+  };
+  const program = {
+    id: "program",
+    status: "active",
+    killSwitchActive: false,
+    metadata: {
+      loyaltyCommunications: {
+        version: 1,
+        sequence: 1,
+        policies: [
+          structuredClone(policy),
+          { ...payload.policy, enabled: !enabled },
+        ],
+      },
+    },
+  };
+  mocks.program.mockResolvedValue(program);
+  return { args, program };
+}
+
+it("retains and retries birthday content while the points-earned journey is disabled", async () => {
+  const { args } = birthdayFixture();
+  expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
+  expect(args.claim.candidate.payload).toHaveProperty(
+    "communicationDeliverySnapshot",
+  );
+  args.prepare.mockClear();
+  expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
+  expect(args.prepare).not.toHaveBeenCalled();
+});
+
+it.each([false, true])(
+  "does not substitute points-earned enablement for birthday admission (retry=%s)",
+  async (retry) => {
+    const { args, program } = birthdayFixture();
+    if (retry) await retainCommunicationDeliveryRequest(args);
+    program.metadata.loyaltyCommunications.policies[0].enabled = false;
+    program.metadata.loyaltyCommunications.policies[1].enabled = true;
+    expect(args.claim.candidate.payload).toHaveProperty("policy.enabled", true);
+    args.prepare.mockClear();
+    mocks.updateMany.mockClear();
+    await expect(retainCommunicationDeliveryRequest(args)).rejects.toThrow(
+      "no longer eligible",
+    );
+    expect(args.prepare).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  },
+);
 
 it.each([
   [false, "program"],
