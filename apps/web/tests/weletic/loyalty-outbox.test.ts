@@ -88,6 +88,10 @@ vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
 vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
   enqueuePurchasePointsCommunication: vi.fn().mockResolvedValue(null),
 }));
+// Producer accounting and atomicity are covered by its dedicated SQL suite.
+vi.mock("@/lib/weletic/loyalty/birthday-communication-producer", () => ({
+  enqueueBirthdayCommunication: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("@/lib/weletic/loyalty/points-earned-notifications", () => ({
   sendPointsEarnedNotification: vi.fn(),
 }));

@@ -41,6 +41,10 @@ vi.mock("@/lib/weletic/loyalty/tier-review-scheduling", () => ({
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
 }));
+// This suite mocks communication persistence; SQL acceptance remains separate.
+vi.mock("@/lib/weletic/loyalty/birthday-communication-producer", () => ({
+  enqueueBirthdayCommunication: vi.fn().mockResolvedValue(null),
+}));
 vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
   enqueueSignupPointsCommunication: vi.fn().mockResolvedValue(null),
 }));

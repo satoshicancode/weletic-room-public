@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { birthdayCommunicationJobSchema } from "./birthday-communication-contract";
 import { loyaltyCommunicationPolicySchema } from "./communications-contract";
 
 const identifier = z.string().min(1).max(191);
@@ -61,7 +62,8 @@ export const loyaltyCommunicationJobPayloadSchema =
         })
         .strict()
         .refine((event) => event.points === event.ledgerPoints),
-    );
+    )
+    .or(birthdayCommunicationJobSchema);
 
 export const signupPointsCommunicationSchema =
   purchasePointsCommunicationBaseSchema

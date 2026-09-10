@@ -90,7 +90,7 @@ export async function sendPointsEarnedNotification({
     storeId: event.storeId,
     programId: event.programId,
     metadata: account.program.metadata,
-    journey: "points_earned",
+    journey: event.journey,
   });
   if (!currentPolicy?.policy.enabled) return "ineligible";
   // Source ledger is required participation evidence. Never infer it from a
@@ -100,18 +100,24 @@ export async function sendPointsEarnedNotification({
       id: event.ledgerEntryId,
       storeId: event.storeId,
       accountId: event.accountId,
-      entryType:
-        event.source === "signup_points_available"
-          ? "EARN_BONUS"
-          : "EARN_ORDER",
-      referenceType:
-        event.source === "signup_points_available"
-          ? "SIGNUP_BONUS"
-          : "COMMERCE_ORDER",
-      referenceId:
-        event.source === "signup_points_available"
-          ? event.accountId
-          : event.orderId,
+      ...(event.source === "birthday_points_available"
+        ? {
+            entryType: "EARN_BONUS",
+            referenceType: "BIRTHDAY_REWARD",
+            referenceId: String(event.calendarYear),
+            idempotencyKey: `birthday:${event.accountId}:${event.calendarYear}`,
+          }
+        : event.source === "signup_points_available"
+          ? {
+              entryType: "EARN_BONUS",
+              referenceType: "SIGNUP_BONUS",
+              referenceId: event.accountId,
+            }
+          : {
+              entryType: "EARN_ORDER",
+              referenceType: "COMMERCE_ORDER",
+              referenceId: event.orderId,
+            }),
     },
     select: { grantId: true, pointsDelta: true, createdAt: true },
   });
@@ -121,7 +127,7 @@ export async function sendPointsEarnedNotification({
     ledger.createdAt.toISOString() !== event.occurredAt
   )
     return "ineligible";
-  if (event.source === "signup_points_available" && ledger.grantId)
+  if (event.source !== "purchase_points_available" && ledger.grantId)
     return "ineligible";
   if (event.source === "purchase_points_available") {
     if (!ledger.grantId) return "ineligible";
@@ -171,11 +177,14 @@ export async function sendPointsEarnedNotification({
           customer_first_name: account.shopper.firstName ?? "",
           points: event.points,
           points_label: account.program.pointNamePlural,
-          reward_name: "",
+          reward_name:
+            event.journey === "birthday"
+              ? `${event.points} ${account.program.pointNamePlural}`
+              : "",
         };
         const template = event.policy.templates[locale];
         const render = (text: string) =>
-          renderLoyaltyCommunicationText(text, "points_earned", values);
+          renderLoyaltyCommunicationText(text, event.journey, values);
         const content = {
           subject: render(template.subject),
           heading: render(template.heading),
