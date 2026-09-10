@@ -5,6 +5,11 @@ Hiro on September 9, 2026. This feature is **in progress, not release-ready**.
 
 ## Current delivery boundary — September 10, public-main refresh
 
+The [purchase-policy schema receipt](isolated-purchase-policy-schema-2026-09-10.md)
+records ADR 0028's separately approved three-column application. Previously
+failing Prisma reads now pass; all ten retained-schema differences are unchanged.
+This removes the missing-column blocker without authorizing startup or deployment.
+
 The [September 10 isolated schema receipt](isolated-installation-schema-2026-09-10.md)
 records Hiro's ADR 0027 approval and successful application of the two reviewed
 pending/native-credential migrations to the isolated development database.
