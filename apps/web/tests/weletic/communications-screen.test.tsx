@@ -55,6 +55,51 @@ async function submit() {
 }
 
 it.each(["en", "ja", "vi"])(
+  "reports signup readiness only for the new capability in %s",
+  async (locale) => {
+    const request = vi.fn().mockResolvedValue({
+      ...response,
+      deliveryIntegration: "purchase_signup_and_expiry_policies",
+    });
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    expect(node.querySelector("article > p")?.textContent).toContain(
+      {
+        en: "and new signup awards",
+        ja: "新規会員登録のポイント付与",
+        vi: "điểm thưởng đăng ký mới",
+      }[locale],
+    );
+    expect(node.textContent).toContain(
+      {
+        en: "Manual, birthday",
+        ja: "手動付与、誕生日",
+        vi: "Điểm thủ công, sinh nhật",
+      }[locale],
+    );
+    await select(1, "birthday");
+    expect(node.textContent).toContain(
+      {
+        en: "Delivery is not connected",
+        ja: "まだ配信に接続されていません",
+        vi: "chưa được kết nối",
+      }[locale],
+    );
+    await select(1, "points_warning");
+    expect(node.textContent).toContain(
+      {
+        en: "Expiry templates",
+        ja: "失効通知のテンプレート",
+        vi: "Mẫu hết hạn",
+      }[locale],
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each(["en", "ja", "vi"])(
   "reports purchase-only readiness without enabling other journeys in %s",
   async (locale) => {
     const request = vi.fn().mockResolvedValue({

@@ -88,6 +88,18 @@ not CI for this signup draft.
 
 ## Deployment gate
 
+The merchant readiness response adds `purchase_signup_and_expiry_policies`.
+The shared EN/JA/VI editor recognizes this value without claiming birthday,
+manual points or other unconnected journeys. Older readiness values retain
+their purchase-only behavior. Deploy the updated strict response readers before
+the backend emits the new value, or coordinate both in the drained rollout.
+Focused editor/contract/client/action checks passed all 48 tests for this change;
+the earlier full-suite and build results above predate this readiness correction.
+The corrected snapshot also passed web and Shopify typechecks, focused lint,
+all 27 Shopify package tests, and the Shopify production build. Independent
+review found no blocker. The web production build still refers to the earlier
+snapshot; the new head must pass public CI before merge.
+
 Existing strict workers accept only the purchase source. Upgrade all event
 readers/workers before enabling signup-producing web processes, or use a
 coordinated drained rollout. Old workers reject the new source, so rolling them

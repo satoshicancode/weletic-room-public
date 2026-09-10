@@ -42,26 +42,36 @@ export function CommunicationsScreen({
   const [mobile, setMobile] = useState(true);
   const epoch = useRef(0);
   const copy = communicationsCopy[locale];
+  const signupConnected =
+    state?.deliveryIntegration === "purchase_signup_and_expiry_policies" &&
+    journey === "points_earned";
   const purchaseConnected =
     state?.deliveryIntegration === "purchase_and_expiry_policies" &&
     journey === "points_earned";
   const expiryConnected =
     (state?.deliveryIntegration === "expiry_policies" ||
-      state?.deliveryIntegration === "purchase_and_expiry_policies") &&
+      state?.deliveryIntegration === "purchase_and_expiry_policies" ||
+      state?.deliveryIntegration === "purchase_signup_and_expiry_policies") &&
     (journey === "points_warning" || journey === "points_last_chance");
-  const connectedCopy = purchaseConnected
+  const connectedCopy = signupConnected
     ? {
-        description: copy.purchaseConnected,
-        saved: copy.purchaseSaved,
-        enabled: copy.purchaseEnabled,
+        description: copy.signupConnected,
+        saved: copy.signupSaved,
+        enabled: copy.signupEnabled,
       }
-    : expiryConnected
+    : purchaseConnected
       ? {
-          description: copy.expiryConnected,
-          saved: copy.expirySaved,
-          enabled: copy.expiryEnabled,
+          description: copy.purchaseConnected,
+          saved: copy.purchaseSaved,
+          enabled: copy.purchaseEnabled,
         }
-      : null;
+      : expiryConnected
+        ? {
+            description: copy.expiryConnected,
+            saved: copy.expirySaved,
+            enabled: copy.expiryEnabled,
+          }
+        : null;
   React.useEffect(() => {
     onNavigationStateChange?.({ dirty, locale });
   }, [dirty, locale, onNavigationStateChange]);
