@@ -182,11 +182,16 @@ No checkbox below is promoted solely by these local checks.
       covers fresh signup ledger events, no retrospective opt-in, and atomic
       rollback on outbox failure in isolated MySQL. Delivery remains mocked;
       remaining sources and named live inbox evidence remain open.
-      Separate draft evidence: [birthday communications](birthday-communications-implementation.md)
+      Merged code in [PR #23](https://github.com/satoshicancode/weletic-room-public/pull/23): [birthday communications](birthday-communications-implementation.md)
       covers exact annual provenance, replay/opt-in containment, atomic rollback,
       localized source rendering and retained-request policy admission. Twenty-four
       combined isolated SQL tests pass; merchant readiness now separates birthday
-      from purchase/signup. Publication and named live delivery remain open.
+      from purchase/signup. Named live delivery remains open.
+      Local [VIP achievement evidence](vip-achievement-communications-implementation.md)
+      covers promotion-only production, immutable history, superseded-notice
+      suppression, retained privacy cleanup and EN/JA/VI merchant readiness.
+      Thirty-three combined SQL tests pass; full regression/build verification
+      and publication remain pending. Mocked delivery is not live acceptance.
       D1/D2 are not complete.
 - [ ] D3: Confirm the intended timezone before birthday/campaign/expiry/email
       activation. Do not silently replace a retained store timezone with Tokyo.

@@ -244,3 +244,20 @@ state coverage and assistive-technology checks remain open. Screenshots stay
 local and are not published as repository assets. The first fixture bundle failed
 to resolve the automatic JSX runtime outside the workspace; using React's classic
 JSX transform for the temporary entry resolved it without changing app source.
+
+## Release verification checkpoint
+
+Shopify app type-check and production build pass on the combined VIP branch.
+The native-discount package's ten tests pass. Full repository lint passes all
+ten tasks. Combined adversarial review against public main found no new code
+blocker; browser artifacts remain local and untracked.
+
+The complete web regression rerun passes all 406 files: 6,384 tests passed and
+six skipped, with no failures. Prisma validation passes against the explicit
+`prisma/schema` directory using a synthetic URL; the initial command lacked the
+schema-directory argument and was corrected without applying any schema.
+The isolated web production build is still running. It uses temporary SELECT-only access to the empty VIP fixture,
+with revocation handled by the runner on exit. No PR publication, deployment,
+installation or real send is established by this checkpoint. The acceptance
+matrix and backlog now identify birthday PR #23 as merged while retaining live
+gates and separating this still-local VIP work.
