@@ -20,6 +20,7 @@ import { snapshotLoyaltyCommunicationPolicy } from "./communications-service";
 import type { LoyaltyMaintenancePermit } from "./maintenance-write-fence";
 import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
 import { hasShopifyCustomerRedactionTombstone } from "./shopper-privacy";
+import { isCurrentVipAchievement } from "./vip-achievement-communication-source";
 
 /** Called only under the outbox customer's settlement lock, including send. */
 export async function sendPointsEarnedNotification({
@@ -54,6 +55,7 @@ export async function sendPointsEarnedNotification({
     },
     select: {
       metadata: true,
+      currentTierId: true,
       shopper: {
         select: {
           email: true,
@@ -93,66 +95,77 @@ export async function sendPointsEarnedNotification({
     journey: event.journey,
   });
   if (!currentPolicy?.policy.enabled) return "ineligible";
-  // Source ledger is required participation evidence. Never infer it from a
-  // cached balance, customer import or an unverified event alone.
-  const ledger = await prisma.weleticPointsLedgerEntry.findFirst({
-    where: {
-      id: event.ledgerEntryId,
-      storeId: event.storeId,
-      accountId: event.accountId,
-      ...(event.source === "birthday_points_available"
-        ? {
-            entryType: "EARN_BONUS",
-            referenceType: "BIRTHDAY_REWARD",
-            referenceId: String(event.calendarYear),
-            idempotencyKey: `birthday:${event.accountId}:${event.calendarYear}`,
-          }
-        : event.source === "signup_points_available"
-          ? {
-              entryType: "EARN_BONUS",
-              referenceType: "SIGNUP_BONUS",
-              referenceId: event.accountId,
-            }
-          : {
-              entryType: "EARN_ORDER",
-              referenceType: "COMMERCE_ORDER",
-              referenceId: event.orderId,
-            }),
-    },
-    select: { grantId: true, pointsDelta: true, createdAt: true },
-  });
-  if (
-    !ledger ||
-    ledger.pointsDelta.toString() !== event.ledgerPoints ||
-    ledger.createdAt.toISOString() !== event.occurredAt
-  )
-    return "ineligible";
-  if (event.source !== "purchase_points_available" && ledger.grantId)
-    return "ineligible";
-  if (event.source === "purchase_points_available") {
-    if (!ledger.grantId) return "ineligible";
-    const grant = await prisma.weleticLoyaltyEarnGrant.findFirst({
-      where: {
-        id: ledger.grantId,
-        storeId: event.storeId,
-        accountId: event.accountId,
-        programId: event.programId,
-        orderId: event.orderId,
-      },
-      select: { status: true, settledPoints: true },
-    });
+  if (event.source === "vip_threshold_promotion") {
     if (
-      !grant ||
-      !["settled", "partially_reversed"].includes(grant.status) ||
-      grant.settledPoints < BigInt(event.points)
+      !(await isCurrentVipAchievement({
+        db: prisma,
+        event,
+        currentTierId: account.currentTierId,
+      }))
     )
       return "ineligible";
-    const order = await prisma.weleticCommerceOrder.findFirst({
-      where: { id: event.orderId, storeId: event.storeId },
-      select: { status: true },
+  } else {
+    // Source ledger is required participation evidence. Never infer it from a
+    // cached balance, customer import or an unverified event alone.
+    const ledger = await prisma.weleticPointsLedgerEntry.findFirst({
+      where: {
+        id: event.ledgerEntryId,
+        storeId: event.storeId,
+        accountId: event.accountId,
+        ...(event.source === "birthday_points_available"
+          ? {
+              entryType: "EARN_BONUS",
+              referenceType: "BIRTHDAY_REWARD",
+              referenceId: String(event.calendarYear),
+              idempotencyKey: `birthday:${event.accountId}:${event.calendarYear}`,
+            }
+          : event.source === "signup_points_available"
+            ? {
+                entryType: "EARN_BONUS",
+                referenceType: "SIGNUP_BONUS",
+                referenceId: event.accountId,
+              }
+            : {
+                entryType: "EARN_ORDER",
+                referenceType: "COMMERCE_ORDER",
+                referenceId: event.orderId,
+              }),
+      },
+      select: { grantId: true, pointsDelta: true, createdAt: true },
     });
-    if (!order || !["paid", "partially_refunded"].includes(order.status))
+    if (
+      !ledger ||
+      ledger.pointsDelta.toString() !== event.ledgerPoints ||
+      ledger.createdAt.toISOString() !== event.occurredAt
+    )
       return "ineligible";
+    if (event.source !== "purchase_points_available" && ledger.grantId)
+      return "ineligible";
+    if (event.source === "purchase_points_available") {
+      if (!ledger.grantId) return "ineligible";
+      const grant = await prisma.weleticLoyaltyEarnGrant.findFirst({
+        where: {
+          id: ledger.grantId,
+          storeId: event.storeId,
+          accountId: event.accountId,
+          programId: event.programId,
+          orderId: event.orderId,
+        },
+        select: { status: true, settledPoints: true },
+      });
+      if (
+        !grant ||
+        !["settled", "partially_reversed"].includes(grant.status) ||
+        grant.settledPoints < BigInt(event.points)
+      )
+        return "ineligible";
+      const order = await prisma.weleticCommerceOrder.findFirst({
+        where: { id: event.orderId, storeId: event.storeId },
+        select: { status: true },
+      });
+      if (!order || !["paid", "partially_refunded"].includes(order.status))
+        return "ineligible";
+    }
   }
   const communications = await readShopperCommunicationSettings({
     storeId: event.storeId,
@@ -175,7 +188,10 @@ export async function sendPointsEarnedNotification({
         const values = {
           brand_name: communications.brandName,
           customer_first_name: account.shopper.firstName ?? "",
-          points: event.points,
+          points:
+            event.source === "vip_threshold_promotion" ? "" : event.points,
+          tier_name:
+            event.source === "vip_threshold_promotion" ? event.toTier.name : "",
           points_label: account.program.pointNamePlural,
           reward_name:
             event.journey === "birthday"

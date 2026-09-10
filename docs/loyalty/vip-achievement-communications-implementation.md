@@ -1,0 +1,263 @@
+# VIP achievement communications — implementation plan
+
+Approved stream: complete loyalty communications. This branch starts from public
+main `3427d1e3c6`; birthday PR #23 is a separate dependency for final integration.
+No activation, provider send, deployment or new authorization is implied.
+
+## Scope and behavior
+
+- Announce a freshly committed threshold promotion using its sequenced tier
+  history, not a balance or mutable tier assignment. One notice names the highest
+  tier reached; skipped-tier entry rewards retain their existing accounting.
+- A later requalification after a real downgrade has a new history identity and
+  may create a fresh notice. Maintenance, grace, downgrade, manual/import placement
+  and replay do not announce achievement. This is Weletic behavior: the preserved
+  Smile reference has conflicting downgrade-notification descriptions.
+- Suppress a delayed notice if a later transition superseded its history or the
+  account no longer holds its target tier. Do not announce obsolete achievement.
+- Snapshot the earned tier name and communication policy at transition time;
+  subsequent text edits do not rewrite queued events. Current policy disablement,
+  consent, privacy, pause and installation fences still stop delivery.
+- Existing tier names may contain internal control characters. Normalize those
+  characters to spaces in the captured message label, trim outside whitespace,
+  and use the neutral label `VIP` if no printable content remains. Keep the tier
+  record unchanged; notification formatting must not invalidate a valid promotion.
+  The normalized snapshot is immutable, and direct event control injection fails.
+
+## Implementation and contracts
+
+1. Add strict internal VIP event/retained-job schemas and deterministic keys.
+   Carry store/program/account/generation, history ID and sequence, from/to tier
+   identities, captured rank/name, effective time and immutable policy revision.
+   No recipient, birth date, points balance, fabricated ledger/order or reward.
+2. Enqueue in the existing store/program-fenced promotion transaction after the
+   history row is created. Roll back history, account and outbox together on error.
+   No retrospective opt-in/backfill. Preserve existing grants and Flow events.
+3. Extend the existing leased communication worker/retention contract; validate
+   owned history and latest transition before sending or retrying. Render only
+   the existing `tier_name`/common variables, with EN/JA/VI and trusted CTA/sender.
+4. Expose truthful merchant readiness for VIP, preserving old response meanings.
+   Upgrade strict readers before producers, or use a coordinated drained rollout.
+
+Affected subsystems: tier lifecycle, internal communication contracts/producer,
+worker/source verification, retained delivery, merchant gateway/shared editor,
+privacy tests and acceptance documentation. No database migration, public write
+endpoint, billing, provider, tier qualification or reward-policy change.
+
+## Verification and definition of done
+
+- Contract rejection: wrong tenant/account/tier, non-promotion, missing/invalid
+  sequence, wrong policy, unsafe names, injected identifiers and malformed dates.
+- Actual isolated MySQL: concurrent promotion, replay, opt-in containment,
+  downgrade/re-promotion, outbox failure rollback, latest-history invalidation,
+  installation generation and privacy before/after worker completion.
+- Shared editor EN/JA/VI mobile and keyboard, loading/error/permission states;
+  focused and full tests, types/lint/builds/Prisma, adversarial review and public CI.
+- Named live inbox evidence and `yamaxdev` lifecycle remain separate execution
+  gates. Local schemas or mocked delivery do not complete the journey.
+
+Current status: contract and producer are local drafts; no worker or UI
+integration is published. Birthday PR #23 merged as `b4685b5803` and was merged
+into this branch without conflicts, retaining purchase and signup variants.
+The frozen historical-import stream remains untouched.
+
+## Local contract checkpoint
+
+The strict event/retained-job contract and key helper pass all 45 focused tests,
+targeted TypeScript checking and focused lint. Initial tests failed because the
+fixture imported its default-policy helper from the wrong module; that import was
+corrected. Independent review found the legacy tier-name control-character
+compatibility issue described above; normalization and immutability cases now
+pass and the correction was re-reviewed without a new blocker.
+
+## Local producer checkpoint
+
+The producer accepts only a fresh threshold-promotion receipt, checks the owned
+active account and current target tier, compares persisted latest history to the
+receipt, reads tiers through the owned program and verifies the expected active
+installation generation. It uses the caller's transaction and propagates enqueue
+failure. Policy snapshot selection now accepts `vip_achieved`.
+
+All 62 contract/producer tests and focused lint pass. The first producer test
+attempts could not load unbuilt shared workspace packages and the ungenerated
+Prisma client; after building/generating those prerequisites, both suites pass.
+These are mocked enqueue tests, not proof of database rollback or races.
+Full web type-check was started before prerequisites existed and failed; its
+post-prerequisite rerun exhausted Node's default heap. With the established 8 GB
+allowance, the producer and initial sender snapshot passed full web type-check.
+
+Independent producer review found no tenant/history/generation defect. The
+producer was intentionally left unwired at that checkpoint. This is not feature
+completion or permission to send messages.
+
+## Local reader/sender checkpoint
+
+The strict shared retained-job union accepts VIP events. The sender preserves
+purchase/signup/birthday predicates and uses owned sequenced tier history for
+VIP, without fabricated ledger evidence. It renders the captured tier name and
+reuses the existing current-policy, consent, privacy, sender and encrypted retry
+checks. No merchant readiness claim has been enabled.
+
+Independent review caught a stale-admission window: SQL-only tier writers could
+change history after the sender's first check. A shared source verifier now also
+checks current tier/latest owned history inside retention's store/program-fenced
+transaction before first sends and retries. This is admission-time ordering, not
+a claim that external provider delivery is atomic with later database writes.
+
+All 141 focused contract/producer/sender/retention tests pass, including policy
+disablement, encrypted retry and same-tier re-promotion winning before admission.
+The interleaving tests use mocked transactions; actual SQL race/rollback,
+retained privacy scrub, lifecycle integration, merchant UI, browser and live
+acceptance remain required. The corrected snapshot passes full web type-check
+with the 8 GB allowance, focused lint and formatting. Independent correction
+review found the admission gap closed and no new blocker. Birthday post-merge
+CI run `34487797175` passed all six checks on `b4685b5803`.
+
+## Local promotion wiring checkpoint
+
+The actual promotion branch now calls the producer immediately after creating
+tier history, passing that returned row, the account's program, the existing
+transaction and the generation from its locked operational-store guard. Flow
+events and skipped-tier entry bonuses remain in the same transaction. Maintenance
+and downgrade branches do not call the producer.
+
+All 84 tests across five tier lifecycle/accounting suites pass, along with full
+web type-check and focused lifecycle lint. New caller tests verify fresh-history
+handoff, maintenance replay exclusion and enqueue-error propagation. Four legacy
+accounting-only suites explicitly mock the producer; their existing accounting
+assertions remain intact. Initial failures were missing notification fixture
+data and a test import removed while unused, both corrected without weakening
+production validation. Independent wiring review found no blocker.
+
+Real SQL concurrent promotion, rollback, later opt-in, stale generation,
+downgrade/requalification and retained privacy cleanup remain unverified. The
+merchant readiness UI, combined full regression/build and live acceptance remain
+unfinished; this local wiring is not a published or deployed feature.
+
+## Isolated SQL checkpoint
+
+The communication integration suite passes 29 tests in
+`weletic_loyalty_it_communications_vip_20260910a` on the approved loopback MySQL
+instance. This is a fresh schema-only fixture, not an installation or live order.
+The real VIP transaction is exercised against a synthetic paid commerce order:
+
+- Concurrent evaluations produce one promotion history, one notice and one
+  100-point tier-entry bonus; the other evaluation maintains the tier.
+- Notification insertion failure rolls back placement/history and prevents later
+  bonus writes. A second failure at metafield-job insertion first observes the
+  inserted bonus, notice and 100-point balance inside the transaction, then
+  verifies that rollback removes all of them and restores the starting tier.
+- Later policy opt-in does not backfill an old promotion.
+- A stale installation generation fails before history or outbox writes.
+
+All 12 independently checked fixture tables reconcile to zero, including tiers
+and history. Temporary DML access is revoked. The first 28-case run also passed;
+the 29th case resolves review's distinction between preventing a bonus write and
+rolling back an already-inserted bonus. The expanded snapshot passes full web
+type-check and focused lint. Independent follow-up review found the late-failure
+test supports the stronger rollback claim, with no defect found.
+
+Concurrency calls overlap but do not force a particular lock-wait schedule.
+The schema clone uses `CREATE TABLE LIKE` and is not foreign-key acceptance.
+The worker email handler and Redis mutex remain synthetic. VIP retained-request
+SQL interleavings, downgrade/requalification, privacy scrub, shared editor,
+complete regression/build and named live evidence remain outstanding.
+
+## SQL downgrade/requalification checkpoint
+
+The suite now passes 31 SQL tests. Two new cases exercise both an unprepared
+notice and an encrypted retained notice through the real promotion, grace,
+downgrade and re-promotion paths. Once downgraded, the old notice is rejected at
+retention admission. Reaching the same target tier later does not revive it:
+history sequences are 1/2/3, two promotions create distinct notification keys,
+and each genuine promotion has its own tier-entry bonus.
+
+The test clock and synthetic order timestamp model a later qualifying period;
+no Shopify order is created. The initial zero-day grace fixture failed the
+existing scheduled-job contract. The corrected fixture uses one day and advances
+to expiry, without changing production policies. All 12 fixture tables again
+reconcile to zero and temporary access is revoked.
+
+These cases prove transition-first admission and retry suppression, not a forced
+concurrent lock-wait schedule or provider-delivery atomicity. VIP privacy cleanup
+and the remaining UI/release gates are still open.
+
+## SQL retained-privacy checkpoint
+
+The suite passes 33 SQL tests. The two VIP privacy cases use an outbox job created
+by the real promotion transaction, not a hand-authored VIP event. The existing
+privacy matrix now handles independent store/account and job identifiers.
+
+Both orderings retain encrypted delivery evidence first. When privacy cleanup
+wins before completion, the stale worker cannot complete or restore its cancelled
+job. When cleanup follows completion, the completed status remains but the
+retained request is erased. Locks and error data are cleared, and a later poll
+cannot resurrect the request. All 12 fixture tables are empty afterward and the
+temporary grant is revoked.
+
+This exercises the account-closure/outbox-scrub phase, not the full Shopify privacy
+webhook lifecycle. The sender and Redis mutex remain mocked; no actual provider
+send occurred. Merchant readiness/UI, forced SQL lock-wait coverage, combined
+regression/build, CI and live acceptance remain outstanding.
+
+## Merchant readiness checkpoint
+
+The signed merchant response adds
+`purchase_signup_birthday_vip_and_expiry_policies`. Older response values retain
+their original meaning, including birthday-only responses leaving VIP
+disconnected. The shared EN/JA/VI editor exposes separate VIP description,
+enablement and save feedback, with new policies disabled by default. Saving does
+not send email; unrelated reward/referral journeys remain disconnected.
+
+All 21 editor tests and 33 communications contract/client/action tests pass,
+along with full web type-check and focused lint. The initial focused command
+named a nonexistent contract-test filename and ran only the editor suite; the
+correct three contract/client/action files were then run explicitly. The combined
+full-web regression is running; actual browser acceptance is not yet performed
+for this VIP editor snapshot.
+
+Strict merchant response readers must be upgraded before the backend emits the
+new value, or rolled out together. Strict worker/event readers must likewise
+precede promotion-producing processes. No schema, public API, provider, scope,
+authentication, billing or deployment change is part of this branch.
+
+## Combined regression and browser checkpoint
+
+The first full web run completed with 6,375 passed, nine failed and six skipped
+across 406 files. Four older accounting/projection fixtures lacked the new
+notification history dependency; interrupted promotion calls also left queued
+mock state affecting later assertions. Explicit notification mocks preserve their
+existing assertions. All 72 tests in those four suites now pass, as do full web
+types, focused lint and formatting. The complete rerun is still running; focused
+passes do not replace it.
+
+Actual shared editor and Shopify CSS were bundled into a loopback-only fixture
+with an in-memory transport. At 375×812, EN/JA/VI had no horizontal overflow or
+private fixture identifiers in visible text. Japanese/Vietnamese message
+templates and controls were visually inspected. English keyboard navigation from
+the subject through four Tab presses saved with Enter and displayed the no-email
+confirmation. Notifications remained disabled. Only a missing favicon produced a
+console error. The browser and loopback server were closed after inspection.
+
+This is not live Shopify/browser acceptance. Complete locale-by-permission/error
+state coverage and assistive-technology checks remain open. Screenshots stay
+local and are not published as repository assets. The first fixture bundle failed
+to resolve the automatic JSX runtime outside the workspace; using React's classic
+JSX transform for the temporary entry resolved it without changing app source.
+
+## Release verification checkpoint
+
+Shopify app type-check and production build pass on the combined VIP branch.
+The native-discount package's ten tests pass. Full repository lint passes all
+ten tasks. Combined adversarial review against public main found no new code
+blocker; browser artifacts remain local and untracked.
+
+The complete web regression rerun passes all 406 files: 6,384 tests passed and
+six skipped, with no failures. Prisma validation passes against the explicit
+`prisma/schema` directory using a synthetic URL; the initial command lacked the
+schema-directory argument and was corrected without applying any schema.
+The isolated web production build passed. The runner independently confirmed all
+twelve fixture tables were empty and revoked its temporary SELECT-only grant.
+No deployment, installation or real send is established by this checkpoint. The acceptance
+matrix and backlog now identify birthday PR #23 as merged while retaining live
+gates and separating this still-local VIP work.

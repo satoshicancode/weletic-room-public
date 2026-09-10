@@ -1,5 +1,10 @@
 export const communicationsCopy = {
   en: {
+    vipConnected:
+      "Connected for new threshold-based VIP promotions, including requalification after a downgrade. Manual or imported tier placement, maintenance and downgrades do not send achievement notices. Superseded notices are suppressed. Delivery requires an approved sender, running worker, customer consent and an active program. Queued notices keep saved content; disabling also stops queued notices. Saving does not send email.",
+    vipSaved: "Saved for future VIP achievement notices. No email was sent.",
+    vipEnabled:
+      "Allow VIP achievement notices (requires consent and configured delivery)",
     birthdayConnected:
       "Connected after a fresh annual birthday points award. This is not an advance birthday reminder or a separate reward schedule. Delivery requires an approved sender, running worker, customer consent and an active program. Queued notices keep saved content; disabling also stops queued notices. Saving does not send email.",
     birthdaySaved:
@@ -53,6 +58,10 @@ export const communicationsCopy = {
     dirty: "Unsaved changes. Save or discard before changing journeys.",
   },
   ja: {
+    vipConnected:
+      "条件達成による新しいVIP昇格に対応しています。降格後の再昇格も対象です。手動設定、インポート、ランク維持、降格では達成通知を送りません。後のランク変更により古くなった通知は送信しません。配信には承認済み送信者、稼働中のワーカー、お客様の同意、有効なプログラムが必要です。待機中の通知は保存時の内容を保持します。無効化すると待機中の通知も停止します。保存だけではメールを送信しません。",
+    vipSaved: "今後のVIP達成通知用に保存しました。メールは送信していません。",
+    vipEnabled: "VIP達成通知を許可する（同意と配信設定が必要）",
     birthdayConnected:
       "新たな年次誕生日ポイント付与後の通知に接続されています。事前リマインダーや別の特典スケジュールではありません。配信には承認済み送信元、稼働中のワーカー、お客様の同意、有効なプログラムが必要です。予約済み通知の内容は維持され、無効化すると予約済み通知も停止します。保存だけでは送信されません。",
     birthdaySaved:
@@ -103,6 +112,12 @@ export const communicationsCopy = {
       "未保存の変更があります。通知を切り替える前に保存または破棄してください。",
   },
   vi: {
+    vipConnected:
+      "Đã kết nối với lần thăng hạng VIP mới khi đạt điều kiện, kể cả thăng hạng lại sau khi bị hạ hạng. Không gửi thông báo thành tích khi gán hạng thủ công, nhập dữ liệu, duy trì hoặc hạ hạng. Thông báo đã lỗi thời do thay đổi hạng sau đó sẽ không được gửi. Cần người gửi được phê duyệt, worker đang chạy, sự đồng ý của khách hàng và chương trình đang hoạt động. Thông báo chờ giữ nguyên nội dung đã lưu; tắt cũng dừng thông báo đang chờ. Lưu không gửi email.",
+    vipSaved:
+      "Đã lưu cho các thông báo đạt hạng VIP trong tương lai. Chưa gửi email.",
+    vipEnabled:
+      "Cho phép thông báo đạt hạng VIP (cần sự đồng ý và cấu hình gửi)",
     birthdayConnected:
       "Đã kết nối sau khi cấp điểm sinh nhật mới hằng năm. Đây không phải lời nhắc trước sinh nhật hoặc lịch thưởng riêng. Cần người gửi được phê duyệt, worker đang chạy, sự đồng ý của khách hàng và chương trình hoạt động. Thông báo đã xếp hàng giữ nội dung đã lưu; tắt cũng ngăn các thông báo này. Lưu không gửi email.",
     birthdaySaved:

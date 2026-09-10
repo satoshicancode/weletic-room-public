@@ -260,11 +260,16 @@ No task below silently authorizes an external gate or a new product policy.
   [signup-source follow-up](signup-communications-implementation.md) adds local
   replay and transaction rollback evidence. Manual sources and remaining
   journeys are not connected; no live-delivery acceptance is implied.
-  The separate [birthday draft](birthday-communications-implementation.md)
+  The [birthday integration](birthday-communications-implementation.md), merged in
+  [PR #23](https://github.com/satoshicancode/weletic-room-public/pull/23),
   adds annual-award transactional production and birthday-policy retained delivery,
   with 24 combined isolated SQL tests and explicit EN/JA/VI readiness after signup
-  integration. Publication and named live acceptance remain outstanding; birthday
-  integration is not shipped.
+  integration. Named live acceptance remains outstanding.
+  The local [VIP achievement implementation](vip-achievement-communications-implementation.md)
+  adds threshold-promotion events, retained-history admission, requalification,
+  privacy cleanup and merchant readiness. Thirty-three combined SQL tests pass;
+  full regression/build verification and publication remain pending. This does
+  not complete communications or establish live delivery readiness.
 - **Approach/subsystems:** connect existing producers/outbox to immutable event
   and policy-revision evidence, trusted recipient/code/CTA/sender context, locale
   fallback, consent/suppression, pause controls, leased delivery, history, retry/

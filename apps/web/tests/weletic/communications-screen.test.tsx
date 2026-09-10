@@ -56,6 +56,56 @@ async function submit() {
 }
 
 it.each(["en", "ja", "vi"] as const)(
+  "exposes separate VIP readiness and saves its policy in %s",
+  async (locale) => {
+    const connectedResponse = {
+      ...response,
+      deliveryIntegration: "purchase_signup_birthday_vip_and_expiry_policies",
+    };
+    const request = vi.fn().mockImplementation(async (input) =>
+      input.operation === "read"
+        ? connectedResponse
+        : {
+            ...connectedResponse,
+            revision: "b".repeat(64),
+            policies: [input.policy],
+          },
+    );
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].signupWithBirthdayConnected,
+    );
+    await select(1, "vip_achieved");
+    expect(node.textContent).toContain(communicationsCopy[locale].vipConnected);
+    expect(node.textContent).toContain(communicationsCopy[locale].vipEnabled);
+    expect(
+      (node.querySelector('input[type="checkbox"]') as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    await editSubject("Welcome {{tier_name}}");
+    await submit();
+    expect(request.mock.calls[1][0].policy.journey).toBe("vip_achieved");
+    expect(request.mock.calls[1][0].policy.enabled).toBe(false);
+    expect(node.textContent).toContain(communicationsCopy[locale].vipSaved);
+    await select(1, "birthday");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].birthdayConnected,
+    );
+    await select(1, "points_warning");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].expiryConnected,
+    );
+    await select(1, "reward_redeemed");
+    expect(node.textContent).toContain(communicationsCopy[locale].disconnected);
+    expect(node.textContent).not.toContain("private-store");
+    expect(node.textContent).not.toContain("private-generation");
+  },
+);
+
+it.each(["en", "ja", "vi"] as const)(
   "separates birthday readiness from points-earned and unconnected journeys in %s",
   async (locale) => {
     const connectedResponse = {

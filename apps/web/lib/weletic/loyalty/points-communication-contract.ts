@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { birthdayCommunicationJobSchema } from "./birthday-communication-contract";
 import { loyaltyCommunicationPolicySchema } from "./communications-contract";
+import { vipAchievementCommunicationJobSchema } from "./vip-achievement-communication-contract";
 
 const identifier = z.string().min(1).max(191);
 const positivePoints = z
@@ -63,7 +64,8 @@ export const loyaltyCommunicationJobPayloadSchema =
         .strict()
         .refine((event) => event.points === event.ledgerPoints),
     )
-    .or(birthdayCommunicationJobSchema);
+    .or(birthdayCommunicationJobSchema)
+    .or(vipAchievementCommunicationJobSchema);
 
 export const signupPointsCommunicationSchema =
   purchasePointsCommunicationBaseSchema

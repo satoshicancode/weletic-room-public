@@ -10,6 +10,7 @@ import {
   withActiveStoreLoyaltyMutation,
 } from "./merchant-write-fence";
 import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
+import { isCurrentVipAchievement } from "./vip-achievement-communication-source";
 
 const requestSchema = z
   .object({
@@ -146,6 +147,7 @@ export async function retainCommunicationDeliveryRequest({
           status: "active",
         },
         select: {
+          currentTierId: true,
           shopper: { select: { email: true, acceptsMarketing: true } },
         },
       });
@@ -153,6 +155,15 @@ export async function retainCommunicationDeliveryRequest({
         throw new CommunicationDeliveryIneligibleError();
       if (recipient.shopper.email !== recipientEmail)
         throw new CommunicationDeliveryRecipientChangedError();
+      if (
+        parsed.data.source === "vip_threshold_promotion" &&
+        !(await isCurrentVipAchievement({
+          db: tx,
+          event: parsed.data,
+          currentTierId: recipient.currentTierId,
+        }))
+      )
+        throw new CommunicationDeliveryIneligibleError();
       const where = {
         id: job.id,
         storeId: job.storeId,

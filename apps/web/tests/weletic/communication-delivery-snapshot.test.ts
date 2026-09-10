@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   program: vi.fn(),
   settings: vi.fn(),
   recipient: vi.fn(),
+  history: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 vi.mock("@/lib/weletic/loyalty/merchant-write-fence", () => ({
@@ -120,6 +121,7 @@ beforeEach(() => {
       weleticLoyaltyProgram: { findUnique: mocks.program },
       weleticMerchantSettings: { findUnique: mocks.settings },
       weleticLoyaltyAccount: { findFirst: mocks.recipient },
+      weleticLoyaltyTierHistory: { findFirst: mocks.history },
       weleticLoyaltyOutboxJob: {
         findFirst: mocks.findFirst,
         updateMany: mocks.updateMany,
@@ -170,6 +172,114 @@ it("retains and retries birthday content while the points-earned journey is disa
   expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
   expect(args.prepare).not.toHaveBeenCalled();
 });
+
+function vipFixture() {
+  const args = fixture();
+  mocks.recipient.mockResolvedValue({
+    currentTierId: "gold",
+    shopper: { email: request.to, acceptsMarketing: true },
+  });
+  mocks.history.mockResolvedValue({
+    id: "history",
+    sequenceNumber: 1,
+    fromTierId: "bronze",
+    toTierId: "gold",
+    changeReason: "threshold_reached",
+    effectiveAt: at,
+    fromTier: { programId: "program" },
+    toTier: { programId: "program" },
+  });
+  const template = {
+    subject: "VIP {{tier_name}}",
+    heading: "VIP",
+    body: "Welcome",
+    actionLabel: "View",
+  };
+  const policy = {
+    journey: "vip_achieved",
+    enabled: true,
+    templates: { en: template, ja: template, vi: template },
+  };
+  args.claim.candidate.payload = {
+    version: 1,
+    journey: "vip_achieved",
+    source: "vip_threshold_promotion",
+    storeId: "store",
+    programId: "program",
+    accountId: "account",
+    installationGeneration: "g1",
+    tierHistoryId: "history",
+    sequenceNumber: 1,
+    fromTier: { id: "bronze", rank: 1 },
+    toTier: { id: "gold", rank: 3, name: "Gold" },
+    occurredAt: at.toISOString(),
+    policyRevision: "a".repeat(64),
+    policy,
+  };
+  const currentPolicy = structuredClone(policy);
+  mocks.program.mockResolvedValue({
+    id: "program",
+    status: "active",
+    killSwitchActive: false,
+    metadata: {
+      loyaltyCommunications: {
+        version: 1,
+        sequence: 1,
+        policies: [currentPolicy],
+      },
+    },
+  });
+  return { args, currentPolicy };
+}
+it.each([false, true])(
+  "rejects a superseding VIP transition at fenced retention admission (retry=%s)",
+  async (retry) => {
+    const { args } = vipFixture();
+    if (retry) await retainCommunicationDeliveryRequest(args);
+    // Event passed its earlier sender check; a SQL-only writer wins before the
+    // retention fence. A re-promotion to the same tier still has newer history.
+    mocks.history.mockResolvedValue({
+      id: "later",
+      sequenceNumber: 3,
+      fromTierId: "bronze",
+      toTierId: "gold",
+      changeReason: "threshold_reached",
+      effectiveAt: at,
+      fromTier: { programId: "program" },
+      toTier: { programId: "program" },
+    });
+    args.prepare.mockClear();
+    mocks.updateMany.mockClear();
+    await expect(retainCommunicationDeliveryRequest(args)).rejects.toThrow(
+      "no longer eligible",
+    );
+    expect(args.prepare).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  },
+);
+it("retains and retries VIP requests without a points-earned policy", async () => {
+  const { args } = vipFixture();
+  expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
+  args.prepare.mockClear();
+  expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
+  expect(args.prepare).not.toHaveBeenCalled();
+});
+it.each([false, true])(
+  "rechecks VIP policy disablement before retention/retry (%s)",
+  async (retry) => {
+    const { args, currentPolicy } = vipFixture();
+    if (retry) await retainCommunicationDeliveryRequest(args);
+    currentPolicy.enabled = false;
+    expect(args.claim.candidate.payload).toHaveProperty("policy.enabled", true);
+    args.prepare.mockClear();
+    mocks.updateMany.mockClear();
+    await expect(retainCommunicationDeliveryRequest(args)).rejects.toThrow(
+      "no longer eligible",
+    );
+    expect(args.prepare).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  },
+);
 
 it.each([false, true])(
   "does not substitute points-earned enablement for birthday admission (retry=%s)",
