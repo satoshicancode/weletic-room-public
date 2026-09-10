@@ -460,6 +460,7 @@ async function shopifyHasCustomerEmail({
 }
 
 const FRIEND_EMAIL_LEASE_TTL_MS = 60_000;
+const FRIEND_EMAIL_DELIVERY_FAILURE = "Referral email delivery failed";
 
 async function deliverFriendRewardEmail({
   referralId,
@@ -518,21 +519,19 @@ async function deliverFriendRewardEmail({
     if (delivery?.error) {
       return {
         success: false,
-        error: String((delivery.error as any).message || delivery.error),
+        error: FRIEND_EMAIL_DELIVERY_FAILURE,
       };
     }
     return {
       success: Boolean(delivery?.data),
-      error: delivery?.data ? undefined : "Delivery response data empty",
+      error: delivery?.data ? undefined : FRIEND_EMAIL_DELIVERY_FAILURE,
     };
-  } catch (err: any) {
-    console.error(
-      `[referral-email] Delivery transport failed for referral ${referralId}:`,
-      err,
-    );
+  } catch {
+    // Provider errors can contain recipients, voucher URLs and credentials.
+    // Retain only a fixed failure category, never the raw error or its cause.
     return {
       success: false,
-      error: err?.message || "Delivery transport failed",
+      error: FRIEND_EMAIL_DELIVERY_FAILURE,
     };
   }
 }
@@ -612,13 +611,10 @@ export async function deliverReferralEmailUnderLease({
   let delivery: { success: boolean; error?: string };
   try {
     delivery = await deliver();
-  } catch (error) {
+  } catch {
     delivery = {
       success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Email delivery transport failed",
+      error: FRIEND_EMAIL_DELIVERY_FAILURE,
     };
   }
 
@@ -666,7 +662,9 @@ export async function deliverReferralEmailUnderLease({
     }
     return { acquired: true, emailSent: finalized === 1 };
   } else {
-    const error = delivery.error || "Delivery rejected or unconfirmed";
+    // This boundary also protects against alternate delivery callbacks that
+    // return an unsanitized error instead of throwing one.
+    const error = FRIEND_EMAIL_DELIVERY_FAILURE;
     if (
       typeof (prisma as { $executeRaw?: unknown }).$executeRaw !== "function"
     ) {
