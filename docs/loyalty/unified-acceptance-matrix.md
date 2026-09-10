@@ -87,6 +87,11 @@ proof only.
 
 ## B — Merchant control plane and immutable contracts
 
+September 10 local [appearance editor checkpoint](merchant-appearance-editor-2026-09-10.md)
+adds the existing nine branding fields through a signed revision-fenced gateway.
+Its synthetic browser and contract evidence does not close B1/B4 or live shopper
+surface gates; advanced appearance controls and nudges remain outstanding.
+
 - [ ] B1: One Shopify-first navigation and shared settings, earning, reward and
       referral contracts/components; thin signed adapters, compatible redirects.
 - [ ] B2: Revision-fenced VIP tiers, thresholds, multipliers, entry rewards,

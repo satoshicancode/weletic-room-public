@@ -198,7 +198,10 @@ No task below silently authorizes an external gate or a new product policy.
 - **Approach/subsystems:** expose existing loyalty-branding fields through shared
   merchant contracts/editor first. Then version and validate additional fields;
   update theme widget/landing projections and CSS from one shared contract.
-  Embedded `/appearance` currently only exposes brand name/logo/accent.
+  September 10 local implementation adds the nine existing loyalty-branding
+  fields to embedded `/appearance`; see the
+  [qualified editor checkpoint](merchant-appearance-editor-2026-09-10.md).
+  It is not yet deployed/accepted and does not cover the advanced fields above.
 - **Dependencies/decisions:** approve new contract/defaults, URL matching and
   numeric bounds before extending them; decide which artwork/custom stack-order
   options are genuinely required. Reuse Weletic artwork, not Smile icons/wallpapers.
