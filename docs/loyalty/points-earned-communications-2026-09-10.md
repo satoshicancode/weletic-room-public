@@ -234,6 +234,30 @@ refunds without rewriting an already retained ambiguous provider request.
 
 ## Remaining integration and safe release order
 
+### Worker completion/privacy SQL follow-up
+
+Two additional MySQL cases exercise the real outbox batch claim/completion,
+encrypted retention and account-outbox scrub phase in both orderings. The whole
+notification handler (including source/refund checks) and Redis customer mutex
+are stubbed in these two cases; they prove SQL transition behavior, not delivery,
+distributed locking or complete privacy ingress.
+
+- Redaction before completion cancels and scrubs the job; the worker rejects its
+  stale claim, and a later poll does not restore the ciphertext.
+- Completion before redaction retains the ciphertext in a completed row (asserted
+  before scrub); the scrubber then erases it without changing the terminal status.
+- The first attempt stopped at the unavailable Redis boundary, with both new
+  cases failing and the prior 12 passing. After making that test boundary
+  explicit, all 14 passed. Independent review added the completed-row assertion;
+  the final rerun again passed **14 tests**. Temporary DML grants were revoked,
+  and independent SQL verified zero rows in all 15 fixture tables. Focused lint,
+  formatting and the full web typecheck passed. Repository-wide formatting also
+  passed after a formatting-only correction to the editor test in PR #20.
+- A full privacy-ingress/Redis-lock interleaving remains a release acceptance
+  task. These bounded cases do not close D2/E6.
+
+### Deployment sequence
+
 1. Worker implementation (locally implemented): use a
    dedicated encrypted provider request bound to job/store/account/generation,
    recipient and provider key. Check the exact request recipient against the

@@ -6,10 +6,28 @@ import {
 import { releaseHoldingPeriodGrant } from "@/lib/weletic/loyalty/holding-period";
 import { appendPointsLedgerEntryWithReceipt } from "@/lib/weletic/loyalty/ledger";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
+import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox-worker";
 import { enqueuePurchasePointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
+import { processWeleticLoyaltyAccountPrivacyScrubStep } from "@/lib/weletic/loyalty/shopper-privacy";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
+
+// The whole notification handler (including source/refund checks) and Redis
+// customer mutex are synthetic. Worker claim/completion,
+// encrypted retention and privacy scrub execute against real MySQL. The ordered
+// interleavings below prove SQL CAS behavior, not distributed-lock correctness.
+const workerSender = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/weletic/loyalty/points-earned-notifications", () => ({
+  sendPointsEarnedNotification: workerSender,
+}));
+vi.mock("@/lib/weletic/shopify/customer-settlement-lock", () => ({
+  withShopifyCustomerSettlementLocks: async ({
+    fn,
+  }: {
+    fn: () => Promise<unknown>;
+  }) => fn(),
+}));
 
 const fixtures: string[] = [];
 let verified = false;
@@ -209,6 +227,87 @@ async function seed() {
     },
   };
 }
+
+it.each(["before_completion", "after_completion"] as const)(
+  "erases retained communication evidence when redaction wins %s",
+  async (ordering) => {
+    const { id, args } = await seed();
+    await prisma.weleticLoyaltyOutboxJob.update({
+      where: { id },
+      data: {
+        status: "pending",
+        attempts: 0,
+        lockedBy: null,
+        lockedAt: null,
+        scheduledFor: new Date(0),
+      },
+    });
+    const scrub = async () => {
+      // The durable scrub phase follows account closure. This test is not a
+      // substitute for the complete Shopify privacy ingress/locking lifecycle.
+      await prisma.weleticLoyaltyAccount.update({
+        where: { id },
+        data: { status: "closed" },
+      });
+      return processWeleticLoyaltyAccountPrivacyScrubStep({
+        storeId: id,
+        accountId: id,
+        phase: "scrub_account_outbox",
+        redactedAt: new Date(),
+      });
+    };
+    workerSender.mockReset();
+    workerSender.mockImplementation(async ({ claim }) => {
+      await retainCommunicationDeliveryRequest({ ...args, claim });
+      const retained = await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id },
+      });
+      expect(retained.status).toBe("processing");
+      expect(retained.payload).toHaveProperty("communicationDeliverySnapshot");
+      if (ordering === "before_completion") await scrub();
+      return "sent";
+    });
+    const result = await processOutboxJobsBatch({
+      storeId: id,
+      jobIds: [id],
+      workerId: "synthetic-communication-privacy-worker",
+      batchSize: 1,
+    });
+    expect(workerSender).toHaveBeenCalledTimes(1);
+    expect(result.failed).toBe(0);
+    expect(result.succeeded).toBe(ordering === "before_completion" ? 0 : 1);
+    expect(result.skipped).toBe(ordering === "before_completion" ? 1 : 0);
+    if (ordering === "after_completion") {
+      const completed = await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id },
+      });
+      expect(completed.status).toBe("completed");
+      expect(completed.payload).toHaveProperty("communicationDeliverySnapshot");
+      await scrub();
+    }
+    const erased = await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+      where: { id },
+    });
+    expect(erased.status).toBe(
+      ordering === "before_completion" ? "cancelled" : "completed",
+    );
+    expect(erased.payload).not.toHaveProperty("communicationDeliverySnapshot");
+    expect(JSON.stringify(erased.payload)).not.toContain(request.to);
+    expect(erased.lockedBy).toBeNull();
+    expect(erased.lockedAt).toBeNull();
+    expect(erased.errorLog).toBeNull();
+    // A later worker poll cannot resurrect the stale retained claim.
+    await processOutboxJobsBatch({ storeId: id, jobIds: [id], batchSize: 1 });
+    expect(workerSender).toHaveBeenCalledTimes(1);
+    expect(
+      (
+        await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+          where: { id },
+        })
+      ).payload,
+    ).not.toHaveProperty("communicationDeliverySnapshot");
+  },
+);
 
 it("allows one competing claim snapshot and retries the exact persisted request", async () => {
   const { id, args } = await seed();
