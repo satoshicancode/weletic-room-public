@@ -53,6 +53,29 @@ The theme currently contains five blocks. Retain `app-embed.liquid`,
 closure before packaging; do not assume every other asset is required or safe.
 The retained launcher must still satisfy EN/JA/VI, mobile, wallet and privacy gates.
 
+### Dependency-closure follow-up
+
+Source inspection of the three retained blocks finds five loyalty asset dependencies:
+`weletic-loyalty-styles.css`, `weletic-loyalty-shared.js`,
+`weletic-loyalty-widget.js`, `weletic-loyalty-landing.js` and
+`weletic-product-points.js`. No retained block references a snippet or review asset.
+The landing script's branding image URL is runtime content, not a bundled asset.
+
+The current `app-embed.liquid` additionally includes `weletic-tracker.js` behind
+`enable_conversion_tracker`, which defaults to true, with partner attribution and
+automatic partner-discount settings. A loyalty-only staged embed must omit that
+script branch and those four partner controls (header, tracker toggle, automatic
+discount toggle and custom tracking domain), without altering the custom source.
+Assert that the staged manifest has only the five loyalty assets and that no
+partner tracking or review block is emitted. Preserve all loyalty settings.
+
+Two shopper gaps must not be mistaken for completed localization/earning evidence:
+the landing Liquid still contains hardcoded English loading/authentication copy;
+the product-points Liquid initially renders a fabricated 1x estimate before the
+JavaScript can replace it. Follow-up acceptance must cover pre-hydration and script
+failure states, not only the hydrated browser. These findings do not authorize
+changing accounting rates or claim that theme staging has been implemented.
+
 ## Implementation and acceptance requirements
 
 1. Build an isolated public staging directory from an explicit source allowlist.

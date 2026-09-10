@@ -1,5 +1,6 @@
 import { shopifyAdminGraphql } from "@/lib/integrations/shopify/admin-graphql";
 import { APP_DOMAIN_WITH_NGROK } from "@dub/utils";
+import { resolvePublicShopifyWebhookCallback } from "./public-webhook-policy";
 
 export const SHOPIFY_CANONICAL_WEBHOOK_TOPICS = [
   "PRODUCTS_CREATE",
@@ -24,6 +25,21 @@ export type ShopifyCanonicalWebhookTopic =
   (typeof SHOPIFY_CANONICAL_WEBHOOK_TOPICS)[number];
 
 export function resolveShopifyWebhookCallbackUrl(customUrl?: string): string {
+  const publicCallback = resolvePublicShopifyWebhookCallback(
+    process.env,
+    customUrl,
+  );
+  if (publicCallback !== null) return publicCallback;
+  const legacyCallback = resolveLegacyWebhookCallbackUrl(customUrl);
+  // Legacy normalization and preview fallbacks can introduce a public host
+  // that was absent from the raw configuration. Validate the effective target.
+  return (
+    resolvePublicShopifyWebhookCallback(process.env, legacyCallback) ??
+    legacyCallback
+  );
+}
+
+function resolveLegacyWebhookCallbackUrl(customUrl?: string): string {
   if (customUrl) return customUrl;
   if (process.env.DEV_WEBHOOK_URL) {
     return `${process.env.DEV_WEBHOOK_URL.replace(/\/+$/, "")}/api/shopify/integration/webhook`;

@@ -31,7 +31,7 @@ function isPublicOrigin(value) {
     return [
       new URL(PUBLIC_LOYALTY_APP_ORIGIN).hostname,
       new URL(PUBLIC_LOYALTY_API_ORIGIN).hostname,
-    ].includes(url.hostname);
+    ].includes(url.hostname.replace(/\.+$/, ""));
   } catch {
     return false;
   }

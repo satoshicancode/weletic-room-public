@@ -100,6 +100,12 @@ describe("public Shopify runtime configuration", () => {
       const env = { [key]: fixture()[key], SHOPIFY_API_KEY: "legacy" };
       expect(() => assertPublicShopifyRuntime(env)).toThrow();
     }
+    expect(() =>
+      assertPublicShopifyRuntime({
+        SHOPIFY_API_KEY: "legacy",
+        SHOPIFY_APP_URL: "https://loyalty-shopify-dev.weletic.com.",
+      }),
+    ).toThrow();
   });
 
   it("does not change custom-app runtime semantics", () => {

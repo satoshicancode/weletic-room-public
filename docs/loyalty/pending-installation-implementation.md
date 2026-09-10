@@ -11,6 +11,12 @@ separate loyalty-only manifest, SDK/gateway configuration guards, narrowed isola
 scopes and repeated successful loopback HTTP checks. These do not satisfy public
 HTTPS deployment, extension ownership, backend isolation or live installation gates.
 
+The [webhook routing receipt](public-webhook-validation-2026-09-10.md) records the
+subsequent correction of legacy callback fallback for public provisioning. All six
+CI checks for the preceding runtime commit `6f1c1c2668` passed; the routing fix
+passes the frozen full regression (396 files; 6,081 passed, six skipped) and still
+requires fresh CI.
+
 The [local runtime smoke receipt](local-runtime-smoke-2026-09-10.md) records
 separately approved loopback startup: all seven HTTP checks passed, and both
 temporary app processes were stopped afterward. This is not Shopify acceptance.
@@ -40,18 +46,18 @@ The dated checkpoints below preserve historical evidence, including failures and
 superseded limitations. They are not a cumulative list of current blockers. Use
 this table and the newest relevant checkpoint when assessing readiness.
 
-| Gate                                                                                 | Current disposition                                                                                                                   |
-| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Store/app-owned authentication, pending admission, retained-map reconnect            | Published as draft PR #15; not merged or deployed.                                                                                    |
-| Latest offline fallback security fix                                                 | Reviewed; 56 focused tests and 38 isolated MySQL tests passed.                                                                        |
-| Latest local code checks                                                             | Web typecheck, lint, formatting and full-schema build passed. Source-frozen full regression: 394 files, 6,020 passed and six skipped. |
-| Merchant installation UI                                                             | Partial actual-component browser evidence with synthetic identity/transport; no live embedded acceptance.                             |
-| Public repository review/CI                                                          | PR #15 refresh `2e4949a56f` passed all six checks. The bootstrap update requires fresh public CI; PR #13 remains frozen.              |
-| New runtime migrations                                                               | Not applied. Earlier PR #5 approval does not authorize the two new migrations.                                                        |
-| First company-store provisioning in an empty environment                             | ADR 0026 approved; bootstrap implementation passed 25 contract and 13 isolated SQL tests. Public CI and live acceptance remain open.  |
-| Public HTTPS identity and extension ownership                                        | Hostnames proposed only; no approved endpoints, public configuration deployment or UID reconciliation acceptance.                     |
-| Named `yamaxdev` installation and loyalty lifecycle                                  | Outstanding; local tests do not establish points, checkout, redemption or refund acceptance.                                          |
-| Communications, appearance/nudges, remaining surfaces, analytics, operations/release | Remain in the broader loyalty backlog; this installation draft does not complete them.                                                |
+| Gate                                                                                 | Current disposition                                                                                                                  |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Store/app-owned authentication, pending admission, retained-map reconnect            | Published as draft PR #15; not merged or deployed.                                                                                   |
+| Latest offline fallback security fix                                                 | Reviewed; 56 focused tests and 38 isolated MySQL tests passed.                                                                       |
+| Latest local code checks                                                             | Web/Shopify types, lint, focused tests and both builds passed; webhook regression: 396 files, 6,081 passed, six skipped.             |
+| Merchant installation UI                                                             | Partial actual-component browser evidence with synthetic identity/transport; no live embedded acceptance.                            |
+| Public repository review/CI                                                          | PR #15 runtime commit `6f1c1c2668` passed all six checks. Subsequent webhook fix needs fresh CI; PR #13 remains frozen.              |
+| New runtime migrations                                                               | ADR 0027 migrations and ADR 0028 purchase-policy columns applied only to the approved isolated development DB; see receipts above.   |
+| First company-store provisioning in an empty environment                             | ADR 0026 approved; bootstrap implementation passed 25 contract and 13 isolated SQL tests. Public CI and live acceptance remain open. |
+| Public HTTPS identity and extension ownership                                        | ADR 0029 hostnames/configuration approved and locally validated; no public deployment or UID ownership acceptance.                   |
+| Named `yamaxdev` installation and loyalty lifecycle                                  | Outstanding; local tests do not establish points, checkout, redemption or refund acceptance.                                         |
+| Communications, appearance/nudges, remaining surfaces, analytics, operations/release | Remain in the broader loyalty backlog; this installation draft does not complete them.                                               |
 
 Publication must describe these gaps explicitly. First-store provisioning,
 runtime schema application, public exposure and live operations are separate

@@ -67,6 +67,11 @@ continues to disable extension discovery.
 
 ### Backend routing follow-up confirmed by source inspection
 
+Historical finding at `6f1c1c2668`; the subsequent
+[webhook routing receipt](public-webhook-validation-2026-09-10.md) records the fix.
+All six public CI checks for `6f1c1c2668` passed in
+[run 34441119322](https://github.com/satoshicancode/weletic-room-public/actions/runs/34441119322).
+
 `apps/web/lib/weletic/shopify/provision-webhooks.ts` currently resolves an explicit
 argument, then `DEV_WEBHOOK_URL`, then the legacy development fallback, then the
 app domain. It does not read `SHOPIFY_WEBHOOK_URL`, despite that variable being

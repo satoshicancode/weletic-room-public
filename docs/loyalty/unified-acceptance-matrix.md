@@ -101,7 +101,8 @@ proof only.
       app/callback/webhook/proxy alignment and canonical shop identity.
       Partial evidence: [ADR 0029 configuration](public-config-validation-2026-09-10.md)
       and [runtime policy](public-runtime-validation-2026-09-10.md) pass local
-      validation and loopback checks. Public HTTPS/canonical live identity remain
+      validation and loopback checks. The [webhook routing guard](public-webhook-validation-2026-09-10.md)
+      adds local pre-transport checks, not live callback evidence. Public HTTPS/canonical live identity remain
       unverified; A3 is not closed.
 - [ ] A4: Reconcile every extension's ownership and generate public-app-specific
       UIDs. Never deploy custom-app identities into the public registration. CLI
