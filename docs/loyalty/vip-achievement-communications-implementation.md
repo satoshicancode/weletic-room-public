@@ -56,9 +56,10 @@ endpoint, billing, provider, tier qualification or reward-policy change.
 - Named live inbox evidence and `yamaxdev` lifecycle remain separate execution
   gates. Local schemas or mocked delivery do not complete the journey.
 
-Current status: contract implementation in progress; no producer, worker or UI
-integration is published. Birthday must be integrated without losing purchase or
-signup variants. The frozen historical-import stream remains untouched.
+Current status: contract and producer are local drafts; no worker or UI
+integration is published. Birthday PR #23 merged as `b4685b5803` and was merged
+into this branch without conflicts, retaining purchase and signup variants.
+The frozen historical-import stream remains untouched.
 
 ## Local contract checkpoint
 
@@ -69,5 +70,45 @@ corrected. Independent review found the legacy tier-name control-character
 compatibility issue described above; normalization and immutability cases now
 pass and the correction was re-reviewed without a new blocker.
 
-No producer, worker, SQL, browser or live evidence exists for this VIP draft yet.
-This checkpoint is not feature completion or permission to send notifications.
+## Local producer checkpoint
+
+The producer accepts only a fresh threshold-promotion receipt, checks the owned
+active account and current target tier, compares persisted latest history to the
+receipt, reads tiers through the owned program and verifies the expected active
+installation generation. It uses the caller's transaction and propagates enqueue
+failure. Policy snapshot selection now accepts `vip_achieved`.
+
+All 62 contract/producer tests and focused lint pass. The first producer test
+attempts could not load unbuilt shared workspace packages and the ungenerated
+Prisma client; after building/generating those prerequisites, both suites pass.
+These are mocked enqueue tests, not proof of database rollback or races.
+Full web type-check was started before prerequisites existed and failed; its
+post-prerequisite rerun exhausted Node's default heap. With the established 8 GB
+allowance, the producer and initial sender snapshot passed full web type-check.
+
+Independent producer review found no tenant/history/generation defect. The
+producer intentionally has no tier-lifecycle caller yet. This checkpoint is not
+feature completion or permission to send messages.
+
+## Local reader/sender checkpoint
+
+The strict shared retained-job union accepts VIP events. The sender preserves
+purchase/signup/birthday predicates and uses owned sequenced tier history for
+VIP, without fabricated ledger evidence. It renders the captured tier name and
+reuses the existing current-policy, consent, privacy, sender and encrypted retry
+checks. No merchant readiness claim has been enabled.
+
+Independent review caught a stale-admission window: SQL-only tier writers could
+change history after the sender's first check. A shared source verifier now also
+checks current tier/latest owned history inside retention's store/program-fenced
+transaction before first sends and retries. This is admission-time ordering, not
+a claim that external provider delivery is atomic with later database writes.
+
+All 141 focused contract/producer/sender/retention tests pass, including policy
+disablement, encrypted retry and same-tier re-promotion winning before admission.
+The interleaving tests use mocked transactions; actual SQL race/rollback,
+retained privacy scrub, lifecycle integration, merchant UI, browser and live
+acceptance remain required. The corrected snapshot passes full web type-check
+with the 8 GB allowance, focused lint and formatting. Independent correction
+review found the admission gap closed and no new blocker. Birthday post-merge
+CI run `34487797175` passed all six checks on `b4685b5803`.

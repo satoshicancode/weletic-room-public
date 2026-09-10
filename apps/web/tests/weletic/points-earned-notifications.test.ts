@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   ledger: vi.fn(),
   grant: vi.fn(),
   order: vi.fn(),
+  history: vi.fn(),
   guard: vi.fn(),
   settings: vi.fn(),
   retain: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock("@/lib/prisma", () => ({
     weleticPointsLedgerEntry: { findFirst: mocks.ledger },
     weleticLoyaltyEarnGrant: { findFirst: mocks.grant },
     weleticCommerceOrder: { findFirst: mocks.order },
+    weleticLoyaltyTierHistory: { findFirst: mocks.history },
   },
 }));
 vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
@@ -445,3 +447,100 @@ it("rejects foreign job scope before queries", async () => {
   expect(mocks.account).not.toHaveBeenCalled();
   expect(mocks.send).not.toHaveBeenCalled();
 });
+
+function vipFixture() {
+  const row = accountRow();
+  const vipTemplate = {
+    subject: "Welcome {{tier_name}}",
+    heading: "VIP",
+    body: "{{customer_first_name}} reached {{tier_name}}",
+    actionLabel: "View",
+  };
+  const vipPolicy = {
+    journey: "vip_achieved",
+    enabled: true,
+    templates: { en: vipTemplate, ja: vipTemplate, vi: vipTemplate },
+  };
+  row.program.metadata.loyaltyCommunications.policies = [
+    structuredClone(vipPolicy),
+  ];
+  mocks.account.mockResolvedValue({ ...row, currentTierId: "gold" });
+  const history = {
+    id: "tier-history",
+    sequenceNumber: 2,
+    fromTierId: "bronze",
+    toTierId: "gold",
+    changeReason: "threshold_reached",
+    effectiveAt: at,
+    fromTier: { programId: "program" },
+    toTier: { programId: "program" },
+  };
+  mocks.history.mockResolvedValue(history);
+  const args: { claim: CommunicationDeliveryClaim } = fixture();
+  args.claim.candidate.payload = {
+    version: 1,
+    journey: "vip_achieved",
+    source: "vip_threshold_promotion",
+    storeId: "store",
+    programId: "program",
+    accountId: "account",
+    installationGeneration: "g1",
+    tierHistoryId: history.id,
+    sequenceNumber: 2,
+    fromTier: { id: "bronze", rank: 1 },
+    toTier: { id: "gold", rank: 3, name: "Gold" },
+    occurredAt: at.toISOString(),
+    policyRevision: "a".repeat(64),
+    policy: vipPolicy,
+  };
+  return { args, row, history };
+}
+it("renders VIP achievement from captured tier name without invented points evidence", async () => {
+  const { args } = vipFixture();
+  expect(await sendPointsEarnedNotification(args)).toBe("sent");
+  expect(mocks.prepare).toHaveBeenCalledWith(
+    expect.objectContaining({ subject: "Welcome Gold" }),
+  );
+  expect(mocks.ledger).not.toHaveBeenCalled();
+  expect(mocks.grant).not.toHaveBeenCalled();
+  expect(mocks.order).not.toHaveBeenCalled();
+});
+it.each([
+  "id",
+  "sequence",
+  "from",
+  "to",
+  "reason",
+  "time",
+  "from-owner",
+  "to-owner",
+])("suppresses VIP notice when latest history changes %s", async (field) => {
+  const { args, history } = vipFixture();
+  if (field === "id") history.id = "later";
+  if (field === "sequence") history.sequenceNumber = 3;
+  if (field === "from") history.fromTierId = "other";
+  if (field === "to") history.toTierId = "other";
+  if (field === "reason") history.changeReason = "annual_downgrade";
+  if (field === "time") history.effectiveAt = new Date(at.getTime() + 1000);
+  if (field === "from-owner") history.fromTier.programId = "foreign";
+  if (field === "to-owner") history.toTier.programId = "foreign";
+  expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
+  expect(mocks.retain).not.toHaveBeenCalled();
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+it.each(["tier", "policy", "consent", "privacy"])(
+  "suppresses VIP after current %s changes",
+  async (field) => {
+    const { args, row } = vipFixture();
+    if (field === "policy")
+      row.program.metadata.loyaltyCommunications.policies[0].enabled = false;
+    if (field === "consent") row.shopper.acceptsMarketing = false;
+    mocks.account.mockResolvedValue({
+      ...row,
+      currentTierId: field === "tier" ? "bronze" : "gold",
+      metadata: field === "privacy" ? "redacted" : null,
+    });
+    expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
+    expect(mocks.send).not.toHaveBeenCalled();
+  },
+);

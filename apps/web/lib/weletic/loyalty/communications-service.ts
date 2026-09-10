@@ -70,7 +70,8 @@ export function snapshotLoyaltyCommunicationPolicy({
     | "points_warning"
     | "points_last_chance"
     | "points_earned"
-    | "birthday";
+    | "birthday"
+    | "vip_achieved";
 }) {
   const state = project(storeId, programId, decodeMetadata(metadata).stored);
   const policy = state.policies.find(
