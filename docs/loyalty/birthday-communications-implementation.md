@@ -117,7 +117,13 @@ The combined full regression passed all 404 files: 6,299 tests passed and six
 were skipped, in 456.73 seconds with two workers. This run covers the combined
 production/test snapshot `0a676c0336`; subsequent changes only record evidence.
 
-Still required: combined production build, public CI, full browser acceptance
+The combined production build passed type validation and generated all 367 static
+pages. Independent postflight checks found zero rows in all ten fixture tables,
+and the temporary read-only grant was revoked. Prisma schema validation passed
+with synthetic connection settings; it did not apply a schema. Existing framework,
+CSS and cache-configuration warnings were nonfatal.
+
+Still required: public CI, full browser acceptance
 and named live acceptance. Birthday code has not been published. The preceding
 birthday-only build and full-suite counts are historical checkpoint evidence,
 not proof of this combined snapshot.
