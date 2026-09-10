@@ -14,6 +14,12 @@ import { execFileSync } from "node:child_process";
 import * as path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// This suite isolates tier accounting. Notification delivery and actual
+// transactional rollback require separate producer and SQL coverage.
+vi.mock("@/lib/weletic/loyalty/vip-achievement-communication-producer", () => ({
+  enqueueVipAchievementCommunication: vi.fn().mockResolvedValue(null),
+}));
+
 // =============================================================================
 // PRISMA & DEPENDENCY MOCKS
 // =============================================================================

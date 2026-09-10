@@ -87,8 +87,8 @@ post-prerequisite rerun exhausted Node's default heap. With the established 8 GB
 allowance, the producer and initial sender snapshot passed full web type-check.
 
 Independent producer review found no tenant/history/generation defect. The
-producer intentionally has no tier-lifecycle caller yet. This checkpoint is not
-feature completion or permission to send messages.
+producer was intentionally left unwired at that checkpoint. This is not feature
+completion or permission to send messages.
 
 ## Local reader/sender checkpoint
 
@@ -112,3 +112,24 @@ acceptance remain required. The corrected snapshot passes full web type-check
 with the 8 GB allowance, focused lint and formatting. Independent correction
 review found the admission gap closed and no new blocker. Birthday post-merge
 CI run `34487797175` passed all six checks on `b4685b5803`.
+
+## Local promotion wiring checkpoint
+
+The actual promotion branch now calls the producer immediately after creating
+tier history, passing that returned row, the account's program, the existing
+transaction and the generation from its locked operational-store guard. Flow
+events and skipped-tier entry bonuses remain in the same transaction. Maintenance
+and downgrade branches do not call the producer.
+
+All 84 tests across five tier lifecycle/accounting suites pass, along with full
+web type-check and focused lifecycle lint. New caller tests verify fresh-history
+handoff, maintenance replay exclusion and enqueue-error propagation. Four legacy
+accounting-only suites explicitly mock the producer; their existing accounting
+assertions remain intact. Initial failures were missing notification fixture
+data and a test import removed while unused, both corrected without weakening
+production validation. Independent wiring review found no blocker.
+
+Real SQL concurrent promotion, rollback, later opt-in, stale generation,
+downgrade/requalification and retained privacy cleanup remain unverified. The
+merchant readiness UI, combined full regression/build and live acceptance remain
+unfinished; this local wiring is not a published or deployed feature.
