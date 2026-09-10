@@ -107,6 +107,10 @@ proof only.
 - [ ] A4: Reconcile every extension's ownership and generate public-app-specific
       UIDs. Never deploy custom-app identities into the public registration. CLI
       validation can insert a local UID; schema validity is not ownership proof.
+      Partial evidence: [offline staging](public-extension-staging-2026-09-10.md)
+      strips inherited IDs and passes local contracts. A colliding thank-you handle
+      was corrected; ten unique local candidate IDs are disjoint from retained
+      custom IDs. Remote ownership/build evidence is still missing; A4 remains open.
 - [ ] A5: Prove isolated database, Redis, media, sessions, queues and secret
       namespaces, including effective process environment. Never share sessions or
       installation generations with the custom app.

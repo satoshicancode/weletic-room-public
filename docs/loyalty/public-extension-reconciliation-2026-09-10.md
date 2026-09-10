@@ -4,6 +4,10 @@ Read-only source inventory after ADR 0029. No extension UID was generated,
 registered, deployed or reassigned by this audit. The public manifest still has
 `extension_directories = []`; existing local UIDs are not public ownership evidence.
 
+Subsequent [offline staging implementation](public-extension-staging-2026-09-10.md)
+records the local package, tests and a CLI validation result rejected because of a
+custom/public UID collision. The original inventory below remains the target scope.
+
 ## Exact inventory and disposition
 
 All source paths below are relative to `packages/shopify-app/extensions/`.
