@@ -6,6 +6,7 @@ import {
 import { releaseHoldingPeriodGrant } from "@/lib/weletic/loyalty/holding-period";
 import { appendPointsLedgerEntryWithReceipt } from "@/lib/weletic/loyalty/ledger";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
+import { awardSignupWelcomeBonus } from "@/lib/weletic/loyalty/non-purchase-earn";
 import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox-worker";
 import { enqueuePurchasePointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
 import { processWeleticLoyaltyAccountPrivacyScrubStep } from "@/lib/weletic/loyalty/shopper-privacy";
@@ -130,7 +131,7 @@ const policy = {
 const metadata = {
   loyaltyCommunications: { version: 1, sequence: 1, policies: [policy] },
 };
-async function seed() {
+async function seed(source = "purchase_points_available") {
   const id = `communication-${randomUUID()}`;
   fixtures.push(id);
   await prisma.project.create({
@@ -194,13 +195,13 @@ async function seed() {
       payload: {
         version: 1,
         journey: "points_earned",
-        source: "purchase_points_available",
+        source,
         storeId: id,
         programId: id,
         accountId: id,
         installationGeneration: "g1",
         ledgerEntryId: id,
-        orderId: id,
+        ...(source === "purchase_points_available" ? { orderId: id } : {}),
         occurredAt: new Date().toISOString(),
         points: "20",
         ledgerPoints: "20",
@@ -228,10 +229,120 @@ async function seed() {
   };
 }
 
-it.each(["before_completion", "after_completion"] as const)(
-  "erases retained communication evidence when redaction wins %s",
-  async (ordering) => {
-    const { id, args } = await seed();
+async function seedSignup() {
+  const { id } = await seed();
+  // Remove the unrelated synthetic delivery candidate, leaving a fresh account.
+  await prisma.weleticLoyaltyOutboxJob.delete({ where: { id } });
+  return id;
+}
+
+it("commits one signup ledger and communication under concurrent replay", async () => {
+  const id = await seedSignup();
+  const award = () =>
+    awardSignupWelcomeBonus({
+      storeId: id,
+      accountId: id,
+      bonusPoints: BigInt(100),
+    });
+  const entries = await Promise.all([award(), award()]);
+  expect(entries[0]?.id).toBe(entries[1]?.id);
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(1);
+  const jobs = await prisma.weleticLoyaltyOutboxJob.findMany({
+    where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+  });
+  expect(jobs).toHaveLength(1);
+  expect(jobs[0].payload).toMatchObject({
+    source: "signup_points_available",
+    points: "100",
+    ledgerEntryId: entries[0]?.id,
+  });
+  expect(jobs[0].payload).not.toHaveProperty("orderId");
+  expect(
+    (await prisma.weleticLoyaltyAccount.findUniqueOrThrow({ where: { id } }))
+      .cachedPointsBalance,
+  ).toBe(BigInt(100));
+});
+
+it("does not backfill signup communications after later policy opt-in", async () => {
+  const id = await seedSignup();
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: { metadata: {} },
+  });
+  await awardSignupWelcomeBonus({
+    storeId: id,
+    accountId: id,
+    bonusPoints: BigInt(100),
+  });
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: { metadata },
+  });
+  await awardSignupWelcomeBonus({
+    storeId: id,
+    accountId: id,
+    bonusPoints: BigInt(100),
+  });
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({
+      where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+    }),
+  ).toBe(0);
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(1);
+});
+
+it("rolls back the real signup ledger and balance when communication insertion fails", async () => {
+  const id = await seedSignup();
+  await expect(
+    prisma.$transaction(async (tx) => {
+      const failingTx = new Proxy(tx, {
+        get(target, property) {
+          if (property !== "weleticLoyaltyOutboxJob")
+            return Reflect.get(target, property);
+          return new Proxy(target.weleticLoyaltyOutboxJob, {
+            get(delegate, operation) {
+              if (operation !== "create")
+                return Reflect.get(delegate, operation);
+              return async () => {
+                throw new Error("Injected outbox insertion failure");
+              };
+            },
+          });
+        },
+      });
+      await awardSignupWelcomeBonus({
+        storeId: id,
+        accountId: id,
+        bonusPoints: BigInt(100),
+        tx: failingTx,
+      });
+    }),
+  ).rejects.toThrow("Injected outbox insertion failure");
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(0);
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(0);
+  expect(
+    (await prisma.weleticLoyaltyAccount.findUniqueOrThrow({ where: { id } }))
+      .cachedPointsBalance,
+  ).toBe(BigInt(0));
+});
+
+it.each([
+  ["before_completion", "purchase_points_available"],
+  ["after_completion", "purchase_points_available"],
+  ["before_completion", "signup_points_available"],
+  ["after_completion", "signup_points_available"],
+] as const)(
+  "erases retained communication evidence when redaction wins %s for %s",
+  async (ordering, source) => {
+    const { id, args } = await seed(source);
     await prisma.weleticLoyaltyOutboxJob.update({
       where: { id },
       data: {
