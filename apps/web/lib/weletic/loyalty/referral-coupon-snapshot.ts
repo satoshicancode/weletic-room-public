@@ -30,6 +30,7 @@ export const ReferralCouponRewardSnapshotSchema = z
       "free_product",
     ]),
     salesChannel: z.enum(["online_store", "pos", "both"]).optional(),
+    exchangeType: z.enum(["fixed", "incremental"]).optional(),
     purchasePolicy: loyaltyPurchasePolicySchema.optional(),
     discountValue: NullableDecimalStringSchema,
     maxDiscountValue: NullableDecimalStringSchema,
@@ -85,6 +86,9 @@ export function getReferralCouponRewardSnapshotContentDigest(
         snapshot.name,
         snapshot.description,
         snapshot.rewardType,
+        ...(Object.prototype.hasOwnProperty.call(snapshot, "exchangeType")
+          ? [snapshot.exchangeType]
+          : []),
         ...(Object.prototype.hasOwnProperty.call(snapshot, "salesChannel")
           ? [snapshot.salesChannel]
           : []),
@@ -137,6 +141,7 @@ type ReferralCouponRewardDefinition = {
   description: string | null;
   rewardType: unknown;
   salesChannel?: unknown;
+  exchangeType?: unknown;
   purchasePolicy?: unknown;
   discountValue: unknown;
   maxDiscountValue: unknown;
@@ -259,6 +264,12 @@ export function createReferralCouponRewardSnapshot({
       : ReferralCouponRewardSnapshotSchema.shape.salesChannel
           .unwrap()
           .parse(reward.salesChannel);
+  const exchangeType =
+    reward.exchangeType === undefined
+      ? undefined
+      : ReferralCouponRewardSnapshotSchema.shape.exchangeType
+          .unwrap()
+          .parse(reward.exchangeType);
   const appliesToResource = reward.appliesToResource ?? null;
   const appliesToEntireOrder = appliesToResource === "entire_order";
   const normalizedShopCurrency = shopCurrency.trim().toUpperCase();
@@ -271,6 +282,7 @@ export function createReferralCouponRewardSnapshot({
     description: reward.description,
     rewardType,
     ...(salesChannel ? { salesChannel } : {}),
+    ...(exchangeType ? { exchangeType } : {}),
     purchasePolicy: readLoyaltyPurchasePolicy(
       reward.purchasePolicy,
       DEFAULT_REWARD_PURCHASE_POLICY,

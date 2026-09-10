@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { normalizeStoredLoyaltyBranding } from "@/lib/weletic/loyalty/branding";
 import { serializeCustomerEarningRule } from "@/lib/weletic/loyalty/earning-actions";
+import { projectPublicLoyaltyNudges } from "@/lib/weletic/loyalty/nudge-public-projection";
 import {
   loyaltyErrorResponse,
   loyaltySuccessResponse,
@@ -10,6 +11,7 @@ import {
   isRewardAvailableOnSalesChannel,
   listRewardDefinitions,
 } from "@/lib/weletic/loyalty/rewards";
+import { currencyMinorUnits } from "@/lib/weletic/money";
 import {
   readWeleticShopifyRequestBody,
   verifyWeleticShopifyRequest,
@@ -53,7 +55,15 @@ export async function GET(request: Request) {
   const store = resolution.storeId
     ? await prisma.weleticShopifyStore.findUnique({
         where: { id: resolution.storeId },
-        select: { id: true, shopCurrency: true },
+        select: {
+          id: true,
+          shopCurrency: true,
+          storeAccessState: true,
+          complianceState: true,
+          uninstalledAt: true,
+          redactedAt: true,
+          installationGeneration: true,
+        },
       })
     : null;
 
@@ -81,6 +91,7 @@ export async function GET(request: Request) {
             status: true,
             killSwitchActive: true,
             branding: true,
+            metadata: true,
           },
         }),
         prisma.weleticLoyaltyTier.findMany({
@@ -250,7 +261,19 @@ export async function GET(request: Request) {
           }
         : null,
       branding,
+      nudges: projectPublicLoyaltyNudges(
+        program?.metadata,
+        program?.status === "active" &&
+          !program.killSwitchActive &&
+          store.storeAccessState === "active" &&
+          store.complianceState === "active" &&
+          store.uninstalledAt === null &&
+          store.redactedAt === null &&
+          typeof store.installationGeneration === "string" &&
+          store.installationGeneration.length > 0,
+      ),
       currency: store.shopCurrency,
+      currencyMinorUnits: currencyMinorUnits(store.shopCurrency),
       tiers: publicTiers,
       earningRules: earnRules
         .filter(

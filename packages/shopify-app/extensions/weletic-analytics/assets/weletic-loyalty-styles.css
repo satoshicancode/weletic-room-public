@@ -578,3 +578,44 @@
   font-weight: 700;
   color: #15803d;
 }
+/* Non-modal prompt: does not take focus or obstruct the existing launcher. */
+.weletic-nudge {
+  position: fixed;
+  bottom: 100px;
+  z-index: 9998;
+  width: min(320px, calc(100vw - 32px));
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid #dfe3e8;
+  border-radius: 12px;
+  background: #fff;
+  color: #202223;
+  box-shadow: 0 4px 20px #0002;
+  overflow-wrap: anywhere;
+  font-family: system-ui, sans-serif;
+}
+.weletic-nudge.weletic-pos-left {
+  left: 16px;
+}
+.weletic-nudge.weletic-pos-right {
+  right: 16px;
+}
+.weletic-nudge h2 {
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+.weletic-nudge p {
+  white-space: pre-wrap;
+}
+.weletic-nudge button {
+  min-height: 44px;
+  margin: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.weletic-nudge button:focus-visible {
+  outline: 3px solid #005bd3;
+  outline-offset: 2px;
+}
