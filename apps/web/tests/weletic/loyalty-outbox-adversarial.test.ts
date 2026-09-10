@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { retainExpiryDeliveryRequest } from "@/lib/weletic/loyalty/expiry-delivery-snapshot";
 import { syncCustomerMetafields } from "@/lib/weletic/loyalty/metafield-sync";
 import {
   HoldingPeriodReleasePayload,
@@ -9,6 +10,7 @@ import {
   validateOutboxPayload,
 } from "@/lib/weletic/loyalty/outbox";
 import { executeOutboxJob } from "@/lib/weletic/loyalty/outbox-worker";
+import { sendPointsExpiryNotification } from "@/lib/weletic/loyalty/points-expiry-notifications";
 import { auditStoreLedgers } from "@/lib/weletic/loyalty/reconciliation";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import {
@@ -18,7 +20,7 @@ import {
   WeleticLoyaltyOutboxJobStatus,
   WeleticPointsLedgerEntryType,
 } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { migrateLedgerVersions } from "../../scripts/loyalty/migrate-ledger-version";
 
 // ============================================================================
@@ -71,6 +73,9 @@ vi.mock("@/lib/prisma", () => ({
 vi.mock("@/lib/weletic/loyalty/metafield-sync", () => ({
   syncCustomerMetafields: vi.fn(),
 }));
+vi.mock("@/lib/weletic/loyalty/points-expiry-notifications", () => ({
+  sendPointsExpiryNotification: vi.fn(),
+}));
 
 vi.mock("@/lib/weletic/shopify/customer-settlement-lock", () => ({
   withShopifyCustomerSettlementLocks: vi.fn(
@@ -84,6 +89,7 @@ const TEST_ACCOUNT_A = "wlacc_adv_a";
 const TEST_ACCOUNT_B = "wlacc_adv_b";
 
 describe("Milestone 2: Outbox Subsystem Adversarial Stress & Resilience Verification", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(prisma.weleticLoyaltyOutboxJob.findFirst).mockReset();
@@ -317,6 +323,100 @@ describe("Milestone 2: Outbox Subsystem Adversarial Stress & Resilience Verifica
         metafields: [],
       });
     }
+
+    it.each([false, true])(
+      "preserves the encrypted payload in worker completion/retry CAS (failure=%s)",
+      async (fail) => {
+        vi.stubEnv("ENCRYPTION_KEY", "test-only-worker-envelope-key");
+        let row = makeMetafieldJob({
+          jobType: "INACTIVITY_EXPIRY",
+          payload: {
+            accountId: TEST_ACCOUNT_A,
+            stage: "warning",
+            installationGeneration: null,
+          },
+        });
+        vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue({
+          id: TEST_ACCOUNT_A,
+          status: "active",
+          metadata: null,
+          shopper: { shopifyCustomerId: "customer_adversarial" },
+          store: { projectId: "workspace_adversarial" },
+        } as any);
+        mockCandidatePoll([structuredClone(row)]);
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.findFirst).mockImplementation(
+          (async ({ where }: any) => {
+            if (Array.isArray(where?.status?.in)) return structuredClone(row);
+            if (
+              where.lockedBy !== row.lockedBy ||
+              where.attempts !== row.attempts ||
+              JSON.stringify(where.payload?.equals) !==
+                JSON.stringify(row.payload)
+            )
+              return null;
+            return structuredClone(row);
+          }) as any,
+        );
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.updateMany).mockImplementation(
+          (async ({ where, data }: any) => {
+            if (
+              JSON.stringify(where.payload?.equals) !==
+              JSON.stringify(row.payload)
+            )
+              return { count: 0 };
+            if (
+              where.lockedBy !== row.lockedBy ||
+              where.attempts !== row.attempts
+            )
+              return { count: 0 };
+            row = {
+              ...row,
+              ...data,
+              attempts:
+                typeof data.attempts === "object"
+                  ? row.attempts + data.attempts.increment
+                  : data.attempts ?? row.attempts,
+            };
+            return { count: 1 };
+          }) as any,
+        );
+        vi.mocked(sendPointsExpiryNotification).mockImplementationOnce(
+          async ({ deliveryClaim }) => {
+            expect(deliveryClaim).toBeDefined();
+            await retainExpiryDeliveryRequest({
+              claim: deliveryClaim!,
+              accountId: TEST_ACCOUNT_A,
+              expectedInstallationGeneration: null,
+              recipientEmail: "synthetic@example.com",
+              idempotencyKey: `loyalty-expiry-job-${row.id}`,
+              prepare: async () => ({
+                to: "synthetic@example.com",
+                from: "test@example.com",
+                subject: "Saved",
+                html: "<p>Saved</p>",
+              }),
+            });
+            expect(row.payload).toHaveProperty("expiryDeliverySnapshot");
+            if (fail) throw new Error("Synthetic ambiguous provider response");
+            return "sent";
+          },
+        );
+        const result = await processOutboxJobsBatch({
+          batchSize: 1,
+          workerId: "snapshot-worker",
+          now: fixedNow,
+        });
+        expect(result).toMatchObject({
+          processed: 1,
+          succeeded: fail ? 0 : 1,
+          failed: fail ? 1 : 0,
+          skipped: 0,
+        });
+        expect(row.status).toBe(fail ? "failed" : "completed");
+        expect(row.payload).toHaveProperty("expiryDeliverySnapshot");
+        expect(row.lockedBy).toBeNull();
+      },
+    );
 
     it("holds the customer settlement lock across the remote metafield mutation", async () => {
       let lockHeld = false;

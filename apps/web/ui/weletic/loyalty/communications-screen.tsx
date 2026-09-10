@@ -42,6 +42,9 @@ export function CommunicationsScreen({
   const [mobile, setMobile] = useState(true);
   const epoch = useRef(0);
   const copy = communicationsCopy[locale];
+  const connected =
+    state?.deliveryIntegration === "expiry_policies" &&
+    (journey === "points_warning" || journey === "points_last_chance");
   React.useEffect(() => {
     onNavigationStateChange?.({ dirty, locale });
   }, [dirty, locale, onNavigationStateChange]);
@@ -187,10 +190,12 @@ export function CommunicationsScreen({
           {languageOptions}
         </select>
       </label>
-      <p>{copy.disconnected}</p>
+      <p>{connected ? copy.expiryConnected : copy.disconnected}</p>
       {busy && <p role="status">{copy.loading}</p>}
       {message && (
-        <p role={message === "saved" ? "status" : "alert"}>{copy[message]}</p>
+        <p role={message === "saved" ? "status" : "alert"}>
+          {message === "saved" && connected ? copy.expirySaved : copy[message]}
+        </p>
       )}
       {state && !state.capabilities.configure && <p>{copy.readonly}</p>}
       <button type="button" disabled={busy} onClick={() => void reload()}>
@@ -254,7 +259,7 @@ export function CommunicationsScreen({
                     setMessage(null);
                   }}
                 />
-                {copy.enabled}
+                {connected ? copy.expiryEnabled : copy.enabled}
               </label>
               {(["subject", "heading", "body", "actionLabel"] as const).map(
                 (field) => (
