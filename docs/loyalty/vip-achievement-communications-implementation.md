@@ -162,3 +162,22 @@ The schema clone uses `CREATE TABLE LIKE` and is not foreign-key acceptance.
 The worker email handler and Redis mutex remain synthetic. VIP retained-request
 SQL interleavings, downgrade/requalification, privacy scrub, shared editor,
 complete regression/build and named live evidence remain outstanding.
+
+## SQL downgrade/requalification checkpoint
+
+The suite now passes 31 SQL tests. Two new cases exercise both an unprepared
+notice and an encrypted retained notice through the real promotion, grace,
+downgrade and re-promotion paths. Once downgraded, the old notice is rejected at
+retention admission. Reaching the same target tier later does not revive it:
+history sequences are 1/2/3, two promotions create distinct notification keys,
+and each genuine promotion has its own tier-entry bonus.
+
+The test clock and synthetic order timestamp model a later qualifying period;
+no Shopify order is created. The initial zero-day grace fixture failed the
+existing scheduled-job contract. The corrected fixture uses one day and advances
+to expiry, without changing production policies. All 12 fixture tables again
+reconcile to zero and temporary access is revoked.
+
+These cases prove transition-first admission and retry suppression, not a forced
+concurrent lock-wait schedule or provider-delivery atomicity. VIP privacy cleanup
+and the remaining UI/release gates are still open.

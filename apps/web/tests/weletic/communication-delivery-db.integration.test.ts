@@ -600,6 +600,94 @@ it("does not announce an old VIP promotion after later policy opt-in", async () 
     }),
   ).toBe(0);
 });
+it.each([false, true])(
+  "invalidates superseded VIP delivery and creates a new requalification identity (retained=%s)",
+  async (retained) => {
+    const id = await seedVip();
+    await evaluateTierMaintenanceCycle(vipEvaluation(id));
+    const original = await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+      where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+    });
+    const now = new Date();
+    const candidate = await prisma.weleticLoyaltyOutboxJob.update({
+      where: { id: original.id },
+      data: {
+        status: "processing",
+        lockedBy: "vip-fixture-owner",
+        lockedAt: now,
+        attempts: 1,
+      },
+    });
+    const args = {
+      claim: {
+        candidate,
+        ownerToken: "vip-fixture-owner",
+        claimedAt: now,
+        attempt: 1,
+      },
+      accountId: id,
+      expectedInstallationGeneration: "g1",
+      recipientEmail: request.to,
+      prepare: vi.fn().mockResolvedValue(request),
+      wallClockNow: now,
+    };
+    if (retained) await retainCommunicationDeliveryRequest(args);
+    const annual = {
+      ...vipEvaluation(id),
+      reviewPeriod: "ROLLING_12M" as const,
+      gracePeriodDays: 1,
+      now: new Date("2027-09-15T00:00:00Z"),
+    };
+    expect((await evaluateTierMaintenanceCycle(annual)).status).toBe(
+      "IN_GRACE_PERIOD",
+    );
+    annual.now = new Date("2027-09-16T00:00:00Z");
+    expect((await evaluateTierMaintenanceCycle(annual)).status).toBe("DEMOTED");
+    args.prepare.mockClear();
+    await expect(retainCommunicationDeliveryRequest(args)).rejects.toThrow(
+      "no longer eligible",
+    );
+    expect(args.prepare).not.toHaveBeenCalled();
+    // Advance the synthetic order into the new review window, then exercise the
+    // real qualification path. No Shopify transaction is created.
+    await prisma.weleticCommerceOrder.update({
+      where: { id },
+      data: { occurredAt: new Date("2027-09-14T00:00:00Z") },
+    });
+    expect((await evaluateTierMaintenanceCycle(annual)).status).toBe(
+      "PROMOTED",
+    );
+    // Same target tier, different history: the earlier message stays obsolete.
+    await expect(retainCommunicationDeliveryRequest(args)).rejects.toThrow(
+      "no longer eligible",
+    );
+    expect(args.prepare).not.toHaveBeenCalled();
+    const histories = await prisma.weleticLoyaltyTierHistory.findMany({
+      where: { accountId: id },
+      orderBy: { sequenceNumber: "asc" },
+    });
+    expect(histories.map((row) => row.changeReason)).toEqual([
+      "threshold_reached",
+      "annual_downgrade",
+      "threshold_reached",
+    ]);
+    expect(histories.map((row) => row.sequenceNumber)).toEqual([1, 2, 3]);
+    const notices = await prisma.weleticLoyaltyOutboxJob.findMany({
+      where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+    });
+    expect(notices).toHaveLength(2);
+    expect(new Set(notices.map((row) => row.idempotencyKey)).size).toBe(2);
+    expect(
+      notices.find((row) => row.id !== original.id)?.payload,
+    ).toMatchObject({ tierHistoryId: histories[2].id, sequenceNumber: 3 });
+    expect(
+      await prisma.weleticPointsLedgerEntry.count({
+        where: { storeId: id, entryType: "TIER_BONUS" },
+      }),
+    ).toBe(2);
+  },
+);
+
 it("rejects stale-generation VIP evaluation before promotion", async () => {
   const id = await seedVip();
   await prisma.weleticShopifyStore.update({
