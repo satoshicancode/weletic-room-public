@@ -4,6 +4,10 @@ Implements the packaging step of the
 [extension reconciliation inventory](public-extension-reconciliation-2026-09-10.md).
 This is not ownership, deployment, live shopper or Flow acceptance evidence.
 
+Subsequent [build evidence](public-extension-build-2026-09-10.md) records successful
+UI/theme builds, stable local candidate IDs and the public product-points initial
+display correction. It supersedes the bundle-build gap in this historical receipt.
+
 ## Implemented
 
 `infra/shopify-development/stage-public-extensions.mjs` builds a 34-file package

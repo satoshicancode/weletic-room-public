@@ -164,6 +164,13 @@ export function transformPublicExtension(path, source) {
     data.settings = data.settings.slice(4);
     text = replaceOnce(text, schema[1], JSON.stringify(data, null, 2));
   }
+  if (path === "weletic-analytics/blocks/product-points-preview.liquid") {
+    text = replaceOnce(
+      text,
+      "        {% assign points_ratio = 1 %}\n        {% assign current_price_units = product.selected_or_first_available_variant.price | divided_by: 100 %}\n        {{ current_price_units | times: points_ratio }}",
+      "        —",
+    );
+  }
   return text;
 }
 

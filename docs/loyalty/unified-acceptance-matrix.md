@@ -110,7 +110,8 @@ proof only.
       Partial evidence: [offline staging](public-extension-staging-2026-09-10.md)
       strips inherited IDs and passes local contracts. A colliding thank-you handle
       was corrected; ten unique local candidate IDs are disjoint from retained
-      custom IDs. Remote ownership/build evidence is still missing; A4 remains open.
+      custom IDs. [UI/theme builds](public-extension-build-2026-09-10.md) pass and
+      preserve those candidates. Remote ownership evidence is missing; A4 remains open.
 - [ ] A5: Prove isolated database, Redis, media, sessions, queues and secret
       namespaces, including effective process environment. Never share sessions or
       installation generations with the custom app.
