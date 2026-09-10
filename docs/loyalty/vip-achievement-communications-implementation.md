@@ -133,3 +133,32 @@ Real SQL concurrent promotion, rollback, later opt-in, stale generation,
 downgrade/requalification and retained privacy cleanup remain unverified. The
 merchant readiness UI, combined full regression/build and live acceptance remain
 unfinished; this local wiring is not a published or deployed feature.
+
+## Isolated SQL checkpoint
+
+The communication integration suite passes 29 tests in
+`weletic_loyalty_it_communications_vip_20260910a` on the approved loopback MySQL
+instance. This is a fresh schema-only fixture, not an installation or live order.
+The real VIP transaction is exercised against a synthetic paid commerce order:
+
+- Concurrent evaluations produce one promotion history, one notice and one
+  100-point tier-entry bonus; the other evaluation maintains the tier.
+- Notification insertion failure rolls back placement/history and prevents later
+  bonus writes. A second failure at metafield-job insertion first observes the
+  inserted bonus, notice and 100-point balance inside the transaction, then
+  verifies that rollback removes all of them and restores the starting tier.
+- Later policy opt-in does not backfill an old promotion.
+- A stale installation generation fails before history or outbox writes.
+
+All 12 independently checked fixture tables reconcile to zero, including tiers
+and history. Temporary DML access is revoked. The first 28-case run also passed;
+the 29th case resolves review's distinction between preventing a bonus write and
+rolling back an already-inserted bonus. The expanded snapshot passes full web
+type-check and focused lint. Independent follow-up review found the late-failure
+test supports the stronger rollback claim, with no defect found.
+
+Concurrency calls overlap but do not force a particular lock-wait schedule.
+The schema clone uses `CREATE TABLE LIKE` and is not foreign-key acceptance.
+The worker email handler and Redis mutex remain synthetic. VIP retained-request
+SQL interleavings, downgrade/requalification, privacy scrub, shared editor,
+complete regression/build and named live evidence remain outstanding.

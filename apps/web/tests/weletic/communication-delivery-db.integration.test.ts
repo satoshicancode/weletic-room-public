@@ -13,6 +13,7 @@ import {
 import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox-worker";
 import { enqueuePurchasePointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
 import { processWeleticLoyaltyAccountPrivacyScrubStep } from "@/lib/weletic/loyalty/shopper-privacy";
+import { evaluateTierMaintenanceCycle } from "@/lib/weletic/loyalty/tier-lifecycle";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
@@ -76,7 +77,13 @@ afterAll(async () => {
       where: { orderId: { in: fixtures } },
     });
     await prisma.weleticCommerceOrder.deleteMany({ where: scope });
+    await prisma.weleticLoyaltyTierHistory.deleteMany({
+      where: { accountId: { in: fixtures } },
+    });
     await prisma.weleticLoyaltyAccount.deleteMany({ where: scope });
+    await prisma.weleticLoyaltyTier.deleteMany({
+      where: { programId: { in: fixtures } },
+    });
     await prisma.weleticShopper.deleteMany({ where: scope });
     await prisma.weleticMerchantSettings.deleteMany({ where: scope });
     await prisma.weleticLoyaltyProgram.deleteMany({ where: scope });
@@ -103,6 +110,8 @@ afterAll(async () => {
       "WeleticLoyaltyAccount",
       "WeleticLoyaltyOutboxJob",
       "WeleticMerchantSettings",
+      "WeleticLoyaltyTier",
+      "WeleticLoyaltyTierHistory",
     ]) {
       const rows = await prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
         `SELECT COUNT(*) AS count FROM ${table}`,
@@ -374,6 +383,238 @@ it("rolls back the real birthday ledger and account when notification insertion 
     (await prisma.weleticLoyaltyAccount.findUniqueOrThrow({ where: { id } }))
       .cachedPointsBalance,
   ).toBe(BigInt(0));
+});
+
+async function seedVip(enabled = true) {
+  const { id } = await seed();
+  await prisma.weleticLoyaltyOutboxJob.delete({ where: { id } });
+  const template = {
+    subject: "VIP {{tier_name}}",
+    heading: "VIP",
+    body: "Welcome",
+    actionLabel: "View",
+  };
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: {
+      vipTimeframe: "lifetime",
+      vipMilestoneMode: "amount_spent",
+      metadata: {
+        loyaltyCommunications: {
+          version: 1,
+          sequence: 1,
+          policies: [
+            {
+              journey: "vip_achieved",
+              enabled,
+              templates: { en: template, ja: template, vi: template },
+            },
+          ],
+        },
+      },
+    },
+  });
+  await prisma.weleticLoyaltyTier.createMany({
+    data: [
+      {
+        id: `${id}-bronze`,
+        programId: id,
+        name: "Bronze",
+        slug: "bronze",
+        tierOrder: 1,
+      },
+      {
+        id: `${id}-gold`,
+        programId: id,
+        name: "Gold",
+        slug: "gold",
+        tierOrder: 2,
+        minSpendThreshold: BigInt(5000),
+        entryBonusPoints: BigInt(100),
+      },
+    ],
+  });
+  await prisma.weleticLoyaltyAccount.update({
+    where: { id },
+    data: { currentTierId: `${id}-bronze` },
+  });
+  const amount = BigInt(10000);
+  await prisma.weleticCommerceOrder.create({
+    data: {
+      id,
+      storeId: id,
+      programId: id,
+      shopperId: id,
+      externalId: id,
+      status: "paid",
+      presentmentCurrency: "JPY",
+      presentmentSubtotal: amount,
+      presentmentNet: amount,
+      presentmentTotal: amount,
+      shopCurrency: "JPY",
+      shopSubtotal: amount,
+      shopNet: amount,
+      shopTotal: amount,
+      accountingCurrency: "JPY",
+      accountingNet: amount,
+      accountingTotal: amount,
+      accountingFxRate: 1,
+      occurredAt: new Date("2026-09-01T00:00:00Z"),
+    },
+  });
+  return id;
+}
+const vipEvaluation = (id: string) => ({
+  storeId: id,
+  accountId: id,
+  expectedInstallationGeneration: "g1",
+  now: new Date("2026-09-10T00:00:00Z"),
+});
+it("commits one VIP promotion, entry bonus and notice under concurrent evaluation", async () => {
+  const id = await seedVip();
+  const results = await Promise.all([
+    evaluateTierMaintenanceCycle(vipEvaluation(id)),
+    evaluateTierMaintenanceCycle(vipEvaluation(id)),
+  ]);
+  expect(results.map((result) => result.status).sort()).toEqual([
+    "MAINTAINED",
+    "PROMOTED",
+  ]);
+  const histories = await prisma.weleticLoyaltyTierHistory.findMany({
+    where: { accountId: id },
+  });
+  expect(histories).toHaveLength(1);
+  const notices = await prisma.weleticLoyaltyOutboxJob.findMany({
+    where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+  });
+  expect(notices).toHaveLength(1);
+  expect(notices[0].payload).toMatchObject({
+    journey: "vip_achieved",
+    tierHistoryId: histories[0].id,
+    sequenceNumber: 1,
+  });
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({
+      where: { storeId: id, entryType: "TIER_BONUS" },
+    }),
+  ).toBe(1);
+  expect(
+    (await prisma.weleticLoyaltyAccount.findUniqueOrThrow({ where: { id } }))
+      .cachedPointsBalance,
+  ).toBe(BigInt(100));
+});
+it.each(["notification", "post_bonus"])(
+  "contains all VIP writes when %s insertion fails",
+  async (phase) => {
+    const id = await seedVip();
+    await expect(
+      prisma.$transaction(async (tx) => {
+        const failingTx = new Proxy(tx, {
+          get(target, property) {
+            if (property !== "weleticLoyaltyOutboxJob")
+              return Reflect.get(target, property);
+            return new Proxy(target.weleticLoyaltyOutboxJob, {
+              get(delegate, operation) {
+                if (operation !== "create")
+                  return Reflect.get(delegate, operation);
+                return async (
+                  args: Prisma.WeleticLoyaltyOutboxJobCreateArgs,
+                ) => {
+                  if (phase === "post_bonus") {
+                    if (args.data.jobType !== "METAFIELD_SYNC")
+                      return delegate.create(args);
+                    expect(
+                      await tx.weleticPointsLedgerEntry.count({
+                        where: { storeId: id, entryType: "TIER_BONUS" },
+                      }),
+                    ).toBe(1);
+                    expect(
+                      await tx.weleticLoyaltyOutboxJob.count({
+                        where: {
+                          storeId: id,
+                          jobType: "LOYALTY_COMMUNICATION",
+                        },
+                      }),
+                    ).toBe(1);
+                    expect(
+                      (
+                        await tx.weleticLoyaltyAccount.findUniqueOrThrow({
+                          where: { id },
+                        })
+                      ).cachedPointsBalance,
+                    ).toBe(BigInt(100));
+                  }
+                  throw new Error("Injected VIP outbox failure");
+                };
+              },
+            });
+          },
+        });
+        await evaluateTierMaintenanceCycle({
+          ...vipEvaluation(id),
+          tx: failingTx,
+        });
+      }),
+    ).rejects.toThrow("Injected VIP outbox failure");
+    expect(
+      await prisma.weleticLoyaltyTierHistory.count({
+        where: { accountId: id },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+    ).toBe(0);
+    expect(
+      await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+    ).toBe(0);
+    expect(
+      await prisma.weleticLoyaltyAccount.findUniqueOrThrow({ where: { id } }),
+    ).toMatchObject({
+      currentTierId: `${id}-bronze`,
+      cachedPointsBalance: BigInt(0),
+    });
+  },
+);
+it("does not announce an old VIP promotion after later policy opt-in", async () => {
+  const id = await seedVip(false);
+  expect((await evaluateTierMaintenanceCycle(vipEvaluation(id))).status).toBe(
+    "PROMOTED",
+  );
+  const program = await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
+    where: { id },
+  });
+  const metadata = program.metadata as {
+    loyaltyCommunications: { policies: { enabled: boolean }[] };
+  };
+  metadata.loyaltyCommunications.policies[0].enabled = true;
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: { metadata },
+  });
+  expect((await evaluateTierMaintenanceCycle(vipEvaluation(id))).status).toBe(
+    "MAINTAINED",
+  );
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({
+      where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
+    }),
+  ).toBe(0);
+});
+it("rejects stale-generation VIP evaluation before promotion", async () => {
+  const id = await seedVip();
+  await prisma.weleticShopifyStore.update({
+    where: { id },
+    data: { installationGeneration: "g2" },
+  });
+  await expect(
+    evaluateTierMaintenanceCycle(vipEvaluation(id)),
+  ).rejects.toThrow();
+  expect(
+    await prisma.weleticLoyaltyTierHistory.count({ where: { accountId: id } }),
+  ).toBe(0);
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(0);
 });
 
 async function seedSignup() {
