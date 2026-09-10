@@ -57,12 +57,10 @@ async function submit() {
 it.each(["en", "ja", "vi"])(
   "reports purchase-only readiness without enabling other journeys in %s",
   async (locale) => {
-    const request = vi
-      .fn()
-      .mockResolvedValue({
-        ...response,
-        deliveryIntegration: "purchase_and_expiry_policies",
-      });
+    const request = vi.fn().mockResolvedValue({
+      ...response,
+      deliveryIntegration: "purchase_and_expiry_policies",
+    });
     await act(async () =>
       root.render(createElement(CommunicationsScreen, { request })),
     );
