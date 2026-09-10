@@ -42,9 +42,13 @@ export function CommunicationsScreen({
   const [mobile, setMobile] = useState(true);
   const epoch = useRef(0);
   const copy = communicationsCopy[locale];
-  const birthdayIntegration =
+  const vipIntegration =
     state?.deliveryIntegration ===
-    "purchase_signup_birthday_and_expiry_policies";
+    "purchase_signup_birthday_vip_and_expiry_policies";
+  const birthdayIntegration =
+    vipIntegration ||
+    state?.deliveryIntegration ===
+      "purchase_signup_birthday_and_expiry_policies";
   const birthdayConnected = birthdayIntegration && journey === "birthday";
   const signupConnected =
     (birthdayIntegration ||
@@ -59,33 +63,40 @@ export function CommunicationsScreen({
       state?.deliveryIntegration === "purchase_and_expiry_policies" ||
       state?.deliveryIntegration === "purchase_signup_and_expiry_policies") &&
     (journey === "points_warning" || journey === "points_last_chance");
-  const connectedCopy = birthdayConnected
-    ? {
-        description: copy.birthdayConnected,
-        saved: copy.birthdaySaved,
-        enabled: copy.birthdayEnabled,
-      }
-    : signupConnected
+  const connectedCopy =
+    vipIntegration && journey === "vip_achieved"
       ? {
-          description: birthdayIntegration
-            ? copy.signupWithBirthdayConnected
-            : copy.signupConnected,
-          saved: copy.signupSaved,
-          enabled: copy.signupEnabled,
+          description: copy.vipConnected,
+          saved: copy.vipSaved,
+          enabled: copy.vipEnabled,
         }
-      : purchaseConnected
+      : birthdayConnected
         ? {
-            description: copy.purchaseConnected,
-            saved: copy.purchaseSaved,
-            enabled: copy.purchaseEnabled,
+            description: copy.birthdayConnected,
+            saved: copy.birthdaySaved,
+            enabled: copy.birthdayEnabled,
           }
-        : expiryConnected
+        : signupConnected
           ? {
-              description: copy.expiryConnected,
-              saved: copy.expirySaved,
-              enabled: copy.expiryEnabled,
+              description: birthdayIntegration
+                ? copy.signupWithBirthdayConnected
+                : copy.signupConnected,
+              saved: copy.signupSaved,
+              enabled: copy.signupEnabled,
             }
-          : null;
+          : purchaseConnected
+            ? {
+                description: copy.purchaseConnected,
+                saved: copy.purchaseSaved,
+                enabled: copy.purchaseEnabled,
+              }
+            : expiryConnected
+              ? {
+                  description: copy.expiryConnected,
+                  saved: copy.expirySaved,
+                  enabled: copy.expiryEnabled,
+                }
+              : null;
   React.useEffect(() => {
     onNavigationStateChange?.({ dirty, locale });
   }, [dirty, locale, onNavigationStateChange]);

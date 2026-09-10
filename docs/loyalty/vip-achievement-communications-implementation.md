@@ -199,3 +199,24 @@ This exercises the account-closure/outbox-scrub phase, not the full Shopify priv
 webhook lifecycle. The sender and Redis mutex remain mocked; no actual provider
 send occurred. Merchant readiness/UI, forced SQL lock-wait coverage, combined
 regression/build, CI and live acceptance remain outstanding.
+
+## Merchant readiness checkpoint
+
+The signed merchant response adds
+`purchase_signup_birthday_vip_and_expiry_policies`. Older response values retain
+their original meaning, including birthday-only responses leaving VIP
+disconnected. The shared EN/JA/VI editor exposes separate VIP description,
+enablement and save feedback, with new policies disabled by default. Saving does
+not send email; unrelated reward/referral journeys remain disconnected.
+
+All 21 editor tests and 33 communications contract/client/action tests pass,
+along with full web type-check and focused lint. The initial focused command
+named a nonexistent contract-test filename and ran only the editor suite; the
+correct three contract/client/action files were then run explicitly. The combined
+full-web regression is running; actual browser acceptance is not yet performed
+for this VIP editor snapshot.
+
+Strict merchant response readers must be upgraded before the backend emits the
+new value, or rolled out together. Strict worker/event readers must likewise
+precede promotion-producing processes. No schema, public API, provider, scope,
+authentication, billing or deployment change is part of this branch.
