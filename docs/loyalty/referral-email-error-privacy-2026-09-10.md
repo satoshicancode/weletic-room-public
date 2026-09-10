@@ -32,8 +32,9 @@ own scoped audit and authorization.
   checks passed. Independent review found no actionable source issues.
 - Full unit regression passed: 5,677 tests passed, six skipped, 368 files, in
   593.35 seconds. The production build passed with exit code zero. These runs
-  used public base `98ec37645c`, before expiry PR #17 merged; post-rebase
-  verification is required before publication. The build used the empty isolated test
+  used public base `98ec37645c`, before expiry PR #17 merged. After rebasing onto
+  `b54bc81108`, all 115 tests across seven referral/expiry/outbox suites passed,
+  and web typechecking passed. Public CI must verify the final branch. The build used the empty isolated test
   database on `127.0.0.1:3307`, temporary SELECT-only access, and no email-provider
   credentials. Its wrapper revoked the temporary grant on exit.
 
