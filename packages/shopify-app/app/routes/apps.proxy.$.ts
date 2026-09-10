@@ -30,6 +30,7 @@ const APP_PROXY_GET_PATHS = new Set([
   "program",
   "customer",
   "customer/activity",
+  "customer/nudge-collections",
 ]);
 const APP_PROXY_ACTION_PATHS = new Set([
   "customer/redeem",
@@ -76,6 +77,41 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     );
   }
 
+  if (subpath === "customer/nudge-collections") {
+    if (
+      !customerId ||
+      !/^[1-9]\d{0,19}$/.test(customerId) ||
+      (session?.shop && session.shop !== shop)
+    )
+      return privateCustomerJson(
+        {
+          error: {
+            code: "unauthorized",
+            message: "Customer authentication required",
+          },
+        },
+        { status: 401 },
+        "Cookie",
+      );
+    const values = url.searchParams.getAll("productIds");
+    if (
+      values.length !== 1 ||
+      values[0].length > 1049 ||
+      values[0].split(",").length > 50 ||
+      values[0].split(",").some((id) => !/^[1-9]\d{0,19}$/.test(id))
+    )
+      return privateCustomerJson(
+        {
+          error: {
+            code: "bad_request",
+            message: "Invalid product identifiers",
+          },
+        },
+        { status: 400 },
+        "Cookie",
+      );
+  }
+
   try {
     // 2. Build internal API target path
     const searchParams = new URLSearchParams();
@@ -86,7 +122,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     if (subpath === "customer") {
       searchParams.set("redemptionChannel", "online_store");
     }
-    const forwardableKeys = ["type", "page", "limit", "redemptionChannel"];
+    const forwardableKeys =
+      subpath === "customer/nudge-collections"
+        ? ["productIds"]
+        : ["type", "page", "limit", "redemptionChannel"];
     for (const key of forwardableKeys) {
       const val = url.searchParams.get(key);
       if (val !== null && val !== "") {
@@ -102,11 +141,24 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
 
     const isPrivateCustomerPath =
-      subpath === "customer" || subpath === "customer/activity";
+      subpath === "customer" ||
+      subpath === "customer/activity" ||
+      subpath === "customer/nudge-collections";
     return isPrivateCustomerPath
       ? privateCustomerJson(result, {}, "Cookie")
       : json(result);
   } catch (error: any) {
+    if (subpath === "customer/nudge-collections")
+      return privateCustomerJson(
+        {
+          error: {
+            code: "unavailable",
+            message: "Membership lookup unavailable",
+          },
+        },
+        { status: 503 },
+        "Cookie",
+      );
     console.error("[Shopify App Proxy Loader Error]", error);
     const status = error.status || 500;
     const isPrivateCustomerPath =
