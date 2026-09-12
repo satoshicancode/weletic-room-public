@@ -13,6 +13,97 @@
   // Only interface copy is translated here. Merchant-authored names and branding
   // remain unchanged; no customer data or executable templates enter this map.
   var CORE_COPY = {
+    "Refer friends": ["友達を紹介する", "Giới thiệu bạn bè"],
+    "Sign in to get your personal referral link.": [
+      "ログインして専用の紹介リンクを取得してください。",
+      "Đăng nhập để nhận liên kết giới thiệu riêng của bạn.",
+    ],
+    "Join rewards to refer friends.": [
+      "特典プログラムに参加して友達を紹介しましょう。",
+      "Tham gia chương trình phần thưởng để giới thiệu bạn bè.",
+    ],
+    "Your signed-in account is not enrolled yet.": [
+      "ログイン中のアカウントはまだ参加していません。",
+      "Tài khoản đã đăng nhập của bạn chưa tham gia chương trình.",
+    ],
+    "Refer Friends, Earn Rewards": [
+      "友達を紹介して特典を獲得",
+      "Giới thiệu bạn bè, nhận phần thưởng",
+    ],
+    "Give your friend {friendBenefit} on their first qualifying order. Earn {advocateBenefit} when that order qualifies.":
+      [
+        "友達の初回対象注文で{friendBenefit}を贈れます。その注文が条件を満たすと、あなたは{advocateBenefit}を獲得できます。",
+        "Tặng bạn bè {friendBenefit} cho đơn hàng đầu tiên đủ điều kiện. Bạn nhận {advocateBenefit} khi đơn hàng đó đáp ứng điều kiện.",
+      ],
+    "Copy Referral Link": [
+      "紹介リンクをコピー",
+      "Sao chép liên kết giới thiệu",
+    ],
+    "Copied to Clipboard!": ["コピーしました！", "Đã sao chép!"],
+    "Your referral link is not available yet.": [
+      "紹介リンクはまだご利用いただけません。",
+      "Liên kết giới thiệu của bạn chưa khả dụng.",
+    ],
+    "Please try again later.": [
+      "後でもう一度お試しください。",
+      "Vui lòng thử lại sau.",
+    ],
+    "You were invited": ["友達からの招待", "Bạn được mời"],
+    "This referral offer is not currently available.": [
+      "現在、この紹介特典はご利用いただけません。",
+      "Ưu đãi giới thiệu hiện không khả dụng.",
+    ],
+    "Create an account with the email you use at checkout and complete your first qualifying order to receive {benefit}.":
+      [
+        "お支払い時と同じメールアドレスでアカウントを作成し、初回対象注文を完了すると{benefit}を獲得できます。",
+        "Tạo tài khoản bằng email dùng khi thanh toán và hoàn tất đơn hàng đầu tiên đủ điều kiện để nhận {benefit}.",
+      ],
+    "Create account": ["アカウントを作成", "Tạo tài khoản"],
+    "Sign in": ["ログイン", "Đăng nhập"],
+    "Your reward is ready": [
+      "特典をご利用いただけます",
+      "Phần thưởng đã sẵn sàng",
+    ],
+    "Use this one-time code on your first order. You do not need to create an account.":
+      [
+        "初回注文でこの一回限りのコードをご利用ください。アカウントの作成は不要です。",
+        "Dùng mã một lần này cho đơn hàng đầu tiên. Bạn không cần tạo tài khoản.",
+      ],
+    "Apply reward": ["特典を適用", "Áp dụng phần thưởng"],
+    "We also emailed the code to you.": [
+      "コードをメールでもお送りしました。",
+      "Chúng tôi cũng đã gửi mã qua email cho bạn.",
+    ],
+    "Save this code now; email delivery is temporarily unavailable.": [
+      "メールを一時的に送信できないため、このコードを保存してください。",
+      "Hãy lưu mã ngay; tính năng gửi email tạm thời không khả dụng.",
+    ],
+    "Claim received": ["お申し込みを受け付けました", "Đã nhận yêu cầu"],
+    "This invitation needs a quick eligibility review. No coupon was issued yet.":
+      [
+        "この招待は利用条件の確認が必要です。クーポンはまだ発行されていません。",
+        "Lời mời cần được kiểm tra điều kiện. Chưa có mã ưu đãi nào được phát hành.",
+      ],
+    "A friend sent you a reward": [
+      "友達から特典が届きました",
+      "Bạn bè đã gửi phần thưởng cho bạn",
+    ],
+    "Enter the email you will use at checkout to receive {benefit}.": [
+      "お支払い時に使用するメールアドレスを入力して、{benefit}をお受け取りください。",
+      "Nhập email bạn sẽ dùng khi thanh toán để nhận {benefit}.",
+    ],
+    "your welcome reward": ["初回特典", "phần thưởng chào mừng"],
+    "Email address": ["メールアドレス", "Địa chỉ email"],
+    "Claiming reward…": ["特典を取得中…", "Đang nhận phần thưởng…"],
+    "Claim my reward": ["特典を受け取る", "Nhận phần thưởng"],
+    "New customers only. The code is unique and can be used once.": [
+      "新規のお客様限定です。専用コードは一回のみご利用いただけます。",
+      "Chỉ dành cho khách hàng mới. Mã riêng chỉ dùng được một lần.",
+    ],
+    "Unable to claim this reward.": [
+      "この特典を取得できませんでした。",
+      "Không thể nhận phần thưởng này.",
+    ],
     "Your balance may be out of date. Refresh it before retrying a redemption.":
       [
         "残高が最新でない可能性があります。交換を再試行する前に残高を更新してください。",
@@ -1555,7 +1646,8 @@
           return response.json().then(function (payload) {
             if (!response.ok) {
               throw new Error(
-                payload?.error?.message || "Unable to claim this reward.",
+                payload?.error?.message ||
+                  translate("Unable to claim this reward."),
               );
             }
             return payload?.data || payload;
@@ -1569,7 +1661,7 @@
           if (destroyed) return;
           state.friendClaim = {
             status: "error",
-            message: error.message || "Unable to claim this reward.",
+            message: error.message || translate("Unable to claim this reward."),
           };
         })
         .finally(function () {
@@ -1666,8 +1758,12 @@
       if (!offer) {
         return (
           '<div class="weletic-guest-box">' +
-          '<h4 class="weletic-guest-title">You were invited</h4>' +
-          '<p class="weletic-guest-desc">This referral offer is not currently available.</p>' +
+          '<h4 class="weletic-guest-title">' +
+          translate("You were invited") +
+          "</h4>" +
+          '<p class="weletic-guest-desc">' +
+          translate("This referral offer is not currently available.") +
+          "</p>" +
           "</div>"
         );
       }
@@ -1680,24 +1776,41 @@
         );
         return (
           '<div class="weletic-guest-box">' +
-          '<h4 class="weletic-guest-title">You were invited</h4>' +
-          '<p class="weletic-guest-desc">Create an account with the email you use at checkout and complete your first qualifying order to receive ' +
-          escapeHtml(friendPointsBenefit) +
-          ".</p>" +
+          '<h4 class="weletic-guest-title">' +
+          translate("You were invited") +
+          "</h4>" +
+          '<p class="weletic-guest-desc">' +
+          escapeHtml(
+            translate(
+              "Create an account with the email you use at checkout and complete your first qualifying order to receive {benefit}.",
+              { benefit: friendPointsBenefit },
+            ),
+          ) +
+          "</p>" +
           '<a href="' +
           escapeHtml(registerUrl) +
-          '" class="weletic-btn-primary">Create account</a>' +
+          '" class="weletic-btn-primary">' +
+          translate("Create account") +
+          "</a>" +
           '<a href="' +
           escapeHtml(loginUrl) +
-          '" class="weletic-btn-secondary">Sign in</a>' +
+          '" class="weletic-btn-secondary">' +
+          translate("Sign in") +
+          "</a>" +
           "</div>"
         );
       }
       if (state.friendClaim?.status === "claimed") {
         return (
           '<div class="weletic-guest-box">' +
-          '<h4 class="weletic-guest-title">Your reward is ready</h4>' +
-          '<p class="weletic-guest-desc">Use this one-time code on your first order. You do not need to create an account.</p>' +
+          '<h4 class="weletic-guest-title">' +
+          translate("Your reward is ready") +
+          "</h4>" +
+          '<p class="weletic-guest-desc">' +
+          translate(
+            "Use this one-time code on your first order. You do not need to create an account.",
+          ) +
+          "</p>" +
           '<div class="weletic-wallet-code">' +
           escapeHtml(state.friendClaim.discountCode) +
           "</div>" +
@@ -1707,19 +1820,33 @@
           ('">' + translate("Copy code") + "</button>") +
           '<a class="weletic-wallet-apply" href="' +
           escapeHtml(state.friendClaim.applyUrl) +
-          '">Apply reward</a>' +
+          '">' +
+          translate("Apply reward") +
+          "</a>" +
           "</div>" +
           (state.friendClaim.emailSent
-            ? '<p class="weletic-guest-desc weletic-referral-note">We also emailed the code to you.</p>'
-            : '<p class="weletic-guest-desc weletic-referral-note">Save this code now; email delivery is temporarily unavailable.</p>') +
+            ? '<p class="weletic-guest-desc weletic-referral-note">' +
+              translate("We also emailed the code to you.") +
+              "</p>"
+            : '<p class="weletic-guest-desc weletic-referral-note">' +
+              translate(
+                "Save this code now; email delivery is temporarily unavailable.",
+              ) +
+              "</p>") +
           "</div>"
         );
       }
       if (state.friendClaim?.status === "review") {
         return (
           '<div class="weletic-guest-box">' +
-          '<h4 class="weletic-guest-title">Claim received</h4>' +
-          '<p class="weletic-guest-desc">This invitation needs a quick eligibility review. No coupon was issued yet.</p>' +
+          '<h4 class="weletic-guest-title">' +
+          translate("Claim received") +
+          "</h4>" +
+          '<p class="weletic-guest-desc">' +
+          translate(
+            "This invitation needs a quick eligibility review. No coupon was issued yet.",
+          ) +
+          "</p>" +
           "</div>"
         );
       }
@@ -1731,23 +1858,39 @@
           : "";
       return (
         '<div class="weletic-guest-box">' +
-        '<h4 class="weletic-guest-title">A friend sent you a reward</h4>' +
-        '<p class="weletic-guest-desc">Enter the email you will use at checkout to receive ' +
-        escapeHtml(offer.friendRewardName || "your welcome reward") +
-        ".</p>" +
+        '<h4 class="weletic-guest-title">' +
+        translate("A friend sent you a reward") +
+        "</h4>" +
+        '<p class="weletic-guest-desc">' +
+        escapeHtml(
+          translate(
+            "Enter the email you will use at checkout to receive {benefit}.",
+            {
+              benefit:
+                offer.friendRewardName || translate("your welcome reward"),
+            },
+          ),
+        ) +
+        "</p>" +
         '<form id="weletic-friend-claim-form" class="weletic-referral-form">' +
-        '<label for="weletic-friend-email">Email address</label>' +
+        '<label for="weletic-friend-email">' +
+        translate("Email address") +
+        "</label>" +
         '<input id="weletic-friend-email" name="email" type="email" autocomplete="email" maxlength="320" required>' +
         errorMessage +
         '<button type="submit" class="weletic-btn-primary" ' +
         (state.friendClaim?.status === "loading" ? "disabled" : "") +
         ">" +
         (state.friendClaim?.status === "loading"
-          ? "Claiming reward…"
-          : "Claim my reward") +
+          ? translate("Claiming reward…")
+          : translate("Claim my reward")) +
         "</button>" +
         "</form>" +
-        '<p class="weletic-guest-desc weletic-referral-note">New customers only. The code is unique and can be used once.</p>' +
+        '<p class="weletic-guest-desc weletic-referral-note">' +
+        translate(
+          "New customers only. The code is unique and can be used once.",
+        ) +
+        "</p>" +
         "</div>"
       );
     }
@@ -2403,17 +2546,28 @@
             html += renderFriendClaim();
           } else if (!isLoggedIn) {
             html += '<div class="weletic-guest-box">';
-            html += '<h4 class="weletic-guest-title">Refer friends</h4>';
             html +=
-              '<p class="weletic-guest-desc">Sign in to get your personal referral link.</p>';
+              '<h4 class="weletic-guest-title">' +
+              translate("Refer friends") +
+              "</h4>";
+            html +=
+              '<p class="weletic-guest-desc">' +
+              translate("Sign in to get your personal referral link.") +
+              "</p>";
             html +=
               '<a href="' +
               escapeHtml(loginUrl) +
-              '" class="weletic-btn-primary">Sign in</a>';
+              '" class="weletic-btn-primary">' +
+              translate("Sign in") +
+              "</a>";
             html += "</div>";
           } else if (!isMember) {
             html +=
-              '<div class="weletic-load-state"><strong>Join rewards to refer friends.</strong><span>Your signed-in account is not enrolled yet.</span></div>';
+              '<div class="weletic-load-state"><strong>' +
+              translate("Join rewards to refer friends.") +
+              "</strong><span>" +
+              translate("Your signed-in account is not enrolled yet.") +
+              "</span></div>";
           } else if (referralLink) {
             var friendBenefit = referralBenefit(
               referralOffer,
@@ -2428,22 +2582,34 @@
               pointNamePlural,
             );
             html +=
-              '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">Refer Friends, Earn Rewards</div>';
+              '<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#111827;">' +
+              translate("Refer Friends, Earn Rewards") +
+              "</div>";
             html +=
-              '<p style="font-size:11px;color:#6b7280;margin-bottom:12px;">Give your friend ' +
-              escapeHtml(friendBenefit) +
-              " on their first qualifying order. Earn " +
-              escapeHtml(advocateBenefit) +
-              " when that order qualifies.</p>";
+              '<p style="font-size:11px;color:#6b7280;margin-bottom:12px;">' +
+              translate(
+                "Give your friend {friendBenefit} on their first qualifying order. Earn {advocateBenefit} when that order qualifies.",
+                {
+                  friendBenefit: escapeHtml(friendBenefit),
+                  advocateBenefit: escapeHtml(advocateBenefit),
+                },
+              ) +
+              "</p>";
             html +=
               '<div style="background:#f9fafb;padding:10px;border-radius:10px;border:1px solid #e5e7eb;font-family:monospace;font-size:11px;word-break:break-all;margin-bottom:8px;">' +
               escapeHtml(referralLink) +
               "</div>";
             html +=
-              '<button type="button" class="weletic-btn-primary" id="weletic-copy-referral-btn">Copy Referral Link</button>';
+              '<button type="button" class="weletic-btn-primary" id="weletic-copy-referral-btn">' +
+              translate("Copy Referral Link") +
+              "</button>";
           } else {
             html +=
-              '<div class="weletic-load-state"><strong>Your referral link is not available yet.</strong><span>Please try again later.</span></div>';
+              '<div class="weletic-load-state"><strong>' +
+              translate("Your referral link is not available yet.") +
+              "</strong><span>" +
+              translate("Please try again later.") +
+              "</span></div>";
           }
         }
 
@@ -2562,8 +2728,8 @@
         bindCopyButton(
           copyBtn,
           referralLink,
-          "Copied to Clipboard!",
-          "Copy Referral Link",
+          translate("Copied to Clipboard!"),
+          translate("Copy Referral Link"),
         );
       }
 
