@@ -244,6 +244,10 @@ No checkbox below is promoted solely by these local checks.
       50,000-row profile reached 30 real reversals and safe continuation, with
       rollback queue verification in 13.5 seconds. Full real-worker execution,
       authenticated and live acceptance remain open; PR #13 remains draft.
+      Eight isolated signed-gateway tests now exercise real HMAC/native-session
+      authorization, preparation/execution and rejection fences against MySQL.
+      Synthetic session records and in-process route calls do not satisfy
+      Shopify OAuth, browser or live merchant acceptance.
 - [ ] D7: Imports append opening-balance ledger entries, not fabricated historic
       earns, referrals, coupons, invites or tier-entry rewards. Preserve existing
       coupons and prevent overlap with historical backfill.

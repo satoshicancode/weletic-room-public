@@ -1,5 +1,44 @@
 # Historical opening-balance import
 
+## September 12 signed merchant gateway database checkpoint
+
+Eight opt-in integration tests pass through the real import `POST` handler,
+HMAC verifier, native credential/session binding, staff authorization and MySQL
+services. The fixture uses generated test-only signing/encryption/privacy keys,
+mapped native installation records and encrypted synthetic online sessions; it
+creates no Weletic user or legacy generic installation. External fetch is blocked.
+
+The happy path covers context, byte inspection, revision-fenced staging, signed
+commit, actual worker execution, signed status/reconciliation, signed rollback
+and independent SQL totals. Two opening balances include an integer above
+JavaScript's safe integer limit. Four append-only entries reconcile to exactly
+zero after rollback. The test explicitly releases fixture scheduling/leases for
+worker execution; it does not prove worker supervision or natural scheduling.
+
+Rejections cover modified signed bytes, sequential/concurrent nonce replay,
+expired online sessions, altered session digests, missing native credentials,
+missing/revoked staff grants, cross-store source IDs, stale source revisions and
+stale installation generations. Failed authentication checks leave no merchant
+action, source or ledger write. Tests invoke `Request`/`Response` in-process:
+**this is not HTTP transport, Shopify OAuth, browser login, maximum-size upload,
+or named yamaxdev acceptance.** Those gates remain unchecked.
+
+Use `vitest.historical-import-gateway-db.config.ts` only with an explicitly
+selected disposable fixture. The suite requires both
+`HISTORICAL_IMPORT_GATEWAY_DATABASE_INTEGRATION=1` and
+`HISTORICAL_IMPORT_DEDICATED_INSTANCE=1`, a named
+`HISTORICAL_IMPORT_SOURCE_FIXTURE_DATABASE` matching the import-fixture prefix,
+loopback port 3308 and the verified `loyalty_dev` database principal. It does not
+create or apply schema. The approved runner independently verified all 157 tables
+empty before/after the eight-case run and revoked its temporary DML grant.
+Cleanup targets generated fixture identities; environment restoration and
+disconnect run in `finally`. No production implementation or public API changed.
+The dedicated server was stopped after cleanup. The six focused gateway,
+transport and deadline suites also pass (116 tests); independent final review
+found no blocker. Production build evidence remains the preceding `c8796152cd`
+checkpoint because this follow-up changes only tests, their opt-in configuration
+and documentation, not runtime sources or dependencies.
+
 ## September 12 grouped rollback and proof-read checkpoint
 
 The next query-only checkpoint reads ownership by account primary key, then checks

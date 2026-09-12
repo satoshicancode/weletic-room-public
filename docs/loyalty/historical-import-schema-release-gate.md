@@ -86,6 +86,8 @@ CI pipeline change, or automatic deployment is part of this checkpoint.
    authenticated merchant journeys, and full 50,000-row execution/reconciliation.
 6. Record named `yamaxdev` acceptance before claiming live completion.
 
-The original unpublished grouped-rollback work remains in the original checkout
-and is not included in this compatibility checkpoint. Performance work must be
-integrated separately without weakening provenance or containment checks.
+The original dirty checkout remains preserved. Subsequent PR #13 checkpoints
+integrate approved grouped rollback, bounded populated-source continuation and
+isolated signed-gateway evidence; see the current implementation receipts.
+None removes this shared-schema gate or supplies Shopify-authenticated browser
+or live acceptance. Provenance and containment checks remain mandatory.
