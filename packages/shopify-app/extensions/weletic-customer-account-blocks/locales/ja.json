@@ -1,0 +1,14 @@
+{
+  "rewards": "特典",
+  "viewHub": "ロイヤルティハブを見る",
+  "points": "{{points}}ポイント",
+  "pointsUnavailable": "ポイントを表示できません",
+  "member": "会員",
+  "rewardOne": "利用可能な特典：{{formattedCount}}件",
+  "rewardMany": "利用可能な特典：{{formattedCount}}件",
+  "summary": "{{tier}} · {{rewards}}",
+  "unavailable": "現在、特典を表示できません。",
+  "retry": "再試行",
+  "loading": "特典を読み込み中",
+  "join": "特典プログラムに登録して、ポイントを貯めましょう。"
+}

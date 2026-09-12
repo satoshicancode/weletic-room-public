@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { describe, expect, it } from "vitest";
+import profileEnglish from "../../../../packages/shopify-app/extensions/weletic-customer-account-blocks/locales/en.default.json";
 import {
   availableRewardCount,
   ProfileLoyaltySummaryView,
@@ -1076,7 +1077,19 @@ describe("Milestone 5: Storefront Theme & Customer Account Extensions Test Suite
           { status: "available" },
         ],
       };
-      const view = ProfileLoyaltySummaryView({ summary });
+      const view = ProfileLoyaltySummaryView({
+        summary,
+        i18n: {
+          formatNumber: (value) => new Intl.NumberFormat("en").format(value),
+          translate: (key, values = {}) => {
+            const text = (profileEnglish as Record<string, string>)[key];
+            if (!text) throw new Error("Missing profile translation");
+            return text.replace(/{{(\w+)}}/g, (_, name) =>
+              String(values[name]),
+            );
+          },
+        },
+      });
       const children = Array.isArray(view.props.children)
         ? view.props.children
         : [view.props.children];
@@ -1137,7 +1150,8 @@ describe("Milestone 5: Storefront Theme & Customer Account Extensions Test Suite
       expect(customerAccountSource).toContain("AbortController");
       expect(customerAccountSource).toContain("Try again");
       expect(profileBlockSource).toContain("CUSTOMER_REQUEST_TIMEOUT_MS");
-      expect(profileBlockSource).toContain("Try again");
+      expect(profileBlockSource).toContain('shopify.i18n.translate("retry")');
+      expect(profileEnglish.retry).toBe("Try again");
       expect(storefrontWidgetSource).toContain("rewardWallet");
       expect(storefrontWidgetSource).toContain("data-copy-code");
       expect(storefrontWidgetSource).toContain("rewardArtifactKind");

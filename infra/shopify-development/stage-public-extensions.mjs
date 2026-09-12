@@ -52,6 +52,7 @@ export const publicExtensionFiles = Object.freeze({
     manifest,
     "manifest.json",
     "src/CustomerAccountLoyaltyBlocks.tsx",
+    ...locales.map((name) => `locales/${name}`),
   ],
   "loyalty-checkout-slider": [
     manifest,
