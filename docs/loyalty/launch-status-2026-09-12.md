@@ -1,5 +1,13 @@
 # Loyalty launch status — September 12, 2026
 
+**Historical snapshot:** the code/publication statuses below are as of PR #27.
+For later merged work through PR #37, use the
+[September 13 public integration update](unified-acceptance-matrix.md#current-public-integration--september-13-2026).
+In particular, redemption, account-backed referral and discount reward-expiry
+communications are now integrated; a later full-scale import failure is recorded.
+The conclusion remains **not ready to launch**. No live gate is closed by those
+merges, and the remaining-work definitions below still require current evidence.
+
 **Not ready to launch.** This reconciles public code integration through
 `a3d8c28422281ea550bda6913dd72fb38d07edb9` (PR #27). It does not certify a
 deployment, an installed app version, delivery or any live acceptance gate.
