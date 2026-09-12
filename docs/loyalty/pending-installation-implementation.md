@@ -34,8 +34,9 @@ The initial full regression stalled without a verdict and was stopped. Its last
 reported reward-editor suite passed all 15 tests alone. The next regression stopped
 on a legacy-sync fixture because the local command omitted `SHOPIFY_API_KEY`, which
 CI supplies as a dummy app identity. All 19 sync tests passed with that same dummy
-value. The source was unchanged; the corrected full regression result and fresh
-public CI are recorded in PR #15 before any merge decision.
+value. The source was unchanged; the corrected full regression passed all 436
+files with 6,801 passing tests and six existing skips. Fresh public CI for this
+reconciled candidate is required before the merge decision in PR #15.
 
 The [public configuration receipt](public-config-validation-2026-09-10.md) and
 [runtime policy receipt](public-runtime-validation-2026-09-10.md) record ADR 0029:
