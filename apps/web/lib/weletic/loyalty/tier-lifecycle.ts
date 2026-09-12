@@ -7,6 +7,7 @@ import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { sumValidQualifyingPoints } from "@/lib/weletic/loyalty/qualifying-review-points";
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
+import { enqueueVipAchievementCommunication } from "@/lib/weletic/loyalty/vip-achievement-communication-producer";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import {
   Prisma,
@@ -235,7 +236,7 @@ export async function evaluateTierMaintenanceCycle(
   }
   const db = (params.tx || prisma) as any;
   const now = params.now ? new Date(params.now) : new Date();
-  await assertShopifyStoreAcceptsOperationalWrites({
+  const operationalStore = await assertShopifyStoreAcceptsOperationalWrites({
     storeId: params.storeId,
     action: "loyalty_tier_evaluation",
     expectedInstallationGeneration: params.expectedInstallationGeneration,
@@ -442,7 +443,7 @@ export async function evaluateTierMaintenanceCycle(
       db,
       accountId: account.id,
     });
-    await db.weleticLoyaltyTierHistory.create({
+    const promotionHistory = await db.weleticLoyaltyTierHistory.create({
       data: {
         id: tierHistoryId,
         accountId: account.id,
@@ -455,6 +456,17 @@ export async function evaluateTierMaintenanceCycle(
         qualifyingPointsSnapshot: qualifyingPoints,
         effectiveAt: now,
       },
+    });
+
+    await enqueueVipAchievementCommunication({
+      tx: params.tx,
+      storeId: params.storeId,
+      programId: account.programId,
+      accountId: account.id,
+      expectedInstallationGeneration:
+        operationalStore?.installationGeneration ?? "",
+      receipt: { created: true, history: promotionHistory },
+      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
     });
 
     await enqueueFlowTriggerJob({

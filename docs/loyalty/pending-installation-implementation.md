@@ -5,6 +5,38 @@ Hiro on September 9, 2026. This feature is **in progress, not release-ready**.
 
 ## Current delivery boundary — September 10, public-main refresh
 
+### September 12 merge-readiness review
+
+Public main `2c9a37ac19` was integrated without rewriting branch history. The sole
+textual conflict was the acceptance matrix; both the newer communication evidence
+and this branch's installation/bootstrap evidence are retained. Independent review
+found no confirmed source blocker in the inspected authentication, credential,
+bootstrap, reconnect and privacy paths. Refreshed test/build/CI results are
+recorded in PR #15; earlier pending-CI statements below are historical checkpoints.
+
+Source merge and runtime activation are distinct. The three new tables are queried
+by retained credential/session paths too: every runtime database must have the
+reviewed additive schema before this code starts. Only the isolated development
+application has prior approval/evidence. No legacy/production schema application,
+deployment, public routing, installation or loyalty activation is performed by
+this review. The repository workflows contain no active app-deployment step and
+GitHub reports no deployment records at this checkpoint. Remote extension ownership,
+backend isolation and named `yamaxdev` acceptance remain rollout prerequisites.
+
+Fresh local verification passed web/Shopify typechecks, repository lint, changed-file
+formatting, Prisma validation, 32 Shopify package tests, the Shopify package build,
+and the isolated public extension validation/build. Thirteen real MySQL bootstrap
+tests and the full web production build passed in a fresh isolated schema on port
+3307; independent checks found all 154 tables empty before and after the build.
+Temporary DDL/DML/SELECT permissions were revoked and the empty fixture was retained.
+
+The initial full regression stalled without a verdict and was stopped. Its last
+reported reward-editor suite passed all 15 tests alone. The next regression stopped
+on a legacy-sync fixture because the local command omitted `SHOPIFY_API_KEY`, which
+CI supplies as a dummy app identity. All 19 sync tests passed with that same dummy
+value. The source was unchanged; the corrected full regression result and fresh
+public CI are recorded in PR #15 before any merge decision.
+
 The [public configuration receipt](public-config-validation-2026-09-10.md) and
 [runtime policy receipt](public-runtime-validation-2026-09-10.md) record ADR 0029:
 separate loyalty-only manifest, SDK/gateway configuration guards, narrowed isolated

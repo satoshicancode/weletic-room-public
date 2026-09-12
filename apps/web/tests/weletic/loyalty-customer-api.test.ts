@@ -16,6 +16,7 @@ import {
   getShopifyCustomerSelectionDigest,
 } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
 import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
+import * as referralOperations from "@/lib/weletic/loyalty/referrals";
 import { validateIncrementalRewardConfig } from "@/lib/weletic/loyalty/rewards";
 import {
   WeleticRedemptionStatus,
@@ -462,6 +463,42 @@ describe("Customer Loyalty APIs & Surfaces", () => {
       rewards: [],
       rewardWallet: [],
     });
+  });
+
+  it("does not provision referral identity for internal read-only summaries", async () => {
+    mockFullSummaryLifecycle({
+      programStatus: "active",
+      killSwitchActive: false,
+      referralRule: {
+        isActive: true,
+        advocateRewardKind: "points",
+        advocatePointsReward: BigInt(100),
+        refereeRewardKind: "points",
+        refereePointsReward: BigInt(100),
+      },
+    });
+    vi.mocked(prisma.weleticRewardDefinition.findMany).mockResolvedValue([]);
+    const link = vi
+      .spyOn(referralOperations, "ensureAccountReferralLink")
+      .mockRejectedValue(new Error("must not provision"));
+    const code = vi
+      .spyOn(referralOperations, "ensureAccountReferralCode")
+      .mockRejectedValue(new Error("must not provision"));
+    try {
+      const summary = await getCustomerLoyaltySummary({
+        storeId: "store_123",
+        shopifyCustomerId: "customer_lifecycle",
+        provisionReferralIdentity: false,
+      });
+      expect(summary.isEnrolled).toBe(true);
+      expect(summary.referral?.offer).not.toBeNull();
+      expect(link).not.toHaveBeenCalled();
+      expect(code).not.toHaveBeenCalled();
+      expect(prisma.weleticLoyaltyAccount.update).not.toHaveBeenCalled();
+    } finally {
+      link.mockRestore();
+      code.mockRestore();
+    }
   });
 
   it.each([
@@ -1135,6 +1172,12 @@ describe("Customer Loyalty APIs & Surfaces", () => {
 
     const standardIssuanceReward = {
       id: "reward_10_off",
+      exchangeType: "fixed",
+      purchasePolicy: {
+        purchaseType: "both",
+        subscriptionCadence: "first_n_payments",
+        subscriptionPaymentLimit: 3,
+      },
       name: "$10 Voucher at issuance",
       description: "$10 off when this coupon was issued",
       rewardType: "amount_off",
@@ -1212,6 +1255,12 @@ describe("Customer Loyalty APIs & Surfaces", () => {
       reward: {
         id: "reward_10_off",
         name: "Referral voucher at qualification",
+        exchangeType: "fixed",
+        purchasePolicy: {
+          purchaseType: "subscription",
+          subscriptionCadence: "first_payment",
+          subscriptionPaymentLimit: null,
+        },
         description: "Referral terms captured when qualified",
         rewardType: "amount_off",
         salesChannel: "online_store",
@@ -1583,7 +1632,13 @@ describe("Customer Loyalty APIs & Surfaces", () => {
       take: 1,
     });
     expect(summary.rewards).toHaveLength(3);
+    expect(summary.program.currencyMinorUnits).toBe(2);
     expect(summary.rewards[0].canRedeem).toBe(true);
+    expect(summary.rewards[0].purchasePolicy).toEqual({
+      purchaseType: "one_time",
+      subscriptionCadence: "first_payment",
+      subscriptionPaymentLimit: null,
+    });
     expect(summary.rewards[0].minOrderAmount).toBe("25000");
     expect(summary.rewards[1].canRedeem).toBe(false); // 1000 pts needed, has 500
     expect(summary.rewards[2].canRedeem).toBe(true); // incremental minimum is 500
@@ -1598,9 +1653,16 @@ describe("Customer Loyalty APIs & Surfaces", () => {
         termsSource: "issuance_snapshot",
         termsSnapshot: expect.objectContaining({
           version: 1,
+          exchangeType: "fixed",
+          purchasePolicy: {
+            purchaseType: "both",
+            subscriptionCadence: "first_n_payments",
+            subscriptionPaymentLimit: 3,
+          },
           rewardType: "amount_off",
           salesChannel: "online_store",
           currency: "USD",
+          currencyMinorUnits: 2,
           minOrderAmount: "5000",
           expiresInDays: 30,
           usageLimitPerCustomer: 1,
@@ -1660,9 +1722,15 @@ describe("Customer Loyalty APIs & Surfaces", () => {
         termsSource: "issuance_snapshot",
         termsSnapshot: expect.objectContaining({
           version: 1,
+          purchasePolicy: {
+            purchaseType: "subscription",
+            subscriptionCadence: "first_payment",
+            subscriptionPaymentLimit: null,
+          },
           rewardType: "amount_off",
           salesChannel: "online_store",
           currency: "EUR",
+          currencyMinorUnits: 2,
           minOrderAmount: "7500",
           expiresInDays: 30,
           usageLimitPerCustomer: 1,
@@ -1718,7 +1786,11 @@ describe("Customer Loyalty APIs & Surfaces", () => {
     )?.termsSnapshot;
     expect(issuedTermsSnapshot).not.toHaveProperty("customerSelectionDigest");
     expect(issuedTermsSnapshot).not.toHaveProperty("contentDigest");
-    expect(issuedTermsSnapshot).not.toHaveProperty("entitledProductIds");
+    expect(issuedTermsSnapshot).toMatchObject({
+      entitledProductIds: ["gid://shopify/Product/1"],
+      entitledVariantIds: [],
+      entitledCollectionIds: [],
+    });
     expect(JSON.stringify(issuedTermsSnapshot)).not.toContain(
       issuanceTerms.customerSelectionDigest,
     );
@@ -1726,6 +1798,12 @@ describe("Customer Loyalty APIs & Surfaces", () => {
       (reward) => reward.id === "redemp_referral_snapshot",
     )?.termsSnapshot;
     expect(referralTermsSnapshot).not.toHaveProperty("customerSelectionDigest");
+    expect(referralTermsSnapshot).toMatchObject({
+      entitledProductIds: ["gid://shopify/Product/referral-snapshot"],
+      entitledVariantIds: [],
+      entitledCollectionIds: [],
+      exchangeType: "fixed",
+    });
     expect(referralTermsSnapshot).not.toHaveProperty("contentDigest");
     expect(referralTermsSnapshot).not.toHaveProperty("discountCode");
     expect(referralTermsSnapshot).not.toHaveProperty("ownershipFingerprint");

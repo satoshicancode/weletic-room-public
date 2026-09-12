@@ -45,6 +45,13 @@ that full EN/JA/VI product-point, variant, VIP/campaign or earning acceptance is
 
 ## Still open
 
+September 12 revalidation after integrating public main `2c9a37ac19`: a fresh
+34-file stage passed CLI configuration validation (`valid: true`, no issues) and
+the app/extension build. Independent inspection found ten unique staged IDs,
+all disjoint from the eleven retained custom IDs. The stage was outside Git in
+an OS-temporary directory; no extension identity or configuration was published.
+This refreshes local build evidence only and does not close any live gate below.
+
 - Authoritative public registration/UID mapping and approved deployment.
 - Backend namespace/credential isolation and public endpoint reachability.
 - Protected customer data/network access and real account/thank-you rendering.

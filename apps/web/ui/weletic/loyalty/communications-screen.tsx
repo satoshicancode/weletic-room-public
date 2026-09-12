@@ -42,6 +42,61 @@ export function CommunicationsScreen({
   const [mobile, setMobile] = useState(true);
   const epoch = useRef(0);
   const copy = communicationsCopy[locale];
+  const vipIntegration =
+    state?.deliveryIntegration ===
+    "purchase_signup_birthday_vip_and_expiry_policies";
+  const birthdayIntegration =
+    vipIntegration ||
+    state?.deliveryIntegration ===
+      "purchase_signup_birthday_and_expiry_policies";
+  const birthdayConnected = birthdayIntegration && journey === "birthday";
+  const signupConnected =
+    (birthdayIntegration ||
+      state?.deliveryIntegration === "purchase_signup_and_expiry_policies") &&
+    journey === "points_earned";
+  const purchaseConnected =
+    state?.deliveryIntegration === "purchase_and_expiry_policies" &&
+    journey === "points_earned";
+  const expiryConnected =
+    (birthdayIntegration ||
+      state?.deliveryIntegration === "expiry_policies" ||
+      state?.deliveryIntegration === "purchase_and_expiry_policies" ||
+      state?.deliveryIntegration === "purchase_signup_and_expiry_policies") &&
+    (journey === "points_warning" || journey === "points_last_chance");
+  const connectedCopy =
+    vipIntegration && journey === "vip_achieved"
+      ? {
+          description: copy.vipConnected,
+          saved: copy.vipSaved,
+          enabled: copy.vipEnabled,
+        }
+      : birthdayConnected
+        ? {
+            description: copy.birthdayConnected,
+            saved: copy.birthdaySaved,
+            enabled: copy.birthdayEnabled,
+          }
+        : signupConnected
+          ? {
+              description: birthdayIntegration
+                ? copy.signupWithBirthdayConnected
+                : copy.signupConnected,
+              saved: copy.signupSaved,
+              enabled: copy.signupEnabled,
+            }
+          : purchaseConnected
+            ? {
+                description: copy.purchaseConnected,
+                saved: copy.purchaseSaved,
+                enabled: copy.purchaseEnabled,
+              }
+            : expiryConnected
+              ? {
+                  description: copy.expiryConnected,
+                  saved: copy.expirySaved,
+                  enabled: copy.expiryEnabled,
+                }
+              : null;
   React.useEffect(() => {
     onNavigationStateChange?.({ dirty, locale });
   }, [dirty, locale, onNavigationStateChange]);
@@ -187,10 +242,14 @@ export function CommunicationsScreen({
           {languageOptions}
         </select>
       </label>
-      <p>{copy.disconnected}</p>
+      <p>{connectedCopy?.description ?? copy.disconnected}</p>
       {busy && <p role="status">{copy.loading}</p>}
       {message && (
-        <p role={message === "saved" ? "status" : "alert"}>{copy[message]}</p>
+        <p role={message === "saved" ? "status" : "alert"}>
+          {message === "saved" && connectedCopy
+            ? connectedCopy.saved
+            : copy[message]}
+        </p>
       )}
       {state && !state.capabilities.configure && <p>{copy.readonly}</p>}
       <button type="button" disabled={busy} onClick={() => void reload()}>
@@ -254,7 +313,7 @@ export function CommunicationsScreen({
                     setMessage(null);
                   }}
                 />
-                {copy.enabled}
+                {connectedCopy?.enabled ?? copy.enabled}
               </label>
               {(["subject", "heading", "body", "actionLabel"] as const).map(
                 (field) => (

@@ -5,11 +5,16 @@ import {
   calculateTierReviewWindow,
   evaluateTierMaintenanceCycle,
 } from "@/lib/weletic/loyalty/tier-lifecycle";
+import { enqueueVipAchievementCommunication } from "@/lib/weletic/loyalty/vip-achievement-communication-producer";
 import {
   WeleticLoyaltyTierChangeReason,
   WeleticPointsLedgerEntryType,
 } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/weletic/loyalty/vip-achievement-communication-producer", () => ({
+  enqueueVipAchievementCommunication: vi.fn().mockResolvedValue(null),
+}));
 
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
@@ -104,6 +109,10 @@ describe("VIP Tier Lifecycle Maintenance & Grace Period Engine (Milestone 2)", (
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(enqueueVipAchievementCommunication).mockResolvedValue(null);
+    vi.mocked(prisma.weleticLoyaltyTierHistory.create).mockImplementation(
+      ({ data }: any) => data as any,
+    );
     vi.mocked(prisma.weleticLoyaltyTierHistory.findFirst).mockResolvedValue(
       null,
     );
@@ -304,6 +313,76 @@ describe("VIP Tier Lifecycle Maintenance & Grace Period Engine (Milestone 2)", (
   });
 
   describe("3. Tier Promotion (PROMOTED)", () => {
+    function setupNotificationPromotion() {
+      const account = {
+        id: "notification-account",
+        storeId,
+        programId: "notification-program",
+        shopperId: "notification-shopper",
+        currentTierId: "tier_silver",
+        currentTier: standardTiers[1],
+        tierExpiresAt: null,
+        program: { tiers: standardTiers },
+      };
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue(
+        account as any,
+      );
+      vi.mocked(prisma.weleticCommerceOrder.findMany).mockResolvedValue([
+        { presentmentNet: BigInt(65_000) },
+      ] as any);
+      vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([]);
+      return account;
+    }
+    it("passes the created promotion history and transaction to communications, never maintenance replay", async () => {
+      const account = setupNotificationPromotion();
+      const params = {
+        storeId,
+        accountId: account.id,
+        now: new Date("2026-09-10T00:00:00Z"),
+      };
+      expect((await evaluateTierMaintenanceCycle(params)).status).toBe(
+        "PROMOTED",
+      );
+      expect(enqueueVipAchievementCommunication).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tx: prisma,
+          storeId,
+          programId: account.programId,
+          accountId: account.id,
+          receipt: {
+            created: true,
+            history: expect.objectContaining({
+              accountId: account.id,
+              sequenceNumber: 1,
+              fromTierId: "tier_silver",
+              toTierId: "tier_gold",
+              changeReason: "threshold_reached",
+              effectiveAt: params.now,
+            }),
+          },
+        }),
+      );
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
+        ...account,
+        currentTierId: "tier_gold",
+        currentTier: standardTiers[2],
+      } as any);
+      expect((await evaluateTierMaintenanceCycle(params)).status).toBe(
+        "MAINTAINED",
+      );
+      expect(enqueueVipAchievementCommunication).toHaveBeenCalledTimes(1);
+    });
+    it("propagates notification enqueue failure instead of reporting successful promotion", async () => {
+      const account = setupNotificationPromotion();
+      vi.mocked(enqueueVipAchievementCommunication).mockRejectedValueOnce(
+        new Error("synthetic VIP enqueue failure"),
+      );
+      await expect(
+        evaluateTierMaintenanceCycle({ storeId, accountId: account.id }),
+      ).rejects.toThrow("synthetic VIP enqueue failure");
+      expect(prisma.weleticLoyaltyTierHistory.create).toHaveBeenCalledTimes(1);
+      // This is propagation coverage; real transactional rollback needs SQL.
+    });
     it("promotes member from Silver to Gold when rolling spend exceeds Gold threshold (¥65,000 >= ¥50,000)", async () => {
       const accountId = "acc_silver_upgrading";
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({

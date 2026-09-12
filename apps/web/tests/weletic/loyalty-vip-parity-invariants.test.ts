@@ -2,6 +2,12 @@ import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
 import { evaluateTierMaintenanceCycle } from "@/lib/weletic/loyalty/tier-lifecycle";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// This suite isolates tier accounting. Notification delivery and actual
+// transactional rollback require separate producer and SQL coverage.
+vi.mock("@/lib/weletic/loyalty/vip-achievement-communication-producer", () => ({
+  enqueueVipAchievementCommunication: vi.fn().mockResolvedValue(null),
+}));
+
 const mocks = vi.hoisted(() => ({
   accountFindUnique: vi.fn(),
   accountUpdate: vi.fn(),

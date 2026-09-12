@@ -102,6 +102,15 @@ function assertLedgerIdempotencyMatch({
 export async function appendPointsLedgerEntry(
   params: AppendPointsLedgerEntryParams,
 ) {
+  return (await appendPointsLedgerEntryWithReceipt(params)).entry;
+}
+
+/** Internal creation evidence for transactional event producers. A replay or
+ * recovered duplicate is never a new earn. With a supplied tx, the caller must
+ * retain this receipt inside that transaction until its outbox work commits. */
+export async function appendPointsLedgerEntryWithReceipt(
+  params: AppendPointsLedgerEntryParams,
+) {
   const {
     storeId,
     accountId,
@@ -157,7 +166,7 @@ export async function appendPointsLedgerEntry(
             referenceId: referenceId ?? null,
             idempotencyKey,
           });
-          return existing;
+          return { entry: existing, created: false as const };
         }
 
         // 2. Load account state
@@ -313,7 +322,7 @@ export async function appendPointsLedgerEntry(
           );
         }
 
-        return ledgerEntry;
+        return { entry: ledgerEntry, created: true as const };
       };
 
       if (tx) {
@@ -357,7 +366,7 @@ export async function appendPointsLedgerEntry(
             referenceId: referenceId ?? null,
             idempotencyKey,
           });
-          return existing;
+          return { entry: existing, created: false as const };
         }
 
         if (attempt < maxRetries && !tx) {

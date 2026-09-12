@@ -118,6 +118,27 @@ proof only.
 
 ## B — Merchant control plane and immutable contracts
 
+September 10 local [appearance editor checkpoint](merchant-appearance-editor-2026-09-10.md)
+adds the existing nine branding fields through a signed revision-fenced gateway.
+Its synthetic browser and contract evidence does not close B1/B4 or live shopper
+surface gates; advanced appearance controls and nudges remain outstanding.
+
+The September 10 [nudge implementation checkpoint](nudges-implementation-2026-09-10.md)
+adds draft editors and signup/spending/reward-use runtime paths, including a
+signed, throttled collection-membership read. Current EN/JA/VI real Chromium
+checks at 375px use synthetic cart/customer/membership responses and prove wallet
+keyboard access and unknown-membership suppression. Earlier checkpoints include
+6,185 passing full-suite tests (six skipped). Final membership-integration reruns
+passed 402 unit files/6,243 tests (six skipped), the isolated Next build, and three
+isolated MySQL revision/generation tests with fixture cleanup and grant revocation.
+This does not close B/E gates: uploaded
+icons/advanced appearance, live referral provenance, named live acceptance and
+publication remain outstanding. The initial web build failed without database
+configuration; an earlier isolated read-only retry passed with grant cleanup.
+Snapshot `exchangeType` additions require coordinated reader-before-producer
+deployment; old strict readers cannot safely consume new issuance snapshots.
+No checkbox below is promoted solely by these local checks.
+
 - [ ] B1: One Shopify-first navigation and shared settings, earning, reward and
       referral contracts/components; thin signed adapters, compatible redirects.
 - [ ] B2: Revision-fenced VIP tiers, thresholds, multipliers, entry rewards,
@@ -176,6 +197,33 @@ proof only.
       quiet hours, frequency limits, bounce/complaint handling and communication
       history. Check Shopify/native/Flow duplicate notices. Ambiguous transport
       acceptance must not cause an automatic alternate-provider resend.
+      Partial local evidence: [expiry communications integration](expiry-communications-integration-2026-09-10.md)
+      connects warning/last-chance policies with immutable encrypted delivery
+      requests, claim fencing and bounded retries. Four isolated MySQL cases pass;
+      remaining journeys, complete privacy-worker races and live delivery remain
+      unaccepted. This does not complete D1 or D2.
+      Additional local evidence: [purchase points communications](points-earned-communications-2026-09-10.md)
+      connects fresh purchase/maturity events with immutable policy snapshots,
+      encrypted retained requests and source-level EN/JA/VI readiness. Twelve
+      isolated MySQL tests cover retention admission, duplicate events, rollback
+      and delayed partial refunds. Other points sources, remaining journeys,
+      completion/redaction races and named live delivery remain open. D1/D2 are
+      still unchecked; follow the client/schema/worker/producer release ordering.
+      Signup follow-up: [signup communication evidence](signup-communications-implementation.md)
+      covers fresh signup ledger events, no retrospective opt-in, and atomic
+      rollback on outbox failure in isolated MySQL. Delivery remains mocked;
+      remaining sources and named live inbox evidence remain open.
+      Merged code in [PR #23](https://github.com/satoshicancode/weletic-room-public/pull/23): [birthday communications](birthday-communications-implementation.md)
+      covers exact annual provenance, replay/opt-in containment, atomic rollback,
+      localized source rendering and retained-request policy admission. Twenty-four
+      combined isolated SQL tests pass; merchant readiness now separates birthday
+      from purchase/signup. Named live delivery remains open.
+      Local [VIP achievement evidence](vip-achievement-communications-implementation.md)
+      covers promotion-only production, immutable history, superseded-notice
+      suppression, retained privacy cleanup and EN/JA/VI merchant readiness.
+      Thirty-three combined SQL tests pass; full regression/build verification
+      and publication remain pending. Mocked delivery is not live acceptance.
+      D1/D2 are not complete.
 - [ ] D3: Confirm the intended timezone before birthday/campaign/expiry/email
       activation. Do not silently replace a retained store timezone with Tokyo.
       Prove boundary timing and approved real inbox delivery.
@@ -284,7 +332,7 @@ Public PR state was read on September 9; merged code is not installed evidence.
 | C8          | Stored-value financial/earning activation decisions unresolved                           | L02, L17                                           |
 | C9          | Existing signed shopper APIs retained, no new public writes tonight                      | L06, L09, Q privacy/ownership checks               |
 | D1          | PR #6/#8 nine-policy editors; R4 records ten Smile entries                               | L10, L09                                           |
-| D2          | New policy integration is explicitly `not_connected`                                     | L10                                                |
+| D2          | Purchase/signup/birthday/VIP/expiry integration merged; live delivery open               | L10                                                |
 | D3          | No timezone replacement or real delivery authorized                                      | L01, L05, L10                                      |
 | D4          | PR #7 exact aggregates/exports; R6 report catalog; funnel/cohorts incomplete             | L11                                                |
 | D5          | Exact analytics contracts/local tests, not independent live reconciliation               | L11, Q                                             |

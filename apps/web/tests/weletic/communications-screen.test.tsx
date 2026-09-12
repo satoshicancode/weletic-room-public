@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { LoyaltyCommunicationsResponse } from "../../lib/weletic/loyalty/communications-contract";
+import { communicationsCopy } from "../../ui/weletic/loyalty/communications-copy";
 import { CommunicationsScreen } from "../../ui/weletic/loyalty/communications-screen";
 
 (
@@ -53,6 +54,202 @@ async function submit() {
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 }
+
+it.each(["en", "ja", "vi"] as const)(
+  "exposes separate VIP readiness and saves its policy in %s",
+  async (locale) => {
+    const connectedResponse = {
+      ...response,
+      deliveryIntegration: "purchase_signup_birthday_vip_and_expiry_policies",
+    };
+    const request = vi.fn().mockImplementation(async (input) =>
+      input.operation === "read"
+        ? connectedResponse
+        : {
+            ...connectedResponse,
+            revision: "b".repeat(64),
+            policies: [input.policy],
+          },
+    );
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].signupWithBirthdayConnected,
+    );
+    await select(1, "vip_achieved");
+    expect(node.textContent).toContain(communicationsCopy[locale].vipConnected);
+    expect(node.textContent).toContain(communicationsCopy[locale].vipEnabled);
+    expect(
+      (node.querySelector('input[type="checkbox"]') as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    await editSubject("Welcome {{tier_name}}");
+    await submit();
+    expect(request.mock.calls[1][0].policy.journey).toBe("vip_achieved");
+    expect(request.mock.calls[1][0].policy.enabled).toBe(false);
+    expect(node.textContent).toContain(communicationsCopy[locale].vipSaved);
+    await select(1, "birthday");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].birthdayConnected,
+    );
+    await select(1, "points_warning");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].expiryConnected,
+    );
+    await select(1, "reward_redeemed");
+    expect(node.textContent).toContain(communicationsCopy[locale].disconnected);
+    expect(node.textContent).not.toContain("private-store");
+    expect(node.textContent).not.toContain("private-generation");
+  },
+);
+
+it.each(["en", "ja", "vi"] as const)(
+  "separates birthday readiness from points-earned and unconnected journeys in %s",
+  async (locale) => {
+    const connectedResponse = {
+      ...response,
+      deliveryIntegration: "purchase_signup_birthday_and_expiry_policies",
+    };
+    const request = vi.fn().mockImplementation(async (input) =>
+      input.operation === "read"
+        ? connectedResponse
+        : {
+            ...connectedResponse,
+            revision: "b".repeat(64),
+            policies: [input.policy],
+          },
+    );
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].signupWithBirthdayConnected,
+    );
+    await select(1, "birthday");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].birthdayConnected,
+    );
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].birthdayEnabled,
+    );
+    await editSubject("Birthday award");
+    await submit();
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[1][0].policy.journey).toBe("birthday");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].birthdaySaved,
+    );
+    await select(1, "points_warning");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].expiryConnected,
+    );
+    await select(1, "vip_achieved");
+    expect(node.textContent).toContain(communicationsCopy[locale].disconnected);
+    expect(node.textContent).not.toContain(
+      communicationsCopy[locale].birthdayConnected,
+    );
+    expect(node.textContent).not.toContain("private-store");
+  },
+);
+
+it.each(["en", "ja", "vi"])(
+  "reports signup readiness only for the new capability in %s",
+  async (locale) => {
+    const request = vi.fn().mockResolvedValue({
+      ...response,
+      deliveryIntegration: "purchase_signup_and_expiry_policies",
+    });
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    expect(node.querySelector("article > p")?.textContent).toContain(
+      {
+        en: "and new signup awards",
+        ja: "新規会員登録のポイント付与",
+        vi: "điểm thưởng đăng ký mới",
+      }[locale],
+    );
+    expect(node.textContent).toContain(
+      {
+        en: "Manual, birthday",
+        ja: "手動付与、誕生日",
+        vi: "Điểm thủ công, sinh nhật",
+      }[locale],
+    );
+    await select(1, "birthday");
+    expect(node.textContent).toContain(
+      {
+        en: "Delivery is not connected",
+        ja: "まだ配信に接続されていません",
+        vi: "chưa được kết nối",
+      }[locale],
+    );
+    await select(1, "points_warning");
+    expect(node.textContent).toContain(
+      {
+        en: "Expiry templates",
+        ja: "失効通知のテンプレート",
+        vi: "Mẫu hết hạn",
+      }[locale],
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each(["en", "ja", "vi"])(
+  "reports purchase-only readiness without enabling other journeys in %s",
+  async (locale) => {
+    const request = vi.fn().mockResolvedValue({
+      ...response,
+      deliveryIntegration: "purchase_and_expiry_policies",
+    });
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    const purchaseCopy = node.querySelector("article > p")?.textContent;
+    expect(purchaseCopy).toContain(
+      {
+        en: "Signup, manual, birthday",
+        ja: "会員登録、手動付与、誕生日",
+        vi: "Điểm đăng ký, thủ công, sinh nhật",
+      }[locale],
+    );
+    await select(1, "reward_redeemed");
+    expect(node.querySelector("article > p")?.textContent).not.toBe(
+      purchaseCopy,
+    );
+    expect(node.textContent).toContain(
+      {
+        en: "Delivery is not connected",
+        ja: "まだ配信に接続されていません",
+        vi: "chưa được kết nối",
+      }[locale],
+    );
+    await select(1, "points_warning");
+    expect(node.textContent).toContain(
+      {
+        en: "Expiry templates",
+        ja: "失効通知のテンプレート",
+        vi: "Mẫu hết hạn",
+      }[locale],
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+  },
+);
+it("does not infer purchase readiness from an older expiry-only response", async () => {
+  const request = vi
+    .fn()
+    .mockResolvedValue({ ...response, deliveryIntegration: "expiry_policies" });
+  await act(async () =>
+    root.render(createElement(CommunicationsScreen, { request })),
+  );
+  expect(node.textContent).toContain("Delivery is not connected");
+});
 
 it.each([
   ["en", "Loyalty communications"],

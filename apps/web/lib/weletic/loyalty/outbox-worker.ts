@@ -81,6 +81,12 @@ import {
   WeleticRedemptionStatus,
   WeleticRewardArtifactKind,
 } from "@prisma/client";
+import { CommunicationDeliveryReconciliationRequiredError } from "./communication-delivery-snapshot";
+import {
+  ExpiryDeliveryReconciliationRequiredError,
+  type ExpiryDeliveryClaim,
+} from "./expiry-delivery-snapshot";
+import { sendPointsEarnedNotification } from "./points-earned-notifications";
 import {
   assertAccountBackedReward,
   assertRewardAccountRelation,
@@ -1155,6 +1161,7 @@ export async function processOutboxJobsBatch(
       NOT: {
         store: { merchantSettings: { is: { shopperEmailPaused: true } } },
         OR: [
+          { jobType: "LOYALTY_COMMUNICATION" },
           { jobType: "REVIEW_REQUEST_EMAIL" },
           {
             jobType: "INACTIVITY_EXPIRY",
@@ -1252,6 +1259,7 @@ export async function processOutboxJobsBatch(
         candidate,
         businessNow === undefined ? new Date() : new Date(businessNow),
         loyaltyMaintenancePermit,
+        claim,
       );
 
       // 5. Success -> Mark completed and unlock
@@ -1299,7 +1307,9 @@ export async function processOutboxJobsBatch(
         error instanceof LoyaltyDiscountReconciliationPendingError ||
         error instanceof VoucherCleanupRetryableError;
       const terminalOutboxFailure =
-        error instanceof ShopifyFlowDispatchError && !error.retryable;
+        (error instanceof ShopifyFlowDispatchError && !error.retryable) ||
+        error instanceof ExpiryDeliveryReconciliationRequiredError ||
+        error instanceof CommunicationDeliveryReconciliationRequiredError;
       const isExhausted =
         terminalOutboxFailure ||
         (currentAttempt >= candidate.maxAttempts &&
@@ -1427,6 +1437,7 @@ export async function executeOutboxJob(
   job: WeleticLoyaltyOutboxJob,
   now: Date = new Date(),
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
+  deliveryClaim?: ExpiryDeliveryClaim,
 ): Promise<OutboxExecutionResult | undefined> {
   if (loyaltyMaintenancePermit !== undefined) {
     assertLoyaltyMaintenanceOwnerPermitAuthorization(loyaltyMaintenancePermit);
@@ -1441,6 +1452,7 @@ export async function executeOutboxJob(
     typeof payload?.accountId === "string" ? payload.accountId : null;
   const operationalJob =
     [
+      "LOYALTY_COMMUNICATION",
       "HOLDING_PERIOD_RELEASE",
       "INACTIVITY_EXPIRY",
       "TIER_REVIEW",
@@ -1488,6 +1500,7 @@ export async function executeOutboxJob(
       expectedInstallationGeneration,
       now,
       loyaltyMaintenancePermit,
+      deliveryClaim,
     );
   }
 
@@ -1513,6 +1526,7 @@ export async function executeOutboxJob(
         expectedInstallationGeneration,
         now,
         loyaltyMaintenancePermit,
+        deliveryClaim,
       );
     }
     if (referralPayload?.success) {
@@ -1539,6 +1553,7 @@ export async function executeOutboxJob(
             expectedInstallationGeneration,
             now,
             loyaltyMaintenancePermit,
+            deliveryClaim,
           );
         }
         if (referralPayload?.success) {
@@ -1554,6 +1569,7 @@ export async function executeOutboxJob(
         expectedInstallationGeneration,
         now,
         loyaltyMaintenancePermit,
+        deliveryClaim,
       );
     },
   });
@@ -1564,8 +1580,18 @@ async function executeOutboxJobUnlocked(
   expectedInstallationGeneration?: string | null,
   now: Date = new Date(),
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
+  deliveryClaim?: ExpiryDeliveryClaim,
 ): Promise<OutboxExecutionResult | undefined> {
   switch (job.jobType) {
+    case "LOYALTY_COMMUNICATION": {
+      if (!deliveryClaim || deliveryClaim.candidate !== job)
+        throw new Error("Loyalty communication requires its worker claim");
+      await sendPointsEarnedNotification({
+        claim: deliveryClaim,
+        loyaltyMaintenancePermit,
+      });
+      break;
+    }
     case "SHOPPER_REWARD_PROVISION": {
       const { provisionShopperReviewCoupon } = await import(
         "./shopper-coupon-worker"
@@ -1601,6 +1627,7 @@ async function executeOutboxJobUnlocked(
         expectedInstallationGeneration,
         now,
         loyaltyMaintenancePermit,
+        deliveryClaim,
       );
       break;
     case "TIER_REVIEW":
@@ -1694,6 +1721,7 @@ export async function handleInactivityExpiry(
   expectedInstallationGeneration?: string | null,
   now: Date = new Date(),
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
+  deliveryClaim?: ExpiryDeliveryClaim,
 ): Promise<void> {
   // Earlier migrated payloads advertised a warning-only mode without a
   // notification implementation. Never let a stale warning job expire points.
@@ -1710,6 +1738,8 @@ export async function handleInactivityExpiry(
       payload,
       expectedInstallationGeneration,
       now,
+      deliveryClaim,
+      loyaltyMaintenancePermit,
     });
     return;
   }
