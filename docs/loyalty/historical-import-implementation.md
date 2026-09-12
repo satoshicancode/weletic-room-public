@@ -1,5 +1,42 @@
 # Historical opening-balance import
 
+## Full real-worker lifecycle test harness
+
+The source database suite now shares one lifecycle harness between the existing
+500-row case (`HISTORICAL_IMPORT_WORKER_LOAD_INTEGRATION=1`) and an opt-in
+50,000-row case (`HISTORICAL_IMPORT_FULL_LIFECYCLE_INTEGRATION=1`). The latter
+requires `HISTORICAL_IMPORT_DEDICATED_INSTANCE=1`, loopback port 3308, and an
+explicit validated `HISTORICAL_IMPORT_SOURCE_FIXTURE_DATABASE` before any writes.
+Use only the identity-verified disposable instance approved in ADR 0030; the
+suite does not create or apply a schema.
+
+Each delivery must retain durable job/source state, make row progress or prove
+terminal completion, and avoid failure/dead-letter outcomes. Both terminal phases
+require the application's full execution proof plus independent SQL ledger count
+and exact sum. Rollback must leave exactly twice the source row count in ledger
+entries and every fixture wallet at zero with ledger version 2. No historical
+execution rows are synthesized. Initial fixture lease/schedule release remains
+test-only and is not scheduler or worker-supervision evidence.
+
+The full case has a 36-hour test ceiling, not a runtime estimate or a change to
+production transaction, lease or delivery limits. Supervise the actual process;
+a test timeout is not proof that asynchronous work stopped. Verify process exit,
+fixture-scoped cleanup, independent empty-table reconciliation and grant
+revocation before stopping the dedicated database. Cleanup has a five-minute
+test budget and always attempts global restoration and client disconnection.
+
+**Harness availability is not 50,000-row acceptance.** The full run remains
+outstanding until both real phases and independent cleanup have named evidence.
+This does not establish authenticated maximum-size upload, Cloudflare deployment,
+Shopify installation or live `yamaxdev` acceptance.
+
+September 12 harness regression: 43 source-database tests passed, five opt-in
+cases skipped. The 500 real rows committed in 61,679 ms and rolled back in
+33,583 ms, with 11 deliveries per phase. Both independent SQL totals passed;
+the approved runner verified all 157 fixture tables empty afterward and revoked
+temporary DML access. These timings describe only this 500-row run, not a
+full-scale runtime projection. Independent review found no remaining blocker.
+
 ## September 12 code-only merge
 
 PR #13 merged as `a09df959abe4540914b1bf03863fbd0d31099c55` after explicit
