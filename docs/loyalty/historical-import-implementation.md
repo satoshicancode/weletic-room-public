@@ -1,5 +1,14 @@
 # Historical opening-balance import
 
+## September 12 code-only merge
+
+PR #13 merged as `a09df959abe4540914b1bf03863fbd0d31099c55` after explicit
+code-only approval. All six pre-merge checks passed. The decision and remaining
+release boundaries are recorded in [ADR 0031](../adr/0031-import-code-integration-release-separation.md).
+Historical draft/merge holds below describe earlier checkpoints and are
+superseded only for code integration. No database application, Cloudflare
+deployment, worker startup, loyalty activation or live acceptance is implied.
+
 ## September 12 signed merchant gateway database checkpoint
 
 Eight opt-in integration tests pass through the real import `POST` handler,

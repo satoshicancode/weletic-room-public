@@ -243,7 +243,9 @@ No checkbox below is promoted solely by these local checks.
       adds grouped rollback and projected evidence reads. Its latest synthetic
       50,000-row profile reached 30 real reversals and safe continuation, with
       rollback queue verification in 13.5 seconds. Full real-worker execution,
-      authenticated and live acceptance remain open; PR #13 remains draft.
+      authenticated and live acceptance remain open. PR #13 is merged as code
+      only under [ADR 0031](../adr/0031-import-code-integration-release-separation.md);
+      deployment and activation remain gated, and D6 remains unchecked.
       Eight isolated signed-gateway tests now exercise real HMAC/native-session
       authorization, preparation/execution and rejection fences against MySQL.
       Synthetic session records and in-process route calls do not satisfy

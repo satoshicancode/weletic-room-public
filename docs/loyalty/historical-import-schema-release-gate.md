@@ -1,8 +1,11 @@
 # Historical import schema release gate
 
-Status: implementation checkpoint, September 12, 2026. **PR #13 remains draft;
-this document does not authorize a shared schema change, merge, deployment, or
-worker startup.**
+Status: code integrated September 12, 2026 through PR #13 at
+`a09df959abe4540914b1bf03863fbd0d31099c55`, under the explicit
+[code-only decision](../adr/0031-import-code-integration-release-separation.md).
+**Shared schema changes, deployment, worker startup and loyalty activation remain
+gated.** Cloudflare deployment setup was pending at approval time; merging is
+not release acceptance or permission to connect automatic deployment.
 
 ## Why the gate is required
 
