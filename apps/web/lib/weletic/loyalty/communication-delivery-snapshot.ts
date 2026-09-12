@@ -11,6 +11,7 @@ import {
 } from "./merchant-write-fence";
 import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
 import { isCurrentReferralBenefit } from "./referral-benefit-communication-source";
+import { isCurrentRewardExpiryReceipt } from "./reward-expiry-communication-source";
 import { isCurrentRewardRedemption } from "./reward-redeemed-communication-source";
 import { isCurrentVipAchievement } from "./vip-achievement-communication-source";
 
@@ -71,7 +72,7 @@ export async function retainCommunicationDeliveryRequest({
   expectedInstallationGeneration,
   recipientEmail,
   prepare,
-  wallClockNow = new Date(),
+  wallClockNow: suppliedWallClockNow,
   loyaltyMaintenancePermit,
 }: {
   claim: CommunicationDeliveryClaim;
@@ -82,6 +83,7 @@ export async function retainCommunicationDeliveryRequest({
   wallClockNow?: Date;
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
 }): Promise<CommunicationDeliveryRequest> {
+  const wallClockNow = suppliedWallClockNow ?? new Date();
   const job = claim.candidate;
   const parsed = loyaltyCommunicationJobPayloadSchema.safeParse(job.payload);
   if (
@@ -167,6 +169,15 @@ export async function retainCommunicationDeliveryRequest({
       )
         throw new CommunicationDeliveryIneligibleError();
       if (
+        parsed.data.source === "reward_expiry_due" &&
+        !(await isCurrentRewardExpiryReceipt({
+          db: tx,
+          event: parsed.data,
+          now: suppliedWallClockNow ?? new Date(),
+        }))
+      )
+        throw new CommunicationDeliveryIneligibleError();
+      if (
         parsed.data.source === "reward_issuance_confirmed" &&
         !(await isCurrentRewardRedemption({
           db: tx,
@@ -234,6 +245,12 @@ export async function retainCommunicationDeliveryRequest({
       let ciphertext: string;
       try {
         request = requestSchema.parse(await prepare());
+        if (
+          parsed.data.source === "reward_expiry_due" &&
+          (suppliedWallClockNow ?? new Date()).getTime() >=
+            new Date(parsed.data.expiresAt).getTime()
+        )
+          throw new CommunicationDeliveryIneligibleError();
         if (request.to !== recipientEmail) throw unavailable();
         const evidence = evidenceSchema.parse({
           version: 1,
@@ -249,7 +266,8 @@ export async function retainCommunicationDeliveryRequest({
         });
         ciphertext = encrypt(JSON.stringify(evidence));
         if (ciphertext.length > 1_000_000) throw unavailable();
-      } catch {
+      } catch (error) {
+        if (error instanceof CommunicationDeliveryIneligibleError) throw error;
         throw unavailable();
       }
       const nextPayload = {

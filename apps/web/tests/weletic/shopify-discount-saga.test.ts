@@ -176,6 +176,11 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
     vi.mocked(prisma.weleticRewardDefinition.findUnique).mockReset();
     vi.mocked(prisma.weleticRewardRedemption.findUnique).mockReset();
     vi.mocked(prisma.weleticRewardRedemption.create).mockReset();
+    vi.mocked(prisma.weleticRewardRedemption.findFirst).mockReset();
+    vi.mocked(prisma.weleticPointsLedgerEntry.findFirst).mockReset();
+    vi.mocked(prisma.weleticRewardRedemption.updateMany)
+      .mockReset()
+      .mockResolvedValue({ count: 1 });
     queryRawMock.mockImplementation(async (statement: any) => {
       const sql = statement.strings?.join(" ") || "";
       const tenantId = statement.values?.[0] || "store_test";
@@ -1932,12 +1937,60 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
         } as any);
         // Reflect the inserted identity/metadata, as Prisma does. An unrelated
         // hardcoded result ID cannot prove the new reservation's origin binding.
+        let receiptRow: any = null;
+        const ledgerCreatedAt = new Date();
         vi.mocked(prisma.weleticRewardRedemption.create).mockImplementation((({
           data,
         }: any) => {
           if (changeGeneration) currentGeneration = "sgen_reinstalled";
-          return Promise.resolve({ ...data });
+          receiptRow = {
+            fulfillmentSource: null,
+            settlementQuarantinedAt: null,
+            shopifyDiscountId: null,
+            shopifyGiftCardId: null,
+            shopifyStoreCreditTransactionId: null,
+            ...data,
+          };
+          return Promise.resolve(receiptRow);
         }) as any);
+        vi.mocked(prisma.weleticRewardRedemption.update).mockImplementation(
+          (async ({ data }: any) => {
+            Object.assign(receiptRow, data);
+            return receiptRow;
+          }) as any,
+        );
+        vi.mocked(prisma.weleticRewardRedemption.updateMany).mockImplementation(
+          (async ({ where, data }: any) => {
+            if (
+              typeof where.status === "string" &&
+              receiptRow.status !== where.status
+            )
+              return { count: 0 };
+            if (
+              where.metadata?.equals &&
+              JSON.stringify(where.metadata.equals) !==
+                JSON.stringify(receiptRow.metadata)
+            )
+              return { count: 0 };
+            Object.assign(receiptRow, data);
+            return { count: 1 };
+          }) as any,
+        );
+        vi.mocked(prisma.weleticRewardRedemption.findFirst).mockImplementation(
+          (async () => receiptRow) as any,
+        );
+        vi.mocked(prisma.weleticPointsLedgerEntry.findFirst).mockImplementation(
+          (async () => ({
+            id: receiptRow.ledgerEntryId,
+            storeId,
+            accountId,
+            entryType: "REDEEM_REWARD",
+            referenceType: "REWARD_REDEMPTION",
+            referenceId: receiptRow.id,
+            pointsDelta: -receiptRow.pointsSpent,
+            createdAt: ledgerCreatedAt,
+          })) as any,
+        );
         const authorityFetch = vi.fn().mockResolvedValue(
           Response.json({
             shop: "pool-bound.myshopify.com",

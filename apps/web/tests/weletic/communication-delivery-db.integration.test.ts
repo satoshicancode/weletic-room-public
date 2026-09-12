@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import * as weleticIds from "@/lib/weletic/ids";
 import {
   retainCommunicationDeliveryRequest,
   type CommunicationDeliveryClaim,
@@ -12,10 +13,18 @@ import {
 } from "@/lib/weletic/loyalty/non-purchase-earn";
 import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox-worker";
 import { enqueuePurchasePointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
+import { createLoyaltyDiscountProvisioningIdentity } from "@/lib/weletic/loyalty/redemption-discount-identity";
 import { createLoyaltyRedemptionProvisioningSnapshot } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
 import { enqueueReferralBenefitCommunication } from "@/lib/weletic/loyalty/referral-benefit-communication-producer";
 import { createReferralCommunicationOrigin } from "@/lib/weletic/loyalty/referral-communication-origin";
+import { getReferralCouponIdempotencyKey } from "@/lib/weletic/loyalty/referral-coupon-idempotency";
+import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
 import { createRewardCommunicationOrigin } from "@/lib/weletic/loyalty/reward-communication-origin";
+import {
+  enqueueRewardExpiryReminderJobs,
+  readRewardExpirySweepCursor,
+  REWARD_EXPIRY_SWEEP_KEY,
+} from "@/lib/weletic/loyalty/reward-expiry-scheduler";
 import { rewardRedeemedCommunicationJobSchema } from "@/lib/weletic/loyalty/reward-redeemed-communication-contract";
 import { enqueueRewardRedeemedCommunication } from "@/lib/weletic/loyalty/reward-redeemed-communication-producer";
 import { processWeleticLoyaltyAccountPrivacyScrubStep } from "@/lib/weletic/loyalty/shopper-privacy";
@@ -273,7 +282,7 @@ async function seed(source = "purchase_points_available") {
   };
 }
 
-async function seedRedemption() {
+async function seedRedemption(expiresAt: Date | null = null) {
   const { id } = await seed();
   await prisma.weleticLoyaltyOutboxJob.delete({ where: { id } });
   const createdAt = new Date();
@@ -286,7 +295,7 @@ async function seedRedemption() {
     currencyVerifiedAt: createdAt,
     customerSelectionDigest: "A".repeat(64),
     startsAt: createdAt,
-    expiresAt: null,
+    expiresAt,
   });
   await prisma.weleticLoyaltyProgram.update({
     where: { id },
@@ -348,8 +357,22 @@ async function seedRedemption() {
           shopifyDiscountCode: id,
           shopifyDiscountCodeCanonical: id.toUpperCase(),
           status: "provisioning",
+          expiresAt,
           ledgerEntryId: debit.entry.id,
           metadata: {
+            rewardSnapshot: { name: "Synthetic redemption" },
+            shopifyDiscountOwnership: createLoyaltyDiscountProvisioningIdentity(
+              {
+                identity: {
+                  storeId: id,
+                  accountId: id,
+                  redemptionId: id,
+                  rewardDefinitionId: id,
+                  discountCode: id,
+                },
+                rewardName: "Synthetic redemption",
+              },
+            ),
             provisioningSnapshot: snapshot,
             rewardCommunicationOrigin: createRewardCommunicationOrigin({
               storeId: id,
@@ -586,6 +609,61 @@ it("atomically commits one redemption notification under concurrent issuance rep
   expect(
     await prisma.weleticRewardRedemption.findUnique({ where: { id } }),
   ).toMatchObject({ status: "issued" });
+});
+
+it("persists confirmed issuance time with the redemption notice disabled and preserves it on replay", async () => {
+  const id = await seedRedemption();
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: {
+      metadata: {
+        loyaltyCommunications: { version: 1, sequence: 2, policies: [] },
+      },
+    },
+  });
+  expect(await issueRedemption(id)).toBe(1);
+  const first = await prisma.weleticRewardRedemption.findUniqueOrThrow({
+    where: { id },
+  });
+  const firstMetadata = first.metadata as Prisma.JsonObject;
+  expect(firstMetadata.rewardCommunicationIssuedAt).toEqual(expect.any(String));
+  expect(
+    Number.isFinite(
+      new Date(firstMetadata.rewardCommunicationIssuedAt as string).getTime(),
+    ),
+  ).toBe(true);
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(0);
+  expect(await issueRedemption(id)).toBe(0);
+  const replay = await prisma.weleticRewardRedemption.findUniqueOrThrow({
+    where: { id },
+  });
+  expect(replay.metadata).toEqual(first.metadata);
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(2);
+});
+
+it("rolls back the issuance timestamp with a failed winning transaction", async () => {
+  const id = await seedRedemption();
+  const before = await prisma.weleticRewardRedemption.findUniqueOrThrow({
+    where: { id },
+  });
+  await expect(issueRedemption(id, true)).rejects.toThrow(
+    "synthetic rollback after enqueue",
+  );
+  const after = await prisma.weleticRewardRedemption.findUniqueOrThrow({
+    where: { id },
+  });
+  expect(after.status).toBe("provisioning");
+  expect(after.metadata).toEqual(before.metadata);
+  expect(
+    (after.metadata as Prisma.JsonObject).rewardCommunicationIssuedAt,
+  ).toBeUndefined();
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(0);
 });
 
 it("rolls back redemption issuance and notification together, preserving the original debit", async () => {
@@ -1689,4 +1767,440 @@ it("reconciles a persisted partial refund before a holding-release notification"
       where: { storeId: id, jobType: "LOYALTY_COMMUNICATION" },
     }),
   ).toBe(1);
+});
+
+async function isolateExpirySweepFixtures() {
+  // Only IDs created by this already-verified disposable database suite.
+  await prisma.weleticLoyaltyProgram.updateMany({
+    where: { storeId: { in: fixtures } },
+    data: { status: "disabled" },
+  });
+}
+async function seedExpiryReward() {
+  const id = await seedRedemption(new Date(Date.now() + 3 * 86400000));
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: {
+      metadata: {
+        preserved: "merchant-value",
+        loyaltyCommunications: {
+          version: 1,
+          sequence: 1,
+          policies: [
+            {
+              ...createDefaultLoyaltyCommunicationPolicy("reward_expiry"),
+              enabled: true,
+            },
+          ],
+        },
+      },
+    },
+  });
+  await issueRedemption(id);
+  return id;
+}
+
+async function seedExpiryReferralCoupon() {
+  const id = await seedReferralPoints();
+  const refereeId = `referee-${id}`;
+  await prisma.weleticShopper.create({
+    data: {
+      id: refereeId,
+      storeId: id,
+      shopifyCustomerId: refereeId,
+      email: "synthetic-friend@example.com",
+      acceptsMarketing: true,
+    },
+  });
+  await prisma.weleticLoyaltyAccount.create({
+    data: {
+      id: refereeId,
+      storeId: id,
+      programId: id,
+      shopperId: refereeId,
+      status: "active",
+    },
+  });
+  const qualifiedAt = new Date(Date.now() - 1000);
+  const identity = {
+    storeId: id,
+    programId: id,
+    referralId: id,
+    qualificationOrderId: id,
+    accountId: id,
+    side: "advocate" as const,
+  };
+  const reward = await prisma.weleticRewardDefinition.create({
+    data: {
+      id,
+      storeId: id,
+      name: "Synthetic referral coupon",
+      rewardType: "amount_off",
+      pointsCost: BigInt(100),
+      discountValue: 500,
+      expiresInDays: 3,
+    },
+  });
+  const snapshot = createReferralCouponRewardSnapshot({
+    identity: { ...identity, rewardDefinitionId: id },
+    reward,
+    qualifiedAt,
+    shopCurrency: "JPY",
+    currencyVerifiedAt: qualifiedAt,
+    shopifyCustomerId: id,
+  });
+  const origin = createReferralCommunicationOrigin({
+    ...identity,
+    installationGeneration: "g1",
+    qualificationPath: "account_referral",
+    qualifiedAt: qualifiedAt.toISOString(),
+    kind: "coupon",
+    rewardDefinitionId: id,
+    rewardSnapshotDigest: snapshot.contentDigest,
+  });
+  await prisma.weleticLoyaltyReferral.update({
+    where: { id },
+    data: {
+      advocatePointsAwarded: BigInt(0),
+      refereeAccountId: refereeId,
+      metadata: {
+        qualificationOrderId: id,
+        referralCommunicationOrigins: { advocate: origin },
+        referralCouponRewardSnapshots: { advocate: snapshot },
+      },
+    },
+  });
+  await prisma.weleticRewardRedemption.create({
+    data: {
+      id,
+      storeId: id,
+      accountId: id,
+      rewardDefinitionId: id,
+      idempotencyKey: getReferralCouponIdempotencyKey(identity),
+      status: "issued",
+      artifactKind: "discount_code",
+      pointsSpent: BigInt(0),
+      shopifyDiscountId: `synthetic-${id}`,
+      shopifyDiscountCode: snapshot.discountCode,
+      shopifyDiscountCodeCanonical: snapshot.discountCode,
+      createdAt: qualifiedAt,
+      expiresAt: new Date(snapshot.expiresAt!),
+      metadata: {
+        referralId: id,
+        qualificationOrderId: id,
+        referralSide: "advocate",
+        rewardSnapshot: snapshot,
+        referralCommunicationIssuedAt: new Date().toISOString(),
+        shopifyDiscountOwnershipFingerprint: snapshot.ownershipFingerprint,
+        shopifyDiscountProvisioningName: snapshot.provisioningName,
+        shopifyDiscountExpectedTitle: snapshot.expectedTitle,
+      },
+    },
+  });
+  const amount = BigInt(10000);
+  await prisma.weleticCommerceOrder.create({
+    data: {
+      id,
+      storeId: id,
+      programId: id,
+      shopperId: refereeId,
+      externalId: id,
+      status: "paid",
+      presentmentCurrency: "JPY",
+      presentmentSubtotal: amount,
+      presentmentNet: amount,
+      presentmentTotal: amount,
+      shopCurrency: "JPY",
+      shopSubtotal: amount,
+      shopNet: amount,
+      shopTotal: amount,
+      accountingCurrency: "JPY",
+      accountingNet: amount,
+      accountingTotal: amount,
+      accountingFxRate: 1,
+      occurredAt: qualifiedAt,
+    },
+  });
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: {
+      metadata: {
+        loyaltyCommunications: {
+          version: 1,
+          sequence: 2,
+          policies: [
+            {
+              ...createDefaultLoyaltyCommunicationPolicy("reward_expiry"),
+              enabled: true,
+            },
+          ],
+        },
+      },
+    },
+  });
+  return id;
+}
+
+it.each([
+  ...(["redemption", "referral_coupon"] as const).flatMap((kind) =>
+    (["used", "expired", "generation", "suspended"] as const).map((change) => ({
+      kind,
+      change,
+    })),
+  ),
+  { kind: "referral_coupon" as const, change: "order_refunded" as const },
+  { kind: "referral_coupon" as const, change: "referral_cancelled" as const },
+])(
+  "rejects retained SQL $kind expiry delivery after $change wins",
+  async ({ kind, change }) => {
+    await isolateExpirySweepFixtures();
+    const id =
+      kind === "redemption"
+        ? await seedExpiryReward()
+        : await seedExpiryReferralCoupon();
+    const now = new Date(Date.now() + 1000);
+    expect(await enqueueRewardExpiryReminderJobs({ now })).toMatchObject({
+      jobsEnqueued: 1,
+      programFailures: [],
+    });
+    const queued = await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+      where: { storeId: id },
+    });
+    const candidate = await prisma.weleticLoyaltyOutboxJob.update({
+      where: { id: queued.id },
+      data: {
+        status: "processing",
+        attempts: 1,
+        lockedBy: "expiry-fixture-owner",
+        lockedAt: now,
+      },
+    });
+    const args = {
+      claim: {
+        candidate,
+        ownerToken: candidate.lockedBy!,
+        claimedAt: candidate.lockedAt!,
+        attempt: 1,
+      },
+      accountId: id,
+      expectedInstallationGeneration: "g1",
+      recipientEmail: request.to,
+      prepare: vi.fn().mockResolvedValue(request),
+      wallClockNow: now,
+    };
+    expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
+    const retained = await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+      where: { id: candidate.id },
+    });
+    expect(retained.payload).toHaveProperty("communicationDeliverySnapshot");
+    expect(JSON.stringify(retained.payload)).not.toContain(request.to);
+    const retry = {
+      ...args,
+      claim: { ...args.claim, candidate: retained },
+      prepare: vi.fn(() => {
+        throw new Error("A retained retry must not render again");
+      }),
+    };
+    expect(await retainCommunicationDeliveryRequest(retry)).toEqual(request);
+    if (change === "order_refunded") {
+      await prisma.weleticCommerceOrder.update({
+        where: { id },
+        data: { status: "refunded" },
+      });
+    } else if (change === "referral_cancelled") {
+      await prisma.weleticLoyaltyReferral.update({
+        where: { id },
+        data: { status: "cancelled" },
+      });
+    } else if (change === "used") {
+      await prisma.weleticRewardRedemption.update({
+        where: { id },
+        data: { status: "used" },
+      });
+    } else if (change === "expired") {
+      const redemption = await prisma.weleticRewardRedemption.findUniqueOrThrow(
+        {
+          where: { id },
+        },
+      );
+      retry.wallClockNow = redemption.expiresAt!;
+    } else {
+      await prisma.weleticShopifyStore.update({
+        where: { id },
+        data:
+          change === "generation"
+            ? { installationGeneration: "g2" }
+            : { storeAccessState: "suspended" },
+      });
+    }
+    await expect(retainCommunicationDeliveryRequest(retry)).rejects.toThrow();
+    expect(retry.prepare).not.toHaveBeenCalled();
+    expect(
+      await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id: candidate.id },
+      }),
+    ).toEqual(retained);
+  },
+);
+
+it("rotates actual MySQL sweep ordering across seven stores and repairs malformed/future cursors", async () => {
+  await isolateExpirySweepFixtures();
+  const ids: string[] = [];
+  for (let n = 0; n < 7; n++) ids.push(await seedExpiryReward());
+  for (const [index, stamp] of [
+    "2099-01-01T00:00:00.000Z",
+    "invalid",
+  ].entries()) {
+    const program = await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
+      where: { id: ids[index] },
+    });
+    await prisma.weleticLoyaltyProgram.update({
+      where: { id: program.id },
+      data: {
+        metadata: {
+          ...(program.metadata as Prisma.JsonObject),
+          [REWARD_EXPIRY_SWEEP_KEY]: {
+            installationGeneration: "old-generation",
+            lastRedemptionId: "zzzz",
+            lastScannedAt: stamp,
+          },
+        },
+      },
+    });
+  }
+  const now = new Date(Date.now() + 1000);
+  const first = await enqueueRewardExpiryReminderJobs({ now });
+  const second = await enqueueRewardExpiryReminderJobs({
+    now: new Date(now.getTime() + 1000),
+  });
+  expect(first.programFailures).toEqual([]);
+  expect(second.programFailures).toEqual([]);
+  expect(first.programsScanned).toBe(5);
+  expect(first.jobsEnqueued + second.jobsEnqueued).toBe(7);
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({
+      where: { storeId: { in: ids } },
+    }),
+  ).toBe(7);
+  for (const id of ids) {
+    const program = await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
+      where: { id },
+    });
+    expect(program.metadata).toMatchObject({
+      preserved: "merchant-value",
+      [REWARD_EXPIRY_SWEEP_KEY]: {
+        installationGeneration: "g1",
+        lastRedemptionId: null,
+      },
+    });
+  }
+});
+
+it("advances the actual SQL cursor past invalid receipts and does not duplicate concurrent sweeps", async () => {
+  await isolateExpirySweepFixtures();
+  const id = await seedExpiryReward();
+  for (const prefix of ["a", "b", "c"]) {
+    await prisma.weleticRewardRedemption.create({
+      data: {
+        id: prefix + "-" + id,
+        storeId: id,
+        accountId: id,
+        rewardDefinitionId: id,
+        pointsSpent: BigInt(100),
+        status: "issued",
+        artifactKind: "discount_code",
+        shopifyDiscountCode: prefix + "-" + id,
+        shopifyDiscountCodeCanonical: (prefix + "-" + id).toUpperCase(),
+        expiresAt: new Date(Date.now() + 86400000),
+        metadata: {},
+      },
+    });
+  }
+  const now = new Date(Date.now() + 1000);
+  const first = await enqueueRewardExpiryReminderJobs({ now, batchSize: 2 });
+  expect(first).toMatchObject({
+    rewardsScanned: 2,
+    ineligible: 2,
+    jobsEnqueued: 0,
+    programFailures: [],
+  });
+  const program = await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
+    where: { id },
+  });
+  expect(readRewardExpirySweepCursor(program.metadata, "g1")).toBe("b-" + id);
+  const runs = await Promise.all([
+    enqueueRewardExpiryReminderJobs({
+      now: new Date(now.getTime() + 1000),
+      batchSize: 2,
+    }),
+    enqueueRewardExpiryReminderJobs({
+      now: new Date(now.getTime() + 2000),
+      batchSize: 2,
+    }),
+  ]);
+  expect(runs.flatMap((r) => r.programFailures)).toEqual([]);
+  expect(runs.reduce((n, r) => n + r.jobsEnqueued, 0)).toBe(1);
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(1);
+});
+
+it("rolls back queue failure and preserves the SQL retry cursor while recording its turn", async () => {
+  await isolateExpirySweepFixtures();
+  const id = await seedExpiryReward();
+  const program = await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
+    where: { id },
+  });
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: {
+      metadata: {
+        ...(program.metadata as Prisma.JsonObject),
+        [REWARD_EXPIRY_SWEEP_KEY]: {
+          installationGeneration: "g1",
+          lastRedemptionId: "0",
+          lastScannedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    },
+  });
+  const collisionId = "collision-" + id;
+  await prisma.weleticLoyaltyOutboxJob.create({
+    data: {
+      id: collisionId,
+      storeId: id,
+      jobType: "LOYALTY_COMMUNICATION",
+      status: "completed",
+      payload: { syntheticCollisionFixture: true },
+      idempotencyKey: "collision-fixture",
+    },
+  });
+  const createId = vi
+    .spyOn(weleticIds, "createWeleticId")
+    .mockReturnValue(collisionId);
+  const now = new Date(Date.now() + 1000);
+  try {
+    const result = await enqueueRewardExpiryReminderJobs({ now });
+    expect(result).toMatchObject({
+      rewardsScanned: 0,
+      jobsEnqueued: 0,
+      programFailures: [{ storeId: id, checkpointRetained: true }],
+    });
+  } finally {
+    createId.mockRestore();
+  }
+  const failed = await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
+    where: { id },
+  });
+  expect(readRewardExpirySweepCursor(failed.metadata, "g1")).toBe("0");
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(1);
+  const retry = await enqueueRewardExpiryReminderJobs({
+    now: new Date(now.getTime() + 1000),
+  });
+  expect(retry).toMatchObject({ jobsEnqueued: 1, programFailures: [] });
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(2);
 });

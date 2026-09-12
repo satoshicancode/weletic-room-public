@@ -3,9 +3,11 @@ import type { CommunicationDeliveryClaim } from "../../lib/weletic/loyalty/commu
 import { CommunicationDeliveryRecipientChangedError } from "../../lib/weletic/loyalty/communication-delivery-snapshot";
 import { sendPointsEarnedNotification } from "../../lib/weletic/loyalty/points-earned-notifications";
 import { createReferralBenefitCommunication } from "../../lib/weletic/loyalty/referral-benefit-communication-contract";
+import { createRewardExpiryCommunication } from "../../lib/weletic/loyalty/reward-expiry-communication-contract";
 import { createRewardRedeemedCommunication } from "../../lib/weletic/loyalty/reward-redeemed-communication-contract";
 import { referralBenefitFixture } from "./referral-benefit-communication-fixture";
 import { rewardCommunicationFixture } from "./reward-communication-fixture";
+import { rewardExpiryCommunicationFixture } from "./reward-expiry-communication-fixture";
 
 const mocks = vi.hoisted(() => ({
   account: vi.fn(),
@@ -21,6 +23,10 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
   send: vi.fn(),
   sender: vi.fn(),
+  expiryRemote: vi.fn(),
+}));
+vi.mock("../../lib/weletic/loyalty/reward-expiry-remote-check", () => ({
+  isRewardExpiryDiscountCurrentlyUsable: mocks.expiryRemote,
 }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -200,6 +206,7 @@ it.each([
 });
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.expiryRemote.mockResolvedValue(true);
   mocks.account.mockResolvedValue(accountRow());
   mocks.ledger.mockResolvedValue({
     grantId: "grant",
@@ -227,6 +234,79 @@ beforeEach(() => {
   mocks.retain.mockImplementation(async ({ prepare }) => prepare());
   mocks.send.mockResolvedValue({ data: { id: "synthetic-provider-id" } });
 });
+
+function expiryFixture(kind: "redemption" | "referral_coupon", locale = "en") {
+  const evidence = rewardExpiryCommunicationFixture(kind);
+  const row = {
+    ...accountRow(),
+    shopper: {
+      ...accountRow().shopper,
+      locale,
+      shopifyCustomerId: "gid://shopify/Customer/private-customer",
+    },
+  };
+  row.program.metadata.loyaltyCommunications.policies = [
+    evidence.policySnapshot.policy,
+  ];
+  mocks.account.mockResolvedValue(row);
+  const args: { claim: CommunicationDeliveryClaim } = fixture();
+  args.claim.candidate.payload = createRewardExpiryCommunication(evidence);
+  return { args, row };
+}
+it("does not dispatch an expiry email when retention crosses the expiry instant", async () => {
+  const { args } = expiryFixture("redemption");
+  const event = args.claim.candidate.payload as {
+    occurredAt: string;
+    expiresAt: string;
+  };
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(event.occurredAt));
+  try {
+    const retain = mocks.retain.getMockImplementation()!;
+    mocks.retain.mockImplementation(async (options) => {
+      const request = await retain(options);
+      vi.setSystemTime(new Date(event.expiresAt));
+      return request;
+    });
+    expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
+    expect(mocks.send).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it.each(["redemption", "referral_coupon"] as const)(
+  "renders %s expiry through the shared sender in EN/JA/VI with mocked remote transport",
+  async (kind) => {
+    for (const locale of ["en", "ja", "vi"]) {
+      const { args } = expiryFixture(kind, locale);
+      expect(await sendPointsEarnedNotification(args)).toBe("sent");
+      expect(mocks.expiryRemote).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          event: args.claim.candidate.payload,
+          shopifyCustomerId: "gid://shopify/Customer/private-customer",
+        }),
+      );
+      const prepared = mocks.prepare.mock.calls.at(-1)![0];
+      expect(prepared.subject).not.toMatch(/\{\{|undefined|private-|PRIVATE-/);
+      expect(prepared.react).toBeTruthy();
+    }
+  },
+);
+it.each(["redemption", "referral_coupon"] as const)(
+  "suppresses unavailable %s remotely and retries transport failures without sending",
+  async (kind) => {
+    const { args } = expiryFixture(kind);
+    mocks.expiryRemote.mockResolvedValue(false);
+    expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
+    expect(mocks.retain).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+    mocks.expiryRemote.mockRejectedValue(new Error("synthetic lookup failure"));
+    await expect(sendPointsEarnedNotification(args)).rejects.toThrow(
+      "synthetic lookup failure",
+    );
+    expect(mocks.send).not.toHaveBeenCalled();
+  },
+);
 function birthdayFixture() {
   const args = fixture();
   const { orderId: _order, ...payload } = args.claim.candidate.payload;

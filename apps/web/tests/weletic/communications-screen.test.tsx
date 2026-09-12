@@ -56,6 +56,59 @@ async function submit() {
 }
 
 it.each(["en", "ja", "vi"] as const)(
+  "exposes bounded reward-expiry readiness and preserves older journey states in %s",
+  async (locale) => {
+    const connectedResponse: LoyaltyCommunicationsResponse = {
+      ...response,
+      deliveryIntegration:
+        "purchase_signup_birthday_vip_redemption_reward_expiry_and_expiry_policies",
+    };
+    const request = vi.fn().mockImplementation(async (input) =>
+      input.operation === "read"
+        ? connectedResponse
+        : {
+            ...connectedResponse,
+            revision: "b".repeat(64),
+            policies: [input.policy],
+          },
+    );
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    await select(1, "reward_expiry");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].rewardExpiryConnected,
+    );
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].rewardExpiryEnabled,
+    );
+    expect(node.textContent).toContain("UTC");
+    expect(node.textContent).toContain("72");
+    expect(node.textContent).not.toContain(
+      communicationsCopy[locale].disconnected,
+    );
+    await editSubject("Expires {{expiry_date}}");
+    await submit();
+    expect(request.mock.calls[1][0].policy).toMatchObject({
+      journey: "reward_expiry",
+      enabled: false,
+    });
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].rewardExpirySaved,
+    );
+    await select(1, "reward_redeemed");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].redemptionConnected,
+    );
+    await select(1, "referral_friend");
+    expect(node.textContent).toContain(communicationsCopy[locale].disconnected);
+    expect(node.innerHTML).not.toContain("private-store");
+    expect(node.innerHTML).not.toContain("private-generation");
+  },
+);
+
+it.each(["en", "ja", "vi"] as const)(
   "exposes redemption readiness without claiming referral delivery in %s",
   async (locale) => {
     const connectedResponse = {
@@ -91,6 +144,8 @@ it.each(["en", "ja", "vi"] as const)(
       communicationsCopy[locale].redemptionSaved,
     );
     await select(1, "referral_friend");
+    expect(node.textContent).toContain(communicationsCopy[locale].disconnected);
+    await select(1, "reward_expiry");
     expect(node.textContent).toContain(communicationsCopy[locale].disconnected);
     expect(node.innerHTML).not.toContain("private-store");
     expect(node.innerHTML).not.toContain("private-generation");

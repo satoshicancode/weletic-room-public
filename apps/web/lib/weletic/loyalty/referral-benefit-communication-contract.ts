@@ -49,7 +49,11 @@ const coupon = common.extend({
     })
     .strict(),
 });
-function consistent(event: z.infer<typeof points> | z.infer<typeof coupon>) {
+const receiptPoints = points.omit({ policyRevision: true, policy: true });
+const receiptCoupon = coupon.omit({ policyRevision: true, policy: true });
+function consistentReceipt(
+  event: z.infer<typeof receiptPoints> | z.infer<typeof receiptCoupon>,
+) {
   const { origin } = event;
   return (
     event.storeId === origin.storeId &&
@@ -59,7 +63,6 @@ function consistent(event: z.infer<typeof points> | z.infer<typeof coupon>) {
     event.benefitKind === origin.kind &&
     event.journey ===
       (origin.side === "advocate" ? "referral_advocate" : "referral_friend") &&
-    event.policy.journey === event.journey &&
     new Date(event.receiptCreatedAt).getTime() >=
       new Date(origin.qualifiedAt).getTime() &&
     new Date(event.occurredAt).getTime() >=
@@ -69,6 +72,15 @@ function consistent(event: z.infer<typeof points> | z.infer<typeof coupon>) {
         event.points === origin.points &&
         event.occurredAt === event.receiptCreatedAt))
   );
+}
+export const referralBenefitReceiptEvidenceSchema = z
+  .discriminatedUnion("benefitKind", [
+    receiptPoints.strict(),
+    receiptCoupon.strict(),
+  ])
+  .refine(consistentReceipt);
+function consistent(event: z.infer<typeof points> | z.infer<typeof coupon>) {
+  return consistentReceipt(event) && event.policy.journey === event.journey;
 }
 export const referralBenefitCommunicationSchema = z
   .discriminatedUnion("benefitKind", [points.strict(), coupon.strict()])
@@ -133,7 +145,7 @@ export type ReferralCouponReceipt = {
   createdAt: Date;
   expiresAt: Date | null;
 };
-type Input = {
+export type ReferralBenefitCommunicationInput = {
   identity: ReferralCommunicationIdentity;
   expectedInstallationGeneration: string;
   referral: ReferralBenefitRecord;
@@ -147,6 +159,7 @@ type Input = {
     | { kind: "points"; ledger: ReferralPointsReceipt }
     | { kind: "coupon"; redemption: ReferralCouponReceipt };
 };
+type Input = ReferralBenefitCommunicationInput;
 function object(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -167,7 +180,26 @@ function project(
   input: Input,
   couponStatuses: readonly string[],
 ): ReferralBenefitCommunication {
-  const { identity, referral, receipt, policySnapshot } = input;
+  const { identity, policySnapshot } = input;
+  if (
+    policySnapshot.storeId !== identity.storeId ||
+    policySnapshot.programId !== identity.programId
+  )
+    unavailable();
+  return referralBenefitCommunicationSchema.parse({
+    ...projectReferralBenefitReceiptEvidence(input, couponStatuses),
+    policyRevision: policySnapshot.revision,
+    policy: policySnapshot.policy,
+  });
+}
+
+/** Validates original benefit evidence independently of notification policy.
+ * Callers must separately authorize the journey and current delivery eligibility. */
+export function projectReferralBenefitReceiptEvidence(
+  input: Omit<Input, "policySnapshot">,
+  couponStatuses: readonly string[],
+) {
+  const { identity, referral, receipt } = input;
   const metadata = object(referral.metadata);
   const invalidatedOrders = metadata.invalidatedQualificationOrderIds;
   if (
@@ -192,9 +224,7 @@ function project(
     !["qualified", "rewarded"].includes(referral.status) ||
     (origin.side === "advocate"
       ? referral.advocateAccountId
-      : referral.refereeAccountId) !== identity.accountId ||
-    policySnapshot.storeId !== identity.storeId ||
-    policySnapshot.programId !== identity.programId
+      : referral.refereeAccountId) !== identity.accountId
   )
     unavailable();
   const frozen = {
@@ -207,8 +237,6 @@ function project(
     accountId: origin.accountId,
     installationGeneration: origin.installationGeneration,
     origin,
-    policyRevision: policySnapshot.revision,
-    policy: policySnapshot.policy,
   };
   if (receipt.kind === "points") {
     if (origin.kind !== "points") unavailable();
@@ -235,7 +263,7 @@ function project(
       ledgerMetadata.orderId !== origin.qualificationOrderId
     )
       unavailable();
-    return referralBenefitCommunicationSchema.parse({
+    return referralBenefitReceiptEvidenceSchema.parse({
       ...frozen,
       benefitKind: "points",
       points: origin.points,
@@ -298,7 +326,7 @@ function project(
   const name =
     snapshot.name.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").trim() ||
     "Reward";
-  return referralBenefitCommunicationSchema.parse({
+  return referralBenefitReceiptEvidenceSchema.parse({
     ...frozen,
     benefitKind: "coupon",
     receiptId: redemption.id,

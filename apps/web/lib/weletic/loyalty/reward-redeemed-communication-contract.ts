@@ -61,6 +61,18 @@ const base = z
   .strict();
 
 export const rewardRedeemedCommunicationSchema = base;
+export const rewardReceiptEvidenceSchema = base.pick({
+  storeId: true,
+  programId: true,
+  accountId: true,
+  installationGeneration: true,
+  redemptionId: true,
+  ledgerEntryId: true,
+  ledgerCreatedAt: true,
+  pointsSpent: true,
+  provisioningDigest: true,
+  reward: true,
+});
 export const rewardRedeemedCommunicationJobSchema = base
   .extend({
     communicationDeliverySnapshot: z.string().max(1_000_000).optional(),
@@ -71,7 +83,7 @@ export type RewardRedeemedCommunication = z.infer<typeof base>;
 /** Construct only after the caller wins provisioning -> issued in the same
  * fenced transaction. A reserved debit alone is not successful redemption.
  * This validates source evidence, not staff authority or permission to send. */
-type RewardCommunicationInput = {
+export type RewardCommunicationInput = {
   storeId: string;
   programId: string;
   accountId: string;
@@ -121,7 +133,31 @@ function projectRewardCommunication(
   input: RewardCommunicationInput,
   acceptedStatuses: readonly string[],
 ): RewardRedeemedCommunication {
-  const { redemption, ledger, policySnapshot } = input;
+  const evidence = projectRewardReceiptEvidence(input, acceptedStatuses);
+  if (
+    input.policySnapshot.storeId !== input.storeId ||
+    input.policySnapshot.programId !== input.programId
+  )
+    throw new Error("Reward communication evidence unavailable");
+  return base.parse({
+    version: 1,
+    journey: "reward_redeemed",
+    source: "reward_issuance_confirmed",
+    ...evidence,
+    occurredAt: input.occurredAt.toISOString(),
+    policyRevision: input.policySnapshot.revision,
+    policy: input.policySnapshot.policy,
+  });
+}
+
+/** Policy-independent receipt projection. Validates economic provenance, not
+ * permission to notify. Other journeys must provide their own event/policy and
+ * current eligibility checks rather than fabricate an issuance notification. */
+export function projectRewardReceiptEvidence(
+  input: Omit<RewardCommunicationInput, "policySnapshot">,
+  acceptedStatuses: readonly string[],
+) {
+  const { redemption, ledger } = input;
   const snapshot = readLoyaltyRedemptionProvisioningSnapshot(
     redemption.metadata,
   );
@@ -167,8 +203,8 @@ function projectRewardCommunication(
     redemption.pointsSpent <= BigInt(0) ||
     snapshot.rewardDefinitionId !== redemption.rewardDefinitionId ||
     BigInt(snapshot.pointsCost) !== redemption.pointsSpent ||
-    policySnapshot.storeId !== input.storeId ||
-    policySnapshot.programId !== input.programId ||
+    !Number.isFinite(input.occurredAt.getTime()) ||
+    !Number.isFinite(ledger.createdAt.getTime()) ||
     input.occurredAt.getTime() < ledger.createdAt.getTime()
   )
     throw new Error("Reward communication evidence unavailable");
@@ -177,10 +213,7 @@ function projectRewardCommunication(
   const name =
     snapshot.name.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").trim() ||
     "Reward";
-  return base.parse({
-    version: 1,
-    journey: "reward_redeemed",
-    source: "reward_issuance_confirmed",
+  return rewardReceiptEvidenceSchema.parse({
     storeId: input.storeId,
     programId: input.programId,
     accountId: input.accountId,
@@ -196,9 +229,6 @@ function projectRewardCommunication(
       value: snapshot.discountValue,
       currency: snapshot.shopCurrency,
     },
-    occurredAt: input.occurredAt.toISOString(),
-    policyRevision: policySnapshot.revision,
-    policy: policySnapshot.policy,
   });
 }
 

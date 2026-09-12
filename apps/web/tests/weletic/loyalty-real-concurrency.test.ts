@@ -134,7 +134,10 @@ const { dbHarness } = vi.hoisted(() => {
           }),
           findFirst: vi.fn(async ({ where, orderBy }: any) => {
             const matching = Array.from(harness.ledgerEntries.values()).filter(
-              (e) => e.accountId === where.accountId,
+              (e) =>
+                e.accountId === where.accountId &&
+                (!where.id || e.id === where.id) &&
+                (!where.storeId || e.storeId === where.storeId),
             );
             if (orderBy?.sequenceNumber === "desc") {
               matching.sort((a, b) => b.sequenceNumber - a.sequenceNumber);
@@ -219,6 +222,7 @@ const { dbHarness } = vi.hoisted(() => {
             harness.accountSequences.add(sequenceCheckKey);
 
             const entry = {
+              createdAt: new Date(),
               ...data,
               id: data.id || `wledger_${Date.now()}_${Math.random()}`,
             };
@@ -358,6 +362,7 @@ const { dbHarness } = vi.hoisted(() => {
           findUnique: vi.fn(async () => ({
             id: "wstore_stress_m6",
             complianceState: "active",
+            storeAccessState: "active",
             shopCurrency: "USD",
             currencyVerifiedAt: new Date(0),
             installationGeneration: "igen_stress_m6",
@@ -365,11 +370,27 @@ const { dbHarness } = vi.hoisted(() => {
         },
 
         weleticRewardRedemption: {
+          findFirst: vi.fn(async ({ where }: any) => {
+            const row = harness.redemptions.get(where.id);
+            return row &&
+              (!where.storeId || row.storeId === where.storeId) &&
+              (!where.accountId || row.accountId === where.accountId)
+              ? { ...row }
+              : null;
+          }),
           findUnique: vi.fn(async ({ where }: any) => {
             return harness.redemptions.get(where.id) || null;
           }),
           create: vi.fn(async ({ data }: any) => {
-            const redemp = { ...data, id: data.id || `wredemp_${Date.now()}` };
+            const redemp = {
+              artifactKind: "discount_code",
+              fulfillmentSource: null,
+              settlementQuarantinedAt: null,
+              shopifyGiftCardId: null,
+              shopifyStoreCreditTransactionId: null,
+              ...data,
+              id: data.id || `wredemp_${Date.now()}`,
+            };
             harness.redemptions.set(redemp.id, redemp);
             return { ...redemp };
           }),
@@ -384,6 +405,16 @@ const { dbHarness } = vi.hoisted(() => {
             const redemp = harness.redemptions.get(where.id);
             if (!redemp) return { count: 0 };
             if (where.storeId && redemp.storeId !== where.storeId) {
+              return { count: 0 };
+            }
+            if (where.accountId && redemp.accountId !== where.accountId) {
+              return { count: 0 };
+            }
+            if (
+              where.metadata?.equals !== undefined &&
+              JSON.stringify(redemp.metadata) !==
+                JSON.stringify(where.metadata.equals)
+            ) {
               return { count: 0 };
             }
             if (

@@ -100,7 +100,16 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: vi.fn(async ({ where }) => {
         return mockState.redemptions.get(where.id) || null;
       }),
-      findFirst: vi.fn(async () => null),
+      findFirst: vi.fn(async ({ where }) => {
+        const item = mockState.redemptions.get(where.id);
+        if (
+          !item ||
+          (where.storeId && item.storeId !== where.storeId) ||
+          (where.accountId && item.accountId !== where.accountId)
+        )
+          return null;
+        return item;
+      }),
       findMany: vi.fn(async ({ where }) => {
         const all = Array.from(mockState.redemptions.values());
         return all.filter((r) => {
@@ -112,7 +121,15 @@ vi.mock("@/lib/prisma", () => ({
         });
       }),
       create: vi.fn(async ({ data }) => {
-        const item = { ...data, createdAt: data.createdAt || new Date() };
+        const item = {
+          artifactKind: "discount_code",
+          fulfillmentSource: null,
+          settlementQuarantinedAt: null,
+          shopifyGiftCardId: null,
+          shopifyStoreCreditTransactionId: null,
+          ...data,
+          createdAt: data.createdAt || new Date(),
+        };
         mockState.redemptions.set(data.id, item);
         return item;
       }),
@@ -127,6 +144,14 @@ vi.mock("@/lib/prisma", () => ({
         const item = mockState.redemptions.get(where.id);
         if (!item) return { count: 0 };
         if (where.storeId && item.storeId !== where.storeId)
+          return { count: 0 };
+        if (where.accountId && item.accountId !== where.accountId)
+          return { count: 0 };
+        if (
+          where.metadata?.equals &&
+          JSON.stringify(item.metadata) !==
+            JSON.stringify(where.metadata.equals)
+        )
           return { count: 0 };
         if (typeof where.status === "string" && item.status !== where.status) {
           return { count: 0 };
@@ -153,7 +178,10 @@ vi.mock("@/lib/prisma", () => ({
       }),
       findFirst: vi.fn(async ({ where, orderBy }) => {
         let matches = mockState.ledgerEntries.filter(
-          (e) => e.accountId === where.accountId,
+          (e) =>
+            e.accountId === where.accountId &&
+            (!where.storeId || e.storeId === where.storeId) &&
+            (!where.id || e.id === where.id),
         );
         if (orderBy?.sequenceNumber === "desc") {
           matches.sort((a, b) => b.sequenceNumber - a.sequenceNumber);
@@ -204,6 +232,7 @@ vi.mock("@/lib/prisma", () => ({
     weleticShopifyStore: {
       findFirst: vi.fn(async () => ({
         id: "store_adversarial",
+        storeAccessState: "active",
         shopDomain: "yamaxdev.myshopify.com",
         projectId: "proj_adv_123",
         complianceState: "active",
@@ -213,6 +242,7 @@ vi.mock("@/lib/prisma", () => ({
       })),
       findUnique: vi.fn(async () => ({
         id: "store_adversarial",
+        storeAccessState: "active",
         shopDomain: "yamaxdev.myshopify.com",
         projectId: "proj_adv_123",
         complianceState: "active",
@@ -241,6 +271,7 @@ vi.mock("@/lib/prisma", () => ({
         return [
           {
             id: "store_adversarial",
+            storeAccessState: "active",
             complianceState: "active",
             installationGeneration: "igen_adv_1",
             shopCurrency: "USD",
@@ -430,7 +461,7 @@ describe("Adversarial Stress Verification: 4-Phase Distributed Discount Saga (Mi
         customFetch: transientFetch as any,
       });
 
-      expect(sagaResult.success).toBe(true);
+      expect(sagaResult.success, sagaResult.error).toBe(true);
       expect(sagaResult.status).toBe(WeleticRedemptionStatus.issued);
       expect(sagaResult.shopifyDiscountId).toBe(
         "gid://shopify/DiscountCodeNode/transient_success_1",
