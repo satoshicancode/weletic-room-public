@@ -56,6 +56,7 @@ const complianceMocks = vi.hoisted(() => ({
     shopCurrency: "USD",
     currencyVerifiedAt: new Date("2026-08-31T00:00:00.000Z"),
     complianceState: "active",
+    installationGeneration: null,
   }),
   assertGeneration: vi.fn().mockResolvedValue({
     id: "store_challenger_ref_1",
@@ -679,6 +680,16 @@ vi.mock("@/lib/prisma", () => {
         return await cb(prismaMock);
       }
       return cb;
+    }),
+    $queryRaw: vi.fn(async (query) => {
+      const storeId = String(query.values[0]);
+      if (query.sql.includes("FROM WeleticLoyaltyProgram")) {
+        return Array.from(dbState.programs.values()).filter(
+          (program) => program.storeId === storeId,
+        );
+      }
+      const store = dbState.stores.get(storeId);
+      return store ? [{ ...store, storeAccessState: "active" }] : [];
     }),
   };
   return { prisma: prismaMock };

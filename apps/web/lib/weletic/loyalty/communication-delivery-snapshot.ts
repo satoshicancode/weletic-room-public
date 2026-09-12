@@ -10,6 +10,7 @@ import {
   withActiveStoreLoyaltyMutation,
 } from "./merchant-write-fence";
 import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
+import { isCurrentReferralBenefit } from "./referral-benefit-communication-source";
 import { isCurrentRewardRedemption } from "./reward-redeemed-communication-source";
 import { isCurrentVipAchievement } from "./vip-achievement-communication-source";
 
@@ -168,6 +169,15 @@ export async function retainCommunicationDeliveryRequest({
       if (
         parsed.data.source === "reward_issuance_confirmed" &&
         !(await isCurrentRewardRedemption({
+          db: tx,
+          event: parsed.data,
+          now: wallClockNow,
+        }))
+      )
+        throw new CommunicationDeliveryIneligibleError();
+      if (
+        parsed.data.source === "referral_benefit_confirmed" &&
+        !(await isCurrentReferralBenefit({
           db: tx,
           event: parsed.data,
           now: wallClockNow,

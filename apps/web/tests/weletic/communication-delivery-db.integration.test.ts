@@ -13,6 +13,8 @@ import {
 import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox-worker";
 import { enqueuePurchasePointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
 import { createLoyaltyRedemptionProvisioningSnapshot } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
+import { enqueueReferralBenefitCommunication } from "@/lib/weletic/loyalty/referral-benefit-communication-producer";
+import { createReferralCommunicationOrigin } from "@/lib/weletic/loyalty/referral-communication-origin";
 import { createRewardCommunicationOrigin } from "@/lib/weletic/loyalty/reward-communication-origin";
 import { rewardRedeemedCommunicationJobSchema } from "@/lib/weletic/loyalty/reward-redeemed-communication-contract";
 import { enqueueRewardRedeemedCommunication } from "@/lib/weletic/loyalty/reward-redeemed-communication-producer";
@@ -72,6 +74,7 @@ afterAll(async () => {
     const scope = { storeId: { in: fixtures } };
     await prisma.weleticLoyaltyOutboxJob.deleteMany({ where: scope });
     await prisma.weleticRewardRedemption.deleteMany({ where: scope });
+    await prisma.weleticLoyaltyReferral.deleteMany({ where: scope });
     await prisma.weleticRewardDefinition.deleteMany({ where: scope });
     await prisma.weleticPointsLedgerEntry.deleteMany({ where: scope });
     await prisma.weleticLoyaltyOrderLineEarn.deleteMany({ where: scope });
@@ -118,6 +121,7 @@ afterAll(async () => {
       "WeleticLoyaltyOutboxJob",
       "WeleticMerchantSettings",
       "WeleticRewardRedemption",
+      "WeleticLoyaltyReferral",
       "WeleticRewardDefinition",
       "WeleticLoyaltyTier",
       "WeleticLoyaltyTierHistory",
@@ -361,6 +365,175 @@ async function seedRedemption() {
   });
   return id;
 }
+
+async function seedReferralPoints() {
+  const { id } = await seed();
+  await prisma.weleticLoyaltyOutboxJob.deleteMany({ where: { storeId: id } });
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: {
+      metadata: {
+        loyaltyCommunications: {
+          version: 1,
+          sequence: 1,
+          policies: [
+            {
+              ...createDefaultLoyaltyCommunicationPolicy("referral_advocate"),
+              enabled: true,
+            },
+          ],
+        },
+      },
+    },
+  });
+  await prisma.weleticLoyaltyReferral.create({
+    data: {
+      id,
+      storeId: id,
+      advocateAccountId: id,
+      status: "qualified",
+      qualifyingOrderId: id,
+      advocatePointsAwarded: BigInt(20),
+      metadata: {
+        qualificationOrderId: id,
+        referralCommunicationOrigins: {
+          advocate: createReferralCommunicationOrigin({
+            storeId: id,
+            programId: id,
+            referralId: id,
+            qualificationOrderId: id,
+            accountId: id,
+            side: "advocate",
+            installationGeneration: "g1",
+            qualificationPath: "preissued_friend_claim",
+            qualifiedAt: new Date().toISOString(),
+            kind: "points",
+            points: "20",
+          }),
+        },
+      },
+    },
+  });
+  return id;
+}
+
+// This exercises the real ledger/producer transaction, not order classification
+// or the entire qualification engine. No Shopify order or provider is involved.
+function awardReferralPoints(id: string, rollback = false) {
+  return withActiveStoreLoyaltyMutation({
+    storeId: id,
+    action: "referral_communication_fixture",
+    expectedInstallationGeneration: "g1",
+    operation: async (tx) => {
+      const receipt = await appendPointsLedgerEntryWithReceipt({
+        tx,
+        storeId: id,
+        accountId: id,
+        entryType: "EARN_REFERRAL",
+        pointsDelta: BigInt(20),
+        referenceType: "referral_friend_claim",
+        referenceId: id,
+        idempotencyKey: `referral_friend_advocate:${id}:${id}`,
+        metadata: { referralId: id, orderId: id },
+      });
+      await enqueueReferralBenefitCommunication({
+        tx,
+        identity: {
+          storeId: id,
+          programId: id,
+          referralId: id,
+          qualificationOrderId: id,
+          accountId: id,
+          side: "advocate",
+        },
+        expectedInstallationGeneration: "g1",
+        receipt: {
+          created: receipt.created,
+          kind: "points",
+          id: receipt.entry.id,
+        },
+      });
+      if (rollback)
+        throw new Error("synthetic referral rollback after enqueue");
+      return receipt.created;
+    },
+  });
+}
+
+it("atomically commits one referral points notice under concurrent receipt replay", async () => {
+  const id = await seedReferralPoints();
+  const created = await Promise.all([
+    awardReferralPoints(id),
+    awardReferralPoints(id),
+  ]);
+  expect(created.sort()).toEqual([false, true]);
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(1);
+  const jobs = await prisma.weleticLoyaltyOutboxJob.findMany({
+    where: { storeId: id },
+  });
+  expect(jobs).toHaveLength(1);
+  expect(jobs[0].payload).toMatchObject({
+    source: "referral_benefit_confirmed",
+    journey: "referral_advocate",
+    points: "20",
+    installationGeneration: "g1",
+  });
+});
+
+it("rolls back referral points and their queued notice together", async () => {
+  const id = await seedReferralPoints();
+  await expect(awardReferralPoints(id, true)).rejects.toThrow(
+    "synthetic referral rollback after enqueue",
+  );
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(0);
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(0);
+  expect(await awardReferralPoints(id)).toBe(true);
+});
+
+it("rejects stale referral provenance even when the outer writer uses fresh installation authority", async () => {
+  const id = await seedReferralPoints();
+  await prisma.weleticShopifyStore.update({
+    where: { id },
+    data: { installationGeneration: "g2" },
+  });
+  await expect(
+    withActiveStoreLoyaltyMutation({
+      storeId: id,
+      action: "referral_communication_fixture",
+      expectedInstallationGeneration: "g2",
+      operation: async (tx) =>
+        enqueueReferralBenefitCommunication({
+          tx,
+          identity: {
+            storeId: id,
+            programId: id,
+            referralId: id,
+            qualificationOrderId: id,
+            accountId: id,
+            side: "advocate",
+          },
+          expectedInstallationGeneration: "g2",
+          receipt: {
+            created: true,
+            kind: "points",
+            id: "must-not-read-receipt",
+          },
+        }),
+    }),
+  ).rejects.toThrow("Referral communication origin unavailable");
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(0);
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(0);
+});
 
 function issueRedemption(id: string, rollback = false) {
   return withActiveStoreLoyaltyMutation({

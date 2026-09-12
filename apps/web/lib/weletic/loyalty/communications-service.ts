@@ -72,6 +72,8 @@ export function snapshotLoyaltyCommunicationPolicy({
     | "points_earned"
     | "birthday"
     | "reward_redeemed"
+    | "referral_friend"
+    | "referral_advocate"
     | "vip_achieved";
 }) {
   const state = project(storeId, programId, decodeMetadata(metadata).stored);

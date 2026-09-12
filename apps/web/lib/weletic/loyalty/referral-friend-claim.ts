@@ -55,6 +55,8 @@ import {
   loyaltyPurchasePolicySchema,
   readLoyaltyPurchasePolicy,
 } from "./purchase-policy";
+import { enqueueReferralBenefitCommunication } from "./referral-benefit-communication-producer";
+import { createReferralCommunicationOrigin } from "./referral-communication-origin";
 
 const CLAIM_METADATA_KEY = "friendRewardSnapshot";
 const LEGACY_FRIEND_REWARD_CLEANUP_PENDING_REASON =
@@ -1305,7 +1307,7 @@ export async function evaluateReferralFriendClaimQualification({
           tx,
         },
       );
-      await lockLoyaltyProgramRow({
+      const lockedProgram = await lockLoyaltyProgramRow({
         tx,
         storeId,
         mode: "active",
@@ -1328,6 +1330,11 @@ export async function evaluateReferralFriendClaimQualification({
       });
       if (!referral || !referral.friendEmailDigest) {
         return { qualified: false as const, reason: "No pending friend claim" };
+      }
+      if (referral.advocateAccount.programId !== lockedProgram.id) {
+        throw new Error(
+          "Referral advocate does not belong to the active loyalty program.",
+        );
       }
       const persistedShopper = refereeShopperId
         ? await tx.weleticShopper.findFirst({
@@ -1495,6 +1502,35 @@ export async function evaluateReferralFriendClaimQualification({
             }),
             eligibleSubtotal: eligibleSubtotal.toString(),
             requiredCouponSides: couponSnapshot ? ["advocate"] : [],
+            referralCommunicationOrigins:
+              operationalStore!.installationGeneration !== null &&
+              (couponSnapshot || advocateAwarded > BigInt(0))
+                ? {
+                    advocate: createReferralCommunicationOrigin({
+                      storeId,
+                      programId: lockedProgram.id,
+                      referralId: referral.id,
+                      qualificationOrderId: orderId,
+                      accountId: referral.advocateAccountId,
+                      side: "advocate",
+                      installationGeneration:
+                        operationalStore!.installationGeneration!,
+                      qualificationPath: "preissued_friend_claim",
+                      qualifiedAt: qualifiedAt.toISOString(),
+                      ...(couponSnapshot
+                        ? {
+                            kind: "coupon" as const,
+                            rewardDefinitionId:
+                              couponSnapshot.rewardDefinitionId,
+                            rewardSnapshotDigest: couponSnapshot.contentDigest,
+                          }
+                        : {
+                            kind: "points" as const,
+                            points: advocateAwarded.toString(),
+                          }),
+                    }),
+                  }
+                : {},
             referralCouponRewardSnapshots: couponSnapshot
               ? { advocate: couponSnapshot }
               : {},
@@ -1552,6 +1588,22 @@ export async function evaluateReferralFriendClaimQualification({
           loyaltyMaintenancePermit,
           tx,
         });
+        if (operationalStore!.installationGeneration !== null)
+          await enqueueReferralBenefitCommunication({
+            tx,
+            identity: {
+              storeId,
+              programId: lockedProgram.id,
+              referralId: referral.id,
+              qualificationOrderId: orderId,
+              accountId: referral.advocateAccountId,
+              side: "advocate",
+            },
+            expectedInstallationGeneration:
+              operationalStore!.installationGeneration!,
+            receipt: { created: true, kind: "points", id: ledgerEntry.id },
+            loyaltyMaintenancePermit,
+          });
         await scheduleTierReviewAfterQualifyingActivity({
           storeId,
           accountId: referral.advocateAccountId,

@@ -124,7 +124,23 @@ vi.mock("@/lib/prisma", () => ({
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
     },
-    $queryRaw: vi.fn().mockResolvedValue([{ id: "store_gdpr" }]),
+    $queryRaw: vi.fn(async (query) => {
+      // Native-review privacy uses the tagged-template form; preserve its
+      // existing synthetic row while routing loyalty's Prisma.sql locks.
+      if (Array.isArray(query)) return [{ id: "store_gdpr" }];
+      const storeId = String(query.values[0]);
+      return query.sql.includes("FROM WeleticLoyaltyProgram")
+        ? [
+            {
+              id: "prog_1",
+              storeId,
+              status: "active",
+              killSwitchActive: false,
+              metadata: null,
+            },
+          ]
+        : [{ id: storeId, storeAccessState: "active" }];
+    }),
     weleticRewardCouponUse: { findMany: vi.fn().mockResolvedValue([]) },
     weleticRewardRedemption: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -739,6 +755,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
           prisma.weleticLoyaltyAccount.findUnique,
         ).mockResolvedValueOnce({
           id: "acc_ref_1",
+          programId: "prog_1",
           storeId: "store_1",
           shopperId: "shopper_ref_1",
           status: "active",
@@ -795,6 +812,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
           prisma.weleticLoyaltyAccount.findUnique,
         ).mockResolvedValueOnce({
           id: "acc_ref_jpy",
+          programId: "prog_1",
           storeId: "store_1",
           shopperId: "shopper_ref_jpy",
           status: "active",

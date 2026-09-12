@@ -28,11 +28,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const complianceMocks = vi.hoisted(() => ({
   assertInstallationGeneration: vi.fn(),
   assertOperationalWrites: vi.fn(),
+  programByStore: new Map<string, string>(),
 }));
 
 // Mock prisma
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    $queryRaw: vi.fn(async (query) => {
+      const storeId = String(query.values[0]);
+      return query.sql.includes("FROM WeleticLoyaltyProgram")
+        ? [
+            {
+              id: complianceMocks.programByStore.get(storeId) ?? "prog_1",
+              storeId,
+              status: "active",
+              killSwitchActive: false,
+              metadata: null,
+            },
+          ]
+        : [{ id: storeId, storeAccessState: "active" }];
+    }),
     weleticLoyaltyAccount: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -128,6 +143,18 @@ vi.mock("@/lib/weletic/redis-lock", () => ({
 describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    complianceMocks.programByStore.clear();
+    for (const suffix of [
+      "cap",
+      "legacy",
+      "invalid_reward",
+      "redaction_race",
+    ]) {
+      complianceMocks.programByStore.set(
+        `store_${suffix}`,
+        `program_${suffix}`,
+      );
+    }
     complianceMocks.assertInstallationGeneration.mockResolvedValue({
       id: "store_test_1",
       complianceState: "active",
@@ -1102,6 +1129,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
 
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "acc_referee_101",
+        programId: "prog_1",
         storeId,
         status: "active",
         shopperId: "shopper_ref_101",
@@ -1163,6 +1191,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
           "shopper_cap_a",
           {
             id: "acc_referee_cap_a",
+            programId: "program_cap",
             storeId,
             shopperId: "shopper_cap_a",
             status: "active",
@@ -1172,6 +1201,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
           "shopper_cap_b",
           {
             id: "acc_referee_cap_b",
+            programId: "program_cap",
             storeId,
             shopperId: "shopper_cap_b",
             status: "active",
@@ -1277,6 +1307,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
     it("creates a serialized default rule for an imported pending referral with no rule", async () => {
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "acc_referee_legacy",
+        programId: "program_legacy",
         storeId: "store_legacy",
         status: "active",
         shopperId: "shopper_referee_legacy",
@@ -1340,6 +1371,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
       const storeId = "store_invalid_reward";
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "acc_referee_invalid_reward",
+        programId: "program_invalid_reward",
         storeId,
         status: "active",
         shopperId: "shopper_invalid_reward",
@@ -1417,6 +1449,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
 
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "acc_referee_coupon",
+        programId: "prog_1",
         storeId,
         status: "active",
         shopperId: "shopper_ref_coupon",
@@ -1506,6 +1539,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
 
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "acc_referee_race",
+        programId: "prog_1",
         storeId,
         status: "active",
         shopperId: "shopper_ref_race",
@@ -1559,6 +1593,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
       const storeId = "store_redaction_race";
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "acc_referee_redaction_race",
+        programId: "program_redaction_race",
         storeId,
         shopperId: "shopper_redaction_race",
         status: "active",
@@ -1617,6 +1652,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
 
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "acc_referee_existing_award",
+        programId: "prog_1",
         storeId,
         status: "active",
         shopperId: "shopper_ref_existing_award",
@@ -1674,6 +1710,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
 
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "acc_referee_replay",
+        programId: "prog_1",
         storeId,
         status: "active",
         shopperId: "shopper_ref_replay",
@@ -2232,9 +2269,11 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
     });
 
     it("blocks qualification when the purchase is not the friend's first order", async () => {
+      complianceMocks.programByStore.set("store_test_1", "program_repeat");
       vi.mocked(prisma.weleticLoyaltyReferral.findFirst).mockReset();
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "acc_repeat_friend",
+        programId: "program_repeat",
         storeId: "store_test_1",
         shopperId: "shopper_repeat_friend",
         status: "active",

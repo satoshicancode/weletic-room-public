@@ -54,6 +54,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    $queryRaw: vi.fn(async (query) => {
+      const storeId = String(query.values[0]);
+      return query.sql.includes("FROM WeleticLoyaltyProgram")
+        ? [
+            {
+              id: "wprog_1",
+              storeId,
+              status: "active",
+              killSwitchActive: false,
+              metadata: null,
+            },
+          ]
+        : [{ id: storeId, storeAccessState: "active" }];
+    }),
     weleticShopifyStore: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -1249,6 +1263,7 @@ describe("Tier 1: Feature Coverage (>=5 tests per feature for all 15 features in
     it("8.4: qualifies referral and awards double-sided points on qualifying order", async () => {
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "wacc_bob",
+        programId: "wprog_1",
         storeId: "store_1",
         status: "active",
         metadata: null,
@@ -1317,6 +1332,7 @@ describe("Tier 1: Feature Coverage (>=5 tests per feature for all 15 features in
     it("8.5: rejects referral qualification when order subtotal is below minimum threshold", async () => {
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "wacc_bob",
+        programId: "wprog_1",
         storeId: "store_1",
         status: "active",
         metadata: null,

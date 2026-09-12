@@ -700,6 +700,7 @@ function assertLogicalClockScope({
 async function executeClosedAccountReferralCleanup(
   storeId: string,
   payload: ReferralRewardProvisionPayload,
+  loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
 ): Promise<OutboxExecutionResult> {
   const idempotencyKey = getReferralCouponIdempotencyKey(payload);
   const redemption = await prisma.weleticRewardRedemption.findUnique({
@@ -715,6 +716,7 @@ async function executeClosedAccountReferralCleanup(
     await recoverCompensatedReferralCouponDiscount({
       storeId,
       redemption,
+      loyaltyMaintenancePermit,
     })
   ) {
     return { referralRewardOutcome: "verified" };
@@ -1633,6 +1635,7 @@ export async function executeOutboxJob(
           return executeClosedAccountReferralCleanup(
             job.storeId,
             referralPayload.data,
+            loyaltyMaintenancePermit,
           );
         }
         return;
@@ -2438,6 +2441,7 @@ export async function handleRedemptionRecovery(
       await recoverCompensatedReferralCouponDiscount({
         storeId,
         redemption,
+        loyaltyMaintenancePermit,
       })
     ) {
       return "dedicated_referral_recovery" as const;

@@ -31,6 +31,8 @@ import {
   WeleticRewardStatus,
 } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loyaltyCommunicationJobPayloadSchema } from "../../lib/weletic/loyalty/points-communication-contract";
+import { createDefaultLoyaltyCommunicationPolicy } from "../../ui/weletic/loyalty/communications-defaults";
 
 import { PATCH as patchReferrals } from "../../app/(ee)/api/shopify/loyalty/admin/referrals/route";
 
@@ -65,6 +67,8 @@ const complianceMocks = vi.hoisted(() => ({
     shopCurrency: "USD",
     currencyVerifiedAt: new Date("2026-08-31T00:00:00.000Z"),
     complianceState: "active",
+    storeAccessState: "active",
+    installationGeneration: "matrix-generation-1",
   }),
   assertGeneration: vi.fn().mockResolvedValue({
     id: "store_matrix_1",
@@ -124,11 +128,13 @@ vi.mock("@/lib/weletic/loyalty/ledger", () => ({
 }));
 
 const outboxMocks = vi.hoisted(() => ({
+  enqueueCommunication: vi.fn().mockResolvedValue({ id: "communication_job" }),
   enqueueJob: vi.fn().mockResolvedValue({ id: "job_outbox_m2" }),
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({
   enqueueOutboxJob: outboxMocks.enqueueJob,
+  enqueueOutboxJobFromProgramTransaction: outboxMocks.enqueueCommunication,
 }));
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: outboxMocks.enqueueFlowTriggerJob,
@@ -151,13 +157,6 @@ vi.mock("@/lib/weletic/loyalty/referral-coupon", () => ({
     ({ referralId, qualificationOrderId, side }) =>
       `referral:${referralId}:${qualificationOrderId}:${side}`,
   ),
-}));
-
-vi.mock("@/lib/weletic/loyalty/referral-coupon-snapshot", () => ({
-  createReferralCouponRewardSnapshot: vi.fn().mockReturnValue({
-    version: 1,
-    discountCode: "WLR-SNAP-99",
-  }),
 }));
 
 // Workspace Auth / RBAC mocks
@@ -260,6 +259,8 @@ function resetMockDb() {
     projectId: "ws_tenant_m2",
     shopifyStoreId: "store_matrix_1",
     myshopifyDomain: "yamaxdev.myshopify.com",
+    storeAccessState: "active",
+    installationGeneration: "matrix-generation-1",
     shopCurrency: "USD",
     currencyVerifiedAt: new Date("2026-08-31T00:00:00.000Z"),
     complianceState: "active",
@@ -272,6 +273,7 @@ function resetMockDb() {
     name: "Yamax Points",
     status: "active",
     killSwitchActive: false,
+    metadata: null,
     updatedAt: new Date(),
   };
   dbState.programs.set(program.id, program);
@@ -322,6 +324,18 @@ function resetMockDb() {
 
 vi.mock("@/lib/prisma", () => {
   const prismaMock: any = {
+    $queryRaw: vi.fn(async (query: { sql: string; values: unknown[] }) => {
+      const storeId = query.values[0];
+      if (query.sql.includes("FROM WeleticLoyaltyProgram"))
+        return Array.from(dbState.programs.values()).filter(
+          (row) => row.storeId === storeId,
+        );
+      if (query.sql.includes("FROM WeleticShopifyStore")) {
+        const store = dbState.stores.get(String(storeId));
+        return store ? [store] : [];
+      }
+      throw new Error("Unexpected matrix SQL query");
+    }),
     weleticMerchantSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     weleticShopifyStore: {
       findUnique: vi.fn(async ({ where }: any) => {
@@ -356,8 +370,12 @@ vi.mock("@/lib/prisma", () => {
       }),
     },
     weleticLoyaltyProgram: {
-      findUnique: vi.fn(
-        async ({ where }: any) => dbState.programs.get(where.id) || null,
+      findUnique: vi.fn(async ({ where }: any) =>
+        where.id
+          ? dbState.programs.get(where.id) || null
+          : Array.from(dbState.programs.values()).find(
+              (row) => row.storeId === where.storeId,
+            ) || null,
       ),
       findFirst: vi.fn(async ({ where }: any) => {
         if (where?.id) return dbState.programs.get(where.id) || null;
@@ -681,6 +699,7 @@ vi.mock("@/lib/prisma", () => {
     },
     weleticPointsLedgerEntry: {
       findUnique: vi.fn().mockResolvedValue(null),
+      findFirst: vi.fn().mockResolvedValue(null),
     },
     weleticLoyaltyOutboxJob: {
       findUnique: vi.fn().mockResolvedValue(null),
@@ -748,6 +767,10 @@ describe("Loyalty Referrals Matrix Test Suite (Requirement R2 / Nhóm 1.2)", () 
   beforeEach(() => {
     vi.clearAllMocks();
     resetMockDb();
+    complianceMocks.assertWrites.mockImplementation(
+      async ({ storeId }: { storeId: string }) =>
+        dbState.stores.get(storeId) ?? null,
+    );
     currentTestRole = "owner";
     currentUserId = "usr_owner_1";
     currentWorkspaceId = "ws_tenant_m2";
@@ -1282,6 +1305,115 @@ describe("Loyalty Referrals Matrix Test Suite (Requirement R2 / Nhóm 1.2)", () 
   // PILLAR 4: ADVOCATE REWARD FULFILLMENT & REFUND CLAWBACK
   // ===========================================================================
   describe("Pillar 4: Advocate Reward Fulfillment & Refund Clawback", () => {
+    it.each(["matrix-generation-1", null])(
+      "connects only fresh installation point receipts (generation=%s)",
+      async (generation) => {
+        const store = dbState.stores.get("store_matrix_1");
+        store.installationGeneration = generation;
+        const program = dbState.programs.get("prog_matrix_1");
+        program.metadata = {
+          loyaltyCommunications: {
+            version: 1,
+            sequence: 1,
+            policies: [
+              {
+                ...createDefaultLoyaltyCommunicationPolicy("referral_advocate"),
+                enabled: true,
+              },
+              {
+                ...createDefaultLoyaltyCommunicationPolicy("referral_friend"),
+                enabled: true,
+              },
+            ],
+          },
+        };
+        const rule = Array.from(dbState.rules.values())[0];
+        rule.refereeRewardKind = "points";
+        rule.refereeRewardDefinitionId = null;
+        const { account: advocate } = createTestLoyaltyAccount({
+          id: "comm_advocate",
+          email: "advocate@example.test",
+          referralCode: "COMM-TEST",
+        });
+        const { account: referee, shopper } = createTestLoyaltyAccount({
+          id: "comm_referee",
+          email: "referee@example.test",
+        });
+        const receipts = new Map<string, any>();
+        ledgerMocks.appendEntry
+          .mockImplementationOnce(async (input: any) => {
+            const row = {
+              ...input,
+              id: "ledger_comm_advocate",
+              grantId: null,
+              createdAt: new Date(),
+              balanceAfter: input.pointsDelta,
+            };
+            receipts.set(row.id, row);
+            return row;
+          })
+          .mockImplementationOnce(async (input: any) => {
+            const row = {
+              ...input,
+              id: "ledger_comm_referee",
+              grantId: null,
+              createdAt: new Date(),
+              balanceAfter: input.pointsDelta,
+            };
+            receipts.set(row.id, row);
+            return row;
+          });
+        vi.mocked(prisma.weleticPointsLedgerEntry.findFirst).mockImplementation(
+          (async ({ where }: any) => receipts.get(where.id) ?? null) as any,
+        );
+        const ref = await bindShopperReferral({
+          storeId: store.id,
+          refereeAccountId: referee.id,
+          referralCode: advocate.referralCode,
+        });
+        const input = {
+          storeId: store.id,
+          orderId: "order_comm",
+          refereeShopperId: shopper.id,
+          orderSubtotal: BigInt(6000),
+          currency: "USD",
+        };
+        expect(await evaluateReferralQualification(input)).toMatchObject({
+          qualified: true,
+        });
+        expect(outboxMocks.enqueueCommunication).toHaveBeenCalledTimes(
+          generation ? 2 : 0,
+        );
+        const persisted = dbState.referrals.get(ref.id);
+        if (generation) {
+          const events = outboxMocks.enqueueCommunication.mock.calls.map(
+            ([args]) =>
+              loyaltyCommunicationJobPayloadSchema.parse(args.payload),
+          );
+          expect(events.map((event) => event.journey)).toEqual([
+            "referral_advocate",
+            "referral_friend",
+          ]);
+          expect(events).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ points: "500" }),
+              expect.objectContaining({ points: "250" }),
+            ]),
+          );
+          expect(
+            persisted.metadata.referralCommunicationOrigins.advocate
+              .installationGeneration,
+          ).toBe(generation);
+        } else
+          expect(persisted.metadata.referralCommunicationOrigins).toEqual({});
+        expect(await evaluateReferralQualification(input)).toMatchObject({
+          qualified: false,
+        });
+        expect(outboxMocks.enqueueCommunication).toHaveBeenCalledTimes(
+          generation ? 2 : 0,
+        );
+      },
+    );
     it("4.1 Fulfills advocate points reward with monotonic ledger sequence and tier review trigger", async () => {
       // Both sides must be points-only for completion in this transaction.
       // The shared fixture otherwise gives the referee an asynchronous coupon.

@@ -22,11 +22,22 @@ import {
   WeleticRedemptionStatus,
 } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createLoyaltyMaintenanceOwnerPermit } from "../../lib/weletic/loyalty/maintenance-write-fence";
+import { loyaltyCommunicationJobPayloadSchema } from "../../lib/weletic/loyalty/points-communication-contract";
+import { createReferralCommunicationOrigin } from "../../lib/weletic/loyalty/referral-communication-origin";
+import { ReferralCommunicationOriginBlockedError } from "../../lib/weletic/loyalty/referral-communication-origin-fence";
+import { createDefaultLoyaltyCommunicationPolicy } from "../../ui/weletic/loyalty/communications-defaults";
+
+const communication = vi.hoisted(() => ({ enqueue: vi.fn() }));
+vi.mock("@/lib/weletic/loyalty/outbox", () => ({
+  enqueueOutboxJobFromProgramTransaction: communication.enqueue,
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     weleticRewardRedemption: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       create: vi.fn(),
       updateMany: vi.fn(),
       count: vi.fn(),
@@ -36,6 +47,7 @@ vi.mock("@/lib/prisma", () => ({
       updateMany: vi.fn(),
     },
     weleticLoyaltyAccount: { findFirst: vi.fn() },
+    weleticLoyaltyProgram: { findUnique: vi.fn() },
     weleticRewardDefinition: { findFirst: vi.fn() },
     weleticShopifyStore: { findUnique: vi.fn() },
     $queryRaw: vi.fn(),
@@ -252,7 +264,7 @@ function mockProvisioningDependencies() {
 
 describe("referral coupon provisioning", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.mocked(prisma.$queryRaw).mockResolvedValue([
       {
         id: "wloyalty_program_coupon",
@@ -265,6 +277,296 @@ describe("referral coupon provisioning", () => {
     vi.mocked(prisma.weleticLoyaltyReferral.updateMany).mockResolvedValue({
       count: 1,
     });
+  });
+
+  function communicationFixture() {
+    const snapshot = createTestReferralCouponSnapshot();
+    const program: any = {
+      id: "wloyalty_program_coupon",
+      storeId,
+      status: "active",
+      killSwitchActive: false,
+      metadata: {
+        loyaltyCommunications: {
+          version: 1,
+          sequence: 1,
+          policies: [
+            {
+              ...createDefaultLoyaltyCommunicationPolicy("referral_advocate"),
+              enabled: true,
+            },
+          ],
+        },
+      },
+    };
+    const store = {
+      id: storeId,
+      storeAccessState: "active",
+      complianceState: "active",
+      shopCurrency: "USD",
+      currencyVerifiedAt: new Date(snapshot.currencyVerifiedAt!),
+      installationGeneration: "original-generation",
+    };
+    const origin = createReferralCommunicationOrigin({
+      storeId,
+      programId: program.id,
+      referralId,
+      qualificationOrderId,
+      accountId,
+      side: "advocate",
+      installationGeneration: store.installationGeneration,
+      qualificationPath: "account_referral",
+      qualifiedAt: snapshot.qualifiedAt,
+      kind: "coupon",
+      rewardDefinitionId,
+      rewardSnapshotDigest: snapshot.contentDigest,
+    });
+    const referral: any = {
+      id: referralId,
+      storeId,
+      advocateAccountId: accountId,
+      refereeAccountId: "other-account",
+      advocatePointsAwarded: BigInt(0),
+      refereePointsAwarded: BigInt(0),
+      qualifyingOrderId: qualificationOrderId,
+      status: "qualified",
+      metadata: {
+        qualificationOrderId,
+        requiredCouponSides: ["advocate"],
+        referralCouponRewardSnapshots: { advocate: snapshot },
+        referralCommunicationOrigins: { advocate: origin },
+      },
+    };
+    const state: { redemption: any; afterPreparation?: () => void } = {
+      redemption: null,
+    };
+    vi.mocked(prisma.$queryRaw).mockImplementation((async (query: {
+      sql: string;
+    }) =>
+      query.sql.includes("FROM WeleticShopifyStore")
+        ? [store]
+        : [program]) as any);
+    vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue(
+      store as any,
+    );
+    vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValue(
+      program,
+    );
+    vi.mocked(prisma.weleticLoyaltyReferral.findFirst).mockImplementation(
+      (async () => referral) as any,
+    );
+    vi.mocked(prisma.weleticLoyaltyReferral.updateMany).mockImplementation(
+      (async ({ data }: any) => {
+        Object.assign(referral, data);
+        return { count: 1 };
+      }) as any,
+    );
+    vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue({
+      id: accountId,
+      storeId,
+      programId: program.id,
+      status: "active",
+      metadata: null,
+      shopper: { shopifyCustomerId: "123" },
+    } as any);
+    vi.mocked(prisma.weleticRewardRedemption.findUnique).mockImplementation(
+      (async () => state.redemption) as any,
+    );
+    vi.mocked(prisma.weleticRewardRedemption.findFirst).mockImplementation(
+      (async () => state.redemption) as any,
+    );
+    vi.mocked(prisma.weleticRewardRedemption.create).mockImplementation(
+      (async ({ data }: any) => {
+        state.redemption = {
+          artifactKind: "discount_code",
+          ledgerEntryId: null,
+          shopifyDiscountId: null,
+          settlementQuarantinedAt: null,
+          createdAt: new Date(),
+          ...data,
+        };
+        return state.redemption;
+      }) as any,
+    );
+    vi.mocked(prisma.weleticRewardRedemption.updateMany).mockImplementation(
+      (async ({ where, data }: any) => {
+        if (
+          typeof where.status === "string" &&
+          state.redemption.status !== where.status
+        )
+          return { count: 0 };
+        Object.assign(state.redemption, data);
+        if (
+          data.metadata?.remoteProvisionPreparationId &&
+          state.afterPreparation
+        ) {
+          const action = state.afterPreparation;
+          state.afterPreparation = undefined;
+          action();
+        }
+        return { count: 1 };
+      }) as any,
+    );
+    vi.mocked(prisma.weleticRewardRedemption.count).mockImplementation(
+      (async () => (state.redemption?.status === "issued" ? 1 : 0)) as any,
+    );
+    communication.enqueue.mockResolvedValue({ id: "communication-job" });
+    const input = {
+      storeId,
+      referralId,
+      qualificationOrderId,
+      accountId,
+      rewardDefinitionId,
+      side: "advocate" as const,
+    };
+    return { input, program, store, state, referral, snapshot };
+  }
+
+  it("connects the winning coupon issuance to the real communication producer without a second notice on replay", async () => {
+    const x = communicationFixture();
+    await issueReferralRewardCoupon(x.input);
+    expect(communication.enqueue).toHaveBeenCalledOnce();
+    const job = communication.enqueue.mock.calls[0][0];
+    expect(job.tx).toBe(prisma);
+    const event = loyaltyCommunicationJobPayloadSchema.parse(job.payload);
+    expect(event).toMatchObject({
+      source: "referral_benefit_confirmed",
+      benefitKind: "coupon",
+      receiptId: x.state.redemption.id,
+      origin: {
+        installationGeneration: "original-generation",
+        rewardSnapshotDigest: x.snapshot.contentDigest,
+      },
+    });
+    expect(x.state.redemption.metadata.referralCommunicationIssuedAt).toBe(
+      event.occurredAt,
+    );
+    await issueReferralRewardCoupon(x.input);
+    expect(communication.enqueue).toHaveBeenCalledOnce();
+    expect(provisionLoyaltyRewardDiscount).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a generation change after preparation and retains the exact marker", async () => {
+    const x = communicationFixture();
+    x.state.afterPreparation = () => {
+      x.store.installationGeneration = "fresh-generation";
+    };
+    await expect(issueReferralRewardCoupon(x.input)).rejects.toBeInstanceOf(
+      ReferralCommunicationOriginBlockedError,
+    );
+    expect(x.state.redemption.metadata.remoteProvisionPreparationId).toEqual(
+      expect.any(String),
+    );
+    expect(x.state.redemption.status).toBe("provisioning");
+    expect(provisionLoyaltyRewardDiscount).not.toHaveBeenCalled();
+    expect(lookupDiscountByCode).not.toHaveBeenCalled();
+    expect(communication.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not complete or emit Flow when reinstall occurs between issuance and completion", async () => {
+    const x = communicationFixture();
+    vi.mocked(prisma.$transaction).mockImplementation((async (
+      callback: any,
+    ) => {
+      const result = await callback(prisma);
+      if (x.state.redemption?.status === "issued") {
+        x.store.installationGeneration = "fresh-generation";
+        vi.mocked(prisma.weleticLoyaltyReferral.updateMany).mockClear();
+      }
+      return result;
+    }) as any);
+    await expect(issueReferralRewardCoupon(x.input)).rejects.toBeInstanceOf(
+      ReferralCommunicationOriginBlockedError,
+    );
+    expect(x.state.redemption.status).toBe("issued");
+    expect(x.referral.status).toBe("qualified");
+    expect(prisma.weleticLoyaltyReferral.updateMany).not.toHaveBeenCalled();
+    expect(enqueueFlowTriggerJob).not.toHaveBeenCalled();
+    expect(deactivateDiscount).not.toHaveBeenCalled();
+    expect(communication.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("rejects missing reservation provenance before completing a modern qualification", async () => {
+    const x = communicationFixture();
+    vi.mocked(prisma.$transaction).mockImplementation((async (
+      callback: any,
+    ) => {
+      const result = await callback(prisma);
+      if (x.state.redemption?.status === "issued") {
+        delete x.state.redemption.metadata.referralCommunicationOrigins;
+        vi.mocked(prisma.weleticLoyaltyReferral.updateMany).mockClear();
+      }
+      return result;
+    }) as any);
+    await expect(issueReferralRewardCoupon(x.input)).rejects.toBeInstanceOf(
+      ReferralCommunicationOriginBlockedError,
+    );
+    expect(x.state.redemption.status).toBe("issued");
+    expect(prisma.weleticLoyaltyReferral.updateMany).not.toHaveBeenCalled();
+    expect(enqueueFlowTriggerJob).not.toHaveBeenCalled();
+  });
+
+  it("rejects a foreign-owned fulfilled row despite copied valid provenance", async () => {
+    const x = communicationFixture();
+    vi.mocked(prisma.$transaction).mockImplementation((async (
+      callback: any,
+    ) => {
+      const result = await callback(prisma);
+      if (x.state.redemption?.status === "issued") {
+        x.state.redemption.accountId = "foreign-account";
+        vi.mocked(prisma.weleticLoyaltyReferral.updateMany).mockClear();
+      }
+      return result;
+    }) as any);
+    await expect(issueReferralRewardCoupon(x.input)).rejects.toBeInstanceOf(
+      ReferralCommunicationOriginBlockedError,
+    );
+    expect(x.state.redemption.status).toBe("issued");
+    expect(prisma.weleticLoyaltyReferral.updateMany).not.toHaveBeenCalled();
+    expect(enqueueFlowTriggerJob).not.toHaveBeenCalled();
+    expect(deactivateDiscount).not.toHaveBeenCalled();
+  });
+
+  it("allows only the maintenance owner to recover an origin-bound coupon", async () => {
+    const x = communicationFixture();
+    await issueReferralRewardCoupon(x.input);
+    x.state.redemption.status = "cancelled";
+    const ownerToken = "synthetic-coupon-cleanup-owner-token-long-enough";
+    x.program.metadata = createLoyaltyMaintenanceLeaseMetadata({
+      existingMetadata: x.program.metadata,
+      ownerToken,
+      runMarker: "referral-coupon-cleanup",
+      fixtureEmails: ["cleanup@example.test"],
+      acquiredAt: new Date("2026-09-13T00:00:00Z"),
+      recoveryAfter: new Date("2026-09-14T00:00:00Z"),
+    });
+    const permit = createLoyaltyMaintenanceOwnerPermit({
+      storeId,
+      metadata: x.program.metadata,
+      ownerToken,
+    });
+    vi.mocked(lookupDiscountByCode).mockResolvedValue({
+      id: x.state.redemption.shopifyDiscountId,
+      code: x.snapshot.discountCode,
+      title: x.snapshot.expectedTitle,
+      status: "ACTIVE",
+    } as any);
+    vi.mocked(deactivateDiscount).mockResolvedValue(true as any);
+    await expect(
+      recoverCompensatedReferralCouponDiscount({
+        storeId,
+        redemption: x.state.redemption,
+      }),
+    ).rejects.toBeInstanceOf(ReferralCommunicationOriginBlockedError);
+    expect(deactivateDiscount).not.toHaveBeenCalled();
+    await expect(
+      recoverCompensatedReferralCouponDiscount({
+        storeId,
+        redemption: x.state.redemption,
+        loyaltyMaintenancePermit: permit,
+      }),
+    ).resolves.toBe(true);
+    expect(deactivateDiscount).toHaveBeenCalledOnce();
   });
 
   it.each(["disabled", "pending_approval", "suspended"])(

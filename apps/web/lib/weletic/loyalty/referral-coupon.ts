@@ -45,8 +45,13 @@ import {
   WeleticLoyaltyReferralStatus,
   WeleticRedemptionStatus,
 } from "@prisma/client";
-import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { enqueueReferralBenefitCommunication } from "./referral-benefit-communication-producer";
+import {
+  assertReferralCommunicationOrigin,
+  ReferralCommunicationOriginBlockedError,
+} from "./referral-communication-origin-fence";
+import { getReferralCouponIdempotencyKey } from "./referral-coupon-idempotency";
 import { assertAccountBackedReward } from "./reward-ownership";
 
 export { getReferralCouponDiscountCode } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
@@ -108,20 +113,69 @@ export class ReferralCouponReconciliationRequiredError extends Error {
   }
 }
 
-export function getReferralCouponIdempotencyKey({
-  referralId,
-  qualificationOrderId,
-  side,
+export { getReferralCouponIdempotencyKey } from "./referral-coupon-idempotency";
+
+/** Original generation travels with the reservation, including after referral
+ * deletion/requalification. Missing legacy origins never generate new notices. */
+async function fenceReferralCouponCommunicationOrigin({
+  tx,
+  program,
+  redemption,
+  identity,
+  loyaltyMaintenancePermit,
 }: {
-  referralId: string;
-  qualificationOrderId: string;
-  side: "advocate" | "referee";
+  tx: Prisma.TransactionClient;
+  program: LockedLoyaltyProgram;
+  redemption: ReferralCouponRedemptionForRecovery;
+  identity?: ReferralCouponIdentity;
+  loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
 }) {
-  const digest = createHash("sha256")
-    .update(`${referralId}:${qualificationOrderId}:${side}`)
-    .digest("hex")
-    .slice(0, 24);
-  return `referral_coupon:${digest}`;
+  const metadata = getReferralCouponMetadata(redemption.metadata);
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      metadata.value,
+      "referralCommunicationOrigins",
+    )
+  )
+    return null;
+  try {
+    assertAccountBackedReward(redemption);
+    if (!metadata.isReferralCoupon)
+      throw new Error("Referral origin identity unavailable");
+    const expected = identity ?? {
+      storeId: redemption.storeId,
+      accountId: redemption.accountId,
+      rewardDefinitionId: redemption.rewardDefinitionId,
+      referralId: metadata.value.referralId as string,
+      qualificationOrderId: metadata.value.qualificationOrderId as string,
+      side: metadata.value.referralSide as "advocate" | "referee",
+    };
+    assertReferralCouponRedemptionIntent(redemption, expected);
+    const origin = await assertReferralCommunicationOrigin({
+      tx,
+      metadata: redemption.metadata,
+      identity: { ...expected, programId: program.id },
+      loyaltyMaintenancePermit,
+    });
+    const snapshot = getPersistedReferralCouponRewardSnapshot(
+      metadata.value,
+      expected,
+      redemption.id,
+    );
+    if (
+      !origin ||
+      origin.kind !== "coupon" ||
+      !snapshot ||
+      origin.rewardSnapshotDigest !== snapshot.contentDigest ||
+      origin.rewardDefinitionId !== redemption.rewardDefinitionId ||
+      origin.qualifiedAt !== snapshot.qualifiedAt
+    )
+      throw new Error("Referral coupon origin snapshot unavailable");
+    return origin;
+  } catch (cause) {
+    if (cause instanceof ReferralCommunicationOriginBlockedError) throw cause;
+    throw new ReferralCommunicationOriginBlockedError(cause);
+  }
 }
 
 function getReferralCouponMetadata(metadata: Prisma.JsonValue) {
@@ -610,9 +664,11 @@ async function deactivateReferralDiscount(params: {
 export async function recoverCompensatedReferralCouponDiscount({
   storeId,
   redemption,
+  loyaltyMaintenancePermit,
 }: {
   storeId: string;
   redemption: ReferralCouponRedemptionForRecovery;
+  loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
 }): Promise<boolean> {
   if (redemption.storeId !== storeId) {
     throw new Error(
@@ -637,182 +693,193 @@ export async function recoverCompensatedReferralCouponDiscount({
   }
 
   const credentials = await resolveShopifyOfflineCredentials({ storeId });
-  return withReferralCouponProgramLock(storeId, "lock_only", async (tx) => {
-    const latest = await tx.weleticRewardRedemption.findUnique({
-      where: { id: redemption.id },
-    });
-    if (!latest || latest.storeId !== storeId) {
-      throw new Error(
-        `Referral coupon recovery tenant changed for ${redemption.id}.`,
-      );
-    }
-    assertAccountBackedReward(latest);
-    const latestMetadata = getReferralCouponMetadata(latest.metadata);
-    if (
-      !latestMetadata.isReferralCoupon ||
-      !COMPENSATED_REFERRAL_COUPON_STATUSES.has(latest.status)
-    ) {
-      return false;
-    }
-    const latestRemoteProvisionAttempted =
-      typeof latestMetadata.value.remoteProvisionAttemptedAt === "string";
-    if (!latest.shopifyDiscountId && !latestRemoteProvisionAttempted) {
-      return true;
-    }
-    const canonicalWriteFence = getReferralCouponCanonicalWriteFence(latest, {
-      // Cleanup remains available for a quarantined row, but every local write
-      // must still compare-and-swap the exact quarantine generation.
-      allowQuarantined: true,
-    });
-
-    let discountId = latest.shopifyDiscountId;
-    if (discountId) {
-      const ownership = getReferralCouponOwnershipExpectation(latest);
-      if (!ownership.snapshot) {
-        throw new ShopifyDiscountError(
-          "INVALID_REQUEST",
-          `Cannot deactivate stored Shopify discount ${discountId} for legacy referral coupon ${latest.id} without a complete immutable reward snapshot; manual reconciliation is required.`,
+  return withReferralCouponProgramLock(
+    storeId,
+    "lock_only",
+    async (tx, program) => {
+      const latest = await tx.weleticRewardRedemption.findUnique({
+        where: { id: redemption.id },
+      });
+      if (!latest || latest.storeId !== storeId) {
+        throw new Error(
+          `Referral coupon recovery tenant changed for ${redemption.id}.`,
         );
       }
-      const recovered = await lookupDiscountByCode(
-        credentials.shopDomain,
-        credentials.accessToken,
-        ownership.expectedCode,
-      );
+      assertAccountBackedReward(latest);
+      await fenceReferralCouponCommunicationOrigin({
+        tx,
+        program,
+        redemption: latest,
+        loyaltyMaintenancePermit,
+      });
+      const latestMetadata = getReferralCouponMetadata(latest.metadata);
       if (
-        !recovered?.id ||
-        recovered.id !== discountId ||
-        !isShopifyDiscountOwned({
-          discount: recovered,
-          expectedCode: ownership.expectedCode,
-          expectedTitle: ownership.expectedTitle,
-        })
+        !latestMetadata.isReferralCoupon ||
+        !COMPENSATED_REFERRAL_COUPON_STATUSES.has(latest.status)
       ) {
-        throw new ShopifyDiscountError(
-          "INVALID_REQUEST",
-          `Stored Shopify discount ${discountId} for referral coupon ${latest.id} could not be verified against its immutable ownership identity; manual reconciliation is required.`,
-        );
+        return false;
       }
-    }
-    if (!discountId) {
-      const recovered = await lookupDiscountByCode(
-        credentials.shopDomain,
-        credentials.accessToken,
-        latest.shopifyDiscountCode,
-      );
-      if (!recovered?.id) {
-        const retryUntil = getReferralCouponReconciliationDeadline(
-          latestMetadata.value,
-        );
-        if (Date.now() < retryUntil.getTime()) {
-          throw new ReferralCouponReconciliationPendingError(
-            `Shopify referral discount ${latest.shopifyDiscountCode} is not visible yet; reconciliation remains pending.`,
-            retryUntil,
-          );
-        }
-        throw new ReferralCouponReconciliationRequiredError(
-          `Shopify referral discount ${latest.shopifyDiscountCode} is still absent after an uncertain create for referral coupon ${latest.id}; manual reconciliation is required.`,
-        );
-      }
-      const ownership = getReferralCouponOwnershipExpectation(latest);
-      if (
-        !isShopifyDiscountOwned({
-          discount: recovered,
-          expectedCode: ownership.expectedCode,
-          expectedTitle: ownership.expectedTitle,
-        })
-      ) {
-        throw new ShopifyDiscountError(
-          "INVALID_REQUEST",
-          `Shopify discount code collision for referral coupon ${latest.id}; the existing discount is not owned by the intended referral configuration.`,
-        );
-      }
-
-      let matchesImmutableConfiguration = false;
-      if (ownership.snapshot && recovered.status === "ACTIVE") {
-        const [account, store] = await Promise.all([
-          tx.weleticLoyaltyAccount.findFirst({
-            where: {
-              id: latest.accountId,
-              storeId,
-              status: "active",
-            },
-            include: { shopper: true },
-          }),
-          tx.weleticShopifyStore.findUnique({
-            where: { id: storeId },
-            select: { shopCurrency: true },
-          }),
-        ]);
-        if (account && store?.shopCurrency) {
-          const contextMatches =
-            store.shopCurrency.trim().toUpperCase() ===
-              ownership.snapshot.shopCurrency &&
-            matchesShopifyCustomerSelectionDigest({
-              digest: ownership.snapshot.customerSelectionDigest,
-              storeId,
-              shopifyCustomerId: account.shopper.shopifyCustomerId,
-            });
-          matchesImmutableConfiguration =
-            contextMatches &&
-            matchesLoyaltyRewardDiscountConfiguration({
-              remote: recovered,
-              rewardDefinition: getRewardDefinitionFromSnapshot(
-                ownership.snapshot,
-              ),
-              startsAt: new Date(ownership.snapshot.startsAt),
-              expiresAt: ownership.snapshot.expiresAt
-                ? new Date(ownership.snapshot.expiresAt)
-                : null,
-              expectedShopCurrency: ownership.snapshot.shopCurrency,
-              shopifyCustomerId: account.shopper.shopifyCustomerId,
-            });
-        }
-      }
-
-      if (!matchesImmutableConfiguration) {
-        // The tenant-bound title proves ownership, but status/economics/scope
-        // or customer eligibility no longer matches the qualification
-        // snapshot. Do not adopt the remote ID; deactivate it before
-        // compensation closes.
-        await deactivateReferralDiscount({
-          shopDomain: credentials.shopDomain,
-          accessToken: credentials.accessToken,
-          discountId: recovered.id,
-        });
+      const latestRemoteProvisionAttempted =
+        typeof latestMetadata.value.remoteProvisionAttemptedAt === "string";
+      if (!latest.shopifyDiscountId && !latestRemoteProvisionAttempted) {
         return true;
       }
-      discountId = recovered.id;
-      const adoptedForCleanup = await tx.weleticRewardRedemption.updateMany({
-        where: {
-          id: latest.id,
-          storeId,
-          status: {
-            in: [
-              WeleticRedemptionStatus.cancelled,
-              WeleticRedemptionStatus.expired,
-              WeleticRedemptionStatus.failed,
-            ],
-          },
-          shopifyDiscountId: null,
-          ...canonicalWriteFence,
-        },
-        data: { shopifyDiscountId: discountId },
+      const canonicalWriteFence = getReferralCouponCanonicalWriteFence(latest, {
+        // Cleanup remains available for a quarantined row, but every local write
+        // must still compare-and-swap the exact quarantine generation.
+        allowQuarantined: true,
       });
-      if (adoptedForCleanup.count !== 1) {
-        throw new Error(
-          `Referral coupon ${latest.id} changed state before remote cleanup.`,
-        );
-      }
-    }
 
-    await deactivateReferralDiscount({
-      shopDomain: credentials.shopDomain,
-      accessToken: credentials.accessToken,
-      discountId,
-    });
-    return true;
-  });
+      let discountId = latest.shopifyDiscountId;
+      if (discountId) {
+        const ownership = getReferralCouponOwnershipExpectation(latest);
+        if (!ownership.snapshot) {
+          throw new ShopifyDiscountError(
+            "INVALID_REQUEST",
+            `Cannot deactivate stored Shopify discount ${discountId} for legacy referral coupon ${latest.id} without a complete immutable reward snapshot; manual reconciliation is required.`,
+          );
+        }
+        const recovered = await lookupDiscountByCode(
+          credentials.shopDomain,
+          credentials.accessToken,
+          ownership.expectedCode,
+        );
+        if (
+          !recovered?.id ||
+          recovered.id !== discountId ||
+          !isShopifyDiscountOwned({
+            discount: recovered,
+            expectedCode: ownership.expectedCode,
+            expectedTitle: ownership.expectedTitle,
+          })
+        ) {
+          throw new ShopifyDiscountError(
+            "INVALID_REQUEST",
+            `Stored Shopify discount ${discountId} for referral coupon ${latest.id} could not be verified against its immutable ownership identity; manual reconciliation is required.`,
+          );
+        }
+      }
+      if (!discountId) {
+        const recovered = await lookupDiscountByCode(
+          credentials.shopDomain,
+          credentials.accessToken,
+          latest.shopifyDiscountCode,
+        );
+        if (!recovered?.id) {
+          const retryUntil = getReferralCouponReconciliationDeadline(
+            latestMetadata.value,
+          );
+          if (Date.now() < retryUntil.getTime()) {
+            throw new ReferralCouponReconciliationPendingError(
+              `Shopify referral discount ${latest.shopifyDiscountCode} is not visible yet; reconciliation remains pending.`,
+              retryUntil,
+            );
+          }
+          throw new ReferralCouponReconciliationRequiredError(
+            `Shopify referral discount ${latest.shopifyDiscountCode} is still absent after an uncertain create for referral coupon ${latest.id}; manual reconciliation is required.`,
+          );
+        }
+        const ownership = getReferralCouponOwnershipExpectation(latest);
+        if (
+          !isShopifyDiscountOwned({
+            discount: recovered,
+            expectedCode: ownership.expectedCode,
+            expectedTitle: ownership.expectedTitle,
+          })
+        ) {
+          throw new ShopifyDiscountError(
+            "INVALID_REQUEST",
+            `Shopify discount code collision for referral coupon ${latest.id}; the existing discount is not owned by the intended referral configuration.`,
+          );
+        }
+
+        let matchesImmutableConfiguration = false;
+        if (ownership.snapshot && recovered.status === "ACTIVE") {
+          const [account, store] = await Promise.all([
+            tx.weleticLoyaltyAccount.findFirst({
+              where: {
+                id: latest.accountId,
+                storeId,
+                status: "active",
+              },
+              include: { shopper: true },
+            }),
+            tx.weleticShopifyStore.findUnique({
+              where: { id: storeId },
+              select: { shopCurrency: true },
+            }),
+          ]);
+          if (account && store?.shopCurrency) {
+            const contextMatches =
+              store.shopCurrency.trim().toUpperCase() ===
+                ownership.snapshot.shopCurrency &&
+              matchesShopifyCustomerSelectionDigest({
+                digest: ownership.snapshot.customerSelectionDigest,
+                storeId,
+                shopifyCustomerId: account.shopper.shopifyCustomerId,
+              });
+            matchesImmutableConfiguration =
+              contextMatches &&
+              matchesLoyaltyRewardDiscountConfiguration({
+                remote: recovered,
+                rewardDefinition: getRewardDefinitionFromSnapshot(
+                  ownership.snapshot,
+                ),
+                startsAt: new Date(ownership.snapshot.startsAt),
+                expiresAt: ownership.snapshot.expiresAt
+                  ? new Date(ownership.snapshot.expiresAt)
+                  : null,
+                expectedShopCurrency: ownership.snapshot.shopCurrency,
+                shopifyCustomerId: account.shopper.shopifyCustomerId,
+              });
+          }
+        }
+
+        if (!matchesImmutableConfiguration) {
+          // The tenant-bound title proves ownership, but status/economics/scope
+          // or customer eligibility no longer matches the qualification
+          // snapshot. Do not adopt the remote ID; deactivate it before
+          // compensation closes.
+          await deactivateReferralDiscount({
+            shopDomain: credentials.shopDomain,
+            accessToken: credentials.accessToken,
+            discountId: recovered.id,
+          });
+          return true;
+        }
+        discountId = recovered.id;
+        const adoptedForCleanup = await tx.weleticRewardRedemption.updateMany({
+          where: {
+            id: latest.id,
+            storeId,
+            status: {
+              in: [
+                WeleticRedemptionStatus.cancelled,
+                WeleticRedemptionStatus.expired,
+                WeleticRedemptionStatus.failed,
+              ],
+            },
+            shopifyDiscountId: null,
+            ...canonicalWriteFence,
+          },
+          data: { shopifyDiscountId: discountId },
+        });
+        if (adoptedForCleanup.count !== 1) {
+          throw new Error(
+            `Referral coupon ${latest.id} changed state before remote cleanup.`,
+          );
+        }
+      }
+
+      await deactivateReferralDiscount({
+        shopDomain: credentials.shopDomain,
+        accessToken: credentials.accessToken,
+        discountId,
+      });
+      return true;
+    },
+    loyaltyMaintenancePermit,
+  );
 }
 
 function assertReferralCouponRedemptionIntent<
@@ -921,6 +988,61 @@ async function completeReferralWhenCouponsAreFulfilled(params: {
           side: requiredSide,
         }),
       );
+      // Issuance released its transaction before this completion lock. Recheck
+      // original provenance here so a reinstall cannot rebind the Flow event.
+      for (const side of ["advocate", "referee"] as const) {
+        const origin = await assertReferralCommunicationOrigin({
+          tx,
+          metadata: referral.metadata,
+          identity: {
+            storeId: params.storeId,
+            programId: program.id,
+            referralId: referral.id,
+            qualificationOrderId: params.qualificationOrderId,
+            accountId:
+              side === "advocate"
+                ? referral.advocateAccountId
+                : referral.refereeAccountId ?? "",
+            side,
+          },
+          loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+        });
+        if (!origin || !requiredCouponSides.includes(side)) continue;
+        if (origin.kind !== "coupon") {
+          throw new ReferralCommunicationOriginBlockedError(
+            new Error("Required coupon has a non-coupon origin"),
+          );
+        }
+        const coupon = await tx.weleticRewardRedemption.findUnique({
+          where: {
+            storeId_idempotencyKey: {
+              storeId: params.storeId,
+              idempotencyKey: getReferralCouponIdempotencyKey({
+                referralId: referral.id,
+                qualificationOrderId: params.qualificationOrderId,
+                side,
+              }),
+            },
+          },
+        });
+        if (!coupon || !LIVE_REFERRAL_COUPON_STATUSES.has(coupon.status))
+          return;
+        const couponOrigin = await fenceReferralCouponCommunicationOrigin({
+          tx,
+          program,
+          redemption: coupon,
+          identity: {
+            ...origin,
+            rewardDefinitionId: origin.rewardDefinitionId,
+          },
+          loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+        });
+        if (!isDeepStrictEqual(origin, couponOrigin)) {
+          throw new ReferralCommunicationOriginBlockedError(
+            new Error("Fulfilled coupon does not match qualification origin"),
+          );
+        }
+      }
       const fulfilledCoupons = requiredKeys.length
         ? await tx.weleticRewardRedemption.count({
             where: {
@@ -1027,6 +1149,13 @@ export async function issueReferralRewardCoupon({
         where: { storeId_idempotencyKey: { storeId, idempotencyKey } },
       });
       if (existing) {
+        await fenceReferralCouponCommunicationOrigin({
+          tx,
+          program,
+          redemption: existing,
+          identity: intendedIdentity,
+          loyaltyMaintenancePermit,
+        });
         const referral = await tx.weleticLoyaltyReferral.findFirst({
           where: {
             id: referralId,
@@ -1103,6 +1232,24 @@ export async function issueReferralRewardCoupon({
         );
       }
       const persistedRewardSnapshot = authoritativeRewardSnapshot;
+      const communicationOrigin = await assertReferralCommunicationOrigin({
+        tx,
+        metadata: referral.metadata,
+        identity: { ...intendedIdentity, programId: program.id },
+        loyaltyMaintenancePermit,
+      });
+      if (
+        communicationOrigin &&
+        (communicationOrigin.kind !== "coupon" ||
+          communicationOrigin.rewardSnapshotDigest !==
+            persistedRewardSnapshot.contentDigest ||
+          communicationOrigin.rewardDefinitionId !== rewardDefinitionId ||
+          communicationOrigin.qualifiedAt !==
+            persistedRewardSnapshot.qualifiedAt)
+      )
+        throw new ReferralCommunicationOriginBlockedError(
+          new Error("Referral coupon origin snapshot unavailable"),
+        );
       assertSnapshotProvisioningContext({
         snapshot: persistedRewardSnapshot,
         storeId,
@@ -1148,6 +1295,11 @@ export async function issueReferralRewardCoupon({
               persistedRewardSnapshot.provisioningName,
             shopifyDiscountExpectedTitle: persistedRewardSnapshot.expectedTitle,
             rewardSnapshot: persistedRewardSnapshot,
+            ...(communicationOrigin
+              ? {
+                  referralCommunicationOrigins: { [side]: communicationOrigin },
+                }
+              : {}),
           } as Prisma.InputJsonValue,
         },
       });
@@ -1188,7 +1340,13 @@ export async function issueReferralRewardCoupon({
     }
   }
 
-  if (await recoverCompensatedReferralCouponDiscount({ storeId, redemption })) {
+  if (
+    await recoverCompensatedReferralCouponDiscount({
+      storeId,
+      redemption,
+      loyaltyMaintenancePermit,
+    })
+  ) {
     return redemption;
   }
 
@@ -1337,6 +1495,13 @@ export async function issueReferralRewardCoupon({
           );
         }
         assertReferralCouponRedemptionIntent(current, intendedIdentity);
+        await fenceReferralCouponCommunicationOrigin({
+          tx,
+          program,
+          redemption: current,
+          identity: intendedIdentity,
+          loyaltyMaintenancePermit,
+        });
         if (current.status !== WeleticRedemptionStatus.provisioning) {
           return {
             kind: "resolved" as const,
@@ -1484,6 +1649,7 @@ export async function issueReferralRewardCoupon({
         await recoverCompensatedReferralCouponDiscount({
           storeId,
           redemption: latest,
+          loyaltyMaintenancePermit,
         })
       ) {
         return latest;
@@ -1508,6 +1674,7 @@ export async function issueReferralRewardCoupon({
         (await recoverCompensatedReferralCouponDiscount({
           storeId,
           redemption: latest,
+          loyaltyMaintenancePermit,
         }))
       ) {
         return latest;
@@ -1536,7 +1703,7 @@ export async function issueReferralRewardCoupon({
       phaseTwoResult = await withReferralCouponProgramLock(
         storeId,
         "active",
-        async (tx) => {
+        async (tx, program) => {
           const currentBeforeRemote =
             await tx.weleticRewardRedemption.findUnique({
               where: { id: redemption.id },
@@ -1551,6 +1718,14 @@ export async function issueReferralRewardCoupon({
             currentBeforeRemote,
             intendedIdentity,
           );
+          const communicationOrigin =
+            await fenceReferralCouponCommunicationOrigin({
+              tx,
+              program,
+              redemption: currentBeforeRemote,
+              identity: intendedIdentity,
+              loyaltyMaintenancePermit,
+            });
           if (
             currentBeforeRemote.status !== WeleticRedemptionStatus.provisioning
           ) {
@@ -1720,11 +1895,29 @@ export async function issueReferralRewardCoupon({
               data: {
                 status: WeleticRedemptionStatus.issued,
                 shopifyDiscountId: provisioned.id,
+                ...(communicationOrigin
+                  ? {
+                      metadata: {
+                        ...provisioningMetadata,
+                        referralCommunicationIssuedAt: new Date().toISOString(),
+                      } as Prisma.InputJsonValue,
+                    }
+                  : {}),
               },
             });
           }
 
           if (issued.count !== 0) {
+            if (communicationOrigin) {
+              await enqueueReferralBenefitCommunication({
+                tx,
+                identity: { ...intendedIdentity, programId: program.id },
+                expectedInstallationGeneration:
+                  communicationOrigin.installationGeneration,
+                receipt: { created: true, kind: "coupon", id: redemption.id },
+                loyaltyMaintenancePermit,
+              });
+            }
             return { issued, latestAfterFinalization: null };
           }
 
@@ -1767,7 +1960,10 @@ export async function issueReferralRewardCoupon({
         loyaltyMaintenancePermit,
       );
     } catch (error) {
-      if (isLoyaltyMaintenanceBlockedError(error)) {
+      if (
+        isLoyaltyMaintenanceBlockedError(error) ||
+        error instanceof ReferralCommunicationOriginBlockedError
+      ) {
         // A maintenance deferral must leave the exact ambiguity marker intact;
         // only the authorized owner or a later post-lease retry may advance it.
         throw error;
@@ -1776,12 +1972,19 @@ export async function issueReferralRewardCoupon({
         await withReferralCouponProgramLock(
           storeId,
           "lock_only",
-          async (tx) => {
+          async (tx, program) => {
             const current = await tx.weleticRewardRedemption.findUnique({
               where: { id: redemption.id },
             });
             if (!current || current.storeId !== storeId) return;
             assertReferralCouponRedemptionIntent(current, intendedIdentity);
+            await fenceReferralCouponCommunicationOrigin({
+              tx,
+              program,
+              redemption: current,
+              identity: intendedIdentity,
+              loyaltyMaintenancePermit,
+            });
             if (current.status !== WeleticRedemptionStatus.provisioning) return;
             const clearedMetadata = clearLoyaltyDiscountRemoteProvisionAttempt({
               metadata: current.metadata,

@@ -19,6 +19,7 @@ import { renderLoyaltyCommunicationText } from "./communications-contract";
 import { snapshotLoyaltyCommunicationPolicy } from "./communications-service";
 import type { LoyaltyMaintenancePermit } from "./maintenance-write-fence";
 import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
+import { isCurrentReferralBenefit } from "./referral-benefit-communication-source";
 import { rewardCommunicationValue } from "./reward-communication-value";
 import { isCurrentRewardRedemption } from "./reward-redeemed-communication-source";
 import { hasShopifyCustomerRedactionTombstone } from "./shopper-privacy";
@@ -109,6 +110,9 @@ export async function sendPointsEarnedNotification({
   } else if (event.source === "reward_issuance_confirmed") {
     if (!(await isCurrentRewardRedemption({ db: prisma, event })))
       return "ineligible";
+  } else if (event.source === "referral_benefit_confirmed") {
+    if (!(await isCurrentReferralBenefit({ db: prisma, event })))
+      return "ineligible";
   } else {
     // Source ledger is required participation evidence. Never infer it from a
     // cached balance, customer import or an unverified event alone.
@@ -195,7 +199,9 @@ export async function sendPointsEarnedNotification({
           customer_first_name: account.shopper.firstName ?? "",
           points:
             event.source === "vip_threshold_promotion" ||
-            event.source === "reward_issuance_confirmed"
+            event.source === "reward_issuance_confirmed" ||
+            (event.source === "referral_benefit_confirmed" &&
+              event.benefitKind === "coupon")
               ? ""
               : event.points,
           tier_name:
@@ -204,13 +210,21 @@ export async function sendPointsEarnedNotification({
           reward_name:
             event.journey === "birthday"
               ? `${event.points} ${account.program.pointNamePlural}`
-              : event.source === "reward_issuance_confirmed"
-                ? event.reward.name
-                : "",
+              : event.source === "referral_benefit_confirmed" &&
+                  event.benefitKind === "points"
+                ? `${event.points} ${account.program.pointNamePlural}`
+                : event.source === "reward_issuance_confirmed" ||
+                    event.source === "referral_benefit_confirmed"
+                  ? event.reward.name
+                  : "",
           reward_value:
-            event.source === "reward_issuance_confirmed"
-              ? rewardCommunicationValue(event.reward, locale)
-              : "",
+            event.source === "referral_benefit_confirmed" &&
+            event.benefitKind === "points"
+              ? `${event.points} ${account.program.pointNamePlural}`
+              : event.source === "reward_issuance_confirmed" ||
+                  event.source === "referral_benefit_confirmed"
+                ? rewardCommunicationValue(event.reward, locale)
+                : "",
         };
         const template = event.policy.templates[locale];
         const render = (text: string) =>

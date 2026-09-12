@@ -37,6 +37,31 @@ const emailMocks = vi.hoisted(() => ({ sendBatch: vi.fn() }));
 
 vi.mock("@/lib/prisma", () => {
   const prismaMock: any = {
+    $queryRaw: vi.fn(async (query: { sql: string; values: unknown[] }) => {
+      if (query.values[0] !== "store_1") return [];
+      if (query.sql.includes("FROM WeleticLoyaltyProgram"))
+        return [
+          {
+            id: "program_1",
+            storeId: "store_1",
+            status: "active",
+            killSwitchActive: false,
+            metadata: null,
+          },
+        ];
+      if (query.sql.includes("FROM WeleticShopifyStore"))
+        return [{ id: "store_1", storeAccessState: "active" }];
+      throw new Error("Unexpected friend-claim SQL query");
+    }),
+    weleticLoyaltyProgram: {
+      findUnique: vi.fn().mockResolvedValue({
+        id: "program_1",
+        storeId: "store_1",
+        status: "active",
+        killSwitchActive: false,
+        metadata: null,
+      }),
+    },
     weleticMerchantSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     $executeRaw: vi.fn(),
     weleticShopifyStore: {
@@ -903,89 +928,98 @@ describe("Smile-compatible anonymous referral friend claims", () => {
     expect(sendBatchEmail).not.toHaveBeenCalled();
   });
 
-  it("qualifies the matching first paid order and rewards only the advocate", async () => {
-    await claimReferralFriendReward({
-      storeId: "store_1",
-      referralCode: "ALICE-1234",
-      friendEmail: "friend@example.com",
-      clientIp: "203.0.113.12",
-    });
-    vi.mocked(prisma.weleticShopper.findFirst).mockResolvedValue({
-      ordersCount: 1,
-    } as any);
-
-    const result = await evaluateReferralFriendClaimQualification({
-      storeId: "store_1",
-      orderId: "order_1",
-      friendEmail: "friend@example.com",
-      refereeShopperId: "shopper_friend",
-      orderSubtotal: BigInt(5000),
-      currency: "USD",
-      customerOrderSequence: 1,
-    });
-
-    expect(result).toMatchObject({
-      qualified: true,
-      advocatePointsAwarded: BigInt(500),
-      couponProvisioning: false,
-    });
-    expect(state.referral.status).toBe(WeleticLoyaltyReferralStatus.rewarded);
-    expect(state.referral.refereePointsAwarded).toBe(BigInt(0));
-    expect(
-      readReferralPrivacySnapshot({
-        value: state.referral.metadata.friendPrivacySnapshot,
+  it.each(["generation_1", null])(
+    "qualifies the matching first paid order and rewards only the advocate (generation=%s)",
+    async (generation) => {
+      compliance.assertWrites.mockResolvedValue({
+        id: "store_1",
+        shopCurrency: "USD",
+        currencyVerifiedAt: new Date("2026-08-01T00:00:00.000Z"),
+        installationGeneration: generation,
+      });
+      await claimReferralFriendReward({
         storeId: "store_1",
-        referralId: state.referral.id,
-        friendEmailDigest: state.referral.friendEmailDigest,
-      }),
-    ).toEqual([expect.objectContaining({ identityKind: "customer_email" })]);
-    expect(JSON.stringify(state.referral.metadata)).not.toContain(
-      "friend@example.com",
-    );
-    expect(
-      vi
-        .mocked(enqueueFlowTriggerJob)
-        .mock.calls.filter(
-          ([input]) => input.payload.handle === "weletic-referral-completed",
-        ),
-    ).toHaveLength(1);
-    expect(enqueueFlowTriggerJob).toHaveBeenCalledWith(
-      expect.objectContaining({
+        referralCode: "ALICE-1234",
+        friendEmail: "friend@example.com",
+        clientIp: "203.0.113.12",
+      });
+      vi.mocked(prisma.weleticShopper.findFirst).mockResolvedValue({
+        ordersCount: 1,
+      } as any);
+
+      const result = await evaluateReferralFriendClaimQualification({
         storeId: "store_1",
-        eventId: state.referral.id,
-        payload: {
-          handle: "weletic-referral-completed",
+        orderId: "order_1",
+        friendEmail: "friend@example.com",
+        refereeShopperId: "shopper_friend",
+        orderSubtotal: BigInt(5000),
+        currency: "USD",
+        customerOrderSequence: 1,
+      });
+
+      expect(result).toMatchObject({
+        qualified: true,
+        advocatePointsAwarded: BigInt(500),
+        couponProvisioning: false,
+      });
+      expect(state.referral.status).toBe(WeleticLoyaltyReferralStatus.rewarded);
+      expect(state.referral.refereePointsAwarded).toBe(BigInt(0));
+      expect(
+        readReferralPrivacySnapshot({
+          value: state.referral.metadata.friendPrivacySnapshot,
+          storeId: "store_1",
           referralId: state.referral.id,
-          accountId: "account_advocate",
-          orderId: "order_1",
-          advocatePoints: "500",
-          friendPoints: "0",
-        },
-      }),
-    );
-    expect(appendPointsLedgerEntry).toHaveBeenCalledWith(
-      expect.objectContaining({
-        accountId: "account_advocate",
-        pointsDelta: BigInt(500),
-      }),
-    );
-    expect(enqueueFlowTriggerJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        storeId: "store_1",
-        payload: expect.objectContaining({
-          accountId: "account_advocate",
-          handle: "weletic-points-earned",
-          pointsDelta: "500",
-          reason: "referral_friend_reward",
+          friendEmailDigest: state.referral.friendEmailDigest,
         }),
-      }),
-    );
-    expect(enqueueOutboxJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        jobType: "METAFIELD_SYNC",
-      }),
-    );
-  });
+      ).toEqual([expect.objectContaining({ identityKind: "customer_email" })]);
+      expect(JSON.stringify(state.referral.metadata)).not.toContain(
+        "friend@example.com",
+      );
+      expect(
+        vi
+          .mocked(enqueueFlowTriggerJob)
+          .mock.calls.filter(
+            ([input]) => input.payload.handle === "weletic-referral-completed",
+          ),
+      ).toHaveLength(1);
+      expect(enqueueFlowTriggerJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storeId: "store_1",
+          eventId: state.referral.id,
+          payload: {
+            handle: "weletic-referral-completed",
+            referralId: state.referral.id,
+            accountId: "account_advocate",
+            orderId: "order_1",
+            advocatePoints: "500",
+            friendPoints: "0",
+          },
+        }),
+      );
+      expect(appendPointsLedgerEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: "account_advocate",
+          pointsDelta: BigInt(500),
+        }),
+      );
+      expect(enqueueFlowTriggerJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          storeId: "store_1",
+          payload: expect.objectContaining({
+            accountId: "account_advocate",
+            handle: "weletic-points-earned",
+            pointsDelta: "500",
+            reason: "referral_friend_reward",
+          }),
+        }),
+      );
+      expect(enqueueOutboxJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobType: "METAFIELD_SYNC",
+        }),
+      );
+    },
+  );
 
   it("does not qualify a different checkout email", async () => {
     await claimReferralFriendReward({
