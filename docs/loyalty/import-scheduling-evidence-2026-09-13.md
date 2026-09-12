@@ -49,7 +49,11 @@ was stopped. The original import worktrees remain preserved.
 These tests do not prove concurrent worker races, all lifecycle paths, or the
 50,000-row terminal accounting totals.
 
-## Next bounded task
+## Follow-up requirements and implementation
+
+The [poll diagnostic harness](import-poll-diagnostics.md) implements the bounded
+tasks below, with focused real-worker evidence and a passing 500-row lifecycle.
+The 50,000-row run has not been repeated and remains unaccepted.
 
 Before another expensive full-scale run:
 

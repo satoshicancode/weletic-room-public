@@ -261,7 +261,10 @@ No checkbox below is promoted solely by these local checks.
       [future-due scheduling checks](import-scheduling-evidence-2026-09-13.md)
       passed, including unchanged pre-due state and exact post-due balance/SQL
       reconciliation. They prove legitimate empty polls, not the failed run's
-      cause. Sanitized failure diagnostics and bounded lifecycle reruns remain.
+      cause. The [test-harness diagnostics](import-poll-diagnostics.md) now add
+      explicit unexplained-poll failures and bounded observed-due waiting;
+      22 focused unit cases, three real diagnostic cases and the 500-row
+      commit/rollback lifecycle passed. Full-scale acceptance remains open.
       The local [dedicated-instance scale continuation](historical-import-implementation.md)
       adds grouped rollback and projected evidence reads. Its latest synthetic
       50,000-row profile reached 30 real reversals and safe continuation, with
