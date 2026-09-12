@@ -1,6 +1,6 @@
 # Weletic company-store loyalty — acceptance matrix
 
-Updated 2026-09-10 (Asia/Tokyo). This is the execution checklist for Hiro's
+Status reconciled 2026-09-12 (Asia/Tokyo). This is the execution checklist for Hiro's
 approved **Loyalty Completion Plan for Weletic Stores**. It supersedes the older
 mixed loyalty/reviews checklist for this stream; it does not activate excluded
 review features or waive any external execution gate.
@@ -8,6 +8,13 @@ review features or waive any external execution gate.
 **Overall acceptance: incomplete. No live gate below is certified complete.**
 Code, local tests, CI, and competitor observations are evidence at their stated
 level, not substitutes for named journeys on yamaxdev.
+
+For current merged-code status and every L00–L17 workstream disposition, use the
+[September 12 launch reconciliation](launch-status-2026-09-12.md). In particular,
+PRs #13, #15 and #18 are merged; the September 9–10 draft statements below are
+historical checkpoints, not current merge blockers. Appearance/nudges and several
+communications producers have also merged. No live checkbox is changed by that
+code integration, and all original requirements below remain in scope.
 
 ## Scope and authoritative sources
 

@@ -1,5 +1,11 @@
 # Company-store bootstrap implementation checkpoint
 
+September 12 status: PR #15 merged as `69149d76d898b6e14c5c54c5cd07568821e704f9`.
+Its [merge and CI receipt](https://github.com/satoshicancode/weletic-room-public/pull/15)
+supersedes only the draft/public-CI statements below. Runtime schema, fresh
+authentication and named live bootstrap acceptance remain gated. See the
+[current launch inventory](launch-status-2026-09-12.md).
+
 September 10, 2026. [ADR 0026](../adr/0026-audited-company-store-bootstrap.md)
 is approved. Implementation belongs to **draft PR #15, not merged or live accepted**.
 
