@@ -237,6 +237,9 @@ No task below silently authorizes an external gate or a new product policy.
 
 ### L09 — Complete shopper and merchant surface acceptance
 
+- **September 13 local evidence:** [landing locale/mobile checks](landing-locales-acceptance-2026-09-13.md)
+  cover shipped theme assets with synthetic responses; live Liquid, authentication,
+  complete state coverage and the broader surface matrix remain open.
 - **Scope/reference:** R2 and September 8 surface inventory: launcher/drawer,
   landing, product points, account hub/profile, wallet/history, referral sharing/
   claim and eligible thank-you surfaces; all merchant editors also need E2 coverage.

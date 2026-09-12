@@ -502,6 +502,9 @@
 
 /* Landing Page Sections */
 .weletic-landing-container {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-wrap: anywhere;
   max-width: 1120px;
   margin: 0 auto;
   padding: 48px 20px;
@@ -535,6 +538,7 @@
 }
 .weletic-landing-guest-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 12px;
 }
