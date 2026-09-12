@@ -10,9 +10,11 @@ import {
 } from "../../lib/weletic/loyalty/communication-delivery-snapshot";
 import { purchasePointsCommunicationSchema } from "../../lib/weletic/loyalty/points-communication-contract";
 import { createReferralBenefitCommunication } from "../../lib/weletic/loyalty/referral-benefit-communication-contract";
+import { createRewardExpiryCommunication } from "../../lib/weletic/loyalty/reward-expiry-communication-contract";
 import { createRewardRedeemedCommunication } from "../../lib/weletic/loyalty/reward-redeemed-communication-contract";
 import { referralBenefitFixture } from "./referral-benefit-communication-fixture";
 import { rewardCommunicationFixture } from "./reward-communication-fixture";
+import { rewardExpiryCommunicationFixture } from "./reward-expiry-communication-fixture";
 
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
@@ -308,6 +310,110 @@ function redemptionFixture() {
   );
   return { args, evidence, currentPolicy };
 }
+
+function expiryFixture(kind: "redemption" | "referral_coupon") {
+  const args = fixture();
+  const evidence = rewardExpiryCommunicationFixture(kind);
+  const event = createRewardExpiryCommunication(evidence);
+  args.claim.candidate.payload = event;
+  args.expectedInstallationGeneration = event.installationGeneration;
+  args.wallClockNow = evidence.now;
+  const currentPolicy = structuredClone(event.policy);
+  mocks.program.mockResolvedValue({
+    id: "program",
+    status: "active",
+    killSwitchActive: false,
+    metadata: {
+      loyaltyCommunications: {
+        version: 1,
+        sequence: 1,
+        policies: [currentPolicy],
+      },
+    },
+  });
+  const receipt = evidence.receipt;
+  const row =
+    receipt.kind === "redemption"
+      ? receipt.input.redemption
+      : receipt.input.receipt.kind === "coupon"
+        ? receipt.input.receipt.redemption
+        : null;
+  if (!row) throw new Error("fixture");
+  mocks.redemption.mockResolvedValue(row);
+  if (receipt.kind === "redemption") {
+    mocks.ledger.mockImplementation(async ({ where }) =>
+      where.referenceType === "REDEMPTION_REFUND" ? null : receipt.input.ledger,
+    );
+  } else {
+    mocks.referral.mockResolvedValue(receipt.input.referral);
+    mocks.order.mockResolvedValue({ status: "paid" });
+  }
+  return { args, event, row, currentPolicy };
+}
+it.each(["lock-wait", "render"] as const)(
+  "rechecks the production expiry clock after %s",
+  async (stage) => {
+    const { args, event } = expiryFixture("redemption");
+    const { wallClockNow: _controlledClock, ...productionArgs } = args;
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(event.occurredAt));
+    try {
+      if (stage === "lock-wait") {
+        const operation = mocks.fence.getMockImplementation()!;
+        mocks.fence.mockImplementation(async (input) => {
+          vi.setSystemTime(new Date(event.expiresAt));
+          return operation(input);
+        });
+      } else {
+        args.prepare.mockImplementation(async () => {
+          vi.setSystemTime(new Date(event.expiresAt));
+          return request;
+        });
+      }
+      await expect(
+        retainCommunicationDeliveryRequest(productionArgs),
+      ).rejects.toThrow("no longer eligible");
+      expect(mocks.updateMany).not.toHaveBeenCalled();
+      if (stage === "lock-wait") expect(args.prepare).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+it.each(["redemption", "referral_coupon"] as const)(
+  "retains exact %s expiry content and suppresses used rewards on retry",
+  async (kind) => {
+    const { args, row } = expiryFixture(kind);
+    expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
+    args.prepare.mockClear();
+    args.prepare.mockResolvedValue({ ...request, subject: "changed content" });
+    expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
+    expect(args.prepare).not.toHaveBeenCalled();
+    row.status = "used";
+    await expect(retainCommunicationDeliveryRequest(args)).rejects.toThrow(
+      "no longer eligible",
+    );
+    expect(args.prepare).not.toHaveBeenCalled();
+  },
+);
+it.each(["redemption", "referral_coupon"] as const)(
+  "rechecks %s expiry and enabled policy before retaining a retry",
+  async (kind) => {
+    const { args, event } = expiryFixture(kind);
+    await retainCommunicationDeliveryRequest(args);
+    args.wallClockNow = new Date(event.expiresAt);
+    args.prepare.mockClear();
+    await expect(retainCommunicationDeliveryRequest(args)).rejects.toThrow(
+      "no longer eligible",
+    );
+    const next = expiryFixture(kind);
+    await retainCommunicationDeliveryRequest(next.args);
+    next.currentPolicy.enabled = false;
+    await expect(retainCommunicationDeliveryRequest(next.args)).rejects.toThrow(
+      "no longer eligible",
+    );
+  },
+);
 
 it("retains encrypted redemption requests and reuses them after legitimate used progression", async () => {
   const { args, evidence } = redemptionFixture();

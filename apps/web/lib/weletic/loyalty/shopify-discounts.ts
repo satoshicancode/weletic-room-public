@@ -2150,7 +2150,8 @@ export async function lookupDiscountByCode(
     id: node.id,
     code: matchedCode?.code || codes[0]?.code || cleanCode,
     title: node.codeDiscount?.title || "",
-    status: node.codeDiscount?.status || "ACTIVE",
+    // Missing remote status is unknown, never proof of an active voucher.
+    status: node.codeDiscount?.status || "",
     ...(Number.isInteger(matchedCode?.asyncUsageCount) &&
     Number(matchedCode?.asyncUsageCount) >= 0
       ? { asyncUsageCount: Number(matchedCode?.asyncUsageCount) }

@@ -2,8 +2,10 @@ import type { Prisma } from "@prisma/client";
 import { snapshotLoyaltyCommunicationPolicy } from "./communications-service";
 import type { LoyaltyMaintenancePermit } from "./maintenance-write-fence";
 import { enqueueOutboxJobFromProgramTransaction } from "./outbox";
+import { RewardCommunicationOriginBlockedError } from "./reward-communication-origin-fence";
 import {
   createRewardRedeemedCommunication,
+  projectRewardReceiptEvidence,
   rewardRedeemedCommunicationKey,
 } from "./reward-redeemed-communication-contract";
 
@@ -39,13 +41,6 @@ export async function enqueueRewardRedeemedCommunication({
   if (!program || program.storeId !== storeId)
     throw new Error("Reward communication program unavailable");
   if (program.status !== "active" || program.killSwitchActive) return null;
-  const policySnapshot = snapshotLoyaltyCommunicationPolicy({
-    storeId,
-    programId: program.id,
-    metadata: program.metadata,
-    journey: "reward_redeemed",
-  });
-  if (!policySnapshot?.policy.enabled) return null;
   const store = await tx.weleticShopifyStore.findUnique({
     where: { id: storeId },
     select: {
@@ -101,6 +96,55 @@ export async function enqueueRewardRedeemedCommunication({
     },
   });
   if (!ledger) throw new Error("Reward communication debit unavailable");
+  // Preserve the actual winning local issuance time even when its notice is
+  // disabled. A later expiry reminder must not invent it from creation time or
+  // from a sweep/retry. The caller owns the transition and store/program lock.
+  projectRewardReceiptEvidence(
+    {
+      storeId,
+      programId: program.id,
+      accountId,
+      installationGeneration: expectedInstallationGeneration,
+      occurredAt: receipt.occurredAt,
+      redemption,
+      ledger,
+    },
+    ["issued"],
+  );
+  const metadata = redemption.metadata as Prisma.JsonObject;
+  const issuedAt = receipt.occurredAt.toISOString();
+  if (
+    metadata.rewardCommunicationIssuedAt !== undefined &&
+    metadata.rewardCommunicationIssuedAt !== issuedAt
+  )
+    throw new RewardCommunicationOriginBlockedError(
+      new Error("Reward issuance timestamp already belongs to another receipt"),
+    );
+  if (metadata.rewardCommunicationIssuedAt === undefined) {
+    const recorded = await tx.weleticRewardRedemption.updateMany({
+      where: {
+        id: redemption.id,
+        storeId,
+        accountId,
+        status: "issued",
+        metadata: { equals: metadata },
+      },
+      data: {
+        metadata: { ...metadata, rewardCommunicationIssuedAt: issuedAt },
+      },
+    });
+    if (recorded.count !== 1)
+      throw new RewardCommunicationOriginBlockedError(
+        new Error("Reward changed before issuance evidence could be retained"),
+      );
+  }
+  const policySnapshot = snapshotLoyaltyCommunicationPolicy({
+    storeId,
+    programId: program.id,
+    metadata: program.metadata,
+    journey: "reward_redeemed",
+  });
+  if (!policySnapshot?.policy.enabled) return null;
   const event = createRewardRedeemedCommunication({
     storeId,
     programId: program.id,

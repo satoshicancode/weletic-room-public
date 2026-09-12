@@ -8,6 +8,8 @@ export function rewardCommunicationFixture(
   type = "amount_off",
   name = "Original reward",
   points = "9007199254740993",
+  expiresAt: Date | null = null,
+  customerSelectionDigest = "A".repeat(64),
 ): Input & {
   policySnapshot: Input["policySnapshot"] & {
     policy: ReturnType<typeof createDefaultLoyaltyCommunicationPolicy>;
@@ -27,9 +29,9 @@ export function rewardCommunicationFixture(
     expiresInDays: null,
     shopCurrency: "USD",
     currencyVerifiedAt: createdAt,
-    customerSelectionDigest: "A".repeat(64),
+    customerSelectionDigest,
     startsAt: createdAt,
-    expiresAt: null,
+    expiresAt,
   });
   return {
     storeId: "store",

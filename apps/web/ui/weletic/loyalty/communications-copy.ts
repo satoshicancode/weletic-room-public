@@ -1,5 +1,11 @@
 export const communicationsCopy = {
   en: {
+    rewardExpiryConnected:
+      "Connected for unused discount rewards and account-backed referral coupons with verified issuance and expiry. Reminders become due 72 hours before expiry; delayed reminders can run only before expiry. Gift Cards, Store Credit and anonymous friend coupons are not supported. Dates currently display in UTC. Delivery still requires consent, an active program, an approved sender and running scheduler/worker. Saving does not send email; disabling also stops queued reminders.",
+    rewardExpirySaved:
+      "Saved for future eligible reward-expiry reminders. No email was sent.",
+    rewardExpiryEnabled:
+      "Allow discount reward-expiry reminders (consent and configured delivery required)",
     redemptionConnected:
       "New reservations with verified installation provenance can produce notices after confirmed reward issuance. Existing reservations are not backfilled. Consent and delivery settings still apply.",
     redemptionSaved:
@@ -64,6 +70,11 @@ export const communicationsCopy = {
     dirty: "Unsaved changes. Save or discard before changing journeys.",
   },
   ja: {
+    rewardExpiryConnected:
+      "発行と有効期限を確認できる未使用の割引特典、および会員アカウントに紐づく紹介クーポンに対応しています。有効期限の72時間前から通知対象となり、遅延時も期限前のみ配信できます。ギフトカード、ストアクレジット、匿名の紹介先クーポンは対象外です。日付は現在UTC表示です。配信には同意、有効なプログラム、承認済み送信者、稼働中のスケジューラーとワーカーが必要です。保存だけでは送信せず、無効化すると待機中の通知も停止します。",
+    rewardExpirySaved:
+      "今後の対象特典の期限通知用に保存しました。メールは送信していません。",
+    rewardExpiryEnabled: "割引特典の期限通知を許可する（同意と配信設定が必要）",
     redemptionConnected:
       "インストール時の情報を確認できる新規予約では、特典の発行確定後に通知できます。既存の予約には遡って適用しません。同意と配信設定が必要です。",
     redemptionSaved:
@@ -123,6 +134,12 @@ export const communicationsCopy = {
       "未保存の変更があります。通知を切り替える前に保存または破棄してください。",
   },
   vi: {
+    rewardExpiryConnected:
+      "Đã kết nối cho phần thưởng giảm giá chưa sử dụng và mã giới thiệu gắn với tài khoản thành viên, có bằng chứng phát hành và hạn dùng. Nhắc hạn bắt đầu trước khi hết hạn 72 giờ; thông báo bị chậm chỉ được gửi trước hạn. Chưa hỗ trợ Gift Card, Store Credit và mã cho người được giới thiệu chưa có tài khoản. Ngày hiện hiển thị theo UTC. Gửi thư vẫn cần sự đồng ý, chương trình hoạt động, người gửi được duyệt và bộ lập lịch/worker đang chạy. Lưu không gửi email; tắt cũng dừng các lời nhắc đang chờ.",
+    rewardExpirySaved:
+      "Đã lưu cho lời nhắc hết hạn phần thưởng đủ điều kiện trong tương lai. Chưa gửi email.",
+    rewardExpiryEnabled:
+      "Cho phép nhắc hết hạn phần thưởng giảm giá (cần sự đồng ý và cấu hình gửi thư)",
     redemptionConnected:
       "Các yêu cầu đổi thưởng mới có thông tin cài đặt đã xác minh có thể tạo thông báo sau khi phần thưởng được cấp thành công. Không áp dụng hồi tố cho yêu cầu cũ. Vẫn cần sự đồng ý và cấu hình gửi.",
     redemptionSaved:

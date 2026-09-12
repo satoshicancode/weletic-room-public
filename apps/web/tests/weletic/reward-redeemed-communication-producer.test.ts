@@ -37,6 +37,10 @@ function fixture(type = "amount_off") {
     },
     weleticRewardRedemption: {
       findFirst: vi.fn().mockResolvedValue(evidence.redemption),
+      updateMany: vi.fn().mockImplementation(async ({ data }) => {
+        evidence.redemption.metadata = data.metadata;
+        return { count: 1 };
+      }),
     },
     weleticPointsLedgerEntry: {
       findFirst: vi.fn().mockResolvedValue(evidence.ledger),
@@ -122,7 +126,12 @@ it.each(["disabled", "kill_switch", "policy_disabled", "policy_missing"])(
     if (state === "policy_missing")
       program.metadata.loyaltyCommunications.policies = [];
     await expect(enqueueRewardRedeemedCommunication(input)).resolves.toBeNull();
-    expect(db.weleticShopifyStore.findUnique).not.toHaveBeenCalled();
+    if (state === "disabled" || state === "kill_switch") {
+      expect(db.weleticShopifyStore.findUnique).not.toHaveBeenCalled();
+      expect(db.weleticRewardRedemption.updateMany).not.toHaveBeenCalled();
+    } else {
+      expect(db.weleticRewardRedemption.updateMany).toHaveBeenCalledOnce();
+    }
     expect(enqueue).not.toHaveBeenCalled();
   },
 );
@@ -169,13 +178,55 @@ it("propagates outbox failure to the owning issuance transaction", async () => {
   ).rejects.toBe(failure);
 });
 
-it("keeps one issuance key across later policy edits and occurrence times", async () => {
-  const { input, program } = fixture();
+it("does not replace a confirmed issuance time after later policy edits", async () => {
+  const { input, program, db, evidence } = fixture();
   await enqueueRewardRedeemedCommunication(input);
+  const metadata = evidence.redemption.metadata;
   program.metadata.loyaltyCommunications.sequence += 1;
   input.receipt.occurredAt = new Date("2026-09-12T01:00:00Z");
-  await enqueueRewardRedeemedCommunication(input);
-  const [first, second] = enqueue.mock.calls.map(([args]) => args);
-  expect(second.idempotencyKey).toBe(first.idempotencyKey);
-  expect(second.payload.policyRevision).not.toBe(first.payload.policyRevision);
+  await expect(enqueueRewardRedeemedCommunication(input)).rejects.toThrow(
+    "Reward issuance timestamp already belongs to another receipt",
+  );
+  expect(evidence.redemption.metadata).toEqual(metadata);
+  expect(db.weleticRewardRedemption.updateMany).toHaveBeenCalledOnce();
+  expect(enqueue).toHaveBeenCalledOnce();
+});
+
+it("retains issuance evidence when the redemption email is disabled", async () => {
+  const { input, program, db, evidence } = fixture();
+  program.metadata.loyaltyCommunications.policies[0].enabled = false;
+  const original = evidence.redemption.metadata as Record<string, unknown>;
+  await expect(enqueueRewardRedeemedCommunication(input)).resolves.toBeNull();
+  expect(evidence.redemption.metadata).toEqual({
+    ...original,
+    rewardCommunicationIssuedAt: input.receipt.occurredAt.toISOString(),
+  });
+  expect(db.weleticRewardRedemption.updateMany).toHaveBeenCalledWith({
+    where: {
+      id: evidence.redemption.id,
+      storeId: input.storeId,
+      accountId: input.accountId,
+      status: "issued",
+      metadata: { equals: original },
+    },
+    data: { metadata: evidence.redemption.metadata },
+  });
+  expect(enqueue).not.toHaveBeenCalled();
+});
+
+it("defers without enqueue when the evidence CAS loses", async () => {
+  const { input, db } = fixture();
+  db.weleticRewardRedemption.updateMany.mockResolvedValue({ count: 0 });
+  await expect(enqueueRewardRedeemedCommunication(input)).rejects.toThrow(
+    "Reward changed before issuance evidence could be retained",
+  );
+  expect(enqueue).not.toHaveBeenCalled();
+});
+
+it("rejects an invalid issuance clock before retaining metadata", async () => {
+  const { input, db } = fixture();
+  input.receipt.occurredAt = new Date(NaN);
+  await expect(enqueueRewardRedeemedCommunication(input)).rejects.toThrow();
+  expect(db.weleticRewardRedemption.updateMany).not.toHaveBeenCalled();
+  expect(enqueue).not.toHaveBeenCalled();
 });

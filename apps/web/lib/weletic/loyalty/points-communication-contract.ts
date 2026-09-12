@@ -3,6 +3,7 @@ import { z } from "zod";
 import { birthdayCommunicationJobSchema } from "./birthday-communication-contract";
 import { loyaltyCommunicationPolicySchema } from "./communications-contract";
 import { referralBenefitCommunicationJobSchema } from "./referral-benefit-communication-contract";
+import { rewardExpiryCommunicationJobSchema } from "./reward-expiry-communication-contract";
 import { rewardRedeemedCommunicationJobSchema } from "./reward-redeemed-communication-contract";
 import { vipAchievementCommunicationJobSchema } from "./vip-achievement-communication-contract";
 
@@ -69,7 +70,8 @@ export const loyaltyCommunicationJobPayloadSchema =
     .or(birthdayCommunicationJobSchema)
     .or(vipAchievementCommunicationJobSchema)
     .or(rewardRedeemedCommunicationJobSchema)
-    .or(referralBenefitCommunicationJobSchema);
+    .or(referralBenefitCommunicationJobSchema)
+    .or(rewardExpiryCommunicationJobSchema);
 
 export const signupPointsCommunicationSchema =
   purchasePointsCommunicationBaseSchema

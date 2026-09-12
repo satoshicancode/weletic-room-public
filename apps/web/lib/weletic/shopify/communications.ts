@@ -59,7 +59,7 @@ export async function manageShopifyCommunicationsInTransaction({
     installationGeneration: actor.installationGeneration,
     capabilities: { configure: capabilities.loyalty },
     deliveryIntegration:
-      "purchase_signup_birthday_vip_redemption_and_expiry_policies",
+      "purchase_signup_birthday_vip_redemption_reward_expiry_and_expiry_policies",
     ...state,
   });
 }

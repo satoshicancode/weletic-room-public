@@ -230,6 +230,16 @@ No checkbox below is promoted solely by these local checks.
       suppression, retained privacy cleanup and EN/JA/VI merchant readiness.
       Thirty-three combined SQL tests pass; full regression/build verification
       and publication remain pending. Mocked delivery is not live acceptance.
+      Local [reward-expiry implementation evidence](reward-expiry-communications-implementation.md)
+      adds original ordinary/referral coupon receipts, immutable reminder events,
+      remote configuration checks and shared retained delivery with expiry-boundary
+      guards. Bounded scheduling is connected to the existing authenticated cron;
+      56 isolated MySQL tests pass, including ordinary-expiry queue/cursor races
+      and ordinary/referral-coupon retained-delivery suppression. EN/JA/VI editor
+      copy exposes supported discount reminders and exclusions; 46 editor/contract
+      tests pass. Latest web/Shopify builds and bounded 375px synthetic-browser
+      checks pass. Full regression passes (7,997 tests, 6 skipped, 496 suites). Publication and
+      named live acceptance remain open; mocked transport is not real delivery.
       D1/D2 are not complete.
 - [ ] D3: Confirm the intended timezone before birthday/campaign/expiry/email
       activation. Do not silently replace a retained store timezone with Tokyo.

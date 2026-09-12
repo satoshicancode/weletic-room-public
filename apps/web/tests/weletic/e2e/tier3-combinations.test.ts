@@ -95,6 +95,7 @@ describe("Tier 3: Cross-Feature Combinations (Weletic Loyalty Production-Core)",
     (prisma.weleticShopifyStore.findUnique as any).mockResolvedValue({
       id: TEST_STORE_ID,
       complianceState: "active",
+      storeAccessState: "active",
       shopCurrency: "USD",
       currencyVerifiedAt: new Date(0),
       installationGeneration: "sgen_combo_e2e",
@@ -253,6 +254,11 @@ describe("Tier 3: Cross-Feature Combinations (Weletic Loyalty Production-Core)",
       pointsSpent: BigInt(500),
       shopifyDiscountCode: "WL-SAGA5",
       shopifyDiscountId: null,
+      artifactKind: "discount_code",
+      fulfillmentSource: null,
+      settlementQuarantinedAt: null,
+      shopifyGiftCardId: null,
+      shopifyStoreCreditTransactionId: null,
       status: WeleticRedemptionStatus.provisioning,
       ledgerEntryId: null,
       metadata: null,
@@ -264,13 +270,41 @@ describe("Tier 3: Cross-Feature Combinations (Weletic Loyalty Production-Core)",
       rewardDefinition: { name: "$5 Off Reward" },
     };
 
-    (prisma.weleticRewardRedemption.findFirst as any).mockResolvedValue({
-      account: {
-        storeId: TEST_STORE_ID,
-        shopper: { shopifyCustomerId: "gid://shopify/Customer/201" },
-        store: { projectId: "workspace_combo_e2e" },
+    (prisma.weleticRewardRedemption.findFirst as any).mockImplementation(
+      ({ where }: any) =>
+        where.id === redemptionState.id &&
+        where.storeId === redemptionState.storeId &&
+        (!where.accountId || where.accountId === redemptionState.accountId)
+          ? {
+              ...redemptionState,
+              account: {
+                ...redemptionState.account,
+                shopper: { shopifyCustomerId: "gid://shopify/Customer/201" },
+                store: { projectId: "workspace_combo_e2e" },
+              },
+            }
+          : null,
+    );
+    (prisma.weleticRewardRedemption.updateMany as any).mockImplementation(
+      ({ where, data }: any) => {
+        if (
+          where.id !== redemptionState.id ||
+          (where.storeId && where.storeId !== redemptionState.storeId) ||
+          (where.accountId && where.accountId !== redemptionState.accountId) ||
+          (typeof where.status === "string" &&
+            where.status !== redemptionState.status) ||
+          (where.status?.in &&
+            !where.status.in.includes(redemptionState.status)) ||
+          (where.metadata?.equals !== undefined &&
+            JSON.stringify(where.metadata.equals) !==
+              JSON.stringify(redemptionState.metadata))
+        ) {
+          return { count: 0 };
+        }
+        redemptionState = { ...redemptionState, ...data };
+        return { count: 1 };
       },
-    });
+    );
 
     (prisma.weleticRewardRedemption.create as any).mockImplementation(
       ({ data }: any) => {
@@ -293,12 +327,20 @@ describe("Tier 3: Cross-Feature Combinations (Weletic Loyalty Production-Core)",
     (prisma.weleticPointsLedgerEntry.findUnique as any).mockImplementation(
       ({ where }: any) => (where?.id ? latestLedger : null),
     );
-    (prisma.weleticPointsLedgerEntry.findFirst as any).mockResolvedValue({
-      sequenceNumber: 1,
-    });
+    (prisma.weleticPointsLedgerEntry.findFirst as any).mockImplementation(
+      ({ where }: any) =>
+        where.id
+          ? latestLedger?.id === where.id &&
+            latestLedger.storeId === where.storeId &&
+            latestLedger.accountId === where.accountId
+            ? latestLedger
+            : null
+          : { sequenceNumber: 1 },
+    );
     (prisma.weleticPointsLedgerEntry.create as any).mockImplementation(
       ({ data }: any) => ({
         ...(latestLedger = {
+          createdAt: new Date(),
           ...data,
           id:
             data.pointsDelta < BigInt(0)
@@ -340,16 +382,27 @@ describe("Tier 3: Cross-Feature Combinations (Weletic Loyalty Production-Core)",
       idempotencyKey: "tier3-combo-redemption-1",
     });
     expect(redResult.ledgerEntry.pointsDelta).toBe(BigInt(-500));
+    expect(redResult.redemption.status).toBe(WeleticRedemptionStatus.issued);
 
-    // 2. Compensating transaction restores points on Shopify GraphQL failure
+    // 2. Local cancellation restores points and queues remote deactivation.
     const compResult = await cancelRewardRedemption({
       storeId: TEST_STORE_ID,
-      redemptionId: "wredemp_saga_1",
-      reason: "Shopify GraphQL saga failure compensation",
+      redemptionId: redResult.redemption.id,
+      reason: "Synthetic merchant cancellation after confirmed issuance",
     });
     expect(compResult.ledgerEntry.pointsDelta).toBe(BigInt(500));
     expect(compResult.redemption.status).toBe(
       WeleticRedemptionStatus.cancelled,
+    );
+    expect(compResult.deactivationPending).toBe(true);
+    expect(prisma.weleticLoyaltyOutboxJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          storeId: TEST_STORE_ID,
+          jobType: "REDEMPTION_RECOVERY",
+          idempotencyKey: `discount_deactivate:${redResult.redemption.id}`,
+        }),
+      }),
     );
   });
 

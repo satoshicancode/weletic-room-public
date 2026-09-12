@@ -72,6 +72,7 @@ export function snapshotLoyaltyCommunicationPolicy({
     | "points_earned"
     | "birthday"
     | "reward_redeemed"
+    | "reward_expiry"
     | "referral_friend"
     | "referral_advocate"
     | "vip_achieved";

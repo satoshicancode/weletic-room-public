@@ -21,6 +21,7 @@ import type { LoyaltyMaintenancePermit } from "./maintenance-write-fence";
 import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
 import { isCurrentReferralBenefit } from "./referral-benefit-communication-source";
 import { rewardCommunicationValue } from "./reward-communication-value";
+import { isRewardExpiryDiscountCurrentlyUsable } from "./reward-expiry-remote-check";
 import { isCurrentRewardRedemption } from "./reward-redeemed-communication-source";
 import { hasShopifyCustomerRedactionTombstone } from "./shopper-privacy";
 import { isCurrentVipAchievement } from "./vip-achievement-communication-source";
@@ -65,6 +66,7 @@ export async function sendPointsEarnedNotification({
           firstName: true,
           locale: true,
           acceptsMarketing: true,
+          shopifyCustomerId: true,
         },
       },
       program: {
@@ -104,6 +106,17 @@ export async function sendPointsEarnedNotification({
         db: prisma,
         event,
         currentTierId: account.currentTierId,
+      }))
+    )
+      return "ineligible";
+  } else if (event.source === "reward_expiry_due") {
+    if (
+      !account.shopper.shopifyCustomerId ||
+      !(await isRewardExpiryDiscountCurrentlyUsable({
+        db: prisma,
+        event,
+        shopifyCustomerId: account.shopper.shopifyCustomerId,
+        loyaltyMaintenancePermit,
       }))
     )
       return "ineligible";
@@ -199,6 +212,7 @@ export async function sendPointsEarnedNotification({
           customer_first_name: account.shopper.firstName ?? "",
           points:
             event.source === "vip_threshold_promotion" ||
+            event.source === "reward_expiry_due" ||
             event.source === "reward_issuance_confirmed" ||
             (event.source === "referral_benefit_confirmed" &&
               event.benefitKind === "coupon")
@@ -207,16 +221,29 @@ export async function sendPointsEarnedNotification({
           tier_name:
             event.source === "vip_threshold_promotion" ? event.toTier.name : "",
           points_label: account.program.pointNamePlural,
+          expiry_date:
+            event.source === "reward_expiry_due"
+              ? new Intl.DateTimeFormat(locale, {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                  timeZone: "UTC",
+                }).format(new Date(event.expiresAt))
+              : "",
           reward_name:
-            event.journey === "birthday"
-              ? `${event.points} ${account.program.pointNamePlural}`
-              : event.source === "referral_benefit_confirmed" &&
-                  event.benefitKind === "points"
+            event.source === "reward_expiry_due"
+              ? "reward" in event.receipt.evidence
+                ? event.receipt.evidence.reward.name
+                : ""
+              : event.journey === "birthday"
                 ? `${event.points} ${account.program.pointNamePlural}`
-                : event.source === "reward_issuance_confirmed" ||
-                    event.source === "referral_benefit_confirmed"
-                  ? event.reward.name
-                  : "",
+                : event.source === "referral_benefit_confirmed" &&
+                    event.benefitKind === "points"
+                  ? `${event.points} ${account.program.pointNamePlural}`
+                  : event.source === "reward_issuance_confirmed" ||
+                      event.source === "referral_benefit_confirmed"
+                    ? event.reward.name
+                    : "",
           reward_value:
             event.source === "referral_benefit_confirmed" &&
             event.benefitKind === "points"
@@ -277,6 +304,13 @@ export async function sendPointsEarnedNotification({
   }
   const deliveryFailure = () =>
     new Error("Loyalty communication email provider unavailable");
+  // Rendering/retention can cross the expiry boundary after the source checks.
+  // Never intentionally dispatch an expiry reminder once that instant passes.
+  if (
+    event.source === "reward_expiry_due" &&
+    Date.now() >= new Date(event.expiresAt).getTime()
+  )
+    return "ineligible";
   const result = await sendPreparedResendEmail(
     request,
     communicationDeliveryProviderKey(claim),

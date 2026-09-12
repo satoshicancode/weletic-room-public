@@ -2,14 +2,58 @@ import { expect, it } from "vitest";
 import {
   createReferralBenefitCommunication,
   matchesReferralBenefitCommunicationEvidence,
+  projectReferralBenefitReceiptEvidence,
   referralBenefitCommunicationJobSchema,
   referralBenefitCommunicationSchema,
+  referralBenefitReceiptEvidenceSchema,
   referralCommunicationKey,
 } from "../../lib/weletic/loyalty/referral-benefit-communication-contract";
 import { referralBenefitFixture as fixture } from "./referral-benefit-communication-fixture";
 
 type Input = ReturnType<typeof fixture>;
 const object = (value: unknown) => value as Record<string, unknown>;
+it.each(["points", "coupon"] as const)(
+  "validates %s receipts without fabricating a notification policy",
+  (kind) => {
+    const input = fixture(kind);
+    const { policySnapshot: _policy, ...receiptInput } = input;
+    const evidence = projectReferralBenefitReceiptEvidence(receiptInput, [
+      "issued",
+    ]);
+    const {
+      policy: _eventPolicy,
+      policyRevision: _revision,
+      ...expected
+    } = createReferralBenefitCommunication(input);
+    expect(evidence).toEqual(expected);
+    expect(evidence).not.toHaveProperty("policy");
+    expect(evidence).not.toHaveProperty("policyRevision");
+    expect(() =>
+      referralBenefitReceiptEvidenceSchema.parse({
+        ...evidence,
+        policy: input.policySnapshot.policy,
+      }),
+    ).toThrow();
+    expect(() =>
+      projectReferralBenefitReceiptEvidence(
+        { ...receiptInput, expectedInstallationGeneration: "fresh" },
+        ["issued"],
+      ),
+    ).toThrow();
+  },
+);
+it("does not treat a used coupon as unused expiry evidence", () => {
+  const { policySnapshot: _policy, ...input } = fixture("coupon");
+  if (input.receipt.kind !== "coupon") throw new Error("fixture");
+  input.receipt.redemption.status = "active";
+  expect(
+    projectReferralBenefitReceiptEvidence(input, ["issued", "active"]),
+  ).toMatchObject({ benefitKind: "coupon" });
+  input.receipt.redemption.status = "used";
+  expect(() =>
+    projectReferralBenefitReceiptEvidence(input, ["issued", "active"]),
+  ).toThrow();
+});
 it.each(["advocate", "referee"] as const)(
   "projects exact points for %s without the other party's data",
   (side) => {
