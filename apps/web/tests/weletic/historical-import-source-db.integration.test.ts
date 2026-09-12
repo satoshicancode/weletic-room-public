@@ -34,6 +34,7 @@ import { executeHistoricalImportRow } from "../../lib/weletic/loyalty/historical
 import { proveHistoricalImportRows } from "../../lib/weletic/loyalty/historical-import-source";
 import { appendPointsLedgerEntry } from "../../lib/weletic/loyalty/ledger";
 import { processOutboxJobsBatch } from "../../lib/weletic/loyalty/outbox-worker";
+import { pollImportWorkerUntilEligible } from "./helpers/import-worker-poll";
 
 const finalInsertFailure = vi.hoisted(() => ({
   duplicateId: null as string | null,
@@ -1299,6 +1300,61 @@ async function releaseFixtureJobToRealWorker(jobId: string) {
     },
   });
 }
+async function readImportPollEvidence({
+  storeId,
+  sourceId,
+  jobId,
+  terminal,
+}: {
+  storeId: string;
+  sourceId: string;
+  jobId: string;
+  terminal: "committed" | "rolled_back";
+}) {
+  return database.$transaction(async (tx) => {
+    const job = await tx.weleticLoyaltyOutboxJob.findFirst({
+      where: { id: jobId, storeId },
+      select: {
+        status: true,
+        scheduledFor: true,
+        nextRetryAt: true,
+        attempts: true,
+        lockedAt: true,
+      },
+    });
+    const source = await tx.weleticLoyaltyImportSource.findFirst({
+      where: { id: sourceId, storeId },
+      select: { status: true, revision: true, leaseExpiresAt: true },
+    });
+    const completedRows = await tx.weleticLoyaltyImportRowExecution.count({
+      where: { sourceId, storeId, status: terminal },
+    });
+    const [clock] = await tx.$queryRaw<Array<{ now: Date }>>`
+      SELECT UTC_TIMESTAMP(3) AS now
+    `;
+    return {
+      applicationNow: Date.now(),
+      databaseNow: clock.now.getTime(),
+      job: job
+        ? {
+            status: job.status,
+            scheduledFor: job.scheduledFor.getTime(),
+            nextRetryAt: job.nextRetryAt?.getTime() ?? null,
+            attempts: job.attempts,
+            lockedAt: job.lockedAt?.getTime() ?? null,
+          }
+        : null,
+      source: source
+        ? {
+            status: source.status,
+            revision: source.revision,
+            leaseExpiresAt: source.leaseExpiresAt?.getTime() ?? null,
+            completedRows,
+          }
+        : null,
+    };
+  }, options);
+}
 async function queuedRollbackWorkerFixture(rowCount = 1, withFields = false) {
   const fixture = await queuedWorkerFixture(rowCount, withFields);
   await releaseFixtureJobToRealWorker(fixture.job.id);
@@ -1632,10 +1688,30 @@ for (const rowCount of [500, 50_000]) {
         let finished = false;
         for (let batch = 0; batch <= rowCount; batch++) {
           const batchStarted = performance.now();
-          const result = await processOutboxJobsBatch({
-            storeId: fixture.source.storeId,
-            jobIds: [jobId],
-            workerId: "isolated-load-worker",
+          const result = await pollImportWorkerUntilEligible({
+            run: () =>
+              processOutboxJobsBatch({
+                storeId: fixture.source.storeId,
+                jobIds: [jobId],
+                workerId: "isolated-load-worker",
+              }),
+            readEvidence: () =>
+              readImportPollEvidence({
+                storeId: fixture.source.storeId,
+                sourceId: fixture.source.id,
+                jobId,
+                terminal,
+              }),
+            phase: terminal === "committed" ? "committing" : "rolling_back",
+            previousRows,
+            report: (evidence) =>
+              console.log(
+                JSON.stringify({
+                  event: "isolated_import_empty_poll",
+                  phase: terminal,
+                  evidence,
+                }),
+              ),
           });
           batchTimes.push(Math.round(performance.now() - batchStarted));
           expect(result).toMatchObject({
@@ -1993,6 +2069,109 @@ it.each(["scheduledFor", "nextRetryAt"] as const)(
         where: { storeId: source.storeId },
       }),
     ).toBe(1);
+  },
+);
+it.each(["scheduledFor", "nextRetryAt", "missing_job"] as const)(
+  "diagnoses a real import poll with %s without concealing missing work",
+  async (scenario) => {
+    const { source, job } = await queuedWorkerFixture();
+    await releaseFixtureJobToRealWorker(job.id);
+    if (scenario !== "missing_job")
+      await database.weleticLoyaltyOutboxJob.update({
+        where: { id: job.id },
+        data: { [scenario]: new Date(Date.now() + 5_000) },
+      });
+    const jobId = scenario === "missing_job" ? `missing-${job.id}` : job.id;
+    const beforeSource =
+      await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+        where: { id: source.id },
+      });
+    const beforeJob = await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+      where: { id: job.id },
+    });
+    const report = vi.fn();
+    const run = vi.fn(() =>
+      processOutboxJobsBatch({
+        storeId: source.storeId,
+        jobIds: [jobId],
+        workerId: "isolated-diagnostic-import-worker",
+      }),
+    );
+    const execution = pollImportWorkerUntilEligible({
+      run,
+      readEvidence: () =>
+        readImportPollEvidence({
+          storeId: source.storeId,
+          sourceId: source.id,
+          jobId,
+          terminal: "committed",
+        }),
+      phase: "committing",
+      previousRows: 0,
+      report,
+    });
+    if (scenario === "missing_job") {
+      await expect(execution).rejects.toThrow("Unexplained empty import poll");
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(
+        await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+          where: { id: source.id },
+        }),
+      ).toEqual(beforeSource);
+      expect(
+        await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+          where: { id: job.id },
+        }),
+      ).toEqual(beforeJob);
+      expect(
+        await database.weleticLoyaltyAccount.count({
+          where: { storeId: source.storeId },
+        }),
+      ).toBe(0);
+    } else {
+      expect(await execution).toMatchObject({
+        processed: 1,
+        succeeded: 1,
+        failed: 0,
+        deadLettered: 0,
+      });
+      expect(run).toHaveBeenCalledTimes(2);
+      expect(
+        await database.weleticLoyaltyAccount.findMany({
+          where: { storeId: source.storeId },
+          select: { cachedPointsBalance: true },
+        }),
+      ).toEqual([
+        {
+          cachedPointsBalance: BigInt(
+            beforeSource.totalOpeningBalance.toFixed(0),
+          ),
+        },
+      ]);
+    }
+    const expectedRows = scenario === "missing_job" ? "0" : "1";
+    expect(
+      await database.$queryRaw<Array<{ entries: string; net: string }>>`
+        SELECT CAST(COUNT(*) AS CHAR) AS entries,
+          CAST(COALESCE(SUM(pointsDelta), 0) AS CHAR) AS net
+        FROM WeleticPointsLedgerEntry WHERE storeId = ${source.storeId}
+      `,
+    ).toEqual([
+      {
+        entries: expectedRows,
+        net:
+          scenario === "missing_job"
+            ? "0"
+            : beforeSource.totalOpeningBalance.toFixed(0),
+      },
+    ]);
+    expect(report).toHaveBeenCalledTimes(1);
+    const diagnostics = JSON.stringify(report.mock.calls);
+    for (const privateValue of [source.id, source.storeId, job.id, jobId])
+      expect(diagnostics).not.toContain(privateValue);
+    expect(diagnostics).not.toMatch(
+      /payload|lockedBy|leaseId|createdByStaffId/,
+    );
   },
 );
 it("runs the real outbox claim/dispatch/acknowledgement and safely replays after source completion", async () => {
