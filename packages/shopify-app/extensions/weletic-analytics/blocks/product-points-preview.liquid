@@ -1,7 +1,7 @@
 {% comment %}
   Weletic Product Points Preview Block
-  Renders live estimated points on product detail pages based on variant price,
-  VIP tier status, and active bonus multiplier campaigns.
+  Renders a base-program points estimate from the variant price. The public
+  endpoint does not provide shopper VIP or targeted campaign eligibility.
   Strictly compliant with Zero-PII DOM architecture.
 {% endcomment %}
 
@@ -14,6 +14,7 @@
   data-product-id="{{ product.id | escape }}"
   data-current-price="{{ product.selected_or_first_available_variant.price | escape }}"
   data-currency="{{ cart.currency.iso_code | default: shop.currency | escape }}"
+  data-locale="{{ request.locale.iso_code | escape }}"
   data-proxy-prefix="{{ block.settings.proxy_prefix | default: '/apps/weletic' | escape }}"
   data-prefix-text="{{ block.settings.prefix_text | default: 'Earn up to' | escape }}"
   data-suffix-text="{{ block.settings.suffix_text | default: 'points with this purchase' | escape }}"
@@ -22,13 +23,11 @@
   <div class="weletic-points-preview-badge">
     <span class="weletic-points-icon">✨</span>
     <span class="weletic-points-text">
-      {{ block.settings.prefix_text | default: 'Earn up to' }}
+      {{ block.settings.prefix_text | default: 'Earn up to' | escape }}
       <strong class="weletic-points-number" id="weletic-variant-points">
-        {% assign points_ratio = 1 %}
-        {% assign current_price_units = product.selected_or_first_available_variant.price | divided_by: 100 %}
-        {{ current_price_units | times: points_ratio }}
+        —
       </strong>
-      {{ block.settings.suffix_text | default: 'points with this purchase' }}
+      {{ block.settings.suffix_text | default: 'points with this purchase' | escape }}
     </span>
   </div>
 </div>

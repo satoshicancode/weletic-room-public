@@ -165,11 +165,11 @@ export function transformPublicExtension(path, source) {
     text = replaceOnce(text, schema[1], JSON.stringify(data, null, 2));
   }
   if (path === "weletic-analytics/blocks/product-points-preview.liquid") {
-    text = replaceOnce(
-      text,
-      "        {% assign points_ratio = 1 %}\n        {% assign current_price_units = product.selected_or_first_available_variant.price | divided_by: 100 %}\n        {{ current_price_units | times: points_ratio }}",
-      "        —",
-    );
+    // Both identities now render an unknown estimate until the program loads.
+    // Keep an exact anchor check so staging cannot silently accept source drift.
+    const placeholder =
+      '      <strong class="weletic-points-number" id="weletic-variant-points">\n        —\n      </strong>';
+    text = replaceOnce(text, placeholder, placeholder);
   }
   return text;
 }
