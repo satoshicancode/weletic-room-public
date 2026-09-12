@@ -1945,6 +1945,7 @@ export async function sweepStuckSagaRedemptions(
                 await recoverCompensatedReferralCouponDiscount({
                   storeId: redemption.storeId,
                   redemption: compensatedRedemption,
+                  loyaltyMaintenancePermit,
                 });
               }
               return "cancelled" as const;

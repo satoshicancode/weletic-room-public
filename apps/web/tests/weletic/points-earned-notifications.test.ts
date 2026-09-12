@@ -2,7 +2,9 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { CommunicationDeliveryClaim } from "../../lib/weletic/loyalty/communication-delivery-snapshot";
 import { CommunicationDeliveryRecipientChangedError } from "../../lib/weletic/loyalty/communication-delivery-snapshot";
 import { sendPointsEarnedNotification } from "../../lib/weletic/loyalty/points-earned-notifications";
+import { createReferralBenefitCommunication } from "../../lib/weletic/loyalty/referral-benefit-communication-contract";
 import { createRewardRedeemedCommunication } from "../../lib/weletic/loyalty/reward-redeemed-communication-contract";
+import { referralBenefitFixture } from "./referral-benefit-communication-fixture";
 import { rewardCommunicationFixture } from "./reward-communication-fixture";
 
 const mocks = vi.hoisted(() => ({
@@ -12,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   order: vi.fn(),
   history: vi.fn(),
   redemption: vi.fn(),
+  referral: vi.fn(),
   guard: vi.fn(),
   settings: vi.fn(),
   retain: vi.fn(),
@@ -27,6 +30,7 @@ vi.mock("@/lib/prisma", () => ({
     weleticCommerceOrder: { findFirst: mocks.order },
     weleticLoyaltyTierHistory: { findFirst: mocks.history },
     weleticRewardRedemption: { findFirst: mocks.redemption },
+    weleticLoyaltyReferral: { findFirst: mocks.referral },
   },
 }));
 vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
@@ -451,6 +455,61 @@ it("rejects foreign job scope before queries", async () => {
   expect(mocks.account).not.toHaveBeenCalled();
   expect(mocks.send).not.toHaveBeenCalled();
 });
+
+it.each(["en", "ja", "vi"] as const)(
+  "renders both referral benefit kinds and sides in %s with mocked provider",
+  async (locale) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-13T01:00:00Z"));
+    try {
+      for (const kind of ["points", "coupon"] as const) {
+        for (const side of ["advocate", "referee"] as const) {
+          const evidence = referralBenefitFixture(kind, side);
+          const event = createReferralBenefitCommunication(evidence);
+          event.policy.templates[locale].subject = `${locale}: {{reward_name}}`;
+          const row = accountRow();
+          row.shopper.locale = locale;
+          mocks.account.mockResolvedValue({
+            ...row,
+            program: {
+              ...row.program,
+              metadata: {
+                loyaltyCommunications: {
+                  version: 1,
+                  sequence: 1,
+                  policies: [event.policy],
+                },
+              },
+            },
+          });
+          mocks.referral.mockResolvedValue(evidence.referral);
+          mocks.order.mockResolvedValue({ status: "paid" });
+          mocks.ledger.mockImplementation(async ({ where }) =>
+            where.referenceType === "REFERRAL_REFUND_CLAWBACK"
+              ? null
+              : evidence.receipt.kind === "points"
+                ? evidence.receipt.ledger
+                : null,
+          );
+          mocks.redemption.mockResolvedValue(
+            evidence.receipt.kind === "coupon"
+              ? evidence.receipt.redemption
+              : null,
+          );
+          const args: { claim: CommunicationDeliveryClaim } = fixture();
+          args.claim.candidate.payload = event;
+          expect(await sendPointsEarnedNotification(args)).toBe("sent");
+          expect(mocks.prepare.mock.lastCall![0].subject).toBe(
+            `${locale}: ${kind === "points" ? "9007199254740993 Points" : "Original referral reward"}`,
+          );
+        }
+      }
+      expect(mocks.send).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 
 function redemptionFixture(type = "amount_off") {
   const evidence = rewardCommunicationFixture(type);

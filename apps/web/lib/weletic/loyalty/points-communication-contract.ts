@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { birthdayCommunicationJobSchema } from "./birthday-communication-contract";
 import { loyaltyCommunicationPolicySchema } from "./communications-contract";
+import { referralBenefitCommunicationJobSchema } from "./referral-benefit-communication-contract";
 import { rewardRedeemedCommunicationJobSchema } from "./reward-redeemed-communication-contract";
 import { vipAchievementCommunicationJobSchema } from "./vip-achievement-communication-contract";
 
@@ -67,7 +68,8 @@ export const loyaltyCommunicationJobPayloadSchema =
     )
     .or(birthdayCommunicationJobSchema)
     .or(vipAchievementCommunicationJobSchema)
-    .or(rewardRedeemedCommunicationJobSchema);
+    .or(rewardRedeemedCommunicationJobSchema)
+    .or(referralBenefitCommunicationJobSchema);
 
 export const signupPointsCommunicationSchema =
   purchasePointsCommunicationBaseSchema

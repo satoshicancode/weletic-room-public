@@ -23,6 +23,20 @@ vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
 // Mock Prisma for integration and unit simulation
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    $queryRaw: vi.fn(async (query) => {
+      const storeId = String(query.values[0]);
+      return query.sql.includes("FROM WeleticLoyaltyProgram")
+        ? [
+            {
+              id: "prog_1",
+              storeId,
+              status: "active",
+              killSwitchActive: false,
+              metadata: null,
+            },
+          ]
+        : [{ id: storeId, storeAccessState: "active" }];
+    }),
     weleticLoyaltyAccount: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -223,6 +237,7 @@ describe("Challenger 2: Adversarial Coverage & Integration Test Harness", () => 
       // Mock referee account
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "wacc_referee_1",
+        programId: "prog_1",
         storeId,
         status: "active",
         shopperId: "shopper_referee_1",

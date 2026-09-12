@@ -1,6 +1,7 @@
 import { encrypt } from "@/lib/encryption";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  CommunicationDeliveryIneligibleError,
   CommunicationDeliveryRecipientChangedError,
   CommunicationDeliveryReconciliationRequiredError,
   communicationDeliveryProviderKey,
@@ -8,7 +9,9 @@ import {
   type CommunicationDeliveryClaim,
 } from "../../lib/weletic/loyalty/communication-delivery-snapshot";
 import { purchasePointsCommunicationSchema } from "../../lib/weletic/loyalty/points-communication-contract";
+import { createReferralBenefitCommunication } from "../../lib/weletic/loyalty/referral-benefit-communication-contract";
 import { createRewardRedeemedCommunication } from "../../lib/weletic/loyalty/reward-redeemed-communication-contract";
+import { referralBenefitFixture } from "./referral-benefit-communication-fixture";
 import { rewardCommunicationFixture } from "./reward-communication-fixture";
 
 const mocks = vi.hoisted(() => ({
@@ -22,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   history: vi.fn(),
   redemption: vi.fn(),
   ledger: vi.fn(),
+  referral: vi.fn(),
+  order: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 vi.mock("@/lib/weletic/loyalty/merchant-write-fence", () => ({
@@ -128,6 +133,8 @@ beforeEach(() => {
       weleticLoyaltyTierHistory: { findFirst: mocks.history },
       weleticRewardRedemption: { findFirst: mocks.redemption },
       weleticPointsLedgerEntry: { findFirst: mocks.ledger },
+      weleticLoyaltyReferral: { findFirst: mocks.referral },
+      weleticCommerceOrder: { findFirst: mocks.order },
       weleticLoyaltyOutboxJob: {
         findFirst: mocks.findFirst,
         updateMany: mocks.updateMany,
@@ -136,6 +143,99 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllEnvs());
+
+function referralFixture(kind: "points" | "coupon") {
+  const args = fixture();
+  const evidence = referralBenefitFixture(kind);
+  const event = createReferralBenefitCommunication(evidence);
+  args.claim.candidate.payload = event;
+  args.expectedInstallationGeneration = event.installationGeneration;
+  args.wallClockNow = new Date("2026-09-13T01:00:00Z");
+  mocks.program.mockResolvedValue({
+    id: "program",
+    status: "active",
+    killSwitchActive: false,
+    metadata: {
+      loyaltyCommunications: {
+        version: 1,
+        sequence: 1,
+        policies: [event.policy],
+      },
+    },
+  });
+  mocks.referral.mockResolvedValue(evidence.referral);
+  mocks.order.mockResolvedValue({ status: "paid" });
+  mocks.ledger.mockImplementation(async ({ where }) =>
+    where.referenceType === "REFERRAL_REFUND_CLAWBACK"
+      ? null
+      : evidence.receipt.kind === "points"
+        ? evidence.receipt.ledger
+        : null,
+  );
+  mocks.redemption.mockResolvedValue(
+    evidence.receipt.kind === "coupon" ? evidence.receipt.redemption : null,
+  );
+  return { args, evidence };
+}
+it.each(["points", "coupon"] as const)(
+  "retains referral %s bytes without rendering again on retry",
+  async (kind) => {
+    const { args } = referralFixture(kind);
+    await expect(retainCommunicationDeliveryRequest(args)).resolves.toEqual(
+      request,
+    );
+    args.prepare.mockResolvedValue({ ...request, subject: "Changed template" });
+    await expect(retainCommunicationDeliveryRequest(args)).resolves.toEqual(
+      request,
+    );
+    expect(args.prepare).toHaveBeenCalledOnce();
+    expect(mocks.updateMany).toHaveBeenCalledOnce();
+    expect(JSON.stringify(mocks.updateMany.mock.calls[0][0])).not.toContain(
+      request.to,
+    );
+  },
+);
+it.each([false, true])(
+  "rechecks referral receipt ownership on retention (retry=%s)",
+  async (retry) => {
+    for (const kind of ["points", "coupon"] as const) {
+      const { args, evidence } = referralFixture(kind);
+      if (retry) await retainCommunicationDeliveryRequest(args);
+      args.prepare.mockClear();
+      mocks.updateMany.mockClear();
+      evidence.referral.qualifyingOrderId = "later-order";
+      await expect(
+        retainCommunicationDeliveryRequest(args),
+      ).rejects.toBeInstanceOf(CommunicationDeliveryIneligibleError);
+      expect(args.prepare).not.toHaveBeenCalled();
+      expect(mocks.updateMany).not.toHaveBeenCalled();
+    }
+  },
+);
+it.each(["clawback", "coupon_cancelled", "consent", "privacy"])(
+  "blocks retained referral delivery after %s",
+  async (gate) => {
+    const { args, evidence } = referralFixture(
+      gate === "coupon_cancelled" ? "coupon" : "points",
+    );
+    await retainCommunicationDeliveryRequest(args);
+    args.prepare.mockClear();
+    mocks.updateMany.mockClear();
+    if (gate === "clawback")
+      evidence.referral.advocatePointsAwarded = BigInt(0);
+    if (gate === "coupon_cancelled" && evidence.receipt.kind === "coupon")
+      evidence.receipt.redemption.status = "cancelled";
+    if (gate === "consent")
+      mocks.recipient.mockResolvedValue({
+        shopper: { email: request.to, acceptsMarketing: false },
+      });
+    if (gate === "privacy")
+      mocks.account.mockRejectedValue(new Error("redacted"));
+    await expect(retainCommunicationDeliveryRequest(args)).rejects.toThrow();
+    expect(args.prepare).not.toHaveBeenCalled();
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+  },
+);
 
 function birthdayFixture(enabled = true) {
   const args = fixture();

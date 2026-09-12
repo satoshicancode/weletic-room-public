@@ -32,6 +32,20 @@ vi.mock("@/lib/weletic/loyalty/vip-achievement-communication-producer", () => ({
 // Mock Prisma
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    $queryRaw: vi.fn(async (query) => {
+      const storeId = String(query.values[0]);
+      return query.sql.includes("FROM WeleticLoyaltyProgram")
+        ? [
+            {
+              id: "prog_1",
+              storeId,
+              status: "active",
+              killSwitchActive: false,
+              metadata: null,
+            },
+          ]
+        : [{ id: storeId, storeAccessState: "active" }];
+    }),
     weleticLoyaltyAccount: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -514,6 +528,7 @@ describe("Challenger 2 Adversarial Stress Test Suite — Milestone 4", () => {
           prisma.weleticLoyaltyAccount.findUnique,
         ).mockResolvedValueOnce({
           id: "acc_ref_thresh",
+          programId: "prog_1",
           storeId,
           shopperId: "shopper_thresh",
           status: "active",

@@ -9,6 +9,7 @@ import {
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
+import { lockLoyaltyProgramRow } from "@/lib/weletic/loyalty/program-write-fence";
 import {
   DEFAULT_REFERRAL_PURCHASE_POLICY,
   getEligibleLoyaltyOrderSubtotal,
@@ -40,6 +41,8 @@ import {
   WeleticRewardStatus,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { enqueueReferralBenefitCommunication } from "./referral-benefit-communication-producer";
+import { createReferralCommunicationOrigin } from "./referral-communication-origin";
 
 const REFERRAL_COUPON_CANCELLABLE_STATUSES = new Set<WeleticRedemptionStatus>([
   WeleticRedemptionStatus.provisioning,
@@ -1089,6 +1092,12 @@ export async function evaluateReferralQualification(
       if (!operationalStore) {
         throw new Error("Referral Shopify store is unavailable.");
       }
+      const lockedProgram = await lockLoyaltyProgramRow({
+        tx,
+        storeId: input.storeId,
+        mode: "active",
+        loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
+      });
       if (
         operationalStore.shopCurrency.trim().toUpperCase() !==
         input.currency.trim().toUpperCase()
@@ -1118,6 +1127,14 @@ export async function evaluateReferralQualification(
       }
       if (referral.advocateAccount.storeId !== input.storeId) {
         throw new Error("Referral advocate belongs to another Shopify store.");
+      }
+      if (
+        referral.advocateAccount.programId !== lockedProgram.id ||
+        refereeAccount.programId !== lockedProgram.id
+      ) {
+        throw new Error(
+          "Referral accounts do not belong to the active loyalty program.",
+        );
       }
       if (
         referral.advocateAccount.status !== "active" ||
@@ -1459,6 +1476,59 @@ export async function evaluateReferralQualification(
           metadata: {
             ...referralMetadata,
             requiredCouponSides: couponJobs.map((job) => job.side),
+            referralCommunicationOrigins:
+              operationalStore.installationGeneration === null
+                ? {}
+                : Object.fromEntries([
+                    ...[
+                      {
+                        side: "advocate" as const,
+                        accountId: referral.advocateAccountId,
+                        points: advocateAwarded,
+                      },
+                      {
+                        side: "referee" as const,
+                        accountId: refereeAccount.id,
+                        points: refereeAwarded,
+                      },
+                    ]
+                      .filter((benefit) => benefit.points > BigInt(0))
+                      .map((benefit) => [
+                        benefit.side,
+                        createReferralCommunicationOrigin({
+                          storeId: input.storeId,
+                          programId: lockedProgram.id,
+                          referralId: referral.id,
+                          qualificationOrderId: input.orderId,
+                          accountId: benefit.accountId,
+                          side: benefit.side,
+                          installationGeneration:
+                            operationalStore.installationGeneration!,
+                          qualificationPath: "account_referral",
+                          qualifiedAt: qualifiedAt.toISOString(),
+                          kind: "points",
+                          points: benefit.points.toString(),
+                        }),
+                      ]),
+                    ...couponJobs.map((job) => [
+                      job.side,
+                      createReferralCommunicationOrigin({
+                        storeId: input.storeId,
+                        programId: lockedProgram.id,
+                        referralId: referral.id,
+                        qualificationOrderId: input.orderId,
+                        accountId: job.accountId,
+                        side: job.side,
+                        installationGeneration:
+                          operationalStore.installationGeneration!,
+                        qualificationPath: "account_referral",
+                        qualifiedAt: qualifiedAt.toISOString(),
+                        kind: "coupon",
+                        rewardDefinitionId: job.rewardDefinitionId,
+                        rewardSnapshotDigest: job.rewardSnapshot.contentDigest,
+                      }),
+                    ]),
+                  ]),
             referralCouponRewardSnapshots: Object.fromEntries(
               couponJobs.map((job) => [job.side, job.rewardSnapshot]),
             ),
@@ -1538,6 +1608,26 @@ export async function evaluateReferralQualification(
           loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
           tx,
         });
+        if (operationalStore.installationGeneration !== null)
+          await enqueueReferralBenefitCommunication({
+            tx,
+            identity: {
+              storeId: input.storeId,
+              programId: lockedProgram.id,
+              referralId: referral.id,
+              qualificationOrderId: input.orderId,
+              accountId: referral.advocateAccountId,
+              side: "advocate",
+            },
+            expectedInstallationGeneration:
+              operationalStore.installationGeneration!,
+            receipt: {
+              created: true,
+              kind: "points",
+              id: advocateLedgerEntry.id,
+            },
+            loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
+          });
       }
 
       if (refereeAwarded > BigInt(0)) {
@@ -1571,6 +1661,26 @@ export async function evaluateReferralQualification(
           loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
           tx,
         });
+        if (operationalStore.installationGeneration !== null)
+          await enqueueReferralBenefitCommunication({
+            tx,
+            identity: {
+              storeId: input.storeId,
+              programId: lockedProgram.id,
+              referralId: referral.id,
+              qualificationOrderId: input.orderId,
+              accountId: refereeAccount.id,
+              side: "referee",
+            },
+            expectedInstallationGeneration:
+              operationalStore.installationGeneration!,
+            receipt: {
+              created: true,
+              kind: "points",
+              id: refereeLedgerEntry.id,
+            },
+            loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
+          });
       }
 
       if (advocateAwarded > BigInt(0)) {
