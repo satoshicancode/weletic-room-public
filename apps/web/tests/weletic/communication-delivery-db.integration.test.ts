@@ -12,11 +12,16 @@ import {
 } from "@/lib/weletic/loyalty/non-purchase-earn";
 import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox-worker";
 import { enqueuePurchasePointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
+import { createLoyaltyRedemptionProvisioningSnapshot } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
+import { createRewardCommunicationOrigin } from "@/lib/weletic/loyalty/reward-communication-origin";
+import { rewardRedeemedCommunicationJobSchema } from "@/lib/weletic/loyalty/reward-redeemed-communication-contract";
+import { enqueueRewardRedeemedCommunication } from "@/lib/weletic/loyalty/reward-redeemed-communication-producer";
 import { processWeleticLoyaltyAccountPrivacyScrubStep } from "@/lib/weletic/loyalty/shopper-privacy";
 import { evaluateTierMaintenanceCycle } from "@/lib/weletic/loyalty/tier-lifecycle";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { createDefaultLoyaltyCommunicationPolicy } from "../../ui/weletic/loyalty/communications-defaults";
 
 // The whole notification handler (including source/refund checks) and Redis
 // customer mutex are synthetic. Worker claim/completion,
@@ -66,6 +71,8 @@ afterAll(async () => {
   if (verified && fixtures.length) {
     const scope = { storeId: { in: fixtures } };
     await prisma.weleticLoyaltyOutboxJob.deleteMany({ where: scope });
+    await prisma.weleticRewardRedemption.deleteMany({ where: scope });
+    await prisma.weleticRewardDefinition.deleteMany({ where: scope });
     await prisma.weleticPointsLedgerEntry.deleteMany({ where: scope });
     await prisma.weleticLoyaltyOrderLineEarn.deleteMany({ where: scope });
     await prisma.weleticLoyaltyEarnGrant.deleteMany({ where: scope });
@@ -110,6 +117,8 @@ afterAll(async () => {
       "WeleticLoyaltyAccount",
       "WeleticLoyaltyOutboxJob",
       "WeleticMerchantSettings",
+      "WeleticRewardRedemption",
+      "WeleticRewardDefinition",
       "WeleticLoyaltyTier",
       "WeleticLoyaltyTierHistory",
     ]) {
@@ -259,6 +268,226 @@ async function seed(source = "purchase_points_available") {
     },
   };
 }
+
+async function seedRedemption() {
+  const { id } = await seed();
+  await prisma.weleticLoyaltyOutboxJob.delete({ where: { id } });
+  const createdAt = new Date();
+  const snapshot = createLoyaltyRedemptionProvisioningSnapshot({
+    reward: { id, name: "Synthetic redemption", rewardType: "amount_off" },
+    pointsCost: BigInt(100),
+    discountValue: "500",
+    expiresInDays: null,
+    shopCurrency: "JPY",
+    currencyVerifiedAt: createdAt,
+    customerSelectionDigest: "A".repeat(64),
+    startsAt: createdAt,
+    expiresAt: null,
+  });
+  await prisma.weleticLoyaltyProgram.update({
+    where: { id },
+    data: {
+      metadata: {
+        loyaltyCommunications: {
+          version: 1,
+          sequence: 1,
+          policies: [
+            {
+              ...createDefaultLoyaltyCommunicationPolicy("reward_redeemed"),
+              enabled: true,
+            },
+          ],
+        },
+      },
+    },
+  });
+  await prisma.weleticRewardDefinition.create({
+    data: {
+      id,
+      storeId: id,
+      name: "Synthetic redemption",
+      rewardType: "amount_off",
+      pointsCost: BigInt(100),
+      discountValue: 500,
+    },
+  });
+  await withActiveStoreLoyaltyMutation({
+    storeId: id,
+    action: "redemption_communication_fixture",
+    expectedInstallationGeneration: "g1",
+    operation: async (tx) => {
+      await appendPointsLedgerEntryWithReceipt({
+        tx,
+        storeId: id,
+        accountId: id,
+        entryType: "MANUAL_ADJUSTMENT",
+        pointsDelta: BigInt(100),
+        idempotencyKey: `opening:${id}`,
+      });
+      const debit = await appendPointsLedgerEntryWithReceipt({
+        tx,
+        storeId: id,
+        accountId: id,
+        entryType: "REDEEM_REWARD",
+        pointsDelta: -BigInt(100),
+        referenceType: "REWARD_REDEMPTION",
+        referenceId: id,
+        idempotencyKey: `redeem:${id}`,
+      });
+      await tx.weleticRewardRedemption.create({
+        data: {
+          id,
+          storeId: id,
+          accountId: id,
+          rewardDefinitionId: id,
+          pointsSpent: BigInt(100),
+          shopifyDiscountCode: id,
+          shopifyDiscountCodeCanonical: id.toUpperCase(),
+          status: "provisioning",
+          ledgerEntryId: debit.entry.id,
+          metadata: {
+            provisioningSnapshot: snapshot,
+            rewardCommunicationOrigin: createRewardCommunicationOrigin({
+              storeId: id,
+              accountId: id,
+              redemptionId: id,
+              installationGeneration: "g1",
+              provisioningDigest: snapshot.contentDigest,
+            }),
+          },
+        },
+      });
+    },
+  });
+  return id;
+}
+
+function issueRedemption(id: string, rollback = false) {
+  return withActiveStoreLoyaltyMutation({
+    storeId: id,
+    action: "redemption_communication_fixture",
+    expectedInstallationGeneration: "g1",
+    operation: async (tx) => {
+      const transition = await tx.weleticRewardRedemption.updateMany({
+        where: { id, storeId: id, accountId: id, status: "provisioning" },
+        data: { status: "issued", shopifyDiscountId: `synthetic-${id}` },
+      });
+      await enqueueRewardRedeemedCommunication({
+        tx,
+        storeId: id,
+        accountId: id,
+        expectedInstallationGeneration: "g1",
+        receipt: {
+          transitioned: transition.count === 1,
+          redemptionId: id,
+          occurredAt: new Date(),
+        },
+      });
+      if (rollback) throw new Error("synthetic rollback after enqueue");
+      return transition.count;
+    },
+  });
+}
+
+it("atomically commits one redemption notification under concurrent issuance replay", async () => {
+  const id = await seedRedemption();
+  const counts = await Promise.all([issueRedemption(id), issueRedemption(id)]);
+  expect(counts.sort()).toEqual([0, 1]);
+  const jobs = await prisma.weleticLoyaltyOutboxJob.findMany({
+    where: { storeId: id },
+  });
+  expect(jobs).toHaveLength(1);
+  expect(jobs[0].jobType).toBe("LOYALTY_COMMUNICATION");
+  expect(
+    rewardRedeemedCommunicationJobSchema.parse(jobs[0].payload),
+  ).toMatchObject({
+    journey: "reward_redeemed",
+    source: "reward_issuance_confirmed",
+    storeId: id,
+    programId: id,
+    accountId: id,
+    redemptionId: id,
+    installationGeneration: "g1",
+    pointsSpent: "100",
+  });
+  expect(
+    await prisma.weleticRewardRedemption.findUnique({ where: { id } }),
+  ).toMatchObject({ status: "issued" });
+});
+
+it("rolls back redemption issuance and notification together, preserving the original debit", async () => {
+  const id = await seedRedemption();
+  const ledgerQuery = {
+    where: { storeId: id },
+    orderBy: { sequenceNumber: "asc" as const },
+  };
+  const before = await prisma.weleticPointsLedgerEntry.findMany(ledgerQuery);
+  expect(
+    before.map(({ entryType, pointsDelta }) => ({ entryType, pointsDelta })),
+  ).toEqual([
+    { entryType: "MANUAL_ADJUSTMENT", pointsDelta: BigInt(100) },
+    { entryType: "REDEEM_REWARD", pointsDelta: -BigInt(100) },
+  ]);
+  await expect(issueRedemption(id, true)).rejects.toThrow(
+    "synthetic rollback after enqueue",
+  );
+  expect(
+    await prisma.weleticRewardRedemption.findUnique({ where: { id } }),
+  ).toMatchObject({ status: "provisioning", shopifyDiscountId: null });
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(0);
+  expect(
+    await prisma.weleticPointsLedgerEntry.count({ where: { storeId: id } }),
+  ).toBe(2);
+  expect(await prisma.weleticPointsLedgerEntry.findMany(ledgerQuery)).toEqual(
+    before,
+  );
+  expect(
+    await prisma.weleticLoyaltyAccount.findUnique({ where: { id } }),
+  ).toMatchObject({ cachedPointsBalance: BigInt(0) });
+  expect(await issueRedemption(id)).toBe(1);
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+  ).toBe(1);
+});
+
+it.each(["generation", "suspended", "redacted"] as const)(
+  "rejects redemption issuance without changing financial evidence after %s wins",
+  async (change) => {
+    const id = await seedRedemption();
+    const redemptionBefore = await prisma.weleticRewardRedemption.findUnique({
+      where: { id },
+    });
+    const ledgerQuery = {
+      where: { storeId: id },
+      orderBy: { sequenceNumber: "asc" as const },
+    };
+    const ledgerBefore =
+      await prisma.weleticPointsLedgerEntry.findMany(ledgerQuery);
+    await prisma.weleticShopifyStore.update({
+      where: { id },
+      data:
+        change === "generation"
+          ? { installationGeneration: "g2" }
+          : change === "suspended"
+            ? { storeAccessState: "suspended" }
+            : { complianceState: "redacted" },
+    });
+    // Ordered interleaving: the installation/access/privacy write commits
+    // before the producer's real store lock. No remote operation is modeled.
+    await expect(issueRedemption(id)).rejects.toThrow();
+    expect(
+      await prisma.weleticRewardRedemption.findUnique({ where: { id } }),
+    ).toEqual(redemptionBefore);
+    expect(await prisma.weleticPointsLedgerEntry.findMany(ledgerQuery)).toEqual(
+      ledgerBefore,
+    );
+    expect(
+      await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
+    ).toBe(0);
+  },
+);
 
 async function seedBirthday() {
   const { id } = await seed();

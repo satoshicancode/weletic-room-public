@@ -41,6 +41,20 @@ function resetMockState() {
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    weleticLoyaltyProgram: {
+      findUnique: vi.fn(async ({ where }) => {
+        const account = Array.from(mockState.accounts.values()).find(
+          (value) => value.storeId === where.storeId,
+        );
+        return account
+          ? {
+              ...account.program,
+              storeId: account.storeId,
+              metadata: account.program.metadata ?? null,
+            }
+          : null;
+      }),
+    },
     weleticLoyaltyAccount: {
       findUnique: vi.fn(async ({ where }) => {
         return mockState.accounts.get(where.id) || null;

@@ -67,7 +67,13 @@ import {
   WeleticRewardArtifactKind,
   WeleticRewardStatus,
 } from "@prisma/client";
+import { createRewardCommunicationOrigin } from "./reward-communication-origin";
+import {
+  assertRewardCommunicationOrigin,
+  RewardCommunicationOriginBlockedError,
+} from "./reward-communication-origin-fence";
 import { assertAccountBackedReward } from "./reward-ownership";
+import { enqueueRewardRedeemedCommunication } from "./reward-redeemed-communication-producer";
 
 export interface ProvisionDiscountSagaParams {
   storeId: string;
@@ -470,6 +476,17 @@ async function provisionDiscountSagaUnlocked(
           ...(reward.description ? { description: reward.description } : {}),
         },
         provisioningSnapshot,
+        ...(operationalStore.installationGeneration
+          ? {
+              rewardCommunicationOrigin: createRewardCommunicationOrigin({
+                storeId,
+                accountId,
+                redemptionId,
+                installationGeneration: operationalStore.installationGeneration,
+                provisioningDigest: provisioningSnapshot.contentDigest,
+              }),
+            }
+          : {}),
       },
       ownership: discountOwnership,
     });
@@ -600,7 +617,11 @@ async function provisionDiscountSagaUnlocked(
         loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
       });
     } catch (error) {
-      if (isLoyaltyMaintenanceBlockedError(error)) throw error;
+      if (
+        isLoyaltyMaintenanceBlockedError(error) ||
+        error instanceof RewardCommunicationOriginBlockedError
+      )
+        throw error;
       const failureReason =
         error instanceof Error ? error.message : String(error);
       const definitelyNoFinancialValueIssued =
@@ -697,8 +718,16 @@ async function provisionDiscountSagaUnlocked(
       mode: "active",
       loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
       timeoutMs: GENERIC_DISCOUNT_PROGRAM_LOCK_TIMEOUT_MS,
-      operation: (tx) =>
-        tx.weleticRewardRedemption.updateMany({
+      operation: async (tx) => {
+        await assertRewardCommunicationOrigin({
+          tx,
+          storeId,
+          accountId,
+          redemptionId: effectiveRedemptionId,
+          metadata: effectiveDiscountMetadata,
+          loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+        });
+        return tx.weleticRewardRedemption.updateMany({
           where: {
             id: effectiveRedemptionId,
             storeId,
@@ -711,7 +740,8 @@ async function provisionDiscountSagaUnlocked(
           data: {
             metadata: effectiveDiscountMetadata as Prisma.InputJsonValue,
           },
-        }),
+        });
+      },
     });
     if (markedForRemoteProvision.count !== 1) {
       throw new Error(
@@ -729,7 +759,18 @@ async function provisionDiscountSagaUnlocked(
         loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
         timeoutMs: GENERIC_DISCOUNT_PROGRAM_LOCK_TIMEOUT_MS,
         operation: async (tx) => {
+          let communicationOrigin: Awaited<
+            ReturnType<typeof assertRewardCommunicationOrigin>
+          > = null;
           try {
+            communicationOrigin = await assertRewardCommunicationOrigin({
+              tx,
+              storeId,
+              accountId,
+              redemptionId: effectiveRedemptionId,
+              metadata: effectiveDiscountMetadata,
+              loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+            });
             const currentShopCurrency =
               await assertLockedLoyaltyProgramCurrencyGeneration({
                 tx,
@@ -1043,6 +1084,21 @@ async function provisionDiscountSagaUnlocked(
             }
           }
 
+          if (transition.count === 1 && communicationOrigin) {
+            await enqueueRewardRedeemedCommunication({
+              tx,
+              storeId,
+              accountId,
+              expectedInstallationGeneration:
+                communicationOrigin.installationGeneration,
+              receipt: {
+                transitioned: true,
+                redemptionId: effectiveRedemptionId,
+                occurredAt: new Date(),
+              },
+              loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+            });
+          }
           await enqueueFlowTriggerJob({
             storeId,
             eventId: effectiveRedemptionId,
@@ -1099,7 +1155,10 @@ async function provisionDiscountSagaUnlocked(
     // ========================================================================
     const failureReason = phase2Error?.message || String(phase2Error);
 
-    if (isLoyaltyMaintenanceBlockedError(phase2Error)) {
+    if (
+      isLoyaltyMaintenanceBlockedError(phase2Error) ||
+      phase2Error instanceof RewardCommunicationOriginBlockedError
+    ) {
       // Maintenance deferral is observationally read-only: preserve the exact
       // ambiguity metadata and reservation for the owner or a post-lease retry.
       throw phase2Error;
@@ -1672,6 +1731,14 @@ export async function reconcileGenericProvisioningDiscount({
       // during a kill switch. Adoption itself still asserts the active
       // generation while holding that exact same program row.
       assertLockedLoyaltyProgramActive(program, loyaltyMaintenancePermit);
+      const communicationOrigin = await assertRewardCommunicationOrigin({
+        tx,
+        storeId: redemption.storeId,
+        accountId: redemption.accountId,
+        redemptionId: redemption.id,
+        metadata: latest.metadata,
+        loyaltyMaintenancePermit,
+      });
       const healed = await tx.weleticRewardRedemption.updateMany({
         where: {
           id: redemption.id,
@@ -1698,6 +1765,21 @@ export async function reconcileGenericProvisioningDiscount({
         throw new Error(
           `Redemption ${redemption.id} is missing its immutable reward snapshot.`,
         );
+      }
+      if (communicationOrigin) {
+        await enqueueRewardRedeemedCommunication({
+          tx,
+          storeId: redemption.storeId,
+          accountId: redemption.accountId,
+          expectedInstallationGeneration:
+            communicationOrigin.installationGeneration,
+          receipt: {
+            transitioned: true,
+            redemptionId: redemption.id,
+            occurredAt: new Date(),
+          },
+          loyaltyMaintenancePermit,
+        });
       }
       await enqueueFlowTriggerJob({
         storeId: redemption.storeId,

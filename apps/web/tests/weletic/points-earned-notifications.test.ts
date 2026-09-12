@@ -2,6 +2,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { CommunicationDeliveryClaim } from "../../lib/weletic/loyalty/communication-delivery-snapshot";
 import { CommunicationDeliveryRecipientChangedError } from "../../lib/weletic/loyalty/communication-delivery-snapshot";
 import { sendPointsEarnedNotification } from "../../lib/weletic/loyalty/points-earned-notifications";
+import { createRewardRedeemedCommunication } from "../../lib/weletic/loyalty/reward-redeemed-communication-contract";
+import { rewardCommunicationFixture } from "./reward-communication-fixture";
 
 const mocks = vi.hoisted(() => ({
   account: vi.fn(),
@@ -9,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   grant: vi.fn(),
   order: vi.fn(),
   history: vi.fn(),
+  redemption: vi.fn(),
   guard: vi.fn(),
   settings: vi.fn(),
   retain: vi.fn(),
@@ -23,6 +26,7 @@ vi.mock("@/lib/prisma", () => ({
     weleticLoyaltyEarnGrant: { findFirst: mocks.grant },
     weleticCommerceOrder: { findFirst: mocks.order },
     weleticLoyaltyTierHistory: { findFirst: mocks.history },
+    weleticRewardRedemption: { findFirst: mocks.redemption },
   },
 }));
 vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
@@ -445,6 +449,77 @@ it("rejects foreign job scope before queries", async () => {
     "job unavailable",
   );
   expect(mocks.account).not.toHaveBeenCalled();
+  expect(mocks.send).not.toHaveBeenCalled();
+});
+
+function redemptionFixture(type = "amount_off") {
+  const evidence = rewardCommunicationFixture(type);
+  for (const locale of ["en", "ja", "vi"] as const) {
+    evidence.policySnapshot.policy.templates[locale].subject =
+      `${locale}: {{reward_name}} / {{reward_value}}`;
+  }
+  const row = accountRow();
+  const event = createRewardRedeemedCommunication(evidence);
+  mocks.account.mockResolvedValue({
+    ...row,
+    program: {
+      ...row.program,
+      metadata: {
+        loyaltyCommunications: {
+          version: 1,
+          sequence: 1,
+          policies: [event.policy],
+        },
+      },
+    },
+  });
+  mocks.redemption.mockResolvedValue({
+    ...evidence.redemption,
+    expiresAt: null,
+  });
+  mocks.ledger.mockImplementation(async ({ where }) =>
+    where.referenceType === "REDEMPTION_REFUND" ? null : evidence.ledger,
+  );
+  const args: { claim: CommunicationDeliveryClaim } = fixture();
+  args.claim.candidate.payload = event;
+  return { args, row, evidence, event };
+}
+
+it.each(["en", "ja", "vi"] as const)(
+  "prepares captured redemption terms in %s (mocked renderer/provider)",
+  async (locale) => {
+    const { args, row } = redemptionFixture();
+    row.shopper.locale = locale;
+    expect(await sendPointsEarnedNotification(args)).toBe("sent");
+    expect(mocks.prepare.mock.calls[0][0].subject).toBe(
+      `${locale}: Original reward / 12.34 USD`,
+    );
+    expect(mocks.order).not.toHaveBeenCalled();
+    expect(mocks.grant).not.toHaveBeenCalled();
+    expect(mocks.send).toHaveBeenCalledOnce();
+  },
+);
+
+it.each(["cancelled", "failed", "expired"])(
+  "suppresses a %s redemption before preparing delivery",
+  async (status) => {
+    const { args, evidence } = redemptionFixture();
+    mocks.redemption.mockResolvedValue({ ...evidence.redemption, status });
+    expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+  },
+);
+
+it("suppresses a redemption with a compensation ledger entry", async () => {
+  const { args, evidence } = redemptionFixture();
+  mocks.ledger.mockImplementation(async ({ where }) =>
+    where.referenceType === "REDEMPTION_REFUND"
+      ? { id: "refund" }
+      : evidence.ledger,
+  );
+  expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
+  expect(mocks.retain).not.toHaveBeenCalled();
   expect(mocks.send).not.toHaveBeenCalled();
 });
 

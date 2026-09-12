@@ -15,6 +15,7 @@ import {
   getShopifyCustomerSelectionDigest,
 } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
 import { getReferralCouponIdempotencyKey } from "@/lib/weletic/loyalty/referral-coupon";
+import * as rewardCommunicationProducer from "@/lib/weletic/loyalty/reward-redeemed-communication-producer";
 import {
   compensateDiscountSaga,
   provisionDiscountSaga,
@@ -50,6 +51,7 @@ import {
   vi,
   type Mock,
 } from "vitest";
+import { rewardCommunicationFixture } from "./reward-communication-fixture";
 
 describe("uncertain Shopify discount reconciliation", () => {
   it("never treats a post-create lookup miss as proof of remote absence", () => {
@@ -70,6 +72,15 @@ describe("uncertain Shopify discount reconciliation", () => {
 // Mock prisma and dependencies
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    weleticLoyaltyProgram: {
+      findUnique: vi.fn(async ({ where }) => ({
+        id: "program_pool_bound",
+        storeId: where.storeId,
+        status: "active",
+        killSwitchActive: false,
+        metadata: null,
+      })),
+    },
     weleticLoyaltyAccount: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
@@ -1814,150 +1825,222 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
       );
     });
 
-    it("does not escape to the global credential resolver while the program transaction is open", async () => {
-      vi.stubEnv("NODE_ENV", "production");
-      vi.stubEnv("SHOPIFY_APP_URL", "https://shopify.weletic.com");
-      vi.stubEnv(
-        "WELETIC_SHOPIFY_SERVICE_SECRET",
-        "test-shopify-service-secret-with-32-characters",
-      );
-      const storeId = "store_pool_bound";
-      const accountId = "acc_pool_bound";
-      const rewardDefinitionId = "reward_pool_bound";
-      let transactionDepth = 0;
-      (prisma.$transaction as any).mockImplementation(
-        async (callback: (tx: typeof prisma) => Promise<unknown>) => {
-          transactionDepth += 1;
-          try {
-            return await callback(prisma);
-          } finally {
-            transactionDepth -= 1;
+    it.each([
+      [false, false],
+      [true, false],
+      [false, true],
+    ])(
+      "keeps credential resolution outside the transaction (changed generation=%s, queue failure=%s)",
+      async (changeGeneration, failCommunication) => {
+        const communication = vi.spyOn(
+          rewardCommunicationProducer,
+          "enqueueRewardRedeemedCommunication",
+        );
+        if (failCommunication)
+          communication.mockRejectedValueOnce(
+            new Error("communication outbox unavailable"),
+          );
+        vi.stubEnv("NODE_ENV", "production");
+        vi.stubEnv("SHOPIFY_APP_URL", "https://shopify.weletic.com");
+        vi.stubEnv(
+          "WELETIC_SHOPIFY_SERVICE_SECRET",
+          "test-shopify-service-secret-with-32-characters",
+        );
+        const storeId = "store_pool_bound";
+        const accountId = "acc_pool_bound";
+        const rewardDefinitionId = "reward_pool_bound";
+        let transactionDepth = 0;
+        let currentGeneration = "sgen_pool_bound";
+        (prisma.$transaction as any).mockImplementation(
+          async (callback: (tx: typeof prisma) => Promise<unknown>) => {
+            transactionDepth += 1;
+            try {
+              return await callback(prisma);
+            } finally {
+              transactionDepth -= 1;
+            }
+          },
+        );
+        queryRawMock.mockImplementation(async (statement: any) => {
+          const sql = statement.strings?.join(" ") ?? "";
+          if (sql.includes("FROM WeleticShopifyStore")) {
+            return [
+              {
+                id: storeId,
+                complianceState: "active",
+                shopCurrency: "USD",
+                currencyVerifiedAt: new Date("2026-08-28T00:00:00.000Z"),
+                installationGeneration: currentGeneration,
+                storeAccessState: "active",
+              },
+            ];
           }
-        },
-      );
-      queryRawMock.mockImplementation(async (statement: any) => {
-        const sql = statement.strings?.join(" ") ?? "";
-        if (sql.includes("FROM WeleticShopifyStore")) {
-          return [
-            {
+          if (sql.includes("FROM WeleticLoyaltyProgram")) {
+            return [
+              {
+                id: "program_pool_bound",
+                storeId,
+                status: "active",
+                killSwitchActive: false,
+              },
+            ];
+          }
+          throw new Error(`Unexpected raw-query fixture: ${sql}`);
+        });
+        (prisma.weleticShopifyStore.findUnique as any).mockImplementation(
+          async ({ select }: any) => {
+            if (select?.shopDomain) {
+              if (transactionDepth > 0) {
+                throw new Error(
+                  "global Shopify credential lookup escaped into a locked transaction",
+                );
+              }
+              return {
+                id: storeId,
+                projectId: `workspace_${storeId}`,
+                shopDomain: "pool-bound.myshopify.com",
+                installationGeneration: "sgen_pool_bound",
+              };
+            }
+            return {
               id: storeId,
               complianceState: "active",
               shopCurrency: "USD",
               currencyVerifiedAt: new Date("2026-08-28T00:00:00.000Z"),
               installationGeneration: "sgen_pool_bound",
               storeAccessState: "active",
-            },
-          ];
-        }
-        if (sql.includes("FROM WeleticLoyaltyProgram")) {
-          return [
-            {
-              id: "program_pool_bound",
-              storeId,
-              status: "active",
-              killSwitchActive: false,
-            },
-          ];
-        }
-        throw new Error(`Unexpected raw-query fixture: ${sql}`);
-      });
-      (prisma.weleticShopifyStore.findUnique as any).mockImplementation(
-        async ({ select }: any) => {
-          if (select?.shopDomain) {
-            if (transactionDepth > 0) {
-              throw new Error(
-                "global Shopify credential lookup escaped into a locked transaction",
-              );
-            }
-            return {
-              id: storeId,
-              projectId: `workspace_${storeId}`,
-              shopDomain: "pool-bound.myshopify.com",
-              installationGeneration: "sgen_pool_bound",
             };
-          }
-          return {
-            id: storeId,
-            complianceState: "active",
-            shopCurrency: "USD",
-            currencyVerifiedAt: new Date("2026-08-28T00:00:00.000Z"),
-            installationGeneration: "sgen_pool_bound",
-            storeAccessState: "active",
-          };
-        },
-      );
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
-        id: accountId,
-        storeId,
-        cachedPointsBalance: BigInt(500),
-        status: "active",
-        metadata: null,
-        program: { id: "program_pool_bound" },
-        shopper: { shopifyCustomerId: "gid://shopify/Customer/100" },
-      } as any);
-      vi.mocked(prisma.weleticRewardDefinition.findUnique).mockResolvedValue({
-        id: rewardDefinitionId,
-        storeId,
-        name: "$5 pool-bound reward",
-        rewardType: WeleticRewardType.amount_off,
-        pointsCost: BigInt(100),
-        discountValue: 500,
-        status: WeleticRewardStatus.active,
-      } as any);
-      vi.mocked(prisma.weleticRewardRedemption.create).mockResolvedValue({
-        id: "wredemp_pool_bound",
-        storeId,
-        accountId,
-        rewardDefinitionId,
-        pointsSpent: BigInt(100),
-        shopifyDiscountCode: "WL-POOL-BOUND",
-        shopifyDiscountCodeCanonical: "WL-POOL-BOUND",
-        status: WeleticRedemptionStatus.provisioning,
-      } as any);
-      const authorityFetch = vi.fn().mockResolvedValue(
-        Response.json({
-          shop: "pool-bound.myshopify.com",
-          accessToken: "fresh-pool-bound-token",
-          scope: "write_discounts",
-          expiresAt: new Date(Date.now() + 55 * 60 * 1000).toISOString(),
-        }),
-      );
-      vi.stubGlobal("fetch", authorityFetch);
-      const shopifyFetch = vi.fn().mockResolvedValue(
-        Response.json({
-          data: {
-            discountCodeBasicCreate: {
-              codeDiscountNode: {
-                id: "gid://shopify/DiscountCodeNode/pool-bound",
-                codeDiscount: {
-                  title: "$5 pool-bound reward",
-                  status: "ACTIVE",
-                  codes: { nodes: [{ code: "WL-POOL-BOUND" }] },
-                },
-              },
-              userErrors: [],
-            },
           },
-        }),
-      );
-      vi.stubEnv(
-        "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS",
-        `current:${Buffer.alloc(32, 0x11).toString("base64")}`,
-      );
+        );
+        vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
+          id: accountId,
+          storeId,
+          cachedPointsBalance: BigInt(500),
+          status: "active",
+          metadata: null,
+          program: { id: "program_pool_bound" },
+          shopper: { shopifyCustomerId: "gid://shopify/Customer/100" },
+        } as any);
+        vi.mocked(prisma.weleticRewardDefinition.findUnique).mockResolvedValue({
+          id: rewardDefinitionId,
+          storeId,
+          name: "$5 pool-bound reward",
+          rewardType: WeleticRewardType.amount_off,
+          pointsCost: BigInt(100),
+          discountValue: 500,
+          status: WeleticRewardStatus.active,
+        } as any);
+        // Reflect the inserted identity/metadata, as Prisma does. An unrelated
+        // hardcoded result ID cannot prove the new reservation's origin binding.
+        vi.mocked(prisma.weleticRewardRedemption.create).mockImplementation((({
+          data,
+        }: any) => {
+          if (changeGeneration) currentGeneration = "sgen_reinstalled";
+          return Promise.resolve({ ...data });
+        }) as any);
+        const authorityFetch = vi.fn().mockResolvedValue(
+          Response.json({
+            shop: "pool-bound.myshopify.com",
+            accessToken: "fresh-pool-bound-token",
+            scope: "write_discounts",
+            expiresAt: new Date(Date.now() + 55 * 60 * 1000).toISOString(),
+          }),
+        );
+        vi.stubGlobal("fetch", authorityFetch);
+        const shopifyFetch = vi.fn().mockResolvedValue(
+          Response.json({
+            data: {
+              discountCodeBasicCreate: {
+                codeDiscountNode: {
+                  id: "gid://shopify/DiscountCodeNode/pool-bound",
+                  codeDiscount: {
+                    title: "$5 pool-bound reward",
+                    status: "ACTIVE",
+                    codes: { nodes: [{ code: "WL-POOL-BOUND" }] },
+                  },
+                },
+                userErrors: [],
+              },
+            },
+          }),
+        );
+        vi.stubEnv(
+          "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS",
+          `current:${Buffer.alloc(32, 0x11).toString("base64")}`,
+        );
 
-      await expect(
-        provisionDiscountSaga({
+        const attempt = provisionDiscountSaga({
           storeId,
           accountId,
           rewardDefinitionId,
           discountCode: "WL-POOL-BOUND",
           idempotencyKey: "pool-bound-provisioning",
           customFetch: shopifyFetch as typeof fetch,
-        }),
-      ).resolves.toMatchObject({ success: true });
-      expect(authorityFetch).toHaveBeenCalledOnce();
-      expect(shopifyFetch).toHaveBeenCalledOnce();
-    });
+        });
+        if (changeGeneration) {
+          await expect(attempt).rejects.toThrow(
+            "stale_installation_generation",
+          );
+          expect(shopifyFetch).not.toHaveBeenCalled();
+          expect(
+            prisma.weleticRewardRedemption.updateMany,
+          ).not.toHaveBeenCalled();
+          // The original reservation links its debit before its transaction
+          // completes. Rejection must add no later status/metadata mutation.
+          expect(
+            prisma.weleticRewardRedemption.update,
+          ).toHaveBeenCalledExactlyOnceWith({
+            where: { id: expect.any(String) },
+            data: { ledgerEntryId: expect.any(String) },
+          });
+          expect(
+            vi
+              .mocked(appendPointsLedgerEntry)
+              .mock.calls.some(([args]) => args.pointsDelta > BigInt(0)),
+          ).toBe(false);
+          return;
+        }
+        if (failCommunication) {
+          await expect(attempt).resolves.toMatchObject({
+            success: false,
+            status: "provisioning",
+            compensated: false,
+            error: "communication outbox unavailable",
+          });
+          expect(communication).toHaveBeenCalledWith(
+            expect.objectContaining({
+              expectedInstallationGeneration: "sgen_pool_bound",
+              receipt: expect.objectContaining({ transitioned: true }),
+            }),
+          );
+          expect(
+            vi
+              .mocked(appendPointsLedgerEntry)
+              .mock.calls.some(([args]) => args.pointsDelta > BigInt(0)),
+          ).toBe(false);
+          expect(
+            vi
+              .mocked(prisma.weleticRewardRedemption.updateMany)
+              .mock.calls.some(([args]) => args.data.status === "failed"),
+          ).toBe(false);
+        } else {
+          await expect(attempt).resolves.toMatchObject({ success: true });
+        }
+        expect(authorityFetch).toHaveBeenCalledOnce();
+        expect(shopifyFetch).toHaveBeenCalledOnce();
+        const inserted = vi.mocked(prisma.weleticRewardRedemption.create).mock
+          .calls[0][0].data;
+        expect(inserted.metadata).toMatchObject({
+          rewardCommunicationOrigin: {
+            version: 1,
+            storeId,
+            accountId,
+            redemptionId: inserted.id,
+            installationGeneration: "sgen_pool_bound",
+          },
+        });
+      },
+    );
 
     it("compensates without a Shopify write when disable wins after reservation but before remote create", async () => {
       const storeId = "store_disable_race";
@@ -3416,6 +3499,97 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
         ).toContain("FOR UPDATE");
       },
     );
+
+    it("preserves an owned generic discount when recovery communication enqueue fails", async () => {
+      const evidence = rewardCommunicationFixture();
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
+        id: "store",
+        currencyVerifiedAt: new Date("2026-09-12T00:00:00Z"),
+      } as any);
+      const redemption = {
+        ...evidence.redemption,
+        status: "provisioning",
+        shopifyDiscountId: null,
+        shopifyDiscountCode: "WL-RECOVERY-COMMUNICATION",
+        expiresAt: null,
+      };
+      vi.mocked(prisma.weleticRewardRedemption.findUnique).mockResolvedValue(
+        redemption as any,
+      );
+      queryRawMock.mockImplementation(async (statement: any) => {
+        if (statement.sql.includes("FROM WeleticShopifyStore"))
+          return [
+            {
+              id: "store",
+              complianceState: "active",
+              storeAccessState: "active",
+              installationGeneration: "generation",
+              shopCurrency: "USD",
+              currencyVerifiedAt: new Date("2026-09-12T00:00:00Z"),
+            },
+          ];
+        return [
+          {
+            id: "program",
+            storeId: "store",
+            status: "active",
+            killSwitchActive: false,
+            metadata: null,
+          },
+        ];
+      });
+      const failure = new Error("communication outbox unavailable");
+      const communication = vi
+        .spyOn(
+          rewardCommunicationProducer,
+          "enqueueRewardRedeemedCommunication",
+        )
+        .mockRejectedValueOnce(failure);
+      const remoteFetch = vi.fn();
+      const input = {
+        redemption: redemption as any,
+        remoteDiscount: {
+          id: "gid://shopify/DiscountCodeNode/recovered",
+          code: redemption.shopifyDiscountCode,
+          title: "Owned reward",
+          status: "ACTIVE",
+        },
+        accountIsActive: true,
+        configurationMatches: true,
+        expectedCurrency: "USD",
+        expectedCurrencyVerifiedAt: "2026-09-12T00:00:00.000Z",
+        shopDomain: "store.myshopify.com",
+        accessToken: "test-token",
+        customFetch: remoteFetch as typeof fetch,
+      };
+      await expect(reconcileGenericProvisioningDiscount(input)).rejects.toBe(
+        failure,
+      );
+      expect(communication).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expectedInstallationGeneration: "generation",
+          receipt: expect.objectContaining({
+            transitioned: true,
+            redemptionId: "redemption",
+          }),
+        }),
+      );
+      expect(remoteFetch).not.toHaveBeenCalled();
+      expect(appendPointsLedgerEntry).not.toHaveBeenCalled();
+      expect(
+        vi
+          .mocked(prisma.weleticRewardRedemption.updateMany)
+          .mock.calls.every(([args]) => args.data.status === "issued"),
+      ).toBe(true);
+      // Reusing the original row models rollback of the local transaction.
+      // SQL rollback itself is deliberately not claimed by this mock suite.
+      communication.mockResolvedValueOnce(null);
+      await expect(reconcileGenericProvisioningDiscount(input)).resolves.toBe(
+        "healed",
+      );
+      expect(remoteFetch).not.toHaveBeenCalled();
+      expect(appendPointsLedgerEntry).not.toHaveBeenCalled();
+    });
 
     it("converges an owned inactive generic discount without another Shopify mutation", async () => {
       const storeId = "store_inactive_recovery";

@@ -19,6 +19,8 @@ import { renderLoyaltyCommunicationText } from "./communications-contract";
 import { snapshotLoyaltyCommunicationPolicy } from "./communications-service";
 import type { LoyaltyMaintenancePermit } from "./maintenance-write-fence";
 import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
+import { rewardCommunicationValue } from "./reward-communication-value";
+import { isCurrentRewardRedemption } from "./reward-redeemed-communication-source";
 import { hasShopifyCustomerRedactionTombstone } from "./shopper-privacy";
 import { isCurrentVipAchievement } from "./vip-achievement-communication-source";
 
@@ -103,6 +105,9 @@ export async function sendPointsEarnedNotification({
         currentTierId: account.currentTierId,
       }))
     )
+      return "ineligible";
+  } else if (event.source === "reward_issuance_confirmed") {
+    if (!(await isCurrentRewardRedemption({ db: prisma, event })))
       return "ineligible";
   } else {
     // Source ledger is required participation evidence. Never infer it from a
@@ -189,13 +194,22 @@ export async function sendPointsEarnedNotification({
           brand_name: communications.brandName,
           customer_first_name: account.shopper.firstName ?? "",
           points:
-            event.source === "vip_threshold_promotion" ? "" : event.points,
+            event.source === "vip_threshold_promotion" ||
+            event.source === "reward_issuance_confirmed"
+              ? ""
+              : event.points,
           tier_name:
             event.source === "vip_threshold_promotion" ? event.toTier.name : "",
           points_label: account.program.pointNamePlural,
           reward_name:
             event.journey === "birthday"
               ? `${event.points} ${account.program.pointNamePlural}`
+              : event.source === "reward_issuance_confirmed"
+                ? event.reward.name
+                : "",
+          reward_value:
+            event.source === "reward_issuance_confirmed"
+              ? rewardCommunicationValue(event.reward, locale)
               : "",
         };
         const template = event.policy.templates[locale];

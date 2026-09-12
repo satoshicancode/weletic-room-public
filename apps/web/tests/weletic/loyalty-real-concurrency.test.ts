@@ -498,7 +498,12 @@ const { dbHarness } = vi.hoisted(() => {
 
         weleticLoyaltyProgram: {
           findUnique: vi.fn(async ({ where }: any) => {
-            return harness.programs.get(where.id) || null;
+            const program = where.id
+              ? harness.programs.get(where.id)
+              : Array.from(harness.programs.values()).find(
+                  (candidate) => candidate.storeId === where.storeId,
+                );
+            return program ?? null;
           }),
         },
 
@@ -586,6 +591,7 @@ describe("Milestone 6: Real Database Multi-Threaded Concurrency Stress Suite", (
       status: "active",
       killSwitchActive: false,
       pointsName: "Points",
+      metadata: null,
     });
 
     // Initialize Active Loyalty Account

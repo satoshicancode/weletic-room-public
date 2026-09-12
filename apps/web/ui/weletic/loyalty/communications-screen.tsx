@@ -42,9 +42,13 @@ export function CommunicationsScreen({
   const [mobile, setMobile] = useState(true);
   const epoch = useRef(0);
   const copy = communicationsCopy[locale];
-  const vipIntegration =
+  const redemptionIntegration =
     state?.deliveryIntegration ===
-    "purchase_signup_birthday_vip_and_expiry_policies";
+    "purchase_signup_birthday_vip_redemption_and_expiry_policies";
+  const vipIntegration =
+    redemptionIntegration ||
+    state?.deliveryIntegration ===
+      "purchase_signup_birthday_vip_and_expiry_policies";
   const birthdayIntegration =
     vipIntegration ||
     state?.deliveryIntegration ===
@@ -64,39 +68,45 @@ export function CommunicationsScreen({
       state?.deliveryIntegration === "purchase_signup_and_expiry_policies") &&
     (journey === "points_warning" || journey === "points_last_chance");
   const connectedCopy =
-    vipIntegration && journey === "vip_achieved"
+    redemptionIntegration && journey === "reward_redeemed"
       ? {
-          description: copy.vipConnected,
-          saved: copy.vipSaved,
-          enabled: copy.vipEnabled,
+          description: copy.redemptionConnected,
+          saved: copy.redemptionSaved,
+          enabled: copy.redemptionEnabled,
         }
-      : birthdayConnected
+      : vipIntegration && journey === "vip_achieved"
         ? {
-            description: copy.birthdayConnected,
-            saved: copy.birthdaySaved,
-            enabled: copy.birthdayEnabled,
+            description: copy.vipConnected,
+            saved: copy.vipSaved,
+            enabled: copy.vipEnabled,
           }
-        : signupConnected
+        : birthdayConnected
           ? {
-              description: birthdayIntegration
-                ? copy.signupWithBirthdayConnected
-                : copy.signupConnected,
-              saved: copy.signupSaved,
-              enabled: copy.signupEnabled,
+              description: copy.birthdayConnected,
+              saved: copy.birthdaySaved,
+              enabled: copy.birthdayEnabled,
             }
-          : purchaseConnected
+          : signupConnected
             ? {
-                description: copy.purchaseConnected,
-                saved: copy.purchaseSaved,
-                enabled: copy.purchaseEnabled,
+                description: birthdayIntegration
+                  ? copy.signupWithBirthdayConnected
+                  : copy.signupConnected,
+                saved: copy.signupSaved,
+                enabled: copy.signupEnabled,
               }
-            : expiryConnected
+            : purchaseConnected
               ? {
-                  description: copy.expiryConnected,
-                  saved: copy.expirySaved,
-                  enabled: copy.expiryEnabled,
+                  description: copy.purchaseConnected,
+                  saved: copy.purchaseSaved,
+                  enabled: copy.purchaseEnabled,
                 }
-              : null;
+              : expiryConnected
+                ? {
+                    description: copy.expiryConnected,
+                    saved: copy.expirySaved,
+                    enabled: copy.expiryEnabled,
+                  }
+                : null;
   React.useEffect(() => {
     onNavigationStateChange?.({ dirty, locale });
   }, [dirty, locale, onNavigationStateChange]);

@@ -29,6 +29,11 @@ import {
   WeleticRedemptionStatus,
   WeleticRewardArtifactKind,
 } from "@prisma/client";
+import {
+  assertRewardCommunicationOrigin,
+  RewardCommunicationOriginBlockedError,
+} from "./reward-communication-origin-fence";
+import { enqueueRewardRedeemedCommunication } from "./reward-redeemed-communication-producer";
 
 const FINANCIAL_REWARD_PROGRAM_LOCK_TIMEOUT_MS = 120_000;
 
@@ -101,24 +106,30 @@ function testCredentials({
 
 async function clearUnsentFinancialAttempt({
   storeId,
+  accountId,
   redemptionId,
   code,
   preparationId,
+  loyaltyMaintenancePermit,
 }: {
   storeId: string;
+  accountId: string;
   redemptionId: string;
   code: string;
   preparationId: string;
+  loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
 }) {
   await withLoyaltyProgramRowLock({
     storeId,
     mode: "lock_only",
+    loyaltyMaintenancePermit,
     timeoutMs: FINANCIAL_REWARD_PROGRAM_LOCK_TIMEOUT_MS,
     operation: async (tx) => {
       const current = await tx.weleticRewardRedemption.findUnique({
         where: { id: redemptionId },
         select: {
           storeId: true,
+          accountId: true,
           status: true,
           shopifyDiscountCodeCanonical: true,
           settlementQuarantinedAt: true,
@@ -132,6 +143,7 @@ async function clearUnsentFinancialAttempt({
       if (
         !current ||
         current.storeId !== storeId ||
+        current.accountId !== accountId ||
         current.status !== WeleticRedemptionStatus.provisioning ||
         current.shopifyDiscountCodeCanonical !==
           canonicalizeLoyaltyDiscountCode(code) ||
@@ -140,10 +152,21 @@ async function clearUnsentFinancialAttempt({
       ) {
         return;
       }
+      // Admission or currency validation may fail before dispatch checks run.
+      // Cleanup must independently fence the persisted reservation's origin.
+      await assertRewardCommunicationOrigin({
+        tx,
+        storeId,
+        accountId,
+        redemptionId,
+        metadata: current.metadata,
+        loyaltyMaintenancePermit,
+      });
       await tx.weleticRewardRedemption.updateMany({
         where: {
           id: redemptionId,
           storeId,
+          accountId,
           status: WeleticRedemptionStatus.provisioning,
           shopifyDiscountCodeCanonical: canonicalizeLoyaltyDiscountCode(code),
           settlementQuarantinedAt: null,
@@ -240,6 +263,14 @@ export async function provisionFinancialRewardReservation({
       loyaltyMaintenancePermit,
       timeoutMs: FINANCIAL_REWARD_PROGRAM_LOCK_TIMEOUT_MS,
       operation: async (tx) => {
+        await assertRewardCommunicationOrigin({
+          tx,
+          storeId,
+          accountId,
+          redemptionId: reservation.redemption.id,
+          metadata: effectiveMetadata,
+          loyaltyMaintenancePermit,
+        });
         await assertLockedLoyaltyProgramCurrencyGeneration({
           tx,
           storeId,
@@ -277,13 +308,20 @@ export async function provisionFinancialRewardReservation({
       loyaltyMaintenancePermit,
       timeoutMs: FINANCIAL_REWARD_PROGRAM_LOCK_TIMEOUT_MS,
       operation: async (tx) => {
+        const communicationOrigin = await assertRewardCommunicationOrigin({
+          tx,
+          storeId,
+          accountId,
+          redemptionId: reservation.redemption.id,
+          metadata: effectiveMetadata,
+          loyaltyMaintenancePermit,
+        });
         await assertLockedLoyaltyProgramCurrencyGeneration({
           tx,
           storeId,
           expectedCurrency: snapshot.shopCurrency,
           expectedCurrencyVerifiedAt: snapshot.currencyVerifiedAt,
         });
-
         let giftCardId: string | null = null;
         let storeCreditTransactionId: string | null = null;
         if (rewardType === "gift_card") {
@@ -354,6 +392,21 @@ export async function provisionFinancialRewardReservation({
           );
         }
 
+        if (communicationOrigin) {
+          await enqueueRewardRedeemedCommunication({
+            tx,
+            storeId,
+            accountId,
+            expectedInstallationGeneration:
+              communicationOrigin.installationGeneration,
+            receipt: {
+              transitioned: true,
+              redemptionId: reservation.redemption.id,
+              occurredAt: new Date(),
+            },
+            loyaltyMaintenancePermit,
+          });
+        }
         await enqueueFlowTriggerJob({
           storeId,
           eventId: reservation.redemption.id,
@@ -412,12 +465,15 @@ export async function provisionFinancialRewardReservation({
       },
     });
   } catch (error) {
+    if (error instanceof RewardCommunicationOriginBlockedError) throw error;
     if (preparationId && !remoteCallStarted) {
       await clearUnsentFinancialAttempt({
         storeId,
+        accountId,
         redemptionId: reservation.redemption.id,
         code,
         preparationId,
+        loyaltyMaintenancePermit,
       });
     }
     throw error;
