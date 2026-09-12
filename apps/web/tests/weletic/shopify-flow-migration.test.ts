@@ -31,9 +31,13 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
       sqlEnum[1].matchAll(/'([^']+)'/g),
       (match) => match[1],
     );
-    expect(sqlLabels).toEqual(prismaLabels.slice(0, sqlLabels.length));
+    // Historical migrations stay immutable. Later additive enum changes must
+    // retain every old ordinal; shared deployment of the new labels is gated.
+    expect(prismaLabels.slice(0, sqlLabels.length)).toEqual(sqlLabels);
     expect(prismaLabels.slice(sqlLabels.length)).toEqual([
       "LOYALTY_COMMUNICATION",
+      "HISTORICAL_IMPORT_COMMIT",
+      "HISTORICAL_IMPORT_ROLLBACK",
     ]);
     const expansion = readFileSync(
       new URL(
@@ -64,7 +68,7 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
         communicationEnum[1].matchAll(/'([^']+)'/g),
         (match) => match[1],
       ),
-    ).toEqual(prismaLabels);
+    ).toEqual(prismaLabels.slice(0, -2));
     expect(sqlLabels).toEqual(
       expect.arrayContaining([
         "REVIEW_REQUEST_EMAIL",

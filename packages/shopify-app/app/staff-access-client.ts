@@ -25,7 +25,10 @@ export class StaffAccessClientError extends Error {
 export function createMerchantJsonPost(
   getToken: () => Promise<string>,
   transport: typeof fetch = fetch,
+  { timeoutMs = 30_000 }: { timeoutMs?: number } = {},
 ) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000)
+    throw new StaffAccessClientError("invalid");
   async function post(path: string, input: unknown): Promise<unknown> {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -33,7 +36,7 @@ export function createMerchantJsonPost(
       timer = setTimeout(() => {
         controller.abort();
         reject(new StaffAccessClientError("unavailable"));
-      }, 30_000);
+      }, timeoutMs);
     });
     try {
       return await Promise.race([

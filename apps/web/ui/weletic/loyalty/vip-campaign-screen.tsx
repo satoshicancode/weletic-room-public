@@ -23,6 +23,7 @@ const messages = {
     tiers: "VIP tiers",
     campaigns: "Bonus campaigns",
     history: "Recent tier history",
+    noTier: "No tier",
     addTier: "Add tier",
     addCampaign: "Add campaign",
     save: "Save",
@@ -85,6 +86,7 @@ const messages = {
     tiers: "VIPランク",
     campaigns: "ボーナスキャンペーン",
     history: "最近のランク履歴",
+    noTier: "ランクなし",
     addTier: "ランクを追加",
     addCampaign: "キャンペーンを追加",
     save: "保存",
@@ -147,6 +149,7 @@ const messages = {
     tiers: "Hạng VIP",
     campaigns: "Chiến dịch thưởng",
     history: "Lịch sử hạng gần đây",
+    noTier: "Chưa có hạng",
     addTier: "Thêm hạng",
     addCampaign: "Thêm chiến dịch",
     save: "Lưu",
@@ -983,7 +986,7 @@ function VipCampaignVisit({ transport }: { transport: VipCampaignTransport }) {
                     {new Date(entry.effectiveAt).toLocaleString(locale)} ·{" "}
                     {historyReasonLabel(copy, entry.changeReason)} ·{" "}
                     {entry.fromTierName ?? "—"} →{" "}
-                    {entry.toTierName ?? entry.toTierId}
+                    {entry.toTierName ?? entry.toTierId ?? copy.noTier}
                   </li>
                 ))}
               </ul>

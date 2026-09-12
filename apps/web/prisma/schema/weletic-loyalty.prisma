@@ -147,6 +147,8 @@ enum WeleticLoyaltyOutboxJobType {
   FLOW_TRIGGER
   SHOPPER_REWARD_PROVISION
   LOYALTY_COMMUNICATION
+  HISTORICAL_IMPORT_COMMIT
+  HISTORICAL_IMPORT_ROLLBACK
 }
 
 enum WeleticLoyaltyOutboxJobStatus {
@@ -389,7 +391,7 @@ model WeleticLoyaltyTierHistory {
   accountId                String
   sequenceNumber           Int?
   fromTierId               String?
-  toTierId                 String
+  toTierId                 String?
   changeReason             WeleticLoyaltyTierChangeReason @default(threshold_reached)
   notes                    String?
   qualifyingSpendSnapshot  BigInt?
@@ -398,7 +400,7 @@ model WeleticLoyaltyTierHistory {
 
   account  WeleticLoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   fromTier WeleticLoyaltyTier?   @relation("FromTier", fields: [fromTierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  toTier   WeleticLoyaltyTier    @relation("ToTier", fields: [toTierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  toTier   WeleticLoyaltyTier?   @relation("ToTier", fields: [toTierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([accountId, sequenceNumber])
   @@index([accountId, effectiveAt, sequenceNumber])
@@ -853,6 +855,101 @@ model WeleticLoyaltyBackfillPreviewItem {
 
   @@unique([jobId, accountId])
   @@index([jobId, shopperId])
+}
+
+enum WeleticLoyaltyImportStatus {
+  preview
+  committing
+  committed
+  rolling_back
+  rolled_back
+  contained
+  cancelled
+}
+
+enum WeleticLoyaltyImportRowStatus {
+  pending
+  committed
+  rolled_back
+  contained
+}
+
+// Source identity and row snapshots are immutable outside privacy erasure.
+// The service must verify normalizedSha256 before accepting commit work.
+// No raw source bytes, filename, email, or free-text error is retained here.
+model WeleticLoyaltyImportSource {
+  id                     String                     @id
+  storeId                String
+  programId              String
+  installationGeneration String
+  sourceSha256           String                     @db.VarChar(64)
+  normalizedSha256       String                     @db.VarChar(64)
+  sourceFormat           String                     @db.VarChar(8)
+  sourceVersion          Int                        @default(1)
+  rowCount               Int
+  totalOpeningBalance    Decimal                    @db.Decimal(30, 0)
+  createdByStaffId       String
+  status                 WeleticLoyaltyImportStatus @default(preview)
+  revision               Int                        @default(0)
+  leaseId                String?                    @db.VarChar(64)
+  leaseExpiresAt         DateTime?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+  completedAt            DateTime?
+
+  @@unique([storeId, programId, normalizedSha256])
+  @@index([storeId, createdAt, id])
+  @@index([storeId, status, createdAt])
+  @@index([status, leaseExpiresAt])
+}
+
+// Immutable imported values, addressed by a one-based data-row number.
+// Optional birthday/tier values do not imply birthday or tier-entry rewards.
+// Privacy cleanup must scrub shopper identity and birthday before purging.
+model WeleticLoyaltyImportRowSnapshot {
+  id                String   @id
+  sourceId          String
+  storeId           String
+  programId         String
+  rowNumber         Int
+  shopifyCustomerId String
+  openingBalance    BigInt
+  birthdayMonth     Int?
+  birthdayDay       Int?
+  tierId            String?
+  createdAt         DateTime @default(now())
+  redactedAt        DateTime?
+
+  @@unique([sourceId, rowNumber])
+  @@unique([sourceId, shopifyCustomerId])
+  @@index([storeId, shopifyCustomerId])
+}
+
+// Mutable execution evidence is separate from imported source values.
+// Account version and field snapshots contain rollback after later activity.
+// No execution record authorizes an account outside its store/program.
+model WeleticLoyaltyImportRowExecution {
+  id                    String                       @id
+  sourceId              String
+  snapshotId            String                       @unique
+  storeId               String
+  programId             String
+  accountId             String
+  status                WeleticLoyaltyImportRowStatus @default(pending)
+  ledgerEntryId         String?                      @unique
+  reversalLedgerEntryId String?                      @unique
+  ledgerVersionBefore   Int
+  ledgerVersionAfter    Int?
+  fieldStateBefore      Json?                        @db.Json
+  fieldStateAfter       Json?                        @db.Json
+  containmentCode       String?                      @db.VarChar(64)
+  committedAt           DateTime?
+  rolledBackAt          DateTime?
+  createdAt             DateTime                     @default(now())
+  updatedAt             DateTime                     @updatedAt
+
+  @@index([storeId, accountId])
+  @@index([sourceId, status])
 }
 
 model WeleticLoyaltyOutboxJob {

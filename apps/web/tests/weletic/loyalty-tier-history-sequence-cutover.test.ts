@@ -24,6 +24,22 @@ function history({
 }
 
 describe("earn-policy cutover tier-history sequencing", () => {
+  it("preserves an authoritative no-tier destination in sequence planning", () => {
+    const row = {
+      ...history({
+        id: "history_restore",
+        effectiveAt: "2026-09-09T00:00:00.000Z",
+        sequenceNumber: 1,
+      }),
+      toTierId: null,
+    };
+    const plan = planTierHistorySequences([row]);
+    expect(plan.blockers).toEqual([]);
+    expect(plan.assignments).toEqual([]);
+    expect(
+      plan.orderedHistoriesByAccount.get("account_sequence")?.[0].toTierId,
+    ).toBeNull();
+  });
   it("assigns contiguous sequences by event time and exposes the next marker sequence", () => {
     const plan = planTierHistorySequences([
       history({

@@ -108,6 +108,23 @@ async function fence() {
 }
 
 describe("transaction-local VIP and campaign service", () => {
+  it("projects no-tier restoration without looking up a fabricated tier", async () => {
+    mocks.historyFind.mockResolvedValue([
+      {
+        id: "wtier_history1",
+        fromTierId: tier.id,
+        toTierId: null,
+        changeReason: "manual_override",
+        effectiveAt: new Date("2026-09-09T00:00:00.000Z"),
+      },
+    ]);
+    const view = await readVipCampaignStateInTransaction(tx, context.storeId);
+    expect(view.tierHistory[0]).toMatchObject({
+      fromTierName: "Gold",
+      toTierId: null,
+      toTierName: null,
+    });
+  });
   it("keeps empty reads side-effect free and binds revisions to the store", async () => {
     mocks.programFind.mockResolvedValue(null);
     const first = await readVipCampaignStateInTransaction(tx, "wstore_a");

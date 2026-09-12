@@ -82,7 +82,7 @@ export type TierHistorySequencePlanRow = {
   accountId: string;
   effectiveAt: Date;
   sequenceNumber: number | null;
-  toTierId: string;
+  toTierId: string | null;
 };
 
 export function planTierHistorySequences(rows: TierHistorySequencePlanRow[]) {

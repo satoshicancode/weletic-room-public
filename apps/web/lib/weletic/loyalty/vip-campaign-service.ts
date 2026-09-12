@@ -189,7 +189,7 @@ export async function readVipCampaignStateInTransaction(
       fromTierName: entry.fromTierId
         ? tierNames.get(entry.fromTierId) ?? null
         : null,
-      toTierName: tierNames.get(entry.toTierId) ?? null,
+      toTierName: entry.toTierId ? tierNames.get(entry.toTierId) ?? null : null,
       effectiveAt: entry.effectiveAt.toISOString(),
     })),
   };

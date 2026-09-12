@@ -80,6 +80,7 @@ export async function enqueueVipAchievementCommunication({
   });
   if (
     !latest ||
+    !latest.toTierId ||
     latest.id !== history.id ||
     latest.sequenceNumber !== history.sequenceNumber ||
     latest.fromTierId !== history.fromTierId ||
@@ -121,7 +122,7 @@ export async function enqueueVipAchievementCommunication({
     programId,
     accountId,
     installationGeneration: expectedInstallationGeneration,
-    history: latest,
+    history: { ...latest, toTierId: latest.toTierId },
     fromTier: { ...fromTier, storeId, rank: fromTier.tierOrder },
     toTier: { ...toTier, storeId, rank: toTier.tierOrder },
     policySnapshot,

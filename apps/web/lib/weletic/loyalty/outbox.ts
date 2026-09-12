@@ -20,7 +20,15 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { loyaltyExpiryCommunicationSnapshotSchema } from "./communications-contract";
+import {
+  HistoricalImportJobPayloadSchema,
+  type HistoricalImportJobPayload,
+} from "./historical-import-job-contract";
 import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
+export {
+  HistoricalImportJobPayloadSchema,
+  type HistoricalImportJobPayload,
+} from "./historical-import-job-contract";
 
 export type EnqueueOutboxJobResult = {
   job: WeleticLoyaltyOutboxJob;
@@ -258,10 +266,15 @@ export const FlowTriggerPayloadSchema = z.discriminatedUnion("handle", [
 ]);
 export type FlowTriggerPayload = z.infer<typeof FlowTriggerPayloadSchema>;
 
+// Durable source references only. Worker ownership/lease material is acquired
+// from current database state, never accepted from an outbox payload.
+
 /**
  * Union of all valid outbox payloads
  */
 export type LoyaltyOutboxPayloadMap = {
+  HISTORICAL_IMPORT_COMMIT: HistoricalImportJobPayload;
+  HISTORICAL_IMPORT_ROLLBACK: HistoricalImportJobPayload;
   LOYALTY_COMMUNICATION: z.infer<typeof loyaltyCommunicationJobPayloadSchema>;
   SHOPPER_REWARD_PROVISION: z.infer<typeof ShopperRewardProvisionPayloadSchema>;
   REVIEW_REQUEST_EMAIL: z.infer<typeof ReviewRequestEmailPayloadSchema>;
@@ -441,6 +454,8 @@ function isInstallationBoundOperationalJob({
       "REVIEW_REQUEST_EMAIL",
       "SHOPPER_REWARD_PROVISION",
       "REVIEW_SUMMARY_SYNC",
+      "HISTORICAL_IMPORT_COMMIT",
+      "HISTORICAL_IMPORT_ROLLBACK",
     ].includes(jobType)
   ) {
     return true;
@@ -473,6 +488,8 @@ async function bindOperationalJobToInstallationGeneration({
   if (!storeDelegate?.findUnique) {
     if (
       process.env.NODE_ENV === "test" &&
+      jobType !== "HISTORICAL_IMPORT_COMMIT" &&
+      jobType !== "HISTORICAL_IMPORT_ROLLBACK" &&
       jobType !== "LOYALTY_COMMUNICATION"
     ) {
       return {
@@ -492,6 +509,14 @@ async function bindOperationalJobToInstallationGeneration({
     throw new Error(
       `Cannot bind ${jobType} outbox work to missing Shopify store ${storeId}.`,
     );
+  }
+  if (
+    (jobType === "HISTORICAL_IMPORT_COMMIT" ||
+      jobType === "HISTORICAL_IMPORT_ROLLBACK") &&
+    (payload as HistoricalImportJobPayload).installationGeneration !==
+      store.installationGeneration
+  ) {
+    throw new Error("Historical import installation generation changed.");
   }
   if (
     jobType === "LOYALTY_COMMUNICATION" &&
@@ -514,6 +539,10 @@ export function validateOutboxPayload(
   payload: unknown,
 ): void {
   switch (jobType) {
+    case "HISTORICAL_IMPORT_COMMIT":
+    case "HISTORICAL_IMPORT_ROLLBACK":
+      HistoricalImportJobPayloadSchema.parse(payload);
+      break;
     case "LOYALTY_COMMUNICATION":
       loyaltyCommunicationJobPayloadSchema.parse(payload);
       break;

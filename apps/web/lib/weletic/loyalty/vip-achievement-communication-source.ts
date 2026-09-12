@@ -36,6 +36,6 @@ export async function isCurrentVipAchievement({
     latest.changeReason === "threshold_reached" &&
     latest.effectiveAt.toISOString() === event.occurredAt &&
     latest.fromTier?.programId === event.programId &&
-    latest.toTier.programId === event.programId
+    latest.toTier?.programId === event.programId
   );
 }

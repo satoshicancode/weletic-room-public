@@ -126,37 +126,44 @@ it.each(["absent", "disabled", "paused", "inactive"])(
     expect(enqueue).not.toHaveBeenCalled();
   },
 );
-it.each(["program", "account", "history", "tier", "generation", "approval"])(
-  "rejects missing or mismatched %s",
-  async (kind) => {
-    if (kind === "program")
-      program.mockResolvedValue({ ...programRow(), id: "foreign" });
-    if (kind === "account") account.mockResolvedValue(null);
-    if (kind === "history")
-      history.mockResolvedValue({
-        ...input().receipt.history,
-        id: "newer",
-        sequenceNumber: 2,
-      });
-    if (kind === "tier") tiers.mockResolvedValue([]);
-    if (kind === "generation")
-      store.mockResolvedValue({
-        installationGeneration: "g2",
-        storeAccessState: "active",
-        complianceState: "active",
-      });
-    if (kind === "approval")
-      store.mockResolvedValue({
-        installationGeneration: "g1",
-        storeAccessState: "pending_approval",
-        complianceState: "active",
-      });
-    await expect(enqueueVipAchievementCommunication(input())).rejects.toThrow(
-      "unavailable",
-    );
-    expect(enqueue).not.toHaveBeenCalled();
-  },
-);
+it.each([
+  "program",
+  "account",
+  "history",
+  "no-tier-history",
+  "tier",
+  "generation",
+  "approval",
+])("rejects missing or mismatched %s", async (kind) => {
+  if (kind === "program")
+    program.mockResolvedValue({ ...programRow(), id: "foreign" });
+  if (kind === "account") account.mockResolvedValue(null);
+  if (kind === "history")
+    history.mockResolvedValue({
+      ...input().receipt.history,
+      id: "newer",
+      sequenceNumber: 2,
+    });
+  if (kind === "tier") tiers.mockResolvedValue([]);
+  if (kind === "no-tier-history")
+    history.mockResolvedValue({ ...input().receipt.history, toTierId: null });
+  if (kind === "generation")
+    store.mockResolvedValue({
+      installationGeneration: "g2",
+      storeAccessState: "active",
+      complianceState: "active",
+    });
+  if (kind === "approval")
+    store.mockResolvedValue({
+      installationGeneration: "g1",
+      storeAccessState: "pending_approval",
+      complianceState: "active",
+    });
+  await expect(enqueueVipAchievementCommunication(input())).rejects.toThrow(
+    "unavailable",
+  );
+  expect(enqueue).not.toHaveBeenCalled();
+});
 it.each(["annual_downgrade", "manual", "import"])(
   "rejects %s placement",
   async (reason) => {

@@ -1777,7 +1777,7 @@ export async function processOrderPointsEarn({
               id: string;
               accountId: string;
               fromTierId: string | null;
-              toTierId: string;
+              toTierId: string | null;
               effectiveAt: Date;
               sequenceNumber: number | null;
             } | null>;

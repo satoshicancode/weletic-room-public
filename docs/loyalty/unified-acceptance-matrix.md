@@ -236,6 +236,18 @@ No checkbox below is promoted solely by these local checks.
 - [ ] D6: Generic Shopify-customer opening-balance/birthday/optional-tier import:
       complete-file preview, validation, immutable source provenance, commit,
       reconciliation and contained rollback. No Smile migration is required.
+      September 12: [schema preflight and compatibility checkpoint](historical-import-schema-release-gate.md)
+      adds isolated metadata/privacy-failure evidence; shared rollout,
+      authenticated journeys and full 50,000-row execution remain unaccepted.
+      The local [dedicated-instance scale continuation](historical-import-implementation.md)
+      adds grouped rollback and projected evidence reads. Its latest synthetic
+      50,000-row profile reached 30 real reversals and safe continuation, with
+      rollback queue verification in 13.5 seconds. Full real-worker execution,
+      authenticated and live acceptance remain open; PR #13 remains draft.
+      Eight isolated signed-gateway tests now exercise real HMAC/native-session
+      authorization, preparation/execution and rejection fences against MySQL.
+      Synthetic session records and in-process route calls do not satisfy
+      Shopify OAuth, browser or live merchant acceptance.
 - [ ] D7: Imports append opening-balance ledger entries, not fabricated historic
       earns, referrals, coupons, invites or tier-entry rewards. Preserve existing
       coupons and prevent overlap with historical backfill.
@@ -395,9 +407,11 @@ live gate. Do not infer a completion percentage from checked code paths.
 
 External Shopify deployment, schema application, App Store submission,
 protected-data/network requests, real email delivery and old-app uninstall remain
-separate execution gates. Approval for the three isolated import tables did not
-authorize shared/production schema changes, an import outbox enum expansion,
-store-approval schema rollout or nullable no-tier rollback history.
+separate execution gates. In addition to the three isolated import tables,
+[ADR 0023](../adr/0023-durable-import-jobs-and-no-tier-rollback.md) records approval
+for import outbox enum values and nullable no-tier history, applied only to local
+weletic_loyalty_dev. This does not authorize shared/production schema changes or
+store-approval schema rollout, and does not prove working import dispatch/rollback.
 
 The points-adjustment Flow action awaits Hiro's choice between an audited,
 revocable bounded automation authorization and approval of every adjustment.

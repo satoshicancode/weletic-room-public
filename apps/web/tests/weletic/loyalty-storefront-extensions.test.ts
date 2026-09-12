@@ -18,6 +18,7 @@ import {
   customerRewardTerms,
   formatCustomerPoints,
   formatCustomerRewardDate,
+  formatCustomerTierDestination,
   formatStoreMinorCurrency,
   getOrCreateRedemptionIntentKey,
   isOnlineStoreReward,
@@ -29,6 +30,16 @@ import {
 } from "../../../../packages/shopify-app/extensions/weletic-customer-account/src/CustomerAccountLoyalty";
 
 describe("Milestone 5: Storefront Theme & Customer Account Extensions Test Suite", () => {
+  it.each([
+    ["en", "No tier"],
+    ["ja-JP", "ランクなし"],
+    ["vi-VN", "Chưa có hạng"],
+  ])("renders a real no-tier destination in %s", (locale, expected) => {
+    expect(formatCustomerTierDestination(null, locale)).toBe(expected);
+    expect(formatCustomerTierDestination({ name: "Gold" }, locale)).toBe(
+      "Gold",
+    );
+  });
   const extensionsDir = path.resolve(
     __dirname,
     "../../../../packages/shopify-app/extensions",

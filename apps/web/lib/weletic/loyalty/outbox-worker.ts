@@ -86,6 +86,11 @@ import {
   ExpiryDeliveryReconciliationRequiredError,
   type ExpiryDeliveryClaim,
 } from "./expiry-delivery-snapshot";
+import {
+  HistoricalImportExecutionContainedError,
+  HistoricalImportLeasePendingError,
+} from "./historical-import-job-contract";
+import type { HistoricalImportWorkerClaim } from "./historical-import-worker";
 import { sendPointsEarnedNotification } from "./points-earned-notifications";
 import {
   assertAccountBackedReward,
@@ -124,6 +129,7 @@ export interface OutboxBatchResult {
 }
 
 type OutboxExecutionResult = {
+  historicalImportOutcome?: "completed" | "continued";
   referralRewardOutcome?: "verified";
   redemptionRecoveryOutcome?:
     | "deactivated"
@@ -442,10 +448,12 @@ async function restoreOutboxClaim({
   db,
   claim,
   restoredAt,
+  retryAt,
 }: {
   db: Prisma.TransactionClient | typeof prisma;
   claim: OutboxJobClaim;
   restoredAt: Date;
+  retryAt?: Date;
 }) {
   const { candidate } = claim;
   if (!canExecuteAtomicOutboxSql(db)) {
@@ -457,10 +465,22 @@ async function restoreOutboxClaim({
         lockedAt: candidate.lockedAt,
         lockedBy: candidate.lockedBy,
         attempts: candidate.attempts,
+        ...(retryAt ? { nextRetryAt: retryAt } : {}),
       },
     });
     return fallback.count;
   }
+  if (retryAt)
+    return db.$executeRaw`
+    UPDATE \`WeleticLoyaltyOutboxJob\`
+    SET \`status\` = ${candidate.status}, \`lockedAt\` = ${candidate.lockedAt},
+      \`lockedBy\` = ${candidate.lockedBy}, \`attempts\` = ${candidate.attempts},
+      \`nextRetryAt\` = ${retryAt}, \`updatedAt\` = ${restoredAt}
+    WHERE \`id\` = ${candidate.id} AND \`storeId\` = ${candidate.storeId}
+      AND \`status\` = ${WeleticLoyaltyOutboxJobStatus.processing}
+      AND \`lockedAt\` = ${claim.claimedAt} AND \`lockedBy\` = ${claim.ownerToken}
+      AND \`attempts\` = ${claim.attempt}
+  `;
   return db.$executeRaw`
     UPDATE \`WeleticLoyaltyOutboxJob\`
     SET
@@ -1262,6 +1282,18 @@ export async function processOutboxJobsBatch(
         claim,
       );
 
+      if (executionResult?.historicalImportOutcome === "continued") {
+        // The import transaction already relinquished source ownership and
+        // requeued this job. Generic acknowledgement would be incorrect.
+        summary.skipped++;
+        summary.jobs.push({
+          id: candidate.id,
+          jobType: candidate.jobType,
+          status: WeleticLoyaltyOutboxJobStatus.pending,
+        });
+        continue;
+      }
+
       // 5. Success -> Mark completed and unlock
       const completedAt = new Date();
       const completed = await transitionOutboxJobToCompleted({
@@ -1283,6 +1315,23 @@ export async function processOutboxJobsBatch(
         status: WeleticLoyaltyOutboxJobStatus.completed,
       });
     } catch (error: any) {
+      if (
+        (candidate.jobType === "HISTORICAL_IMPORT_COMMIT" ||
+          candidate.jobType === "HISTORICAL_IMPORT_ROLLBACK") &&
+        error instanceof HistoricalImportLeasePendingError
+      ) {
+        // Waiting for source ownership is not an execution failure. Restore
+        // only this exact queue claim and defer to the verified DB expiry.
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: new Date(),
+          retryAt: error.retryAt,
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
       if (
         isLoyaltyMaintenanceBlockedError(error) ||
         error instanceof ShopperEmailPausedError
@@ -1308,6 +1357,7 @@ export async function processOutboxJobsBatch(
         error instanceof VoucherCleanupRetryableError;
       const terminalOutboxFailure =
         (error instanceof ShopifyFlowDispatchError && !error.retryable) ||
+        error instanceof HistoricalImportExecutionContainedError ||
         error instanceof ExpiryDeliveryReconciliationRequiredError ||
         error instanceof CommunicationDeliveryReconciliationRequiredError;
       const isExhausted =
@@ -1437,10 +1487,31 @@ export async function executeOutboxJob(
   job: WeleticLoyaltyOutboxJob,
   now: Date = new Date(),
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
-  deliveryClaim?: ExpiryDeliveryClaim,
+  queueClaim?: HistoricalImportWorkerClaim | ExpiryDeliveryClaim,
 ): Promise<OutboxExecutionResult | undefined> {
+  const deliveryClaim =
+    queueClaim && "candidate" in queueClaim ? queueClaim : undefined;
+  const importClaim = queueClaim && {
+    ownerToken: queueClaim.ownerToken,
+    claimedAt: queueClaim.claimedAt,
+    attempt: queueClaim.attempt,
+  };
   if (loyaltyMaintenancePermit !== undefined) {
     assertLoyaltyMaintenanceOwnerPermitAuthorization(loyaltyMaintenancePermit);
+  }
+  if (job.jobType === "HISTORICAL_IMPORT_COMMIT") {
+    const { executeHistoricalImportCommitJob } = await import(
+      "./historical-import-worker"
+    );
+    // Import primitives always enforce the normal active-store/program fence.
+    // Never use the legacy operational-job blocked-store no-op as completion.
+    return executeHistoricalImportCommitJob({ job, queueClaim: importClaim });
+  }
+  if (job.jobType === "HISTORICAL_IMPORT_ROLLBACK") {
+    const { executeHistoricalImportRollbackJob } = await import(
+      "./historical-import-rollback-worker"
+    );
+    return executeHistoricalImportRollbackJob({ job, queueClaim: importClaim });
   }
   const payload =
     job.payload &&
@@ -1461,6 +1532,8 @@ export async function executeOutboxJob(
       "FLOW_TRIGGER",
       "REVIEW_REQUEST_EMAIL",
       "SHOPPER_REWARD_PROVISION",
+      "HISTORICAL_IMPORT_COMMIT",
+      "HISTORICAL_IMPORT_ROLLBACK",
     ].includes(job.jobType) ||
     (job.jobType === "REDEMPTION_RECOVERY" && payload?.sagaPhase === "expiry");
   let expectedInstallationGeneration: string | null | undefined;

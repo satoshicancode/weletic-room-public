@@ -6,6 +6,10 @@ import { storage } from "@/lib/storage";
 import { deleteExpiredShopperCouponUsesBatch } from "@/lib/weletic/loyalty/coupon-use-retention";
 import { publishLoyaltyEarnPolicyRevision } from "@/lib/weletic/loyalty/earn-policy-revision";
 import {
+  purgeHistoricalImportStoreBatch,
+  redactHistoricalImportCustomerBatch,
+} from "@/lib/weletic/loyalty/historical-import-privacy";
+import {
   redactReferralFriendClaimsForEmail,
   redactReferralFriendClaimsForShopBatch,
 } from "@/lib/weletic/loyalty/referral-friend-claim";
@@ -421,6 +425,8 @@ const EXPORT_PHASES = [
   "export_review_incentive_claims",
   "export_coupon_uses",
   "export_review_incentive_invalidations",
+  "export_import_snapshots",
+  "export_import_executions",
 ] as const;
 
 type ExportPhase = (typeof EXPORT_PHASES)[number];
@@ -514,6 +520,64 @@ async function fetchExportPage({
     orderBy: { id: "asc" as const },
     ...(lastId ? { cursor: { id: lastId }, skip: 1 } : {}),
   };
+  if (phase === "export_import_snapshots") {
+    const shopper = shopperId
+      ? await prisma.weleticShopper.findUnique({
+          where: { id: shopperId, storeId },
+          select: { shopifyCustomerId: true },
+        })
+      : null;
+    if (!shopper) return [];
+    const numericId = shopper.shopifyCustomerId.replace(
+      /^gid:\/\/shopify\/Customer\//,
+      "",
+    );
+    if (!/^[1-9][0-9]{0,19}$/.test(numericId)) return [];
+    return prisma.weleticLoyaltyImportRowSnapshot.findMany({
+      ...page,
+      where: {
+        storeId,
+        shopifyCustomerId: {
+          in: [numericId, `gid://shopify/Customer/${numericId}`],
+        },
+        redactedAt: null,
+      },
+      select: {
+        id: true,
+        sourceId: true,
+        openingBalance: true,
+        birthdayMonth: true,
+        birthdayDay: true,
+        tierId: true,
+        createdAt: true,
+      },
+    });
+  }
+  if (phase === "export_import_executions") {
+    return accountId
+      ? prisma.weleticLoyaltyImportRowExecution.findMany({
+          ...page,
+          where: { storeId, accountId },
+          select: {
+            id: true,
+            sourceId: true,
+            snapshotId: true,
+            status: true,
+            ledgerEntryId: true,
+            reversalLedgerEntryId: true,
+            ledgerVersionBefore: true,
+            ledgerVersionAfter: true,
+            fieldStateBefore: true,
+            fieldStateAfter: true,
+            containmentCode: true,
+            committedAt: true,
+            rolledBackAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+      : [];
+  }
   if (phase === "export_native_reviews") {
     return shopperId
       ? prisma.weleticProductReview.findMany({
@@ -1356,6 +1420,32 @@ export async function processCustomerRedactStep(
   }
 
   if (request.phase === "purge_customer_backfill_preview") {
+    const imports = await withComplianceMutationLease({
+      request,
+      fn: (tx) =>
+        redactHistoricalImportCustomerBatch({
+          tx,
+          storeId: request.storeId,
+          shopifyCustomerId: subject.customerId,
+          accountId: subject.accountId,
+        }),
+    });
+    if (imports.snapshotsRedacted || imports.executionsRedacted) {
+      return {
+        completed: false,
+        phase: "purge_customer_backfill_preview",
+        cursor: Prisma.DbNull,
+        progress: {
+          ...progress,
+          customerImportSnapshotsRedacted:
+            Number(progress.customerImportSnapshotsRedacted ?? 0) +
+            imports.snapshotsRedacted,
+          customerImportExecutionsRedacted:
+            Number(progress.customerImportExecutionsRedacted ?? 0) +
+            imports.executionsRedacted,
+        },
+      };
+    }
     const owners = [
       ...(subject.accountId ? [{ accountId: subject.accountId }] : []),
       ...(subject.shopperId ? [{ shopperId: subject.shopperId }] : []),
@@ -2431,6 +2521,31 @@ export async function processShopRedactStep(request: any): Promise<StepState> {
   }
 
   if (request.phase === "purge_loyalty_backfill") {
+    const imports = await withComplianceMutationLease({
+      request,
+      fn: (tx, store) => {
+        if (store.complianceState !== "frozen")
+          throw new ComplianceLeaseLostError(
+            "Import purge requires a frozen store.",
+          );
+        return purgeHistoricalImportStoreBatch({
+          tx,
+          storeId: request.storeId,
+        });
+      },
+    });
+    if (imports.kind !== "completed") {
+      return {
+        completed: false,
+        phase: "purge_loyalty_backfill",
+        cursor: Prisma.DbNull,
+        progress: {
+          ...progress,
+          loyaltyImportRecordsDeleted:
+            Number(progress.loyaltyImportRecordsDeleted ?? 0) + imports.count,
+        },
+      };
+    }
     const result = await withComplianceMutationLease({
       request,
       fn: async (tx) => {

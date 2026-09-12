@@ -8,6 +8,19 @@ declare const shopify: Api;
 const API_BASE_URL = "https://shopify.weletic.com/api/customer-account/loyalty";
 const CUSTOMER_REQUEST_TIMEOUT_MS = 10_000;
 
+export function formatCustomerTierDestination(
+  tier: { name: string } | null,
+  locale = "en",
+) {
+  if (tier) return tier.name;
+  const language = locale.toLowerCase().split(/[-_]/)[0];
+  return language === "ja"
+    ? "ランクなし"
+    : language === "vi"
+      ? "Chưa có hạng"
+      : "No tier";
+}
+
 export interface CustomerSessionClaims {
   dest?: string;
   sub?: string;
@@ -257,7 +270,7 @@ type LoyaltySummary = {
     history?: Array<{
       id: string;
       fromTier?: { id: string; name: string } | null;
-      toTier: { id: string; name: string };
+      toTier: { id: string; name: string } | null;
       changeReason: string;
       qualifyingSpendSnapshot?: string | null;
       qualifyingPointsSnapshot?: string | null;
@@ -2028,7 +2041,10 @@ export function CustomerAccountLoyalty() {
                             {activity.fromTier?.name
                               ? `${activity.fromTier.name} → `
                               : ""}
-                            {activity.toTier.name}
+                            {formatCustomerTierDestination(
+                              activity.toTier,
+                              shopify.localization?.language?.value?.isoCode,
+                            )}
                           </s-text>
                           <s-text color="subdued" type="small">
                             {activity.changeReason.replaceAll("_", " ")} ·{" "}
