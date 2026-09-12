@@ -58,7 +58,12 @@ export function assertFinancialRewardScope({
   rewardType: "gift_card" | "store_credit";
 }) {
   const scopes = knownScopes(credentials);
-  if (!scopes) return;
+  if (!scopes) {
+    throw new ShopifyFinancialRewardError(
+      "MISSING_SCOPE",
+      "Shopify installation scope evidence is unavailable. Re-authenticate the Shopify app before enabling this reward.",
+    );
+  }
   const required =
     rewardType === "gift_card"
       ? ["read_gift_cards", "write_gift_cards", "write_customers"]
