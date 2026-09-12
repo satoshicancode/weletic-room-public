@@ -1,8 +1,134 @@
 # Historical opening-balance import
 
+## September 12 grouped rollback and proof-read checkpoint
+
+The next query-only checkpoint reads ownership by account primary key, then checks
+the selected account's store/program and shopper's store/customer identity.
+Global metadata-linked ledger evidence is still read in full. Claims fetch only
+entries not already loaded in that same proof transaction; global reference
+discovery reads IDs and loads full evidence for newly discovered entries. Missing
+reference hydration fails closed. Source-wide overflow, orphan/foreign evidence,
+exact arithmetic and fresh per-transaction proof remain required. No schema,
+public contract or application deadline changed.
+
+Independent review found no production blocker. All 44 focused reconciliation
+and batch-budget tests pass, including missing/foreign owners, missing/corrupt
+claims, missing reference hydration, deduplication and overflow. The two UI files
+last visible before the previous full-suite stall pass independently: 36 tests.
+The full rerun with a temporary file-level progress reporter passed all 480
+files: 7,586 tests passed and six existing skips. The earlier stall was not
+reproduced; no UI or test-runner code fix is claimed. The reporter is a local
+diagnostic artifact and does not change the checked-in test configuration.
+The populated-source profile reached bounded continuation on the approved
+dedicated instance: rollback queue verification 13,505 ms; one real worker
+delivery 54,234 ms; 30 actual reversal rows, with the job safely pending again
+and no failure/dead-letter result. Independent proof verified the exact net
+balance `(50000 - 30) * 9007199254740993` and 50,030 ledger rows. This fixture
+contains 49,999 synthetically seeded commits and only one real initial commit;
+it is not full 50,000-row execution acceptance. The delivery's 30-second target
+is a soft budget checked between transaction groups, not a hard worker duration
+limit; each transaction retains its existing 30-second deadline. The profile
+completed with exit 0, all 157 tables independently empty and its temporary grant
+revoked. The complete 500-row real-worker test also passed: 11 deliveries per
+phase, 64,014 ms for commit and 29,863 ms for rollback; independent proof verified
+all 1,000 ledger entries and zero remaining import balance. Together with the
+ordinary regressions, 43 MySQL tests passed (four opt-in skips). All 157 tables
+were independently empty afterward and temporary access was revoked.
+
+Final verification passed: web/Shopify typechecks, all ten root lint tasks,
+Prisma validation, changed-file formatting, 32 Shopify tests, and both production
+builds (web: 367 static pages). The web build used temporary SELECT-only access
+to the empty dedicated fixture; all 157 tables remained empty and the grant was
+revoked afterward. The dedicated server was stopped without an OOM event; its
+empty volume is retained, and shared services remain unchanged.
+Independent final review found no code, secret or scope
+blocker. The checkpoint remains draft, not a merge or deployment authorization;
+shared-schema, authenticated merchant and full real-worker scale gates remain.
+
+## Earlier September 12 scale continuation — historical local checkpoint
+
+The accepted ADR 0024 grouped rollback checkpoint was copied into the separate
+compatibility worktree on top of `ed1bf07c98`; the original checkout was not
+modified. All 42 ordinary MySQL source cases (including three new adversarial
+group cases) and 13 deterministic batch-budget cases passed. The ownership-change
+case uses a valid replacement lease UUID so it exercises stale ownership rather
+than malformed-record rejection. Operation-only timing instrumentation is local;
+it measures Prisma model calls, not raw SQL or CPU-only proof work. No new code was
+pushed and PR #13 remains at its previously verified compatibility checkpoint.
+
+A new schema-only fixture, `weletic_loyalty_it_import_scale_20260912`, began with
+157 empty tables. The populated profile created synthetic evidence for 50,000
+committed rows (only the first was committed by the real row handler). The run
+failed during the full execution-record read before rollback queue creation or
+group execution. Docker reported `OOMKilled=true` with a 805,306,368-byte
+(768 MiB) container limit. This was a server-memory failure, **not** a successful
+throughput measurement or a reproduced transaction-deadline result. Timings
+before failure: snapshot read 2,337 ms; failed execution read 7,653 ms. No SQL,
+query parameters, customer identifiers or source rows were included in the
+normalized timing report.
+
+The server failure also interrupted automatic fixture cleanup and grant
+revocation. The previously running container was restarted without changing its
+resource limits; its server UUID was rechecked and it returned to healthy status.
+The exact disposable fixture database was dropped and its temporary DML grant
+revoked, both independently verified. Existing development/legacy databases were
+retained. No application service, live Shopify operation or deployment ran.
+
+Hiro approved a separate disposable MySQL instance under
+[ADR 0030](../adr/0030-disposable-import-load-database.md). It uses a dedicated
+2 GiB memory budget, loopback port 3308, fresh credentials and a separate volume,
+leaving the existing instance unchanged. The generated fixture
+`weletic_loyalty_it_import_dedicated_20260912` contained 157 empty tables before
+and after the 42-case regression run; temporary DML privileges were revoked.
+The first dedicated populated profile avoided OOM but failed queue creation when
+the existing 30-second transaction expired during owner verification. Model-call
+timings: snapshots 6,798 ms, executions 18,386 ms, first 20 shopper batches 4,060 ms.
+The 120-second cleanup hook also expired; independent SQL rejected the nonempty
+fixture and the temporary DML grant was revoked. Only that disposable synthetic
+schema was removed and regenerated on the identity-verified dedicated instance.
+The profile's cleanup-only hook now has a 300-second allowance, outside the
+measured workload; application transaction and delivery deadlines are unchanged.
+
+Query-only improvements are local and independently reviewed: project only
+execution/owner evidence fields and split ledger ID/reference lookup paths while
+retaining global orphan discovery, fresh full proof, transaction fences,
+deduplication and cumulative source-wide overflow checks. All 35 focused
+reconciliation/batch-budget tests pass, including global reference-only foreign
+evidence, cross-path overflow, deduplication and projection contracts. The
+comparison profile still failed before rollback queue creation: snapshot reads
+5,799 ms, projected execution reads 5,025 ms, 50 owner batches 6,950 ms and the
+first two ledger operations 10,993 ms. The narrower execution projection reduced
+that operation's observed duration, but the overall 30-second proof gate remains
+unpassed. These are operation-only measurements on a shared development host,
+not controlled production benchmarks. Never remove proofs or extend application
+deadlines merely to obtain a passing scale result.
+
+Final local verification: all 42 ordinary MySQL source cases passed again after
+the query changes; all 157 fixture tables were independently empty afterward and
+temporary DML access was revoked. Both dedicated profiles kept the server alive
+without OOM. The comparison profile's longer cleanup-only allowance completed
+successfully. Web typechecking (including a final rerun), Shopify typechecking,
+all ten lint tasks, Prisma validation, changed-file formatting, 32 Shopify unit
+tests and the Shopify build passed. The full web suite stalled with idle workers
+and no terminal summary; it was deliberately interrupted (exit 130), not passed.
+The web production build was not rerun for this local checkpoint. No new commit,
+push, merge, shared-schema application or deployment was performed.
+The dedicated container was stopped after cleanup as required by ADR 0030;
+its empty volume and private local credential files are retained for reproducibility.
+The original dirty import checkout and existing port-3307 instance were unchanged
+during this dedicated-instance execution.
+
+Next: profile the remaining global ledger discovery and ownership-query costs
+without exposing row data; retain all orphan/foreign-write discovery and fresh
+transactional proof. Isolate the full web suite stall independently before
+publication. Rerun ordinary regressions, populated-source verification, full web
+tests and the web build after any correction. Full 50,000-row real-worker
+commit/rollback, authenticated merchant journeys and shared rollout remain open.
+
 Status: implementation in progress, 2026-09-09. The three import tables have been
 approved and created only in isolated local MySQL. Both opt-in database suites
-pass (44 tests across the latest suite runs). Byte-derived inspection/staging
+pass (39 regular source cases and nine ledger cases after bounded rollback grouping;
+historical opt-in load checkpoints are qualified below). Byte-derived inspection/staging
 persistence and commit/rollback orchestration are covered locally; authenticated
 browser journeys and live merchant acceptance remain unproven. Nothing is deployed
 to Shopify.
@@ -99,13 +225,13 @@ cleanup completed, and independent read-only counts were zero across ten affecte
 models. Web typechecking, focused lint and independent review passed.
 
 This does not establish the remaining 49,900 commits, finalization, or rollback
-performance on a fully populated 50,000-row source. Rollback currently rechecks
+performance on a fully populated 50,000-row source. At that checkpoint rollback rechecked
 whole-source evidence in each row transaction. Moving that proof to claim and
 finalization alone would weaken detection between row transactions; do not do so
 as a performance shortcut. Measure a populated rollback fixture before choosing
 an optimization, retaining foreign-entry and orphan discovery. A multi-row locked
-transaction would change contention and containment granularity and requires an
-explicit architectural decision, not an inferred performance allowance.
+transaction changes contention and containment granularity; the subsequent
+explicit approval is recorded in ADR 0024 below.
 
 ### Populated rollback profile and bounded worker scheduling
 
@@ -118,7 +244,7 @@ atomic correction. At that observed per-row cost, a fixed 50-row delivery risks
 exceeding the default five-minute outbox claim window. Extrapolation also suggests
 a full rollback could take days; no full-run duration has been measured.
 
-Commit and rollback batches now retain the row-count cap and add a monotonic
+At this checkpoint commit and rollback batches retained the row-count cap and added a monotonic
 30-second soft time target checked between rows. The first row is attempted even
 if selection consumes the target. No in-flight row is interrupted; failures and
 containment retain their original behavior. This is not a hard 30-second delivery
@@ -139,11 +265,55 @@ suite passes 854 tests, including nine deterministic batch-budget cases and
 short-progress continuation cases for both worker phases. Independent review
 found no production blocker. The 50,000-row throughput gate remains open.
 
-Reducing full-source proof frequency across separate row transactions is not an
-approved shortcut. A proposed bounded multi-row transaction could retain a proof
-under the same locks while amortizing its cost, but would change contention and
-failure/containment granularity. That redesign requires an explicit architectural
-decision before implementation; continued task execution does not select it.
+Reducing full-source proof frequency across separate transactions remains
+prohibited. Hiro subsequently approved bounded multi-row transactions with
+changed group failure/containment granularity; see
+[ADR 0024](../adr/0024-bounded-import-rollback-transactions.md).
+
+### Approved bounded rollback groups
+
+Rollback now groups at most ten rows in one fresh repeatable-read transaction.
+One full-source proof is retained under store/program/source/queue locks, and
+each row keeps its execution/account, field ownership and ledger checks. A final
+database-time lease check aborts the entire group if ownership has expired.
+Proof never crosses transaction boundaries. A late conflict aborts every row in
+that group before a separate same-lease transaction contains the conflicting row
+and source. Earlier committed groups remain durable.
+
+The delivery row cap and soft 30-second target still apply, now between atomic
+rollback groups. The 30-second transaction timeout remains unchanged. This is
+not a schema change or permission to merge/deploy. The previous populated-source
+timings above describe single-row transactions, not this grouped implementation.
+The isolated source suite passes 39 regular cases (five load cases skipped),
+including ten-row correction/replay, mixed replay/new work, exactly one proof per
+group, final database-time lease expiry, late field/ledger containment and a
+second-row SQL failure that aborts the first row and permits retry. Stale
+installation and altered-source evidence fail closed. Nine isolated ledger cases
+also pass. Initial new fixture failures were missing shoppers beyond the first
+row; fixture seeding was corrected without changing application safety checks.
+Independent review found no blocking implementation or test issue.
+
+The broader import/outbox/Flow/staff unit selection passes 942 tests in 55 files
+with two workers. Web typechecking passes with the existing CI's 8 GiB heap
+setting; focused lint, Prisma validation, formatting, Shopify typechecking and
+both production builds pass. The initial default-heap TypeScript run exhausted
+4 GiB, and an over-parallelized unit run had worker-start errors; neither failed
+run is counted as a pass. Lower-concurrency verification completed cleanly.
+
+The populated 50,000-row profile did **not** pass after this change. Initial
+rollback queue creation exhausted the existing 30,000 ms transaction budget
+(Prisma reported 30,046 ms) while reading full-source ledger evidence, before
+the grouped rollback worker ran. There is no new grouped-throughput measurement.
+This exposes insufficient headroom in the existing full-source verifier; smaller
+rollback groups cannot fix a timeout that occurs before group execution.
+
+Exact fixture cleanup completed, followed by independent zero-count checks
+across ten affected models. The grouping follow-up remains local and uncommitted;
+published draft PR #13 still points to `b13eb922976f420cb67d58d2d4a8de38609ea0e8`,
+whose public Fast Quality Gate passed. No schema, deadline or integrity check was
+relaxed, and nothing was deployed. Further full-source query profiling and
+optimization is the next proposed work item, pending Hiro's direction after this
+verification failure. Full-scale and authenticated/live acceptance remain open.
 
 ## Approved isolated database execution
 

@@ -239,6 +239,11 @@ No checkbox below is promoted solely by these local checks.
       September 12: [schema preflight and compatibility checkpoint](historical-import-schema-release-gate.md)
       adds isolated metadata/privacy-failure evidence; shared rollout,
       authenticated journeys and full 50,000-row execution remain unaccepted.
+      The local [dedicated-instance scale continuation](historical-import-implementation.md)
+      adds grouped rollback and projected evidence reads. Its latest synthetic
+      50,000-row profile reached 30 real reversals and safe continuation, with
+      rollback queue verification in 13.5 seconds. Full real-worker execution,
+      authenticated and live acceptance remain open; PR #13 remains draft.
 - [ ] D7: Imports append opening-balance ledger entries, not fabricated historic
       earns, referrals, coupons, invites or tier-entry rewards. Preserve existing
       coupons and prevent overlap with historical backfill.

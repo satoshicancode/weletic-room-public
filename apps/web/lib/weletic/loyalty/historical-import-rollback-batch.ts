@@ -9,7 +9,10 @@ import {
 import { finalizeHistoricalImportExecution } from "./historical-import-finalization";
 import { HISTORICAL_IMPORT_BATCH_TARGET_MS } from "./historical-import-job-contract";
 import { HistoricalImportConflictError } from "./historical-import-persistence";
-import { rollbackHistoricalImportRow } from "./historical-import-rollback-row";
+import {
+  HISTORICAL_IMPORT_ROLLBACK_TRANSACTION_ROWS,
+  rollbackHistoricalImportRows,
+} from "./historical-import-rollback-row";
 
 /** Bounded rollback step. Durable row evidence is the cursor; independent
  * reconciliation is the completion condition. Containment stops the source and
@@ -32,6 +35,10 @@ export async function processHistoricalImportRollbackBatch({
     (processed === 0 ||
       performance.now() - startedAt < HISTORICAL_IMPORT_BATCH_TARGET_MS)
   ) {
+    const groupLimit = Math.min(
+      HISTORICAL_IMPORT_ROLLBACK_TRANSACTION_ROWS,
+      limit - processed,
+    );
     const next = await prisma.$transaction(
       async (tx) => {
         const current = await assertHistoricalImportExecutionLeaseInTransaction(
@@ -49,15 +56,19 @@ export async function processHistoricalImportRollbackBatch({
           AND s.rowNumber > ${afterRowNumber}
           AND (e.id IS NULL OR e.status <> 'rolled_back' OR e.sourceId <> s.sourceId
             OR e.storeId <> s.storeId OR e.programId <> s.programId)
-        ORDER BY s.rowNumber ASC LIMIT 1 FOR UPDATE
+        ORDER BY s.rowNumber ASC LIMIT ${groupLimit} FOR UPDATE
       `);
         if (
-          rows.length > 1 ||
-          (rows.length === 1 &&
-            (!z.string().min(1).max(191).safeParse(rows[0].id).success ||
-              !Number.isInteger(rows[0].rowNumber) ||
-              rows[0].rowNumber <= afterRowNumber ||
-              rows[0].rowNumber > HISTORICAL_IMPORT_MAX_SOURCE_ROWS))
+          rows.length > groupLimit ||
+          new Set(rows.map((row) => row.id)).size !== rows.length ||
+          rows.some(
+            (row, index) =>
+              !z.string().min(1).max(191).safeParse(row.id).success ||
+              !Number.isInteger(row.rowNumber) ||
+              row.rowNumber <=
+                (index === 0 ? afterRowNumber : rows[index - 1].rowNumber) ||
+              row.rowNumber > HISTORICAL_IMPORT_MAX_SOURCE_ROWS,
+          )
         )
           throw new HistoricalImportConflictError();
         const renewed = await renewHistoricalImportExecutionLeaseInTransaction({
@@ -66,8 +77,7 @@ export async function processHistoricalImportRollbackBatch({
         });
         return {
           lease: renewed.lease,
-          snapshotId: rows[0]?.id ?? null,
-          rowNumber: rows[0]?.rowNumber ?? null,
+          rows,
         };
       },
       {
@@ -76,7 +86,7 @@ export async function processHistoricalImportRollbackBatch({
       },
     );
     token = next.lease;
-    if (next.snapshotId === null) {
+    if (next.rows.length === 0) {
       const result = await finalizeHistoricalImportExecution({ lease: token });
       if (!result.finalized) throw new HistoricalImportConflictError();
       return {
@@ -86,9 +96,9 @@ export async function processHistoricalImportRollbackBatch({
         lease: null,
       };
     }
-    const result = await rollbackHistoricalImportRow({
+    const result = await rollbackHistoricalImportRows({
       lease: token,
-      snapshotId: next.snapshotId,
+      snapshotIds: next.rows.map((row) => row.id),
     });
     if (result.contained)
       return {
@@ -97,8 +107,8 @@ export async function processHistoricalImportRollbackBatch({
         contained: true as const,
         lease: null,
       };
-    processed++;
-    afterRowNumber = next.rowNumber!;
+    processed += next.rows.length;
+    afterRowNumber = next.rows[next.rows.length - 1].rowNumber;
   }
   return {
     processed,

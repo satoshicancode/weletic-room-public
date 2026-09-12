@@ -41,16 +41,13 @@ function fixture() {
     },
   };
   const tx = {
-    weleticShopper: {
+    weleticLoyaltyAccount: {
       findMany: vi.fn().mockResolvedValue([
         {
+          id: "account",
           storeId: "store",
-          shopifyCustomerId: "123",
-          loyaltyAccount: {
-            id: "account",
-            storeId: "store",
-            programId: "program",
-          },
+          programId: "program",
+          shopper: { storeId: "store", shopifyCustomerId: "123" },
         },
       ]),
     },
@@ -123,18 +120,19 @@ describe("stored import reconciliation", () => {
       f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue(
         executions,
       );
-      f.tx.weleticShopper.findMany.mockImplementation(
-        async (query: {
-          where: { storeId: string; loyaltyAccount: { id: { in: string[] } } };
-        }) => {
-          expect(query.where.storeId).toBe("store");
-          expect(query.where.loyaltyAccount.id.in.length).toBeLessThanOrEqual(
-            1000,
-          );
-          return query.where.loyaltyAccount.id.in.map((id) => ({
+      f.tx.weleticLoyaltyAccount.findMany.mockImplementation(
+        async (query: { where: { id: { in: string[] } } }) => {
+          expect(query.where.id.in.length).toBeLessThanOrEqual(1000);
+          return query.where.id.in.map((id) => ({
+            id,
             storeId: "store",
-            shopifyCustomerId: String(Number(id.slice("account-".length)) + 1),
-            loyaltyAccount: { id, storeId: "store", programId: "program" },
+            programId: "program",
+            shopper: {
+              storeId: "store",
+              shopifyCustomerId: String(
+                Number(id.slice("account-".length)) + 1,
+              ),
+            },
           }));
         },
       );
@@ -142,17 +140,14 @@ describe("stored import reconciliation", () => {
         async (query: {
           where: {
             metadata?: unknown;
-            OR?: Array<{
-              id?: { in: string[] };
-              referenceId?: { in: string[] };
-            }>;
+            id?: { in: string[] };
+            referenceId?: { in: string[] };
           };
         }) => {
           if (query.where.metadata) return entries;
-          const clauses = query.where.OR!;
-          expect(clauses[0].id!.in.length).toBeLessThanOrEqual(1000);
-          expect(clauses[1].referenceId!.in.length).toBeLessThanOrEqual(1000);
-          return clauses[0].id!.in.map((id) => byId.get(id)!);
+          const ids = query.where.id?.in ?? query.where.referenceId!.in;
+          expect(ids.length).toBeLessThanOrEqual(1000);
+          return ids.map((id) => byId.get(id.replace("snapshot-", "ledger-"))!);
         },
       );
       expect(await f.run()).toMatchObject({
@@ -161,7 +156,7 @@ describe("stored import reconciliation", () => {
         rowCount: count,
         observedNetPoints: (points * BigInt(count)).toString(),
       });
-      expect(f.tx.weleticShopper.findMany).toHaveBeenCalledTimes(
+      expect(f.tx.weleticLoyaltyAccount.findMany).toHaveBeenCalledTimes(
         Math.ceil(count / 1000),
       );
       expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(
@@ -239,7 +234,7 @@ describe("stored import reconciliation", () => {
     for (const [
       query,
     ] of f.tx.weleticPointsLedgerEntry.findMany.mock.calls.slice(1)) {
-      expect(query.where.OR[1].referenceId.in.length).toBeLessThanOrEqual(1000);
+      expect(query.where.referenceId.in.length).toBeLessThanOrEqual(1000);
     }
   });
   it("loads verified source evidence and returns only a summary", async () => {
@@ -295,24 +290,17 @@ describe("stored import reconciliation", () => {
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
     f.tx.weleticPointsLedgerEntry.findMany
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: f.entry.id }])
       .mockResolvedValueOnce([{ ...f.entry, metadata: {} }]);
     expect((await f.run()).reconciled).toBe(false);
     expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         where: {
-          OR: [
-            { id: { in: [] } },
-            {
-              referenceId: { in: ["snapshot"] },
-              referenceType: {
-                in: [
-                  "LOYALTY_IMPORT_OPENING_BALANCE",
-                  "LOYALTY_IMPORT_ROLLBACK",
-                ],
-              },
-            },
-          ],
+          referenceId: { in: ["snapshot"] },
+          referenceType: {
+            in: ["LOYALTY_IMPORT_OPENING_BALANCE", "LOYALTY_IMPORT_ROLLBACK"],
+          },
         },
       }),
     );
@@ -321,8 +309,135 @@ describe("stored import reconciliation", () => {
     const f = fixture();
     f.tx.weleticPointsLedgerEntry.findMany
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ...f.entry, storeId: "other" }]);
+      .mockResolvedValueOnce([{ ...f.entry, storeId: "other" }])
+      .mockResolvedValueOnce([]);
     await expect(f.run()).rejects.toThrow();
+  });
+  it("rejects a foreign reference-only orphan without metadata or claims", async () => {
+    const f = fixture();
+    f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
+    f.tx.weleticPointsLedgerEntry.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: f.entry.id }])
+      .mockResolvedValueOnce([{ ...f.entry, storeId: "other", metadata: {} }]);
+    await expect(f.run()).rejects.toThrow();
+  });
+  it("reuses metadata evidence for claims and reference IDs inside the same proof", async () => {
+    const f = fixture();
+    expect(await f.run()).toMatchObject({
+      reconciled: true,
+      observedNetPoints: "10",
+    });
+    expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(2);
+    for (const [query] of f.tx.weleticPointsLedgerEntry.findMany.mock.calls) {
+      expect(query.where).not.toHaveProperty("storeId");
+      expect(query.take).toBe(3);
+    }
+  });
+  it("rejects a discovered reference that cannot be hydrated", async () => {
+    const f = fixture();
+    f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
+    f.tx.weleticPointsLedgerEntry.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: "orphan" }])
+      .mockResolvedValueOnce([]);
+    await expect(f.run()).rejects.toThrow();
+  });
+  it.each(["missing", "corrupt", "valid"])(
+    "hydrates a %s claim absent from metadata discovery",
+    async (kind) => {
+      const f = fixture();
+      f.tx.weleticPointsLedgerEntry.findMany
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce(
+          kind === "missing"
+            ? []
+            : [
+                {
+                  ...f.entry,
+                  metadata: kind === "corrupt" ? {} : f.entry.metadata,
+                },
+              ],
+        )
+        .mockResolvedValueOnce([]);
+      const result = await f.run();
+      expect(result.reconciled).toBe(kind === "valid");
+      if (kind === "missing")
+        expect(result.issues).toContain("missing_ledger_entry");
+      if (kind === "corrupt")
+        expect(result.issues).toContain("ledger_provenance_mismatch");
+      expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ where: { id: { in: ["ledger"] } } }),
+      );
+    },
+  );
+  it.each([
+    "missing_account",
+    "missing_shopper",
+    "foreign_account",
+    "foreign_program",
+    "foreign_shopper",
+  ])("rejects %s ownership before ledger reads", async (kind) => {
+    const f = fixture();
+    f.tx.weleticLoyaltyAccount.findMany.mockResolvedValue(
+      kind === "missing_account"
+        ? []
+        : [
+            {
+              id: "account",
+              storeId: kind === "foreign_account" ? "other" : "store",
+              programId: kind === "foreign_program" ? "other" : "program",
+              shopper:
+                kind === "missing_shopper"
+                  ? null
+                  : {
+                      storeId: kind === "foreign_shopper" ? "other" : "store",
+                      shopifyCustomerId: "123",
+                    },
+            },
+          ],
+    );
+    await expect(f.run()).rejects.toThrow();
+    expect(f.tx.weleticPointsLedgerEntry.findMany).not.toHaveBeenCalled();
+  });
+  it("enforces the cumulative overflow bound across separate discovery paths", async () => {
+    const f = fixture();
+    f.tx.weleticPointsLedgerEntry.findMany
+      .mockResolvedValueOnce([f.entry])
+      .mockResolvedValueOnce([{ id: "second" }, { id: "third" }]);
+    await expect(f.run()).rejects.toThrow();
+  });
+  it("projects all required execution and ownership evidence without restoration blobs", async () => {
+    const f = fixture();
+    await f.run();
+    expect(f.tx.weleticLoyaltyImportRowExecution.findMany).toHaveBeenCalledWith(
+      {
+        where: { sourceId: "source" },
+        take: 2,
+        select: {
+          snapshotId: true,
+          sourceId: true,
+          storeId: true,
+          programId: true,
+          accountId: true,
+          status: true,
+          ledgerEntryId: true,
+          reversalLedgerEntryId: true,
+        },
+      },
+    );
+    expect(f.tx.weleticLoyaltyAccount.findMany).toHaveBeenCalledWith({
+      where: { id: { in: ["account"] } },
+      select: {
+        id: true,
+        storeId: true,
+        programId: true,
+        shopper: {
+          select: { storeId: true, shopifyCustomerId: true },
+        },
+      },
+    });
   });
   it("detects an unclaimed foreign write with this source provenance", async () => {
     const f = fixture();
@@ -359,15 +474,12 @@ describe("stored import reconciliation", () => {
   });
   it("rejects execution and ledger agreement on the wrong customer account", async () => {
     const f = fixture();
-    f.tx.weleticShopper.findMany.mockResolvedValue([
+    f.tx.weleticLoyaltyAccount.findMany.mockResolvedValue([
       {
+        id: "account",
         storeId: "store",
-        shopifyCustomerId: "456",
-        loyaltyAccount: {
-          id: "account",
-          storeId: "store",
-          programId: "program",
-        },
+        programId: "program",
+        shopper: { storeId: "store", shopifyCustomerId: "456" },
       },
     ]);
     await expect(f.run()).rejects.toThrow();

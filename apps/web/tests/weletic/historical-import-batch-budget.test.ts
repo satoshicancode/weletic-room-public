@@ -24,7 +24,8 @@ vi.mock("@/lib/weletic/loyalty/historical-import-row-execution", () => ({
   executeHistoricalImportRow: mocks.row,
 }));
 vi.mock("@/lib/weletic/loyalty/historical-import-rollback-row", () => ({
-  rollbackHistoricalImportRow: mocks.row,
+  HISTORICAL_IMPORT_ROLLBACK_TRANSACTION_ROWS: 10,
+  rollbackHistoricalImportRows: mocks.row,
 }));
 const modes = [
   { phase: "committing", run: processHistoricalImportCommitBatch },
@@ -157,3 +158,53 @@ it("rollback containment wins over the elapsed-time continuation", async () => {
     clock.mockRestore();
   }
 });
+
+it("rollback groups at most ten rows and respects a smaller remaining delivery cap", async () => {
+  const rows = Array.from({ length: 13 }, (_, index) => ({
+    id: `row${index + 1}`,
+    rowNumber: index + 1,
+  }));
+  mocks.raw
+    .mockReset()
+    .mockResolvedValueOnce(rows.slice(0, 10))
+    .mockResolvedValueOnce(rows.slice(10));
+  mocks.row.mockResolvedValue({ contained: false });
+  const result = await processHistoricalImportRollbackBatch({
+    lease: { ...scope, phase: "rolling_back" },
+    maxRows: 13,
+  });
+  expect(result.processed).toBe(13);
+  expect(result.completed).toBe(false);
+  expect(mocks.row.mock.calls.map(([args]) => args.snapshotIds.length)).toEqual(
+    [10, 3],
+  );
+  expect(mocks.raw.mock.calls.map(([query]) => query.values.at(-1))).toEqual([
+    10, 3,
+  ]);
+});
+
+it.each([
+  [
+    { id: "row1", rowNumber: 1 },
+    { id: "row1", rowNumber: 2 },
+  ],
+  [
+    { id: "row2", rowNumber: 2 },
+    { id: "row1", rowNumber: 1 },
+  ],
+  Array.from({ length: 11 }, (_, index) => ({
+    id: `row${index}`,
+    rowNumber: index + 1,
+  })),
+])(
+  "rejects malformed bounded rollback selection %# before correction",
+  async (...rows) => {
+    mocks.raw.mockReset().mockResolvedValue(rows);
+    await expect(
+      processHistoricalImportRollbackBatch({
+        lease: { ...scope, phase: "rolling_back" },
+      }),
+    ).rejects.toThrow();
+    expect(mocks.row).not.toHaveBeenCalled();
+  },
+);

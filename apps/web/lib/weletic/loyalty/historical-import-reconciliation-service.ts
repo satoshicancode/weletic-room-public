@@ -29,6 +29,17 @@ export async function readHistoricalImportExecutionProofInTransaction({
   const executions = await tx.weleticLoyaltyImportRowExecution.findMany({
     where: { sourceId },
     take: snapshots.length + 1,
+    // Field restoration JSON is checked by the row handler, not this proof.
+    select: {
+      snapshotId: true,
+      sourceId: true,
+      storeId: true,
+      programId: true,
+      accountId: true,
+      status: true,
+      ledgerEntryId: true,
+      reversalLedgerEntryId: true,
+    },
   });
   const snapshotIds = new Set(snapshots.map((row) => row.id));
   const bySnapshot = new Map(executions.map((row) => [row.snapshotId, row]));
@@ -55,16 +66,21 @@ export async function readHistoricalImportExecutionProofInTransaction({
   const snapshotsById = new Map(snapshots.map((row) => [row.id, row]));
   for (let offset = 0; offset < accountIds.length; offset += 1000) {
     const ids = accountIds.slice(offset, offset + 1000);
-    const shoppers = await tx.weleticShopper.findMany({
-      where: { storeId, loyaltyAccount: { id: { in: ids } } },
-      include: { loyaltyAccount: true },
+    const accounts = await tx.weleticLoyaltyAccount.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        storeId: true,
+        programId: true,
+        shopper: {
+          select: { storeId: true, shopifyCustomerId: true },
+        },
+      },
     });
-    const owners = new Map(
-      shoppers.map((shopper) => [shopper.loyaltyAccount?.id, shopper]),
-    );
+    const owners = new Map(accounts.map((account) => [account.id, account]));
     for (const accountId of ids) {
-      const shopper = owners.get(accountId);
-      const account = shopper?.loyaltyAccount;
+      const account = owners.get(accountId);
+      const shopper = account?.shopper;
       if (
         !shopper ||
         shopper.storeId !== storeId ||
@@ -114,30 +130,52 @@ export async function readHistoricalImportExecutionProofInTransaction({
   });
   const byEntryId = new Map(discovered.map((entry) => [entry.id, entry]));
   const references = [...snapshotIds];
-  // Keep IN lists below driver parameter limits even for a 50,000-row source.
-  for (
-    let offset = 0;
-    offset < Math.max(claimedIds.length, references.length);
-    offset += 1000
-  ) {
-    const selected = await tx.weleticPointsLedgerEntry.findMany({
-      where: {
-        OR: [
-          { id: { in: claimedIds.slice(offset, offset + 1000) } },
-          {
-            referenceId: { in: references.slice(offset, offset + 1000) },
-            referenceType: {
-              in: ["LOYALTY_IMPORT_OPENING_BALANCE", "LOYALTY_IMPORT_ROLLBACK"],
-            },
+  if (byEntryId.size > snapshots.length * 2)
+    throw new HistoricalImportIntegrityError();
+  async function loadMissingEntries(ids: string[]) {
+    const missing = [...new Set(ids)].filter((id) => !byEntryId.has(id));
+    for (let offset = 0; offset < missing.length; offset += 1000) {
+      const selected = await tx.weleticPointsLedgerEntry.findMany({
+        where: { id: { in: missing.slice(offset, offset + 1000) } },
+        take: snapshots.length * 2 + 1,
+        orderBy: { id: "asc" },
+      });
+      for (const entry of selected) byEntryId.set(entry.id, entry);
+      if (byEntryId.size > snapshots.length * 2)
+        throw new HistoricalImportIntegrityError();
+    }
+  }
+  // The same coherent transaction already loaded metadata-linked entries.
+  // Claims still discover entries whose metadata is absent or corrupt.
+  await loadMissingEntries(claimedIds);
+  // Discover every reference globally, including orphan/foreign writes, but
+  // avoid retransferring full JSON evidence already loaded by another path.
+  // Keep the source-wide sentinel: one corrupt reference can have many entries.
+  {
+    const ids = references;
+    for (let offset = 0; offset < ids.length; offset += 1000) {
+      const chunk = ids.slice(offset, offset + 1000);
+      const selected = await tx.weleticPointsLedgerEntry.findMany({
+        where: {
+          referenceId: { in: chunk },
+          referenceType: {
+            in: ["LOYALTY_IMPORT_OPENING_BALANCE", "LOYALTY_IMPORT_ROLLBACK"],
           },
-        ],
-      },
-      take: snapshots.length * 2 + 1,
-      orderBy: { id: "asc" },
-    });
-    for (const entry of selected) byEntryId.set(entry.id, entry);
-    if (byEntryId.size > snapshots.length * 2)
-      throw new HistoricalImportIntegrityError();
+        },
+        select: { id: true },
+        take: snapshots.length * 2 + 1,
+        orderBy: { id: "asc" },
+      });
+      const discoveredIds = selected.map((entry) => entry.id);
+      if (
+        new Set([...byEntryId.keys(), ...discoveredIds]).size >
+        snapshots.length * 2
+      )
+        throw new HistoricalImportIntegrityError();
+      await loadMissingEntries(discoveredIds);
+      if (discoveredIds.some((id) => !byEntryId.has(id)))
+        throw new HistoricalImportIntegrityError();
+    }
   }
   const entries = [...byEntryId.values()];
   // Do not expose another tenant's amounts, even inside a failed summary.
