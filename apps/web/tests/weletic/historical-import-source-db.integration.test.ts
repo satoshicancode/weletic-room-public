@@ -34,7 +34,147 @@ import { executeHistoricalImportRow } from "../../lib/weletic/loyalty/historical
 import { proveHistoricalImportRows } from "../../lib/weletic/loyalty/historical-import-source";
 import { appendPointsLedgerEntry } from "../../lib/weletic/loyalty/ledger";
 import { processOutboxJobsBatch } from "../../lib/weletic/loyalty/outbox-worker";
-import { pollImportWorkerUntilEligible } from "./helpers/import-worker-poll";
+import {
+  pollImportWorkerUntilEligible,
+  sanitizeImportPollEvidence,
+} from "./helpers/import-worker-poll";
+
+const stageDiagnostics = vi.hoisted(() => ({ active: false, emitted: 0 }));
+function reportImportStage(record: {
+  stage: string;
+  prismaCode: string | null;
+  errorKind: string;
+}) {
+  if (!stageDiagnostics.active || stageDiagnostics.emitted >= 8) return;
+  stageDiagnostics.emitted++;
+  console.log(
+    JSON.stringify({ event: "isolated_import_stage_failure", ...record }),
+  );
+}
+vi.mock(
+  "../../lib/weletic/loyalty/historical-import-commit-batch",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../lib/weletic/loyalty/historical-import-commit-batch")
+      >();
+    const { observeImportStage } = await import(
+      "./helpers/import-stage-evidence"
+    );
+    return {
+      ...actual,
+      processHistoricalImportCommitBatch: (
+        ...args: Parameters<typeof actual.processHistoricalImportCommitBatch>
+      ) =>
+        stageDiagnostics.active
+          ? observeImportStage(
+              "commit_batch",
+              () => actual.processHistoricalImportCommitBatch(...args),
+              reportImportStage,
+            )
+          : actual.processHistoricalImportCommitBatch(...args),
+    };
+  },
+);
+vi.mock(
+  "../../lib/weletic/loyalty/historical-import-rollback-batch",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../lib/weletic/loyalty/historical-import-rollback-batch")
+      >();
+    const { observeImportStage } = await import(
+      "./helpers/import-stage-evidence"
+    );
+    return {
+      ...actual,
+      processHistoricalImportRollbackBatch: (
+        ...args: Parameters<typeof actual.processHistoricalImportRollbackBatch>
+      ) =>
+        stageDiagnostics.active
+          ? observeImportStage(
+              "rollback_batch",
+              () => actual.processHistoricalImportRollbackBatch(...args),
+              reportImportStage,
+            )
+          : actual.processHistoricalImportRollbackBatch(...args),
+    };
+  },
+);
+vi.mock(
+  "../../lib/weletic/loyalty/historical-import-recovery",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../lib/weletic/loyalty/historical-import-recovery")
+      >();
+    const { observeImportStage } = await import(
+      "./helpers/import-stage-evidence"
+    );
+    return {
+      ...actual,
+      recoverHistoricalImportCommitFromOutbox: (
+        ...args: Parameters<
+          typeof actual.recoverHistoricalImportCommitFromOutbox
+        >
+      ) =>
+        stageDiagnostics.active
+          ? observeImportStage(
+              "commit_recovery",
+              () => actual.recoverHistoricalImportCommitFromOutbox(...args),
+              reportImportStage,
+            )
+          : actual.recoverHistoricalImportCommitFromOutbox(...args),
+      recoverHistoricalImportRollbackFromOutbox: (
+        ...args: Parameters<
+          typeof actual.recoverHistoricalImportRollbackFromOutbox
+        >
+      ) =>
+        stageDiagnostics.active
+          ? observeImportStage(
+              "rollback_recovery",
+              () => actual.recoverHistoricalImportRollbackFromOutbox(...args),
+              reportImportStage,
+            )
+          : actual.recoverHistoricalImportRollbackFromOutbox(...args),
+    };
+  },
+);
+vi.mock(
+  "../../lib/weletic/loyalty/historical-import-continuation",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../lib/weletic/loyalty/historical-import-continuation")
+      >();
+    const { observeImportStage } = await import(
+      "./helpers/import-stage-evidence"
+    );
+    return {
+      ...actual,
+      continueHistoricalImportCommit: (
+        ...args: Parameters<typeof actual.continueHistoricalImportCommit>
+      ) =>
+        stageDiagnostics.active
+          ? observeImportStage(
+              "commit_continuation",
+              () => actual.continueHistoricalImportCommit(...args),
+              reportImportStage,
+            )
+          : actual.continueHistoricalImportCommit(...args),
+      continueHistoricalImportRollback: (
+        ...args: Parameters<typeof actual.continueHistoricalImportRollback>
+      ) =>
+        stageDiagnostics.active
+          ? observeImportStage(
+              "rollback_continuation",
+              () => actual.continueHistoricalImportRollback(...args),
+              reportImportStage,
+            )
+          : actual.continueHistoricalImportRollback(...args),
+    };
+  },
+);
 
 const finalInsertFailure = vi.hoisted(() => ({
   duplicateId: null as string | null,
@@ -76,6 +216,8 @@ vi.mock("@/lib/prisma", async (importOriginal) => {
   };
 });
 afterEach(() => {
+  stageDiagnostics.active = false;
+  stageDiagnostics.emitted = 0;
   if (!queryProfile.active) return;
   queryProfile.active = false;
   console.log(
@@ -402,6 +544,41 @@ async function seedExecutableRow(
   );
   return { ...fixture, shopper, lease: claimed.lease };
 }
+
+it("records a real expired import lease failure without changing accounting", async () => {
+  const fixture = await seedExecutableRow();
+  await database.weleticLoyaltyImportSource.update({
+    where: { id: fixture.source.id },
+    data: { leaseExpiresAt: new Date(0) },
+  });
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  stageDiagnostics.active = true;
+  try {
+    await expect(
+      processHistoricalImportCommitBatch({ lease: fixture.lease, maxRows: 1 }),
+    ).rejects.toBeInstanceOf(HistoricalImportConflictError);
+    expect(log).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({
+        event: "isolated_import_stage_failure",
+        stage: "commit_batch",
+        prismaCode: null,
+        errorKind: "HistoricalImportConflictError",
+      }),
+    );
+  } finally {
+    log.mockRestore();
+  }
+  expect(
+    await database.weleticPointsLedgerEntry.count({
+      where: { storeId: fixture.source.storeId },
+    }),
+  ).toBe(0);
+  expect(
+    await database.weleticLoyaltyImportRowExecution.count({
+      where: { sourceId: fixture.source.id },
+    }),
+  ).toBe(0);
+});
 
 async function rollbackFixture(withFields = false, rowCount = 1) {
   const fixture = await seedExecutableRow(withFields, withFields, rowCount);
@@ -1684,6 +1861,7 @@ for (const rowCount of [500, 50_000]) {
       ) => {
         const started = performance.now();
         const batchTimes: number[] = [];
+        stageDiagnostics.active = true;
         let previousRows = 0;
         let finished = false;
         for (let batch = 0; batch <= rowCount; batch++) {
@@ -1714,6 +1892,33 @@ for (const rowCount of [500, 50_000]) {
               ),
           });
           batchTimes.push(Math.round(performance.now() - batchStarted));
+          if (result.failed !== 0 || result.deadLettered !== 0) {
+            try {
+              const evidence = sanitizeImportPollEvidence(
+                await readImportPollEvidence({
+                  storeId: fixture.source.storeId,
+                  sourceId: fixture.source.id,
+                  jobId,
+                  terminal,
+                }),
+              );
+              console.log(
+                JSON.stringify({
+                  event: "isolated_import_failed_delivery",
+                  phase: terminal,
+                  delivery: batch + 1,
+                  evidence,
+                }),
+              );
+            } catch {
+              console.log(
+                JSON.stringify({
+                  event: "isolated_import_failure_evidence_unavailable",
+                  phase: terminal,
+                }),
+              );
+            }
+          }
           expect(result).toMatchObject({
             processed: 1,
             failed: 0,
