@@ -76,6 +76,22 @@ it("does not recover or correct again after verified terminal replay", async () 
   });
   expect(mocks.recover).not.toHaveBeenCalled();
 });
+it("dispatches a full outbox claim through the strict rollback claim parser", async () => {
+  const { executeOutboxJob } = await import(
+    "../../lib/weletic/loyalty/outbox-worker"
+  );
+  await expect(
+    executeOutboxJob(job, new Date(), undefined, {
+      ...queueClaim,
+      candidate: job,
+    }),
+  ).resolves.toEqual({ historicalImportOutcome: "completed" });
+  expect(mocks.recover).toHaveBeenCalledWith(
+    expect.objectContaining({
+      claim: { ...queueClaim, jobId: job.id, sourceRevision: 3 },
+    }),
+  );
+});
 it.each([1, 2, 49, 50])(
   "continues %s rows only after durable successful-progress handoff",
   async (processed) => {

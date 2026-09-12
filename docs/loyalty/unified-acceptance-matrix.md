@@ -1,6 +1,6 @@
 # Weletic company-store loyalty — acceptance matrix
 
-Updated 2026-09-09 (Asia/Tokyo). This is the execution checklist for Hiro's
+Updated 2026-09-10 (Asia/Tokyo). This is the execution checklist for Hiro's
 approved **Loyalty Completion Plan for Weletic Stores**. It supersedes the older
 mixed loyalty/reviews checklist for this stream; it does not activate excluded
 review features or waive any external execution gate.
@@ -32,7 +32,9 @@ level, not substitutes for named journeys on yamaxdev.
 
 ## Public implementation checkpoints — not live acceptance
 
-Snapshot verified from public GitHub PR state on 2026-09-09:
+Initial snapshot verified on September 9; PRs #14–#16 rechecked against public
+GitHub state on September 10. Bootstrap is a subsequent draft PR #15 update;
+earlier public CI does not certify that update.
 
 | Public PR                                                                                                                              | Implementation checkpoint                                | Evidence boundary                                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -42,13 +44,37 @@ Snapshot verified from public GitHub PR state on 2026-09-09:
 | [#6](https://github.com/satoshicancode/weletic-room-public/pull/6), [#8](https://github.com/satoshicancode/weletic-room-public/pull/8) | Expiry localization and communications editors           | Merged code; real delivery/consent acceptance open                                             |
 | [#7](https://github.com/satoshicancode/weletic-room-public/pull/7)                                                                     | Signed analytics and exact exports                       | Merged code; independent live SQL reconciliation open                                          |
 | [#10](https://github.com/satoshicancode/weletic-room-public/pull/10)                                                                   | Privacy-fenced referral-completed Flow                   | Merged as 7ab142733e52a9a1f450f7b3d962ab781cf2a27e; public UID/publication/live workflows open |
-| [#5](https://github.com/satoshicancode/weletic-room-public/pull/5)                                                                     | Audited company-store approval                           | Open, not merged; schema merge/application approval outstanding                                |
+| [#5](https://github.com/satoshicancode/weletic-room-public/pull/5)                                                                     | Audited company-store approval                           | Backend foundation; isolated-only merge/staging approved September 9; install/status UI open   |
+| [#12](https://github.com/satoshicancode/weletic-room-public/pull/12)                                                                   | Manifest/runtime fallback scope alignment                | Merged code; installed public scope acceptance remains open                                    |
+| [#13](https://github.com/satoshicancode/weletic-room-public/pull/13)                                                                   | Historical opening-balance imports                       | Draft, unmerged; frozen tonight with separate uncommitted optimization preserved               |
 
-Historical import work remains local and unmerged. Three import tables were
-approved and created only in isolated MySQL weletic_loyalty_dev. Latest source
-and ledger suite runs cover 19 passing tests, including final-insert failure
-atomicity and exact fixture cleanup. This is not source-upload, complete
-rollback-orchestration, durable-supervision or live acceptance.
+September 10 additions:
+
+- [PR #14](https://github.com/satoshicancode/weletic-room-public/pull/14), merged
+  as `4b1e8965a7aa96648883b6a220ef27eb5fad0162`: reference preservation and bounded
+  core shopper work; no live lifecycle acceptance inferred.
+- [PR #15](https://github.com/satoshicancode/weletic-room-public/pull/15), draft
+  at `2e4949a56fe98ec97cee5c1db9abd5022ddb78b6`: store-owned authentication,
+  pending admission/status and retained-map reconnect. Public CI passed; runtime
+  schema, public identity and live installation remain gated.
+- [PR #16](https://github.com/satoshicancode/weletic-room-public/pull/16), merged
+  as `98ec37645ce78f934d8121cbb415d8f441db9ad3`: sanitized expiry-provider errors;
+  no new delivery integration or real send.
+- [ADR 0026](../adr/0026-audited-company-store-bootstrap.md) approves operator-only
+  first-store bootstrap. Its [local checkpoint](company-store-bootstrap-implementation.md)
+  records 25 contract and 13 isolated SQL tests, signed-handler stale publication
+  rejection, privacy handling and exact fixture reconciliation. The source-frozen
+  full regression passed: 394 files, 6,020 tests passed and six skipped. Fresh
+  public CI remains required. This does not check E4/E5/G3 or authorize runtime migrations.
+
+Historical import work is now draft public PR #13, not merely the earlier local
+19-test checkpoint. Its source/commit/rollback/orchestration have isolated proof,
+including a 500-row worker lifecycle; full-scale execution, authenticated browser,
+shared-schema compatibility and live acceptance remain open. The September 9
+reference-first stream does not modify or publish its preserved optimization.
+See L12 in the [dated backlog](smile-parity-backlog-2026-09-09.md) for qualified
+prior performance/failure evidence and exact remaining tasks. Isolated schema
+approval never authorizes shared/production application.
 
 Recheck current source, PR state and CI before execution; these snapshots do not
 identify an installed app version. The [referral Flow checkpoint](referral-completed-flow-implementation.md)
@@ -59,24 +85,59 @@ proof only.
 
 ## A — Reference, repository and public identity
 
-- [ ] A1: Review the [Smile benchmark](benchmark-smile-2026-09-08.md) for the
+- [x] A1: Review the [Smile benchmark](benchmark-smile-2026-09-08.md) for the
       remaining paid subscription conditions, appearance/nudges, notification
       variables/defaults, analytics filters and export columns. Retain normalized
       written observations; no configuration changes, sends, transactions,
       subscription changes or customer exports. No unredacted screenshots in public.
+      Evidence: REF-20260909 / MAP-20260909 in the
+      [September 9 backlog](smile-parity-backlog-2026-09-09.md#tonights-verification-record),
+      R1–R6 and S01–S36. This closes reference disposition only; inaccessible
+      controls and locked reports remain explicitly unknown, not accepted behavior.
 - [ ] A2: Verify origin/public-main branch provenance, read-only legacy-private,
       parked reviews branch, and replacement of stale execution references.
 - [ ] A3: Preserve the custom-app TOML. Add a separate reviewed configuration
       for Weletic Loyalty Reviews Dev, without credentials. Verify public HTTPS
       app/callback/webhook/proxy alignment and canonical shop identity.
+      Partial evidence: [ADR 0029 configuration](public-config-validation-2026-09-10.md)
+      and [runtime policy](public-runtime-validation-2026-09-10.md) pass local
+      validation and loopback checks. The [webhook routing guard](public-webhook-validation-2026-09-10.md)
+      adds local pre-transport checks, not live callback evidence. Public HTTPS/canonical live identity remain
+      unverified; A3 is not closed.
 - [ ] A4: Reconcile every extension's ownership and generate public-app-specific
       UIDs. Never deploy custom-app identities into the public registration. CLI
       validation can insert a local UID; schema validity is not ownership proof.
+      Partial evidence: [offline staging](public-extension-staging-2026-09-10.md)
+      strips inherited IDs and passes local contracts. A colliding thank-you handle
+      was corrected; ten unique local candidate IDs are disjoint from retained
+      custom IDs. [UI/theme builds](public-extension-build-2026-09-10.md) pass and
+      preserve those candidates. Remote ownership evidence is missing; A4 remains open.
 - [ ] A5: Prove isolated database, Redis, media, sessions, queues and secret
       namespaces, including effective process environment. Never share sessions or
       installation generations with the custom app.
 
 ## B — Merchant control plane and immutable contracts
+
+September 10 local [appearance editor checkpoint](merchant-appearance-editor-2026-09-10.md)
+adds the existing nine branding fields through a signed revision-fenced gateway.
+Its synthetic browser and contract evidence does not close B1/B4 or live shopper
+surface gates; advanced appearance controls and nudges remain outstanding.
+
+The September 10 [nudge implementation checkpoint](nudges-implementation-2026-09-10.md)
+adds draft editors and signup/spending/reward-use runtime paths, including a
+signed, throttled collection-membership read. Current EN/JA/VI real Chromium
+checks at 375px use synthetic cart/customer/membership responses and prove wallet
+keyboard access and unknown-membership suppression. Earlier checkpoints include
+6,185 passing full-suite tests (six skipped). Final membership-integration reruns
+passed 402 unit files/6,243 tests (six skipped), the isolated Next build, and three
+isolated MySQL revision/generation tests with fixture cleanup and grant revocation.
+This does not close B/E gates: uploaded
+icons/advanced appearance, live referral provenance, named live acceptance and
+publication remain outstanding. The initial web build failed without database
+configuration; an earlier isolated read-only retry passed with grant cleanup.
+Snapshot `exchangeType` additions require coordinated reader-before-producer
+deployment; old strict readers cannot safely consume new issuance snapshots.
+No checkbox below is promoted solely by these local checks.
 
 - [ ] B1: One Shopify-first navigation and shared settings, earning, reward and
       referral contracts/components; thin signed adapters, compatible redirects.
@@ -136,6 +197,33 @@ proof only.
       quiet hours, frequency limits, bounce/complaint handling and communication
       history. Check Shopify/native/Flow duplicate notices. Ambiguous transport
       acceptance must not cause an automatic alternate-provider resend.
+      Partial local evidence: [expiry communications integration](expiry-communications-integration-2026-09-10.md)
+      connects warning/last-chance policies with immutable encrypted delivery
+      requests, claim fencing and bounded retries. Four isolated MySQL cases pass;
+      remaining journeys, complete privacy-worker races and live delivery remain
+      unaccepted. This does not complete D1 or D2.
+      Additional local evidence: [purchase points communications](points-earned-communications-2026-09-10.md)
+      connects fresh purchase/maturity events with immutable policy snapshots,
+      encrypted retained requests and source-level EN/JA/VI readiness. Twelve
+      isolated MySQL tests cover retention admission, duplicate events, rollback
+      and delayed partial refunds. Other points sources, remaining journeys,
+      completion/redaction races and named live delivery remain open. D1/D2 are
+      still unchecked; follow the client/schema/worker/producer release ordering.
+      Signup follow-up: [signup communication evidence](signup-communications-implementation.md)
+      covers fresh signup ledger events, no retrospective opt-in, and atomic
+      rollback on outbox failure in isolated MySQL. Delivery remains mocked;
+      remaining sources and named live inbox evidence remain open.
+      Merged code in [PR #23](https://github.com/satoshicancode/weletic-room-public/pull/23): [birthday communications](birthday-communications-implementation.md)
+      covers exact annual provenance, replay/opt-in containment, atomic rollback,
+      localized source rendering and retained-request policy admission. Twenty-four
+      combined isolated SQL tests pass; merchant readiness now separates birthday
+      from purchase/signup. Named live delivery remains open.
+      Local [VIP achievement evidence](vip-achievement-communications-implementation.md)
+      covers promotion-only production, immutable history, superseded-notice
+      suppression, retained privacy cleanup and EN/JA/VI merchant readiness.
+      Thirty-three combined SQL tests pass; full regression/build verification
+      and publication remain pending. Mocked delivery is not live acceptance.
+      D1/D2 are not complete.
 - [ ] D3: Confirm the intended timezone before birthday/campaign/expiry/email
       activation. Do not silently replace a retained store timezone with Tokyo.
       Prove boundary timing and approved real inbox delivery.
@@ -148,6 +236,9 @@ proof only.
 - [ ] D6: Generic Shopify-customer opening-balance/birthday/optional-tier import:
       complete-file preview, validation, immutable source provenance, commit,
       reconciliation and contained rollback. No Smile migration is required.
+      September 12: [schema preflight and compatibility checkpoint](historical-import-schema-release-gate.md)
+      adds isolated metadata/privacy-failure evidence; shared rollout,
+      authenticated journeys and full 50,000-row execution remain unaccepted.
 - [ ] D7: Imports append opening-balance ledger entries, not fabricated historic
       earns, referrals, coupons, invites or tier-entry rewards. Preserve existing
       coupons and prevent overlap with historical backfill.
@@ -210,6 +301,66 @@ Revalidate [App Store requirements](https://shopify.dev/docs/apps/launch/shopify
 and [customer-account capabilities](https://shopify.dev/docs/api/customer-account-ui-extensions/latest)
 before requesting access or submitting. These links are requirements, not evidence
 of approval.
+
+## September 9 — Requirement-to-task reconciliation
+
+The [implementation-ready backlog](smile-parity-backlog-2026-09-09.md) contains
+scope, reference, approach, subsystem, dependencies/decisions, tests and definition
+of done for each task. The table below dispositions **all 48 existing requirements**;
+it does not replace their detailed wording or close a live gate. R1–R6 and S01–S36
+refer to the dated benchmark addendum. Q records tonight's actual verification.
+Public PR state was read on September 9; merged code is not installed evidence.
+
+| Requirement | Evidence / present boundary                                                              | Outstanding task                                   |
+| ----------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| A1          | September 8 benchmark + September 9 R1–R6; explicit unknowns/locked reports              | L00 reference completeness/review                  |
+| A2          | Tonight's separate branch starts from public main `6a277373`; import unchanged           | L00 repository-wide provenance/stale references    |
+| A3          | Public registration identified; no reviewed deployed configuration proof                 | L14                                                |
+| A4          | Existing extensions are not proof of public ownership/new UIDs                           | L14                                                |
+| A5          | Local environment notes are not public runtime isolation proof                           | L14, L16                                           |
+| B1          | Shared control-plane code and PR #2 navigation exist                                     | L07, L09, Q signed/browser acceptance              |
+| B2          | PR #2 merged; R5 preserves VIP semantic conflicts                                        | L04                                                |
+| B3          | PR #2 merged; R5 scheduling observed, targeting is Weletic requirement                   | L05                                                |
+| B4          | VIP/campaign/communications/analytics gateways exist; import is draft                    | L04, L05, L10, L11, L12, Q authorization/races     |
+| B5          | PR #4/#9 immutable contracts merged                                                      | L03                                                |
+| B6          | Policy revision/snapshot implementation exists; live interpretation open                 | L03, L06                                           |
+| B7          | No real distinct renewal evidence tonight                                                | L03                                                |
+| C1          | Existing lifecycle implementation; R1 points timing                                      | L01, Q                                             |
+| C2          | Immutable allocation code; no new named order/refund evidence                            | L01, L05, Q                                        |
+| C3          | Tier lifecycle code and R5 reference, not live progression proof                         | L04                                                |
+| C4          | Existing referral paths; R1/R2 previews are not claim proof                              | L06                                                |
+| C5          | Reward implementations exist; core fixture is a bounded subset                           | L02, Q                                             |
+| C6          | Capability guards require real store reasons/readback                                    | L02, L17                                           |
+| C7          | Native Basic discount strategy retained; Plus target remains disabled                    | L02, L17                                           |
+| C8          | Stored-value financial/earning activation decisions unresolved                           | L02, L17                                           |
+| C9          | Existing signed shopper APIs retained, no new public writes tonight                      | L06, L09, Q privacy/ownership checks               |
+| D1          | PR #6/#8 nine-policy editors; R4 records ten Smile entries                               | L10, L09                                           |
+| D2          | Purchase/signup/birthday/VIP/expiry integration merged; live delivery open               | L10                                                |
+| D3          | No timezone replacement or real delivery authorized                                      | L01, L05, L10                                      |
+| D4          | PR #7 exact aggregates/exports; R6 report catalog; funnel/cohorts incomplete             | L11                                                |
+| D5          | Exact analytics contracts/local tests, not independent live reconciliation               | L11, Q                                             |
+| D6          | PR #13 draft; generic import rather than Smile migration                                 | L12                                                |
+| D7          | Draft opening-balance/provenance implementation, no fabricated history                   | L12                                                |
+| D8          | Draft durable orchestration has local proof; scale/supervision open                      | L12, L16                                           |
+| D9          | Draft append-only rollback/containment; preserved optimization not full-scale proof      | L12                                                |
+| E1          | Theme/account surfaces exist; R2 inventory and preview only                              | L02, L06, L08, L09                                 |
+| E2          | Previous local component evidence is partial; tonight's result recorded in Q             | L07, L08, L09, Q                                   |
+| E3          | Workers exist; no supervised public runtime/alert rehearsal                              | L16                                                |
+| E4          | PR #5 foundation; PR #15 admission/status draft; ADR 0026 bootstrap has local proof only | L13; bootstrap checkpoint                          |
+| E5          | No fresh public install/reinstall acceptance                                             | L13, L14, L16                                      |
+| E6          | Existing privacy guards; new-record UPDATE races/scan costs remain open                  | L06, L10, L12, L16                                 |
+| F1          | Existing trigger definitions; PR #10 referral producer merged, unpublished               | L15                                                |
+| F2          | Authorization semantics undecided; callback is not an online staff session               | L15 decision before coding                         |
+| F3          | No new real public workflow evidence                                                     | L15                                                |
+| F4          | PR #12 fallback scope fix merged, public grants/least privilege still open               | L14, L17                                           |
+| F5          | Protected-data/network access request and live access are external gates                 | L17                                                |
+| F6          | Internal-company limited-visibility strategy approved; release checklist open            | L13, L14, L17                                      |
+| F7          | No submission/production rollout/custom-app uninstall tonight                            | L17                                                |
+| G1          | Q will record focused checks/review/CI; no completion inferred from drafts               | Q                                                  |
+| G2          | Existing isolated suites only at their stated scope; imports frozen                      | L01–L06, L10, L12, L16, Q                          |
+| G3          | All named yamaxdev lifecycle/workflow/SQL evidence remains open                          | L01–L06, L10–L17, Q                                |
+| G4          | One-writer activation/containment requires approved environment rehearsal                | L14, L16, L17, Q                                   |
+| G5          | Overall loyalty acceptance remains incomplete                                            | Q closure only after all applicable named evidence |
 
 ## G — Verification and completion record
 

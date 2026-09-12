@@ -100,8 +100,8 @@ vi.mock(
   },
 );
 
-vi.mock("@/lib/weletic/loyalty/ledger", () => ({
-  appendPointsLedgerEntry: vi.fn(async (params: any) => {
+vi.mock("@/lib/weletic/loyalty/ledger", () => {
+  const appendPointsLedgerEntry = vi.fn(async (params: any) => {
     mocks.ledgerAppend(params);
     return {
       id: "ledger_entry_1",
@@ -110,8 +110,18 @@ vi.mock("@/lib/weletic/loyalty/ledger", () => ({
       balanceAfter: BigInt(1_000) + BigInt(params.pointsDelta),
       metadata: params.metadata,
     };
-  }),
-  OptimisticConcurrencyError: class OptimisticConcurrencyError extends Error {},
+  });
+  return {
+    appendPointsLedgerEntry,
+    appendPointsLedgerEntryWithReceipt: async (params: unknown) => ({
+      entry: await appendPointsLedgerEntry(params),
+      created: true,
+    }),
+    OptimisticConcurrencyError: class OptimisticConcurrencyError extends Error {},
+  };
+});
+vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
+  enqueuePurchasePointsCommunication: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({

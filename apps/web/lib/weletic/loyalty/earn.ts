@@ -12,6 +12,7 @@ import {
 import { enqueueFlowTriggerJob } from "@/lib/weletic/loyalty/flow-trigger-outbox";
 import {
   appendPointsLedgerEntry,
+  appendPointsLedgerEntryWithReceipt,
   OptimisticConcurrencyError,
 } from "@/lib/weletic/loyalty/ledger";
 import { allocateReversalAcrossRemainingLines } from "@/lib/weletic/loyalty/line-reversal-allocation";
@@ -36,6 +37,7 @@ import {
   WeleticPointsLedgerEntryType,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { enqueuePurchasePointsCommunication } from "./points-communication-producer";
 import {
   classifyLoyaltyPurchaseLine,
   DEFAULT_EARNING_PURCHASE_POLICY,
@@ -1198,6 +1200,44 @@ export function calculateRefundPointsReversal(
 // 5. Order Points Lifecycle Orchestration
 // ============================================================================
 
+/** Reconcile persisted merchandise refunds before publishing available earns.
+ * Caller owns the store/program transaction. Line-less adjustments retain the
+ * existing legacy-adoption exception rather than inventing item clawbacks. */
+export async function reconcilePersistedOrderMerchandiseRefunds({
+  storeId,
+  refunds,
+  tx,
+  expectedInstallationGeneration,
+  loyaltyMaintenancePermit,
+}: {
+  storeId: string;
+  refunds: Array<{ id: string; lines: Array<{ id: string }> }>;
+  tx: Prisma.TransactionClient;
+  expectedInstallationGeneration?: string | null;
+  loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
+}) {
+  for (const persistedRefund of refunds) {
+    if (persistedRefund.lines.length === 0) {
+      const legacyReversal = await tx.weleticPointsLedgerEntry.findUnique({
+        where: {
+          storeId_idempotencyKey: {
+            storeId,
+            idempotencyKey: `refund_reversal:${persistedRefund.id}`,
+          },
+        },
+      });
+      if (!legacyReversal || legacyReversal.grantId !== null) continue;
+    }
+    await processRefundPointsReversal({
+      storeId,
+      refundId: persistedRefund.id,
+      expectedInstallationGeneration,
+      loyaltyMaintenancePermit,
+      tx,
+    });
+  }
+}
+
 export async function processOrderPointsEarn({
   storeId,
   orderId,
@@ -1305,32 +1345,14 @@ export async function processOrderPointsEarn({
     );
   }
 
-  const reconcilePersistedMerchandiseRefunds = async () => {
-    for (const persistedRefund of order.refunds || []) {
-      if (persistedRefund.lines.length === 0) {
-        // New line-less refunds may include shipping, duties, or manual order
-        // adjustments and are not automatically clawed back here. A legacy
-        // grantless reversal, however, has already changed the account and must
-        // be revisited so it can be linked/compensated against the new grant.
-        const legacyReversal = await db.weleticPointsLedgerEntry.findUnique({
-          where: {
-            storeId_idempotencyKey: {
-              storeId,
-              idempotencyKey: `refund_reversal:${persistedRefund.id}`,
-            },
-          },
-        });
-        if (!legacyReversal || legacyReversal.grantId !== null) continue;
-      }
-      await processRefundPointsReversal({
-        storeId,
-        refundId: persistedRefund.id,
-        expectedInstallationGeneration,
-        loyaltyMaintenancePermit,
-        tx,
-      });
-    }
-  };
+  const reconcilePersistedMerchandiseRefunds = () =>
+    reconcilePersistedOrderMerchandiseRefunds({
+      storeId,
+      refunds: order.refunds || [],
+      tx,
+      expectedInstallationGeneration,
+      loyaltyMaintenancePermit,
+    });
 
   // Check if grant already exists (Idempotency)
   const existingGrant = await db.weleticLoyaltyEarnGrant.findUnique({
@@ -2744,7 +2766,7 @@ export async function processOrderPointsEarn({
   } else {
     // Immediate maturity: append immutable ledger entry
     const idempotencyKey = `earn_order:${order.id}`;
-    const ledgerEntry = await appendPointsLedgerEntry({
+    const receipt = await appendPointsLedgerEntryWithReceipt({
       storeId,
       accountId: loyaltyAccount.id,
       entryType: WeleticPointsLedgerEntryType.EARN_ORDER,
@@ -2769,7 +2791,7 @@ export async function processOrderPointsEarn({
       },
       tx,
     });
-
+    const ledgerEntry = receipt.entry;
     await enqueueFlowTriggerJob({
       storeId,
       eventId: ledgerEntry.id,
@@ -2808,6 +2830,13 @@ export async function processOrderPointsEarn({
     });
 
     await reconcilePersistedMerchandiseRefunds();
+    await enqueuePurchasePointsCommunication({
+      tx,
+      storeId,
+      programId: program.id,
+      receipt,
+      loyaltyMaintenancePermit,
+    });
     return ledgerEntry;
   }
 }

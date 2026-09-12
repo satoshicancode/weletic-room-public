@@ -89,6 +89,7 @@ export default function PointsExpiryReminder({
   accountUrl = "https://example.myshopify.com/account",
   urgency = "warning",
   locale = "en",
+  customContent,
 }: {
   brandName: string;
   logoUrl?: string | null;
@@ -99,8 +100,14 @@ export default function PointsExpiryReminder({
   accountUrl: string;
   urgency: "warning" | "last_chance";
   locale?: string | null;
+  customContent?: {
+    subject: string;
+    heading: string;
+    body: string;
+    actionLabel: string;
+  };
 }) {
-  const copy = getPointsExpiryCopy({
+  const defaults = getPointsExpiryCopy({
     locale,
     urgency,
     pointsBalance,
@@ -108,6 +115,9 @@ export default function PointsExpiryReminder({
     customerFirstName,
     brandName,
   });
+  const copy = customContent
+    ? { ...defaults, ...customContent, action: customContent.actionLabel }
+    : defaults;
 
   return (
     <Html lang={copy.language}>

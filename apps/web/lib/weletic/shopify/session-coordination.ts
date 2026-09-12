@@ -74,7 +74,7 @@ export async function observeShopifySessionCoordination(
   };
 }
 
-async function ensureShopifySessionCoordination(
+export async function ensureShopifySessionCoordination(
   tx: Prisma.TransactionClient,
   scope: ShopifySessionScope,
 ) {
@@ -86,6 +86,25 @@ async function ensureShopifySessionCoordination(
       CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))
     ON DUPLICATE KEY UPDATE id = id
   `);
+}
+
+/** Required privacy/auth lifecycle mutation only, in the same transaction as
+ * credential deletion. Revokes active and delayed leases without deleting the
+ * durable coordinator (which would allow old epoch/revision proofs to recur).
+ */
+export async function revokeShopifySessionCoordination(
+  tx: Prisma.TransactionClient,
+  scope: ShopifySessionScope,
+) {
+  await ensureShopifySessionCoordination(tx, scope);
+  const changed = await tx.$executeRaw(Prisma.sql`
+    UPDATE WeleticShopifySessionCoordination
+    SET revision = revision + 1, leaseEpoch = leaseEpoch + 1,
+        leaseOwnerHash = NULL, leaseExpiresAt = NULL, updatedAt = CURRENT_TIMESTAMP(3)
+    WHERE id = ${shopifySessionCoordinationId(scope)}
+      AND revision < 9223372036854775806 AND leaseEpoch < 9223372036854775806
+  `);
+  if (changed !== 1) throw new ShopifySessionCoordinationError("stale_session");
 }
 
 /** Transition window: a legacy writer can never bypass a promoted coordinator. */

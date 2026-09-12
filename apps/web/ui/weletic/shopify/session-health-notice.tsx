@@ -30,9 +30,11 @@ export function ShopifySessionHealthNotice({
           Shopify reconnection required
         </p>
         <p>
-          A missing Shopify session was reported. A workspace owner should
-          reconnect the Shopify integration if it has not already been repaired.
-          Existing points, rewards and reviews are preserved.
+          A missing Shopify session was reported. A Shopify store owner or
+          authorized staff member should open Weletic in that store’s Shopify
+          Admin to authenticate again if it has not already been repaired.
+          Reconnection does not grant company approval or activate loyalty. This
+          alert does not change existing points, rewards or reviews.
         </p>
         {error && (
           <p>

@@ -4,6 +4,7 @@ import {
   getShopifyCustomerTombstoneRetentionDays,
   getShopifyFinancialRetentionDays,
 } from "./compliance-config";
+import { deleteExpiredPendingInstallations } from "./pending-installation-retention";
 
 const MAX_RETENTION_DELETE_BATCH = 100;
 
@@ -100,6 +101,11 @@ export async function deleteExpiredShopifyPrivacyTombstonesBatch({
   ]);
 
   return {
+    pendingInstallations: {
+      deleted: await prisma.$transaction((tx) =>
+        deleteExpiredPendingInstallations(tx, { batchSize: take, now }),
+      ),
+    },
     referralSnapshots: { deleted: referralSnapshotsDeleted },
     customer: {
       selected: customerRows.length,

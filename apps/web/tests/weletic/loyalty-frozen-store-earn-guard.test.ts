@@ -49,6 +49,7 @@ describe("frozen Shopify store loyalty earn guard", () => {
           shopCurrency: true,
           currencyVerifiedAt: true,
           installationGeneration: true,
+          storeAccessState: true,
         },
       });
       expect(mocks.orderFindUnique).not.toHaveBeenCalled();

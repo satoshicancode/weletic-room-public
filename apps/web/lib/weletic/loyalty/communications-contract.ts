@@ -101,6 +101,20 @@ export const loyaltyCommunicationPolicySchema = z
     }
   });
 
+export const loyaltyExpiryCommunicationSnapshotSchema = z
+  .object({
+    version: z.literal(1),
+    storeId: z.string().min(1),
+    programId: z.string().min(1),
+    revision: z.string().regex(/^[a-f0-9]{64}$/),
+    policy: loyaltyCommunicationPolicySchema.refine(
+      (policy) =>
+        policy.journey === "points_warning" ||
+        policy.journey === "points_last_chance",
+    ),
+  })
+  .strict();
+
 export const loyaltyCommunicationsRequestSchema = z.discriminatedUnion(
   "operation",
   [
@@ -148,7 +162,14 @@ export const loyaltyCommunicationsResponseSchema = z
     revision: z.string().regex(/^[a-f0-9]{64}$/),
     capabilities: z.object({ configure: z.boolean() }).strict(),
     // Configuration availability is not evidence of an integrated producer.
-    deliveryIntegration: z.literal("not_connected"),
+    deliveryIntegration: z.enum([
+      "not_connected",
+      "expiry_policies",
+      "purchase_and_expiry_policies",
+      "purchase_signup_and_expiry_policies",
+      "purchase_signup_birthday_and_expiry_policies",
+      "purchase_signup_birthday_vip_and_expiry_policies",
+    ]),
     policies: z.array(loyaltyCommunicationPolicySchema).max(9),
   })
   .strict()

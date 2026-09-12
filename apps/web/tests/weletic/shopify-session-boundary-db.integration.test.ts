@@ -107,6 +107,7 @@ describe("signed session API boundaries with real MySQL", () => {
     // reference only generated, otherwise-unused IDs; no merchant row is reused.
     await database.weleticShopifyStore.create({
       data: {
+        storeAccessState: "active",
         ...{ id: fixture.id, projectId: fixture.projectId },
         programId: `sprogram_${suffix}`,
         shopDomain: fixture.shop,

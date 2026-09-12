@@ -7,8 +7,14 @@ import {
 import { shopifyCredentialVerificationHash } from "@/lib/weletic/shopify/store-resolver";
 import { Discount, Project } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { legacyCredentialSqlFixture } from "./helpers/legacy-credential-sql-fixture";
+
+const rawSql = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn() }));
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/weletic/shopify/credential-source", () => ({
+  readShopifyCredentialSource: vi.fn(async () => ({ source: "legacy" })),
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -23,7 +29,8 @@ vi.mock("@/lib/prisma", () => ({
     weleticShopifyStore: {
       findUnique: vi.fn(),
     },
-    $queryRaw: vi.fn(),
+    $queryRaw: rawSql.read,
+    $executeRaw: rawSql.write,
     $transaction: vi.fn(),
   },
 }));
@@ -83,19 +90,23 @@ describe("Shopify Discount Provider & Utilities", () => {
     vi.mocked(prisma.installedIntegration.update).mockResolvedValue({} as any);
     vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
       id: "wstore_1",
+      projectId: "ws_123",
       shopDomain: "yamax-demo.myshopify.com",
+      complianceState: "active",
       installationGeneration: "sgen_one",
     } as any);
-    vi.mocked(prisma.$queryRaw).mockResolvedValue([
-      {
-        id: "wstore_1",
-        projectId: "ws_123",
-        installationGeneration: "sgen_one",
-      },
-    ] as any);
+    const fixture = legacyCredentialSqlFixture({
+      readStore: () =>
+        prisma.weleticShopifyStore.findUnique({ where: { id: "wstore_1" } }),
+      readInstallation: (id) =>
+        prisma.installedIntegration.findUnique({ where: { id } }),
+    });
+    rawSql.read.mockImplementation(fixture.queryRaw);
+    rawSql.write.mockImplementation(fixture.executeRaw);
     vi.mocked(prisma.$transaction).mockImplementation(async (callback: any) =>
       callback({
         $queryRaw: prisma.$queryRaw,
+        $executeRaw: prisma.$executeRaw,
         installedIntegration: {
           findUnique: prisma.installedIntegration.findUnique,
           update: prisma.installedIntegration.update,
@@ -292,6 +303,7 @@ describe("Shopify Discount Provider & Utilities", () => {
       ).resolves.toBeUndefined();
       expect(prisma.installedIntegration.update).toHaveBeenCalledWith({
         where: { id: "inst_1" },
+        select: { id: true },
         data: {
           credentials: expect.objectContaining({
             shop: "yamax-demo.myshopify.com",

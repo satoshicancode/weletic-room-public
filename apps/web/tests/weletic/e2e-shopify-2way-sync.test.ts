@@ -8,6 +8,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+// This in-memory sync simulation uses a legacy integration, not native SDK
+// authentication. Credential-source authority is covered by dedicated tests.
+vi.mock("@/lib/weletic/shopify/credential-source", () => ({
+  readShopifyCredentialSource: vi.fn(async () => ({ source: "legacy" })),
+}));
+
 vi.mock("@vercel/functions", () => ({
   waitUntil: (fn: any) => Promise.resolve(fn),
 }));
@@ -568,9 +574,39 @@ vi.mock("@/lib/prisma", () => ({
         return results;
       }),
     },
-    $queryRaw: vi.fn(async () => {
+    $queryRaw: vi.fn(async (query: Prisma.Sql) => {
+      const sql = query.strings.join("?");
+      if (sql.includes("FROM InstalledIntegration")) {
+        const id = query.values[0];
+        if (typeof id !== "string") throw new Error("Expected installation ID");
+        const installation = db.installedIntegrations.get(id);
+        return installation ? [installation] : [];
+      }
+      // This legacy discount fixture has no loyalty program, privacy tombstone,
+      // public admission or native credential. Execute the real ownership fence.
+      if (
+        sql.includes("FROM WeleticLoyaltyProgram") ||
+        sql.includes("FROM WeleticShopifyShopPrivacyTombstone") ||
+        sql.includes("FROM WeleticShopifyPendingInstallation") ||
+        sql.includes("FROM WeleticShopifyInstallationCredential")
+      )
+        return [];
+      if (!sql.includes("FROM WeleticShopifyStore")) {
+        throw new Error("Unhandled SQL in two-way sync simulation");
+      }
       const store = db.weleticShopifyStores.values().next().value;
       return store ? [store] : [];
+    }),
+    $executeRaw: vi.fn(async (query: Prisma.Sql) => {
+      if (
+        !query.strings
+          .join("?")
+          .includes("INSERT INTO WeleticShopifySessionCoordination")
+      ) {
+        throw new Error("Unhandled SQL write in two-way sync simulation");
+      }
+      // Lock contention is tested with isolated MySQL, not this in-memory map.
+      return 1;
     }),
     $transaction: vi.fn(async function (this: any, action: any) {
       return typeof action === "function" ? action(this) : Promise.all(action);

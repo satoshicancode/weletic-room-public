@@ -267,38 +267,50 @@ describe("referral coupon provisioning", () => {
     });
   });
 
-  it("locks and rejects a disabled program before creating a coupon", async () => {
-    vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([
-      {
-        id: "wloyalty_program_coupon",
-        storeId,
-        status: "disabled",
-        killSwitchActive: false,
-      },
-    ] as never);
+  it.each(["disabled", "pending_approval", "suspended"])(
+    "rejects %s before reserving a referral coupon",
+    async (state) => {
+      vi.mocked(prisma.$queryRaw).mockImplementation((async (query: any) => {
+        if (query.sql.includes("FROM WeleticShopifyStore"))
+          return [
+            {
+              id: storeId,
+              storeAccessState: state === "disabled" ? "active" : state,
+            },
+          ];
+        return [
+          {
+            id: "wloyalty_program_coupon",
+            storeId,
+            status: state === "disabled" ? "disabled" : "active",
+            killSwitchActive: false,
+          },
+        ];
+      }) as any);
 
-    await expect(
-      issueReferralRewardCoupon({
-        storeId,
-        referralId,
-        qualificationOrderId,
-        accountId,
-        rewardDefinitionId,
-        side: "advocate",
-      }),
-    ).rejects.toThrow("Loyalty program is currently disabled or inactive");
+      await expect(
+        issueReferralRewardCoupon({
+          storeId,
+          referralId,
+          qualificationOrderId,
+          accountId,
+          rewardDefinitionId,
+          side: "advocate",
+        }),
+      ).rejects.toThrow("Loyalty program is currently disabled or inactive");
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
-    const [programLockStatement] = vi.mocked(prisma.$queryRaw).mock.calls[0];
-    const programLockSql = (
-      programLockStatement as { strings: readonly string[] }
-    ).strings.join(" ");
-    expect(programLockSql).toContain("FROM WeleticLoyaltyProgram");
-    expect(programLockSql).toContain("FOR UPDATE");
-    expect(prisma.weleticRewardRedemption.create).not.toHaveBeenCalled();
-    expect(lookupDiscountByCode).not.toHaveBeenCalled();
-    expect(provisionLoyaltyRewardDiscount).not.toHaveBeenCalled();
-  });
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      const [programLockStatement] = vi.mocked(prisma.$queryRaw).mock.calls[1];
+      const programLockSql = (
+        programLockStatement as { strings: readonly string[] }
+      ).strings.join(" ");
+      expect(programLockSql).toContain("FROM WeleticLoyaltyProgram");
+      expect(programLockSql).toContain("FOR UPDATE");
+      expect(prisma.weleticRewardRedemption.create).not.toHaveBeenCalled();
+      expect(lookupDiscountByCode).not.toHaveBeenCalled();
+      expect(provisionLoyaltyRewardDiscount).not.toHaveBeenCalled();
+    },
+  );
 
   it("re-locks and rejects a program disabled before remote provisioning", async () => {
     const snapshot = createTestReferralCouponSnapshot();
@@ -322,31 +334,20 @@ describe("referral coupon provisioning", () => {
         return { count: 1 };
       },
     );
-    vi.mocked(prisma.$queryRaw)
-      .mockResolvedValueOnce([
+    let programReads = 0;
+    vi.mocked(prisma.$queryRaw).mockImplementation((async (query: any) => {
+      if (query.sql.includes("FROM WeleticShopifyStore"))
+        return [{ id: storeId, storeAccessState: "active" }];
+      programReads += 1;
+      return [
         {
           id: "wloyalty_program_coupon",
           storeId,
-          status: "active",
+          status: programReads >= 3 ? "disabled" : "active",
           killSwitchActive: false,
         },
-      ] as never)
-      .mockResolvedValueOnce([
-        {
-          id: "wloyalty_program_coupon",
-          storeId,
-          status: "active",
-          killSwitchActive: false,
-        },
-      ] as never)
-      .mockResolvedValueOnce([
-        {
-          id: "wloyalty_program_coupon",
-          storeId,
-          status: "disabled",
-          killSwitchActive: false,
-        },
-      ] as never);
+      ];
+    }) as any);
 
     await expect(
       issueReferralRewardCoupon({
@@ -359,7 +360,7 @@ describe("referral coupon provisioning", () => {
       }),
     ).rejects.toThrow("Loyalty program is currently disabled or inactive");
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
+    expect(programReads).toBe(4);
     expect(lookupDiscountByCode).not.toHaveBeenCalled();
     expect(provisionLoyaltyRewardDiscount).not.toHaveBeenCalled();
     expect(redemption.metadata).not.toHaveProperty(
@@ -406,34 +407,21 @@ describe("referral coupon provisioning", () => {
         return { count: 1 };
       },
     );
-    vi.mocked(prisma.$queryRaw)
-      .mockResolvedValueOnce([
+    let programReads = 0;
+    vi.mocked(prisma.$queryRaw).mockImplementation((async (query: any) => {
+      if (query.sql.includes("FROM WeleticShopifyStore"))
+        return [{ id: storeId, storeAccessState: "active" }];
+      programReads += 1;
+      return [
         {
           id: "wloyalty_program_coupon",
           storeId,
           status: "active",
           killSwitchActive: false,
-          metadata: null,
+          metadata: programReads >= 3 ? maintenanceMetadata : null,
         },
-      ] as never)
-      .mockResolvedValueOnce([
-        {
-          id: "wloyalty_program_coupon",
-          storeId,
-          status: "active",
-          killSwitchActive: false,
-          metadata: null,
-        },
-      ] as never)
-      .mockResolvedValueOnce([
-        {
-          id: "wloyalty_program_coupon",
-          storeId,
-          status: "active",
-          killSwitchActive: false,
-          metadata: maintenanceMetadata,
-        },
-      ] as never);
+      ];
+    }) as any);
 
     await expect(
       issueReferralRewardCoupon({
@@ -448,7 +436,7 @@ describe("referral coupon provisioning", () => {
       "Loyalty operational writes are blocked by a maintenance lease",
     );
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+    expect(programReads).toBe(3);
     expect(lookupDiscountByCode).not.toHaveBeenCalled();
     expect(provisionLoyaltyRewardDiscount).not.toHaveBeenCalled();
     expect(persistedMetadataWrites).toHaveLength(1);
@@ -752,7 +740,7 @@ describe("referral coupon provisioning", () => {
       }),
     ).resolves.toBe(issuedRedemption);
 
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(4);
     expect(enqueueFlowTriggerJob).toHaveBeenCalledWith({
       storeId,
       eventId: referralId,

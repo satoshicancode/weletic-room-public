@@ -30,8 +30,13 @@ describe("Shopify connection notice presentation", () => {
     const html = render();
     expect(html).toContain('role="alert"');
     expect(html).toContain("Shopify reconnection required");
-    expect(html).toContain("workspace owner");
-    expect(html).toContain("preserved");
+    expect(html).toContain("Shopify store owner");
+    expect(html).toContain("authorized staff member");
+    expect(html).toContain(
+      "does not grant company approval or activate loyalty",
+    );
+    expect(html).not.toContain("workspace owner");
+    expect(html).toContain("does not change existing points");
     expect(html).not.toContain("<button");
     expect(swr.mock.calls[0][0]).toBe(
       "/api/weletic/shopify/session-health?workspaceId=workspace-1",

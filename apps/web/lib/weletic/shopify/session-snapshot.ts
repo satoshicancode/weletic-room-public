@@ -3,6 +3,7 @@ import { integrationCredentialsSchema } from "@/lib/integrations/shopify/schema"
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { readPendingInstallation } from "./installation-admission";
 import type {
   ShopifySessionObservation,
   ShopifySessionSnapshot,
@@ -15,6 +16,10 @@ import {
   type ShopifySessionScope,
 } from "./session-coordination";
 import type { LockedShopifySessionStore } from "./session-lifecycle-fence";
+import {
+  assertLegacyShopifyCredentialAuthority,
+  readStoreOwnedShopifyCredential,
+} from "./store-owned-credential";
 import {
   canonicalizeShopifyDomain,
   readShopifyCredentialTokenHash,
@@ -35,6 +40,74 @@ export async function readShopifySessionSnapshot(
   store: LockedShopifySessionStore | undefined,
 ): Promise<ShopifySessionSnapshot> {
   const observed = await observeShopifySessionCoordination(tx, scope);
+  // The coordinator serializes first creation as well as refresh. Pending
+  // generations fence authentication, but deliberately supply no worker token
+  // hash or workspace authority.
+  const pending = await readPendingInstallation(tx, scope);
+  if (
+    !store &&
+    pending &&
+    (pending.state !== "pending_approval" ||
+      pending.mappedStoreId !== null ||
+      !pending.installationGeneration ||
+      !pending.authenticatedAt ||
+      pending.uninstalledAt ||
+      pending.redactedAt)
+  )
+    throw new ShopifySessionCoordinationError("stale_session");
+  let credentialTokenHash: string | null = null;
+  let hasInstallation = false;
+  if (store) {
+    if (!store.installationGeneration)
+      throw new ShopifySessionCoordinationError("invalid_scope");
+    // Admission is the explicit public-installation boundary. Once present,
+    // missing/invalid native credentials must never fall back to a legacy row.
+    if (pending) {
+      const credential = await readStoreOwnedShopifyCredential(tx, {
+        ...scope,
+        storeId: store.id,
+        workspaceId: store.projectId,
+        installationGeneration: store.installationGeneration,
+      });
+      hasInstallation = credential !== null;
+      credentialTokenHash = credential
+        ? createHash("sha256").update(credential.accessToken).digest("hex")
+        : null;
+    } else {
+      await assertLegacyShopifyCredentialAuthority(tx, store.id, scope.appId);
+      const installations = await tx.installedIntegration.findMany({
+        where: {
+          projectId: store.projectId,
+          integrationId: SHOPIFY_INTEGRATION_ID,
+        },
+        take: 2,
+        orderBy: { id: "asc" },
+        select: { credentials: true },
+      });
+      if (installations.length > 1)
+        throw new ShopifySessionCoordinationError("invalid_scope");
+      const installation = installations[0];
+      if (installation) {
+        hasInstallation = true;
+        const credentials = integrationCredentialsSchema.safeParse(
+          installation.credentials,
+        );
+        if (
+          !credentials.success ||
+          canonicalizeShopifyDomain(credentials.data.shop || "") !==
+            scope.shop ||
+          credentials.data.installationGeneration !==
+            store.installationGeneration
+        ) {
+          throw new ShopifySessionCoordinationError("invalid_scope");
+        }
+        credentialTokenHash = readShopifyCredentialTokenHash(
+          installation.credentials,
+        );
+      }
+    }
+  }
+  // Credential locks precede SDK-session locks for publication and reads alike.
   const rows = await tx.$queryRaw<
     Array<{ shop: string; payload: string; isOnline: boolean | number }>
   >(Prisma.sql`
@@ -44,40 +117,6 @@ export async function readShopifySessionSnapshot(
   const row = rows[0];
   if (row && (row.shop !== scope.shop || Boolean(row.isOnline))) {
     throw new ShopifySessionCoordinationError("invalid_scope");
-  }
-  let credentialTokenHash: string | null = null;
-  let hasInstallation = false;
-  if (store) {
-    if (!store.installationGeneration)
-      throw new ShopifySessionCoordinationError("invalid_scope");
-    const installations = await tx.installedIntegration.findMany({
-      where: {
-        projectId: store.projectId,
-        integrationId: SHOPIFY_INTEGRATION_ID,
-      },
-      take: 2,
-      orderBy: { id: "asc" },
-      select: { credentials: true },
-    });
-    if (installations.length > 1)
-      throw new ShopifySessionCoordinationError("invalid_scope");
-    const installation = installations[0];
-    if (installation) {
-      hasInstallation = true;
-      const credentials = integrationCredentialsSchema.safeParse(
-        installation.credentials,
-      );
-      if (
-        !credentials.success ||
-        canonicalizeShopifyDomain(credentials.data.shop || "") !== scope.shop ||
-        credentials.data.installationGeneration !== store.installationGeneration
-      ) {
-        throw new ShopifySessionCoordinationError("invalid_scope");
-      }
-      credentialTokenHash = readShopifyCredentialTokenHash(
-        installation.credentials,
-      );
-    }
   }
   const parsed = row
     ? shopifySessionPropertiesSchema.parse(JSON.parse(decrypt(row.payload)))
@@ -111,7 +150,10 @@ export async function readShopifySessionSnapshot(
       sessionDigest: createHash("sha256")
         .update(row ? `present:${row.payload}` : "missing")
         .digest("hex"),
-      installationGeneration: store?.installationGeneration ?? null,
+      installationGeneration:
+        store?.installationGeneration ??
+        pending?.installationGeneration ??
+        null,
       credentialTokenHash,
     },
     properties: parsed,

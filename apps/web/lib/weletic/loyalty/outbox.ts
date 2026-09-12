@@ -19,10 +19,12 @@ import {
   WeleticLoyaltyOutboxJobType,
 } from "@prisma/client";
 import { z } from "zod";
+import { loyaltyExpiryCommunicationSnapshotSchema } from "./communications-contract";
 import {
   HistoricalImportJobPayloadSchema,
   type HistoricalImportJobPayload,
 } from "./historical-import-job-contract";
+import { loyaltyCommunicationJobPayloadSchema } from "./points-communication-contract";
 export {
   HistoricalImportJobPayloadSchema,
   type HistoricalImportJobPayload,
@@ -67,6 +69,9 @@ export const InactivityExpiryPayloadSchema = z.object({
   stage: z.enum(["warning", "last_chance", "expire"]).optional(),
   policyVersion: z.number().int().nonnegative().optional(),
   pointsToExpire: z.string().optional(), // BigInt string
+  communicationSnapshot: loyaltyExpiryCommunicationSnapshotSchema
+    .nullable()
+    .optional(),
   installationGeneration: z.string().min(1).max(64).nullable().optional(),
 });
 export type InactivityExpiryPayload = z.infer<
@@ -270,6 +275,7 @@ export type FlowTriggerPayload = z.infer<typeof FlowTriggerPayloadSchema>;
 export type LoyaltyOutboxPayloadMap = {
   HISTORICAL_IMPORT_COMMIT: HistoricalImportJobPayload;
   HISTORICAL_IMPORT_ROLLBACK: HistoricalImportJobPayload;
+  LOYALTY_COMMUNICATION: z.infer<typeof loyaltyCommunicationJobPayloadSchema>;
   SHOPPER_REWARD_PROVISION: z.infer<typeof ShopperRewardProvisionPayloadSchema>;
   REVIEW_REQUEST_EMAIL: z.infer<typeof ReviewRequestEmailPayloadSchema>;
   REVIEW_SUMMARY_SYNC: z.infer<typeof ReviewSummarySyncPayloadSchema>;
@@ -438,6 +444,7 @@ function isInstallationBoundOperationalJob({
 }) {
   if (
     [
+      "LOYALTY_COMMUNICATION",
       "HOLDING_PERIOD_RELEASE",
       "INACTIVITY_EXPIRY",
       "TIER_REVIEW",
@@ -482,7 +489,8 @@ async function bindOperationalJobToInstallationGeneration({
     if (
       process.env.NODE_ENV === "test" &&
       jobType !== "HISTORICAL_IMPORT_COMMIT" &&
-      jobType !== "HISTORICAL_IMPORT_ROLLBACK"
+      jobType !== "HISTORICAL_IMPORT_ROLLBACK" &&
+      jobType !== "LOYALTY_COMMUNICATION"
     ) {
       return {
         ...payload,
@@ -510,6 +518,13 @@ async function bindOperationalJobToInstallationGeneration({
   ) {
     throw new Error("Historical import installation generation changed.");
   }
+  if (
+    jobType === "LOYALTY_COMMUNICATION" &&
+    store.installationGeneration !==
+      (payload as Record<string, unknown>).installationGeneration
+  ) {
+    throw new Error("Loyalty communication installation changed");
+  }
   return {
     ...payload,
     installationGeneration: store.installationGeneration ?? null,
@@ -527,6 +542,9 @@ export function validateOutboxPayload(
     case "HISTORICAL_IMPORT_COMMIT":
     case "HISTORICAL_IMPORT_ROLLBACK":
       HistoricalImportJobPayloadSchema.parse(payload);
+      break;
+    case "LOYALTY_COMMUNICATION":
+      loyaltyCommunicationJobPayloadSchema.parse(payload);
       break;
     case "SHOPPER_REWARD_PROVISION":
       ShopperRewardProvisionPayloadSchema.parse(payload);
@@ -598,6 +616,12 @@ export async function enqueueOutboxJob<
 
   // Validate payload matches schema
   validateOutboxPayload(jobType, payload);
+  if (
+    jobType === "LOYALTY_COMMUNICATION" &&
+    (payload as Record<string, unknown>).storeId !== storeId
+  ) {
+    throw new Error("Loyalty communication store mismatch");
+  }
 
   const maintenanceGated = isMaintenanceGatedOutboxJob({ jobType, payload });
   if (maintenanceGated && !tx) {

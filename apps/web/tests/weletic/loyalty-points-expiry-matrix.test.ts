@@ -1,3 +1,5 @@
+import { snapshotLoyaltyCommunicationPolicy } from "@/lib/weletic/loyalty/communications-service";
+import type { ExpiryDeliveryClaim } from "@/lib/weletic/loyalty/expiry-delivery-snapshot";
 import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
 import {
@@ -12,9 +14,13 @@ import {
   type PointsExpiryPolicy,
 } from "@/lib/weletic/loyalty/points-expiry-policy";
 import { enqueuePointsExpiryLifecycleJobs } from "@/lib/weletic/loyalty/points-expiry-scheduler";
-import { sendBatchEmail } from "@dub/email";
+import {
+  prepareResendEmail,
+  sendBatchEmail,
+  sendPreparedResendEmail,
+} from "@dub/email";
 import { Prisma, WeleticPointsLedgerEntryType } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockPrisma } = vi.hoisted(() => {
   const mockProgram = {
@@ -34,6 +40,7 @@ const { mockPrisma } = vi.hoisted(() => {
     create: vi.fn(),
   };
   const mockTx = {
+    weleticLoyaltyOutboxJob: { findFirst: vi.fn(), updateMany: vi.fn() },
     weleticLoyaltyProgram: mockProgram,
     weleticLoyaltyAccount: mockAccount,
     weleticPointsLedgerEntry: mockLedger,
@@ -67,6 +74,7 @@ vi.mock("@/lib/weletic/loyalty/earn-policy-revision", () => ({
 
 vi.mock("@/lib/weletic/loyalty/merchant-write-fence", () => ({
   withActiveStoreLoyaltyMutation: vi.fn(),
+  assertActiveLoyaltyAccountForMutation: vi.fn(),
 }));
 
 vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
@@ -75,6 +83,8 @@ vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
 
 vi.mock("@dub/email", () => ({
   sendBatchEmail: vi.fn(),
+  prepareResendEmail: vi.fn(),
+  sendPreparedResendEmail: vi.fn(),
 }));
 
 const basePolicy: PointsExpiryPolicy = {
@@ -93,6 +103,7 @@ const basePolicy: PointsExpiryPolicy = {
 };
 
 describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm 1.3)", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
@@ -100,6 +111,196 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       data: { data: [{ id: "email_expiry_test" }] },
       error: null,
     } as any);
+  });
+
+  describe("queued merchant expiry policies", () => {
+    function fixture() {
+      vi.stubEnv("ENCRYPTION_KEY", "test-only-expiry-matrix-not-runtime");
+      vi.mocked(withActiveStoreLoyaltyMutation).mockImplementation(
+        async ({ operation }: any) => operation(mockPrisma.mockTx),
+      );
+      mockPrisma.mockTx.weleticLoyaltyOutboxJob.findFirst.mockResolvedValue({
+        id: "job",
+        updatedAt: new Date("2026-09-02T00:00:00Z"),
+      });
+      mockPrisma.mockTx.weleticLoyaltyOutboxJob.updateMany.mockResolvedValue({
+        count: 1,
+      });
+      vi.mocked(prepareResendEmail).mockImplementation(async (email) => ({
+        to: email.to,
+        from: email.from ?? "test@example.com",
+        subject: email.subject ?? "Synthetic subject",
+        html: `<p>${email.subject}</p>`,
+      }));
+      vi.mocked(sendPreparedResendEmail).mockResolvedValue({
+        data: { data: [{ id: "prepared-test" }] },
+        error: null,
+      } as any);
+      const template = {
+        subject: "Saved {{points}}",
+        heading: "Heading",
+        body: "{{brand_name}} {{expiry_date}}",
+        actionLabel: "Rewards",
+      };
+      const policy = {
+        journey: "points_warning",
+        enabled: true,
+        templates: { en: template, ja: template, vi: template },
+      };
+      const metadata = {
+        loyaltyCommunications: { version: 1, sequence: 1, policies: [policy] },
+      };
+      const snapshot = snapshotLoyaltyCommunicationPolicy({
+        storeId: "store",
+        programId: "program",
+        metadata,
+        journey: "points_warning",
+      })!;
+      const expiryAt = "2026-10-01T00:00:00.000Z";
+      const account = {
+        id: "account",
+        cachedPointsBalance: BigInt(1250),
+        nextExpiryDate: new Date(expiryAt),
+        pointsExpiryPolicyVersion: 1,
+        shopper: {
+          email: "synthetic@example.com",
+          firstName: "Name",
+          locale: "en",
+          acceptsMarketing: true,
+          ordersCount: 1,
+        },
+        program: {
+          ...basePolicy,
+          id: "program",
+          metadata,
+          name: "Brand",
+          pointNamePlural: "Points",
+        },
+        store: { shopDomain: "synthetic.myshopify.com" },
+      };
+      mockPrisma.weleticLoyaltyAccount.findFirst.mockResolvedValue(account);
+      const args = {
+        storeId: "store",
+        now: new Date("2026-09-02T00:00:00.000Z"),
+        payload: {
+          accountId: "account",
+          lastActivityAt: "2025-10-01T00:00:00.000Z",
+          expiryMonths: 12,
+          expiryAt,
+          stage: "warning" as const,
+          policyVersion: 1,
+          communicationSnapshot: snapshot,
+        },
+      };
+      const deliveryClaim: ExpiryDeliveryClaim = {
+        candidate: {
+          id: "job",
+          storeId: "store",
+          jobType: "INACTIVITY_EXPIRY",
+          status: "pending",
+          idempotencyKey: "fixture-job-key",
+          scheduledFor: args.now,
+          createdAt: args.now,
+          updatedAt: args.now,
+          attempts: 0,
+          maxAttempts: 5,
+          priority: 10,
+          lockedAt: null,
+          lockedBy: null,
+          processedAt: null,
+          completedAt: null,
+          lastError: null,
+          nextRetryAt: null,
+          errorLog: [],
+          payload: args.payload,
+        },
+        ownerToken: "test-worker",
+        claimedAt: args.now,
+        attempt: 1,
+      };
+      return { account, args: { ...args, deliveryClaim }, policy, snapshot };
+    }
+    it("uses queued content after a merchant edits the current template", async () => {
+      const { args, policy } = fixture();
+      policy.templates.en.subject = "Edited";
+      expect(await sendPointsExpiryNotification(args)).toBe("sent");
+      expect(vi.mocked(sendPreparedResendEmail).mock.calls[0][0].subject).toBe(
+        "Saved 1250",
+      );
+    });
+    it("reuses the provider request after balance, name and locale change", async () => {
+      const { args, account } = fixture();
+      await sendPointsExpiryNotification(args);
+      const first = vi.mocked(sendPreparedResendEmail).mock.calls[0];
+      account.cachedPointsBalance = BigInt(3000);
+      account.shopper.firstName = "Changed";
+      account.shopper.locale = "ja";
+      await sendPointsExpiryNotification(args);
+      expect(vi.mocked(sendPreparedResendEmail).mock.calls[1]).toEqual(first);
+      expect(prepareResendEmail).toHaveBeenCalledTimes(1);
+    });
+    it("does not re-render invalid new customer variables during a retained retry", async () => {
+      const { args, account } = fixture();
+      args.payload.communicationSnapshot.policy.templates.en.body =
+        "Hello {{customer_first_name}}";
+      await sendPointsExpiryNotification(args);
+      account.shopper.firstName = "Invalid\u0000name";
+      await sendPointsExpiryNotification(args);
+      expect(prepareResendEmail).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(sendPreparedResendEmail).mock.calls[1]).toEqual(
+        vi.mocked(sendPreparedResendEmail).mock.calls[0],
+      );
+    });
+    it("uses distinct provider keys for distinct policy jobs on the same expiry date", async () => {
+      const first = fixture();
+      await sendPointsExpiryNotification(first.args);
+      const second = fixture();
+      second.args.deliveryClaim.candidate.id = "new-policy-job";
+      second.account.program.pointsExpiryPolicyVersion = 2;
+      second.account.pointsExpiryPolicyVersion = 2;
+      second.args.payload.policyVersion = 2;
+      await sendPointsExpiryNotification(second.args);
+      const calls = vi.mocked(sendPreparedResendEmail).mock.calls;
+      expect(calls[0][1]).toBe("loyalty-expiry-job-job");
+      expect(calls[1][1]).toBe("loyalty-expiry-job-new-policy-job");
+    });
+    it("suppresses a retry when the intended recipient changes", async () => {
+      const { args, account } = fixture();
+      await sendPointsExpiryNotification(args);
+      account.shopper.email = "changed@example.com";
+      expect(await sendPointsExpiryNotification(args)).toBe("ineligible");
+      expect(sendPreparedResendEmail).toHaveBeenCalledTimes(1);
+    });
+    it("requires a claimed outbox job before a new-policy send", async () => {
+      const { args } = fixture();
+      await expect(
+        sendPointsExpiryNotification({ ...args, deliveryClaim: undefined }),
+      ).rejects.toThrow("requires a worker claim");
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
+    });
+    it("current disable suppresses a previously enabled snapshot", async () => {
+      const { args, policy } = fixture();
+      policy.enabled = false;
+      expect(await sendPointsExpiryNotification(args)).toBe("ineligible");
+      expect(sendBatchEmail).not.toHaveBeenCalled();
+    });
+    it.each(["storeId", "programId"] as const)(
+      "rejects foreign snapshot %s",
+      async (key) => {
+        const { args, snapshot } = fixture();
+        snapshot[key] = "foreign";
+        await expect(sendPointsExpiryNotification(args)).rejects.toThrow(
+          "ownership mismatch",
+        );
+        expect(sendBatchEmail).not.toHaveBeenCalled();
+      },
+    );
+    it("does not bypass revoked consent", async () => {
+      const { args, account } = fixture();
+      account.shopper.acceptsMarketing = false;
+      expect(await sendPointsExpiryNotification(args)).toBe("ineligible");
+      expect(sendBatchEmail).not.toHaveBeenCalled();
+    });
   });
 
   // ==========================================================================
@@ -1196,88 +1397,141 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       expect(sendBatchEmail).not.toHaveBeenCalled();
     });
 
-    it("scheduler sweep reconciles accounts with outdated policy version and re-schedules fresh jobs", async () => {
-      const programVersion = 3;
-      const tx = {
-        weleticLoyaltyProgram: {
-          findUnique: vi.fn().mockResolvedValue({
-            ...basePolicy,
-            id: "wprog_reconcile",
-            pointsExpiryMonths: 6, // Changed from 12 to 6 months
+    it.each([true, false, null])(
+      "scheduler preserves communication policies (%s) while reconciling expiry jobs",
+      async (enabled) => {
+        const programVersion = 3;
+        const template = {
+          subject: "Scheduled {{points}}",
+          heading: "Points expiry",
+          body: "{{expiry_date}}",
+          actionLabel: "Rewards",
+        };
+        const metadata =
+          enabled === null
+            ? null
+            : {
+                loyaltyCommunications: {
+                  version: 1,
+                  sequence: 4,
+                  policies: ["points_warning", "points_last_chance"].map(
+                    (journey) => ({
+                      journey,
+                      enabled,
+                      templates: { en: template, ja: template, vi: template },
+                    }),
+                  ),
+                },
+              };
+        const tx = {
+          weleticLoyaltyProgram: {
+            findUnique: vi.fn().mockResolvedValue({
+              ...basePolicy,
+              id: "wprog_reconcile",
+              metadata,
+              pointsExpiryMonths: 6, // Changed from 12 to 6 months
+              pointsExpiryPolicyVersion: programVersion,
+              pointsExpiryPolicyAnchorAt: new Date("2026-01-01T00:00:00.000Z"),
+            }),
+          },
+          weleticLoyaltyAccount: {
+            findMany: vi
+              .fn()
+              // 1. Accounts to reconcile (policyVersion !== 3)
+              .mockResolvedValueOnce([
+                {
+                  id: "wlacc_reconcile_target",
+                  cachedPointsBalance: BigInt(750),
+                  lastQualifyingActivityAt: new Date(
+                    "2026-04-01T00:00:00.000Z",
+                  ),
+                  pointsExpiryPolicyVersion: 2, // Outdated v2
+                },
+              ])
+              // 2. Accounts to schedule (pointsExpiryJobsScheduledAt === null)
+              .mockResolvedValueOnce([
+                {
+                  id: "wlacc_reconcile_target",
+                  cachedPointsBalance: BigInt(750),
+                  lastQualifyingActivityAt: new Date(
+                    "2026-04-01T00:00:00.000Z",
+                  ),
+                  nextExpiryDate: new Date("2026-10-01T00:00:00.000Z"),
+                },
+              ]),
+            updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+          },
+        };
+
+        mockPrisma.weleticLoyaltyProgram.findMany.mockResolvedValue([
+          { storeId: "wstore_sweep" },
+        ]);
+        vi.mocked(withActiveStoreLoyaltyMutation).mockImplementation(
+          async ({ operation }: any) => operation(tx),
+        );
+
+        const sweepResult = await enqueuePointsExpiryLifecycleJobs({
+          now: new Date("2026-09-01T00:00:00.000Z"),
+          batchSize: 10,
+        });
+
+        // 1. Reconciled 1 account
+        expect(sweepResult.accountsReconciled).toBe(1);
+        expect(tx.weleticLoyaltyAccount.updateMany).toHaveBeenCalledWith({
+          where: {
+            id: "wlacc_reconcile_target",
+            storeId: "wstore_sweep",
+            status: "active",
+            pointsExpiryPolicyVersion: 2,
+          },
+          data: {
+            nextExpiryDate: new Date("2026-10-01T00:00:00.000Z"), // 6 months from 2026-04-01
             pointsExpiryPolicyVersion: programVersion,
-            pointsExpiryPolicyAnchorAt: new Date("2026-01-01T00:00:00.000Z"),
-          }),
-        },
-        weleticLoyaltyAccount: {
-          findMany: vi
-            .fn()
-            // 1. Accounts to reconcile (policyVersion !== 3)
-            .mockResolvedValueOnce([
-              {
-                id: "wlacc_reconcile_target",
-                cachedPointsBalance: BigInt(750),
-                lastQualifyingActivityAt: new Date("2026-04-01T00:00:00.000Z"),
-                pointsExpiryPolicyVersion: 2, // Outdated v2
-              },
-            ])
-            // 2. Accounts to schedule (pointsExpiryJobsScheduledAt === null)
-            .mockResolvedValueOnce([
-              {
-                id: "wlacc_reconcile_target",
-                cachedPointsBalance: BigInt(750),
-                lastQualifyingActivityAt: new Date("2026-04-01T00:00:00.000Z"),
-                nextExpiryDate: new Date("2026-10-01T00:00:00.000Z"),
-              },
-            ]),
-          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-        },
-      };
+            pointsExpiryJobsScheduledAt: null,
+          },
+        });
 
-      mockPrisma.weleticLoyaltyProgram.findMany.mockResolvedValue([
-        { storeId: "wstore_sweep" },
-      ]);
-      vi.mocked(withActiveStoreLoyaltyMutation).mockImplementation(
-        async ({ operation }: any) => operation(tx),
-      );
-
-      const sweepResult = await enqueuePointsExpiryLifecycleJobs({
-        now: new Date("2026-09-01T00:00:00.000Z"),
-        batchSize: 10,
-      });
-
-      // 1. Reconciled 1 account
-      expect(sweepResult.accountsReconciled).toBe(1);
-      expect(tx.weleticLoyaltyAccount.updateMany).toHaveBeenCalledWith({
-        where: {
-          id: "wlacc_reconcile_target",
-          storeId: "wstore_sweep",
-          status: "active",
-          pointsExpiryPolicyVersion: 2,
-        },
-        data: {
-          nextExpiryDate: new Date("2026-10-01T00:00:00.000Z"), // 6 months from 2026-04-01
-          pointsExpiryPolicyVersion: programVersion,
-          pointsExpiryJobsScheduledAt: null,
-        },
-      });
-
-      // 2. Fresh jobs enqueued carrying new version v3
-      expect(sweepResult.jobsEnqueued).toBe(5);
-      expect(
-        vi
+        // 2. Fresh jobs enqueued carrying new version v3
+        expect(sweepResult.jobsEnqueued).toBe(5);
+        const expiryJobs = vi
           .mocked(enqueueOutboxJobFromProgramTransaction)
           .mock.calls.filter(([call]) => call.jobType === "INACTIVITY_EXPIRY")
-          .map(([call]) => call.idempotencyKey),
-      ).toEqual([
-        "inactivity_expiry:warning:wlacc_reconcile_target:2026-10-01T00:00:00.000Z:v3",
-        "inactivity_expiry:last_chance:wlacc_reconcile_target:2026-10-01T00:00:00.000Z:v3",
-        "inactivity_expiry:expire:wlacc_reconcile_target:2026-10-01T00:00:00.000Z:v3",
-      ]);
-      expect(
-        vi
-          .mocked(enqueueOutboxJobFromProgramTransaction)
-          .mock.calls.filter(([call]) => call.jobType === "FLOW_TRIGGER"),
-      ).toHaveLength(2);
-    });
+          .map(([call]) => call.payload as Record<string, unknown>);
+        for (const [index, journey] of [
+          "points_warning",
+          "points_last_chance",
+        ].entries()) {
+          const snapshot = expiryJobs[index].communicationSnapshot;
+          if (enabled === null) {
+            expect(snapshot).toBeNull();
+          } else {
+            expect(snapshot).toEqual(
+              snapshotLoyaltyCommunicationPolicy({
+                storeId: "wstore_sweep",
+                programId: "wprog_reconcile",
+                metadata,
+                journey: journey as "points_warning" | "points_last_chance",
+              }),
+            );
+          }
+        }
+        expect(expiryJobs[2]).not.toHaveProperty("communicationSnapshot");
+        expect(
+          vi
+            .mocked(enqueueOutboxJobFromProgramTransaction)
+            .mock.calls.filter(([call]) => call.jobType === "INACTIVITY_EXPIRY")
+            .map(([call]) => call.idempotencyKey),
+        ).toEqual([
+          "inactivity_expiry:warning:wlacc_reconcile_target:2026-10-01T00:00:00.000Z:v3",
+          "inactivity_expiry:last_chance:wlacc_reconcile_target:2026-10-01T00:00:00.000Z:v3",
+          "inactivity_expiry:expire:wlacc_reconcile_target:2026-10-01T00:00:00.000Z:v3",
+        ]);
+        expect(
+          vi
+            .mocked(enqueueOutboxJobFromProgramTransaction)
+            .mock.calls.filter(([call]) => call.jobType === "FLOW_TRIGGER"),
+        ).toHaveLength(2);
+      },
+    );
   });
 });

@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { APPSFLYER_INTEGRATION_ID } from "@dub/utils/src";
+import {
+  APPSFLYER_INTEGRATION_ID,
+  SHOPIFY_INTEGRATION_ID,
+} from "@dub/utils/src";
 import { redirect } from "next/navigation";
 import IntegrationPageClient from "./page-client";
 
@@ -10,51 +13,57 @@ export default async function IntegrationPage(props: {
 }) {
   const { slug: workspaceSlug, integrationSlug } = await props.params;
 
-  // Being extra safe, we are fetching the integration and the installed integration separately
-  const [integration, installedIntegration] = await Promise.all([
-    prisma.integration.findUnique({
-      where: {
-        slug: integrationSlug,
-      },
-    }),
-
-    prisma.installedIntegration.findFirst({
-      where: {
-        integration: {
-          slug: integrationSlug,
-        },
-        project: {
-          slug: workspaceSlug,
-        },
-      },
-      select: {
-        id: true,
-        integrationId: true,
-        userId: true,
-        settings: true,
-        createdAt: true,
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            image: true,
-          },
-        },
-        webhooks: {
-          select: {
-            id: true,
-          },
-        },
-      },
-    }),
-  ]);
+  const integration = await prisma.integration.findUnique({
+    where: {
+      slug: integrationSlug,
+    },
+  });
 
   if (!integration || integration.comingSoon) {
     redirect(`/${workspaceSlug}/settings/integrations`);
   }
 
-  if (integration.guideUrl && integration.id !== APPSFLYER_INTEGRATION_ID) {
+  // Native Shopify installations have no generic installer identity. Do not
+  // fetch or serialize a legacy user's details even when an old row remains.
+  const installedIntegration =
+    integration.id === SHOPIFY_INTEGRATION_ID
+      ? null
+      : await prisma.installedIntegration.findFirst({
+          where: {
+            integration: {
+              slug: integrationSlug,
+            },
+            project: {
+              slug: workspaceSlug,
+            },
+          },
+          select: {
+            id: true,
+            integrationId: true,
+            userId: true,
+            settings: true,
+            createdAt: true,
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                image: true,
+              },
+            },
+            webhooks: {
+              select: {
+                id: true,
+              },
+            },
+          },
+        });
+
+  if (
+    integration.guideUrl &&
+    integration.id !== APPSFLYER_INTEGRATION_ID &&
+    integration.id !== SHOPIFY_INTEGRATION_ID
+  ) {
     redirect(integration.guideUrl);
   }
 

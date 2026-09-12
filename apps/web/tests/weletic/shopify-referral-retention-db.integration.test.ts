@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ executeRaw: vi.fn().mockResolvedValue(0) }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    $transaction: async (operation: any) =>
+      operation({ $queryRaw: async () => [], $executeRaw: mocks.executeRaw }),
     $executeRaw: mocks.executeRaw,
     weleticShopifyCustomerPrivacyTombstone: {
       findMany: vi.fn().mockResolvedValue([]),

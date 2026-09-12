@@ -18,7 +18,7 @@ import {
   inspectShopifyConnectLifecycle,
   type ShopifyConnectLifecycle,
 } from "@/lib/weletic/shopify/integration-lifecycle";
-import { deriveAllShopifyShopPrivacyIdentities } from "@/lib/weletic/shopify/privacy-identity";
+import { lockLegacyShopifyConnection } from "@/lib/weletic/shopify/legacy-connection-fence";
 import {
   ensureShopifyWebhooksRegistered,
   SHOPIFY_CANONICAL_WEBHOOK_TOPICS,
@@ -33,6 +33,7 @@ import {
 import { APP_DOMAIN_WITH_NGROK, SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import * as z from "zod/v4";
 
 const requestSchema = z.discriminatedUnion("action", [
@@ -49,38 +50,11 @@ const requestSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
-type ShopifyShopPrivacyIdentity = ReturnType<
-  typeof deriveAllShopifyShopPrivacyIdentities
->[number];
-
 type CredentialObservation = {
   installationId: string | null;
   installationUserId: string | null;
   tokenHash: string | null;
 };
-
-async function lockActiveShopPrivacyTombstone({
-  tx,
-  identities,
-}: {
-  tx: Prisma.TransactionClient;
-  identities: ShopifyShopPrivacyIdentity[];
-}) {
-  const identityPredicates = identities.map(
-    ({ identityKeyId, shopDomainDigest }) =>
-      Prisma.sql`(identityKeyId = ${identityKeyId} AND shopDomainDigest = ${shopDomainDigest})`,
-  );
-  if (identityPredicates.length === 0) return null;
-  const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT id
-    FROM WeleticShopifyShopPrivacyTombstone
-    WHERE expiresAt > ${new Date()}
-      AND (${Prisma.join(identityPredicates, " OR ")})
-    LIMIT 1
-    FOR UPDATE
-  `);
-  return rows[0] ?? null;
-}
 
 // PATCH /api/shopify/integration/callback – update a shopify store id
 export const PATCH = withWorkspace(
@@ -108,6 +82,12 @@ export const PATCH = withWorkspace(
           message: "Enter a valid *.myshopify.com store domain.",
         });
       }
+      await prisma.$transaction((tx) =>
+        lockLegacyShopifyConnection(tx, {
+          workspaceId: workspace.id,
+          shop: canonicalShopDomain,
+        }),
+      );
       // Snapshot the exact installation generation before either Shopify
       // verification or webhook provisioning. The final transaction compares
       // this observation under the store -> program locks, so a slower callback
@@ -161,25 +141,16 @@ export const PATCH = withWorkspace(
 
     try {
       if (body.action === "disconnect") {
-        const [store, installation] = await Promise.all([
-          prisma.weleticShopifyStore.findUnique({
-            where: { projectId: workspace.id },
-            select: {
-              id: true,
-              shopDomain: true,
-              complianceState: true,
-              installationGeneration: true,
-            },
-          }),
-          prisma.installedIntegration.findFirst({
-            where: {
-              projectId: workspace.id,
-              integrationId: SHOPIFY_INTEGRATION_ID,
-            },
-            select: { id: true },
-          }),
-        ]);
-        if (!store || !installation || !store.installationGeneration) {
+        const store = await prisma.weleticShopifyStore.findUnique({
+          where: { projectId: workspace.id },
+          select: {
+            id: true,
+            shopDomain: true,
+            complianceState: true,
+            installationGeneration: true,
+          },
+        });
+        if (!store || !store.installationGeneration) {
           throw new DubApiError({
             code: "conflict",
             message: "No bound Shopify integration lifecycle is available.",
@@ -201,7 +172,19 @@ export const PATCH = withWorkspace(
         const request = await persistAndQueueInternalShopifyDisconnect({
           storeId: store.id,
           canonicalShopDomain: verifiedShopDomain,
-          idempotencyKey: `${installation.id}:${store.installationGeneration}`,
+          expectedInstallationGeneration: store.installationGeneration,
+          // Stable after credential scrub deletes generic/native records.
+          // The retained Store and generation, not an installer User, own this
+          // lifecycle. Generation is rechecked under the ingress Store lock.
+          idempotencyKey: createHash("sha256")
+            .update(
+              JSON.stringify([
+                "store-disconnect-v1",
+                store.id,
+                store.installationGeneration,
+              ]),
+            )
+            .digest("hex"),
         });
         return NextResponse.json({
           shopifyStoreId: null,
@@ -267,15 +250,16 @@ export const PATCH = withWorkspace(
             body.accessToken,
           ),
         });
-        const shopPrivacyIdentities = deriveAllShopifyShopPrivacyIdentities({
-          shopDomain: verifiedShopDomain,
-        });
 
         let finalizedConnection: {
           mode: "active" | "frozen_refresh";
           project?: { shopifyStoreId: string | null };
         };
         finalizedConnection = await prisma.$transaction(async (tx) => {
+          await lockLegacyShopifyConnection(tx, {
+            workspaceId: workspace.id,
+            shop: verifiedShopDomain,
+          });
           const persistCredential = async (credentialGeneration: string) => {
             const currentInstallations = await tx.installedIntegration.findMany(
               {
@@ -330,10 +314,8 @@ export const PATCH = withWorkspace(
           };
 
           if (!lifecycle.storeId) {
-            // This locking/current read is intentionally ordered before the
-            // tombstone read. If final shop-redact owns the raw-domain store
-            // row, this writer waits; after redaction commits it must observe
-            // the tombstone before it can bind credentials.
+            // The shared legacy fence already checked Store and tombstone
+            // authority, before locking the coordinator and admission.
             const globalStores = await tx.$queryRaw<
               Array<{ id: string; projectId: string }>
             >(Prisma.sql`
@@ -343,15 +325,6 @@ export const PATCH = withWorkspace(
               LIMIT 1
               FOR UPDATE
             `);
-            const retainedTombstone = await lockActiveShopPrivacyTombstone({
-              tx,
-              identities: shopPrivacyIdentities,
-            });
-            if (retainedTombstone) {
-              throw new Error(
-                "This Shopify domain is retained by a redacted privacy lifecycle.",
-              );
-            }
             if (globalStores[0]) {
               throw new Error(
                 "This Shopify domain became bound while the connection was being verified.",
@@ -402,15 +375,6 @@ export const PATCH = withWorkspace(
           if (!lockedStore) {
             throw new Error(
               "The retained Shopify store disappeared during connection.",
-            );
-          }
-          const retainedTombstone = await lockActiveShopPrivacyTombstone({
-            tx,
-            identities: shopPrivacyIdentities,
-          });
-          if (retainedTombstone) {
-            throw new Error(
-              "This Shopify domain is retained by a redacted privacy lifecycle.",
             );
           }
           if (

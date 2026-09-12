@@ -1,7 +1,8 @@
 import { Prisma } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  nativeCredentialDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   merchantSettingsDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   staffGrantFindMany: vi.fn().mockResolvedValue([]),
   staffActionFindMany: vi.fn().mockResolvedValue([]),
@@ -380,7 +381,9 @@ import {
 } from "../../lib/weletic/shopify/compliance-worker";
 
 describe("durable compliance worker boundaries", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
+    vi.stubEnv("SHOPIFY_API_KEY", "public-app-test");
     vi.clearAllMocks();
     mocks.shopperFindMany.mockResolvedValue([]);
     mocks.customerFindMany.mockResolvedValue([]);
@@ -582,6 +585,7 @@ describe("durable compliance worker boundaries", () => {
         },
         $queryRaw: (query: any) => {
           const sql = query?.strings?.join("") ?? "";
+          if (sql.includes("WeleticShopifyPendingInstallation")) return [];
           if (sql.includes("WeleticShopifyComplianceRequest")) {
             return mocks.requestLeaseQueryRaw(query);
           }
@@ -593,6 +597,9 @@ describe("durable compliance worker boundaries", () => {
         project: {
           findUnique: mocks.projectFindUnique,
           update: mocks.projectUpdate,
+        },
+        weleticShopifyInstallationCredential: {
+          deleteMany: mocks.nativeCredentialDeleteMany,
         },
         installedIntegration: {
           findMany: mocks.installationFindMany,
@@ -1020,6 +1027,47 @@ describe("durable compliance worker boundaries", () => {
         cursor: { lastId: "snapshot_99", sequence: 1 },
       });
       expect(mocks.artifactStore.mock.calls[0][0].value).toHaveLength(100);
+    },
+  );
+
+  it.each(["export_import_snapshots", "export_import_executions"])(
+    "does not advance %s when its table is unavailable; retries the same cursor",
+    async (phase) => {
+      const unavailable = Object.assign(new Error("Import table unavailable"), {
+        code: "P2021",
+      });
+      const query =
+        phase === "export_import_snapshots"
+          ? mocks.importSnapshotFindMany
+          : mocks.importExecutionFindMany;
+      mocks.shopperFindUnique.mockResolvedValue({ shopifyCustomerId: "42" });
+      query
+        .mockRejectedValueOnce(unavailable)
+        .mockResolvedValueOnce([{ id: "row_after_repair" }]);
+      const request = {
+        id: "import_export",
+        storeId: "store_1",
+        lockedBy: "worker_1",
+        leaseVersion: 1,
+        phase,
+        cursor: { lastId: "prior", sequence: 1 },
+        progress: {},
+        store: { projectId: "workspace_1" },
+        payloadCiphertext: JSON.stringify({
+          shopperId: "shopper_42",
+          accountId: "account_42",
+          orderExternalIds: [],
+        }),
+      };
+      await expect(processCustomerDataRequestStep(request)).rejects.toBe(
+        unavailable,
+      );
+      expect(mocks.artifactStore).not.toHaveBeenCalled();
+      expect(request.cursor).toEqual({ lastId: "prior", sequence: 1 });
+      await processCustomerDataRequestStep(request);
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(query.mock.calls[1][0].cursor).toEqual({ id: "prior" });
+      expect(mocks.artifactStore).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -2426,6 +2474,40 @@ describe("durable compliance worker boundaries", () => {
     expect(mocks.importCustomerRedact).toHaveBeenCalledTimes(1);
   });
 
+  it("does not skip customer import erasure when schema is unavailable", async () => {
+    const unavailable = Object.assign(new Error("Import table unavailable"), {
+      code: "P2021",
+    });
+    mocks.importCustomerRedact
+      .mockRejectedValueOnce(unavailable)
+      .mockResolvedValueOnce({ snapshotsRedacted: 1, executionsRedacted: 1 });
+    const request = {
+      id: "wcomp_import_redact",
+      storeId: "store_1",
+      lockedBy: "worker_1",
+      leaseVersion: 1,
+      phase: "purge_customer_backfill_preview",
+      cursor: null,
+      progress: {},
+      store: { projectId: "workspace_1" },
+      payloadCiphertext: JSON.stringify({
+        customerId: "42",
+        accountId: "account_42",
+        orderExternalIds: [],
+      }),
+    };
+    await expect(processCustomerRedactStep(request)).rejects.toBe(unavailable);
+    expect(mocks.backfillPreviewFindMany).not.toHaveBeenCalled();
+    await expect(processCustomerRedactStep(request)).resolves.toMatchObject({
+      phase: request.phase,
+      progress: {
+        customerImportSnapshotsRedacted: 1,
+        customerImportExecutionsRedacted: 1,
+      },
+    });
+    expect(mocks.importCustomerRedact).toHaveBeenCalledTimes(2);
+  });
+
   it("deletes immutable customer backfill snapshots before legacy previews", async () => {
     mocks.backfillSnapshotFindMany
       .mockResolvedValueOnce([{ id: "snapshot_01" }])
@@ -2931,6 +3013,36 @@ describe("durable compliance worker boundaries", () => {
       processShopRedactStep({ ...request, lockedBy: null }),
     ).rejects.toThrow("lease");
     expect(mocks.importStorePurge).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not skip shop import erasure when schema is unavailable", async () => {
+    const unavailable = Object.assign(new Error("Import table unavailable"), {
+      code: "P2021",
+    });
+    mocks.importStorePurge
+      .mockRejectedValueOnce(unavailable)
+      .mockResolvedValueOnce({ kind: "executions", count: 1 });
+    const request = {
+      id: "wcomp_import_shop",
+      storeId: "store_1",
+      lockedBy: "worker_1",
+      leaseVersion: 1,
+      phase: "purge_loyalty_backfill",
+      cursor: null,
+      progress: { loyaltyImportRecordsDeleted: 2 },
+      store: { projectId: "workspace_1" },
+      payloadCiphertext: JSON.stringify({
+        shopDomain: "target.myshopify.com",
+        orderExternalIds: [],
+      }),
+    };
+    await expect(processShopRedactStep(request)).rejects.toBe(unavailable);
+    expect(mocks.backfillCreditFindMany).not.toHaveBeenCalled();
+    await expect(processShopRedactStep(request)).resolves.toMatchObject({
+      phase: request.phase,
+      progress: { loyaltyImportRecordsDeleted: 3 },
+    });
+    expect(mocks.importStorePurge).toHaveBeenCalledTimes(2);
   });
 
   it("drains bounded backfill previews before jobs and converges idempotently", async () => {
@@ -3520,6 +3632,9 @@ describe("durable compliance worker boundaries", () => {
       where: { storeId: "store_1" },
     });
     expect(mocks.installationDeleteMany).toHaveBeenCalledOnce();
+    expect(mocks.nativeCredentialDeleteMany).toHaveBeenCalledWith({
+      where: { storeId: "store_1" },
+    });
     expect(mocks.projectUpdate).toHaveBeenCalledWith({
       where: { id: "workspace_1" },
       data: { shopifyStoreId: null },

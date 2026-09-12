@@ -9,6 +9,37 @@ to Shopify.
 
 ## Draft review and release gates
 
+September 12 compatibility checkpoint: see the
+[schema release gate](historical-import-schema-release-gate.md). The published
+import checkpoint was integrated with public main `cfd241e62c` in a separate
+worktree; original unpublished grouped-rollback changes were not included.
+Both communication and import job families retain strict payload/generation and
+ownership checks. Full delivery claims are projected into the import-specific
+strict claim shape; rollback to no VIP tier cannot produce achievement messages.
+The read-only schema audit and additive enum planner do not authorize shared DDL
+or remove the draft release gate below.
+
+Fresh isolated fixture `weletic_loyalty_it_import_compat_20260912` was generated
+from the combined Prisma schema. The real audit passed the baseline/restored
+schema and rejected each missing import table, an extra required column, an extra
+unique constraint, the wrong opening-balance type, and a non-null rollback tier
+destination. All 157 tables were independently verified empty before and after;
+temporary SELECT-only access was revoked. No existing database schema was changed.
+An attempted MyISAM fixture conversion was rejected by MySQL before that negative
+audit could run; wrong-engine/view rejection is covered by unit tests, not claimed
+as a live MyISAM conversion result. This is metadata compatibility evidence, not
+full financial execution or live privacy acceptance.
+
+Compatibility verification: 480 web test files, 7,569 tests passed, six existing
+skips; web and Shopify typechecks; all ten root lint tasks; 32 Shopify tests;
+Prisma validation; both production builds (web: 367 static pages); all changed
+TypeScript/Markdown formatting. The build used the same empty fixture with
+temporary SELECT-only access and verified cleanup. The initial high-parallelism run missed two existing wall-clock
+performance thresholds; the complete rerun with two workers passed without
+changing those assertions. Web typechecking required an 8 GiB Node heap after the
+default-heap run exhausted memory. Independent review found and verified fixes
+for strict-claim projection, no-tier VIP messages, and restrictive schema drift.
+
 This implementation is a draft review checkpoint, not a merge or release candidate.
 Existing privacy export and erasure workflows now query the three import tables
 even when no import has been used. Deploying against an unprepared database would

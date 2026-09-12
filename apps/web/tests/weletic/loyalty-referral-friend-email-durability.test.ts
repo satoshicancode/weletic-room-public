@@ -318,7 +318,9 @@ describe("Referral Friend Email Delivery Durability & Lease State Machine", () =
     expect(referralRecord.friendEmailDeliveryAttempts).toBe(1);
     expect(referralRecord.friendEmailLeaseToken).toBeNull();
     expect(referralRecord.friendEmailLeaseReservedAt).toBeNull();
-    expect(referralRecord.friendEmailLastError).toContain("Timeout");
+    expect(referralRecord.friendEmailLastError).toBe(
+      "Referral email delivery failed",
+    );
   });
 
   it("3. Prevents duplicate outbound emails when an active lease is held by a concurrent request", async () => {

@@ -261,6 +261,8 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
         shopCurrency: "USD",
         currencyVerifiedAt: new Date(),
         installationGeneration: "g1",
+        storeAccessState: "active" as const,
+        storeAccessRevision: 1,
         program: { accountingCurrency: "USD" },
       };
       vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue(store);

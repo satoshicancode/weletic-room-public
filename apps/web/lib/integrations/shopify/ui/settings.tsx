@@ -2,19 +2,16 @@
 
 import { syncShopifyCatalogAction } from "@/lib/actions/partners/sync-shopify-catalog";
 import useWorkspace from "@/lib/swr/use-workspace";
-import { InstalledIntegrationInfoProps } from "@/lib/types";
 import { ShopifySessionHealthNotice } from "@/ui/weletic/shopify/session-health-notice";
 import { Button } from "@dub/ui";
-import { CheckCircle2, Globe, RefreshCw, ShoppingBag } from "lucide-react";
+import { Globe, RefreshCw, ShoppingBag } from "lucide-react";
 import { useAction } from "next-safe-action/hooks";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 
-export const ShopifyIntegrationSettings = ({
-  installed,
-}: InstalledIntegrationInfoProps) => {
-  const { id: workspaceId, shopifyStoreId } = useWorkspace();
+export const ShopifyIntegrationSettings = () => {
+  const { id: workspaceId } = useWorkspace();
   const { mutate } = useSWRConfig();
   const [lastSyncedStats, setLastSyncedStats] = useState<{
     products?: number;
@@ -61,18 +58,13 @@ export const ShopifyIntegrationSettings = ({
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <h4 className="text-sm font-semibold text-neutral-900">
-                Shopify Store Connection
+                Shopify catalog synchronization
               </h4>
-              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                <CheckCircle2 className="h-3 w-3" />
-                Installed
-              </span>
             </div>
             <p className="text-xs text-neutral-500">
-              Cửa hàng được liên kết:{" "}
-              <span className="font-mono font-medium text-neutral-800">
-                {shopifyStoreId || "Connected Store"}
-              </span>
+              Sync requests use the server’s current store connection and access
+              checks. This page does not verify installation or company
+              approval.
             </p>
           </div>
 
@@ -80,6 +72,7 @@ export const ShopifyIntegrationSettings = ({
             type="button"
             variant="primary"
             loading={isPending}
+            disabled={!workspaceId}
             text={isPending ? "Syncing…" : "Sync Catalog Now"}
             icon={<RefreshCw className="h-3.5 w-3.5" />}
             onClick={() => {
@@ -100,8 +93,8 @@ export const ShopifyIntegrationSettings = ({
                 Tự động đồng bộ Webhooks
               </p>
               <p className="text-[11px] text-neutral-500">
-                12 sự kiện thời gian thực (Sản phẩm, Thị trường, Giảm giá, Đơn
-                hàng)
+                Webhook delivery depends on the current app registration and
+                store permissions; this page does not verify delivery.
               </p>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { defaultLoyaltyNudgeSettings } from "@/lib/weletic/loyalty/nudge-contract";
 import { listRewardDefinitions } from "@/lib/weletic/loyalty/rewards";
 import { resolveShopifyStoreByDomain } from "@/lib/weletic/shopify/store-resolver";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -101,6 +102,11 @@ describe("public Shopify loyalty program contract", () => {
     vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
       id: "store_1",
       shopCurrency: "JPY",
+      storeAccessState: "active",
+      complianceState: "active",
+      uninstalledAt: null,
+      redactedAt: null,
+      installationGeneration: "fixture-generation",
     } as any);
     vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValue({
       id: "wprog_private",
@@ -163,6 +169,7 @@ describe("public Shopify loyalty program contract", () => {
 
   it("returns an explicit shopper-safe DTO and normalized live branding", async () => {
     const payload = await getProgramPayload();
+    expect(payload.data.currencyMinorUnits).toBe(0);
 
     expect(payload.data.program).toEqual({
       name: "Yamax Points",
@@ -221,6 +228,67 @@ describe("public Shopify loyalty program contract", () => {
       }),
     });
   });
+
+  it.each([true, false])(
+    "projects only nudge presentation settings when program active=%s",
+    async (active) => {
+      const settings = defaultLoyaltyNudgeSettings();
+      settings.policies[0].enabled = true;
+      vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValue({
+        name: "Fixture",
+        pointNameSingular: "Point",
+        pointNamePlural: "Points",
+        pointsPerCurrencyUnit: BigInt(1),
+        status: "active",
+        killSwitchActive: !active,
+        metadata: {
+          loyaltyNudges: settings,
+          maintenanceLeaseDigest: "never-public",
+        },
+      } as any);
+      const payload = await getProgramPayload();
+      expect(payload.data.nudges).toEqual(
+        active ? settings : defaultLoyaltyNudgeSettings(),
+      );
+      expect(JSON.stringify(payload)).not.toContain("never-public");
+    },
+  );
+
+  it.each([
+    { storeAccessState: "pending_approval" },
+    { storeAccessState: "suspended" },
+    { complianceState: "redacted" },
+    { uninstalledAt: NOW },
+    { redactedAt: NOW },
+    { installationGeneration: null },
+    { installationGeneration: "" },
+  ])(
+    "suppresses nudge configuration for an ineligible installation %j",
+    async (override) => {
+      const settings = defaultLoyaltyNudgeSettings();
+      settings.policies[0].enabled = true;
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
+        id: "store_1",
+        shopCurrency: "JPY",
+        storeAccessState: "active",
+        complianceState: "active",
+        uninstalledAt: null,
+        redactedAt: null,
+        installationGeneration: "fixture-generation",
+        ...override,
+      } as any);
+      vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValue({
+        name: "Fixture",
+        pointsPerCurrencyUnit: BigInt(1),
+        status: "active",
+        killSwitchActive: false,
+        metadata: { loyaltyNudges: settings },
+      } as any);
+      const payload = await getProgramPayload();
+      expect(payload.data.nudges).toEqual(defaultLoyaltyNudgeSettings());
+      expect(JSON.stringify(payload)).not.toContain("fixture-generation");
+    },
+  );
 
   it("does not publish POS-only rewards in the online catalog", async () => {
     vi.mocked(listRewardDefinitions).mockResolvedValueOnce([

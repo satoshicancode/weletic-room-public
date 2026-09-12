@@ -1,5 +1,9 @@
 import { PrismaClient } from "@prisma/client";
 import { createHash } from "node:crypto";
+import {
+  planImportOutboxEnum,
+  sqlEnum,
+} from "../../lib/weletic/loyalty/historical-import-schema-contract";
 
 // Narrow ADR 0023 local DDL. Never use prisma db push for this operation.
 const url = new URL(process.env.DATABASE_URL || "invalid:");
@@ -14,36 +18,8 @@ if (
 )
   throw new Error("Refusing non-isolated import execution schema target");
 
-const previousValues = [
-  "HOLDING_PERIOD_RELEASE",
-  "INACTIVITY_EXPIRY",
-  "TIER_REVIEW",
-  "METAFIELD_SYNC",
-  "REDEMPTION_RECOVERY",
-  "BIRTHDAY_REWARD",
-  "REFERRAL_REWARD_PROVISION",
-  "VOUCHER_PRIVACY_CLEANUP",
-  "REVIEW_REQUEST_EMAIL",
-  "REVIEW_SUMMARY_SYNC",
-  "REVIEW_MEDIA_CLEANUP",
-  "FLOW_TRIGGER",
-  "SHOPPER_REWARD_PROVISION",
-  "REVIEW_POINTS_FULFILL",
-];
-// Retain the pre-existing local-only review value and every enum ordinal.
-const nextValues = [
-  ...previousValues,
-  "HISTORICAL_IMPORT_COMMIT",
-  "HISTORICAL_IMPORT_ROLLBACK",
-];
-const enumType = (values: string[]) =>
-  `enum(${values.map((v) => `'${v}'`).join(",")})`;
-const enumDdl = `ALTER TABLE \`WeleticLoyaltyOutboxJob\` MODIFY COLUMN \`jobType\` ${enumType(nextValues)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL`;
 const tierDdl =
   "ALTER TABLE `WeleticLoyaltyTierHistory` MODIFY COLUMN `toTierId` VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL";
-const ddlSha256 = createHash("sha256")
-  .update(`${enumDdl};\n${tierDdl};\n`)
-  .digest("hex");
 const client = new PrismaClient({ datasourceUrl: url.toString() });
 type Column = {
   tableName: string;
@@ -92,12 +68,12 @@ async function main() {
     throw new Error("Unexpected column attributes; refusing schema change");
   const jobs = columns.find((c) => c.tableName === "WeleticLoyaltyOutboxJob");
   const tier = columns.find((c) => c.tableName === "WeleticLoyaltyTierHistory");
-  if (
-    !jobs ||
-    jobs.nullable !== "NO" ||
-    ![enumType(previousValues), enumType(nextValues)].includes(jobs.columnType)
-  )
+  if (!jobs || jobs.nullable !== "NO")
     throw new Error("Unexpected outbox enum; refusing schema change");
+  // Preserve every ordinal from a recognized lineage. Never overwrite newer
+  // communication jobs with the old import-only enum definition.
+  const plan = planImportOutboxEnum(jobs.columnType);
+  const enumDdl = `ALTER TABLE \`WeleticLoyaltyOutboxJob\` MODIFY COLUMN \`jobType\` ${sqlEnum(plan.proposed)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL`;
   if (
     !tier ||
     tier.columnType !== "varchar(191)" ||
@@ -105,13 +81,15 @@ async function main() {
   )
     throw new Error("Unexpected tier-history column; refusing schema change");
   const statements = [
-    ...(jobs.columnType === enumType(previousValues) ? [enumDdl] : []),
+    ...(!plan.ready ? [enumDdl] : []),
     ...(tier.nullable === "NO" ? [tierDdl] : []),
   ];
   console.log(
     JSON.stringify({
       database: identity[0].name,
-      ddlSha256,
+      ddlSha256: createHash("sha256")
+        .update(statements.join(";\n"))
+        .digest("hex"),
       statements,
       apply: process.env.LOYALTY_IMPORT_EXECUTION_SCHEMA_APPLY === "1",
     }),
@@ -123,7 +101,7 @@ async function main() {
   const after = await readColumns();
   if (
     after.find((c) => c.tableName === "WeleticLoyaltyOutboxJob")?.columnType !==
-      enumType(nextValues) ||
+      sqlEnum(plan.proposed) ||
     after.find((c) => c.tableName === "WeleticLoyaltyTierHistory")?.nullable !==
       "YES"
   )

@@ -25,6 +25,7 @@ const AUDIT_SOURCES = [
   "voucher_cleanup_snapshots",
   "nonterminal_outbox_snapshots",
   "webhook_events",
+  "pending_installations",
 ] as const;
 
 type AuditSource = (typeof AUDIT_SOURCES)[number];
@@ -70,6 +71,12 @@ async function loadAuditPage({
   lastId?: string;
 }): Promise<AuditRecord[]> {
   const page = auditPage(batchSize, lastId);
+  if (source === "pending_installations") {
+    return prisma.weleticShopifyPendingInstallation.findMany({
+      ...page,
+      select: { id: true, identityKeyId: true },
+    });
+  }
   if (source === "customer_tombstones") {
     return prisma.weleticShopifyCustomerPrivacyTombstone.findMany({
       ...page,

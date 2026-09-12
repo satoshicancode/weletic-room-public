@@ -81,6 +81,12 @@ enum WeleticShopifyStoreComplianceState {
   redacted
 }
 
+enum WeleticShopifyStoreAccessState {
+  pending_approval
+  active
+  suspended
+}
+
 model WeleticShopifyStore {
   id                      String                             @id
   projectId               String                             @unique
@@ -89,6 +95,8 @@ model WeleticShopifyStore {
   shopCurrency            String
   currencyVerifiedAt      DateTime?
   installationGeneration  String?                            @db.VarChar(64)
+  storeAccessState        WeleticShopifyStoreAccessState     @default(pending_approval)
+  storeAccessRevision     Int                                @default(1)
   defaultLocale           String                             @default("en")
   apiVersion              String
   syncStatus              WeleticSyncStatus                  @default(pending)
@@ -142,9 +150,97 @@ model WeleticShopifyStore {
   shopPrivacyTombstones        WeleticShopifyShopPrivacyTombstone[]
   voucherCleanups              WeleticShopifyVoucherCleanup[]
   voucherCleanupRequestLinks   WeleticShopifyVoucherCleanupRequestLink[]
+  accessChanges                WeleticShopifyStoreAccessChange[]
+  pendingInstallation          WeleticShopifyPendingInstallation?
+  installationCredentials      WeleticShopifyInstallationCredential[]
 
   @@index(syncStatus)
   @@index(complianceState)
+}
+
+// Shopify-native credential ownership: no generic integration or installer User.
+// The encrypted envelope repeats app/store/generation identity to reject swaps.
+model WeleticShopifyInstallationCredential {
+  id                     String   @id @db.VarChar(64)
+  storeId                String   @db.VarChar(191)
+  appId                  String   @db.VarChar(191)
+  installationGeneration String   @db.VarChar(64)
+  revision               Int      @default(1)
+  credentialCiphertext   String   @db.LongText
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, appId], map: "shopify_store_app_credential_key")
+}
+
+// Operator admission changes and automatic reconnect resets. This append-only
+// record is committed with the store revision; it contains no customer identifiers
+// or credentials. Automatic resets never activate a store.
+model WeleticShopifyStoreAccessChange {
+  id                     String                         @id @db.VarChar(64)
+  storeId                String
+  installationGeneration String                         @db.VarChar(64)
+  previousState          WeleticShopifyStoreAccessState
+  nextState              WeleticShopifyStoreAccessState
+  revision               Int
+  operator               String                         @db.VarChar(191)
+  reason                 String                         @db.VarChar(500)
+  createdAt              DateTime                       @default(now())
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, revision])
+}
+
+enum WeleticShopifyPendingInstallationState {
+  pending_approval
+  mapped
+  uninstalled
+  redacted
+}
+
+// Admission exists before a workspace/program/store. Domains are matched using
+// the existing versioned privacy HMAC keyring; this table stores no SDK tokens,
+// shopper identity, email, or raw shop domain. A mapped row is NOT activation.
+model WeleticShopifyPendingInstallation {
+  id                     String                                 @id @db.VarChar(64)
+  appId                  String                                 @db.VarChar(191)
+  identityKeyId          String                                 @db.VarChar(64)
+  shopDomainDigest       String                                 @db.VarChar(64)
+  installationGeneration String?                                @db.VarChar(64)
+  state                  WeleticShopifyPendingInstallationState @default(pending_approval)
+  revision               Int                                    @default(1)
+  mappedStoreId          String?                                @unique
+  authenticatedAt        DateTime?
+  uninstalledAt          DateTime?
+  redactedAt             DateTime?
+  expiresAt              DateTime?
+  createdAt              DateTime                               @default(now())
+  updatedAt              DateTime                               @updatedAt
+
+  mappedStore WeleticShopifyStore?                      @relation(fields: [mappedStoreId], references: [id], onDelete: SetNull)
+  changes     WeleticShopifyPendingInstallationChange[]
+
+  @@unique([appId, identityKeyId, shopDomainDigest], map: "pending_installation_identity_key")
+  @@index([state, expiresAt])
+}
+
+model WeleticShopifyPendingInstallationChange {
+  id                     String   @id @db.VarChar(64)
+  pendingInstallationId  String   @db.VarChar(64)
+  mappedStoreId          String?  @db.VarChar(191)
+  installationGeneration String   @db.VarChar(64)
+  revision               Int
+  operation              String   @db.VarChar(32)
+  operator               String   @db.VarChar(191)
+  reason                 String   @db.VarChar(500)
+  createdAt              DateTime @default(now())
+
+  pendingInstallation WeleticShopifyPendingInstallation @relation(fields: [pendingInstallationId], references: [id], onDelete: Cascade)
+
+  @@unique([pendingInstallationId, revision], map: "pending_installation_audit_revision_key")
 }
 
 // Shopify Remix OAuth sessions. The serialized payload is encrypted before it

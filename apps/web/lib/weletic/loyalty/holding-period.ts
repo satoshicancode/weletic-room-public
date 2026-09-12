@@ -2,10 +2,16 @@ import { prisma } from "@/lib/prisma";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import { Prisma, WeleticPointsLedgerEntryType } from "@prisma/client";
+import { reconcilePersistedOrderMerchandiseRefunds } from "./earn";
 import { enqueueFlowTriggerJob } from "./flow-trigger-outbox";
-import { appendPointsLedgerEntry, OptimisticConcurrencyError } from "./ledger";
+import {
+  appendPointsLedgerEntry,
+  appendPointsLedgerEntryWithReceipt,
+  OptimisticConcurrencyError,
+} from "./ledger";
 import { allocateReversalAcrossRemainingLines } from "./line-reversal-allocation";
 import { enqueueOutboxJob } from "./outbox";
+import { enqueuePurchasePointsCommunication } from "./points-communication-producer";
 import { scheduleTierReviewAfterQualifyingActivity } from "./tier-review-scheduling";
 
 const HOLDING_RELEASE_TRANSACTION_RETRIES = 5;
@@ -73,7 +79,10 @@ export async function releaseHoldingPeriodGrant(
     const grant = targetGrantId
       ? await client.weleticLoyaltyEarnGrant.findUnique({
           where: { id: targetGrantId },
-          include: { order: true, lineEarns: true },
+          include: {
+            order: { include: { refunds: { include: { lines: true } } } },
+            lineEarns: true,
+          },
         })
       : targetOrderId && params.storeId
         ? await client.weleticLoyaltyEarnGrant.findUnique({
@@ -83,7 +92,10 @@ export async function releaseHoldingPeriodGrant(
                 orderId: targetOrderId,
               },
             },
-            include: { order: true, lineEarns: true },
+            include: {
+              order: { include: { refunds: { include: { lines: true } } } },
+              lineEarns: true,
+            },
           })
         : null;
 
@@ -286,7 +298,7 @@ export async function releaseHoldingPeriodGrant(
     const idempotencyKey = `holding_release:${grant.orderId}`;
     const reason = `Holding period release for order ${grant.order?.orderName || grant.order?.externalId || grant.orderId}`;
 
-    const ledgerEntry = await appendPointsLedgerEntry({
+    const receipt = await appendPointsLedgerEntryWithReceipt({
       storeId: grant.storeId,
       accountId: grant.accountId,
       entryType: WeleticPointsLedgerEntryType.EARN_ORDER,
@@ -307,7 +319,7 @@ export async function releaseHoldingPeriodGrant(
       },
       tx: client,
     });
-
+    const ledgerEntry = receipt.entry;
     await enqueueFlowTriggerJob({
       storeId: grant.storeId,
       eventId: ledgerEntry.id,
@@ -344,6 +356,20 @@ export async function releaseHoldingPeriodGrant(
       tx: client,
     });
 
+    await reconcilePersistedOrderMerchandiseRefunds({
+      storeId: grant.storeId,
+      refunds: grant.order.refunds || [],
+      tx: client,
+      expectedInstallationGeneration: params.expectedInstallationGeneration,
+      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+    });
+    await enqueuePurchasePointsCommunication({
+      tx: client,
+      storeId: grant.storeId,
+      programId: grant.programId,
+      receipt,
+      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+    });
     return {
       released: true,
       grantId: grant.id,

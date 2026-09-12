@@ -55,6 +55,39 @@ function project(
   return { revision, policies };
 }
 
+/** Immutable policy selection for an event producer already holding the store
+ * and program locks. No customer data, recipient, URL or sender is captured. */
+export function snapshotLoyaltyCommunicationPolicy({
+  storeId,
+  programId,
+  metadata,
+  journey,
+}: {
+  storeId: string;
+  programId: string;
+  metadata: Prisma.JsonValue | null;
+  journey:
+    | "points_warning"
+    | "points_last_chance"
+    | "points_earned"
+    | "birthday"
+    | "vip_achieved";
+}) {
+  const state = project(storeId, programId, decodeMetadata(metadata).stored);
+  const policy = state.policies.find(
+    (candidate) => candidate.journey === journey,
+  );
+  return policy
+    ? {
+        version: 1 as const,
+        storeId,
+        programId,
+        revision: state.revision,
+        policy,
+      }
+    : null;
+}
+
 export async function readLoyaltyCommunicationsInTransaction(
   tx: Prisma.TransactionClient,
   storeId: string,

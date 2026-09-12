@@ -1,3 +1,4 @@
+import { render } from "@react-email/render";
 import type { CreateEmailOptions } from "resend";
 import { resend } from "./resend";
 import { VARIANT_TO_FROM_MAP } from "./resend/constants";
@@ -58,6 +59,29 @@ const resendEmailForOptions = (
   // This shouldn't happen in practice, but we'll default to an empty text
   return { ...baseOptions, text: "" };
 };
+
+/** Freeze provider normalization and rendering before durable outbox retention.
+ * Sending this result must not rerun environment-based recipient/sender mapping.
+ */
+export async function prepareResendEmail(opts: ResendEmailOptions) {
+  if (!resend) throw new Error("Prepared email transport unavailable");
+  const normalized = resendEmailForOptions(opts);
+  if (!normalized.react) throw new Error("Prepared email requires a template");
+  const { react, ...request } = normalized;
+  return { ...request, html: await render(react) };
+}
+
+/** Durable idempotent jobs never silently switch to a non-idempotent SMTP
+ * fallback. Legacy sendEmail/sendBatchEmail behavior is unchanged.
+ */
+export async function sendPreparedResendEmail(
+  request: CreateEmailOptions,
+  idempotencyKey: string,
+) {
+  if (!resend || !idempotencyKey)
+    throw new Error("Prepared email transport unavailable");
+  return resend.batch.send([request], { idempotencyKey });
+}
 
 // Send email using Resend (Recommended for production)
 export const sendEmailViaResend = async (opts: ResendEmailOptions) => {

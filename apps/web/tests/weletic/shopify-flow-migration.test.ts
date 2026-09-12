@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 describe("Shopify Flow migration preserves the native-review outbox contract", () => {
-  it("preserves historical enum ordinals and only appends the approved import types", () => {
+  it("preserves historical enum order and extends it through the latest additive migration", () => {
     const schema = readFileSync(
       new URL("../../prisma/schema/weletic-loyalty.prisma", import.meta.url),
       "utf8",
@@ -35,6 +35,7 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
     // retain every old ordinal; shared deployment of the new labels is gated.
     expect(prismaLabels.slice(0, sqlLabels.length)).toEqual(sqlLabels);
     expect(prismaLabels.slice(sqlLabels.length)).toEqual([
+      "LOYALTY_COMMUNICATION",
       "HISTORICAL_IMPORT_COMMIT",
       "HISTORICAL_IMPORT_ROLLBACK",
     ]);
@@ -50,6 +51,24 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
     expect(
       Array.from(expandedEnum[1].matchAll(/'([^']+)'/g), (match) => match[1]),
     ).toEqual(sqlLabels);
+    const communicationExpansion = readFileSync(
+      new URL(
+        "../../../../infra/shopify-development/migrations/20260910_loyalty_communication_outbox.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const communicationEnum = communicationExpansion.match(
+      /MODIFY `jobType` ENUM\(([^)]+)\)/,
+    );
+    if (!communicationEnum)
+      throw new Error("Communication enum expansion missing");
+    expect(
+      Array.from(
+        communicationEnum[1].matchAll(/'([^']+)'/g),
+        (match) => match[1],
+      ),
+    ).toEqual(prismaLabels.slice(0, -2));
     expect(sqlLabels).toEqual(
       expect.arrayContaining([
         "REVIEW_REQUEST_EMAIL",

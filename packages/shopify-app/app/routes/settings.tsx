@@ -6,7 +6,7 @@ import {
 import { Link, useRouteError } from "@remix-run/react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-remix/server";
-import { useId, useMemo } from "react";
+import { useId, useMemo, type ReactNode } from "react";
 import { MerchantSettingsSession } from "../../../../apps/web/ui/weletic/merchant-settings/settings-form";
 import styles from "../customers.css?url";
 import {
@@ -36,8 +36,10 @@ export function action() {
 }
 export default function SettingsPage({
   appearanceOnly = false,
+  children,
 }: {
   appearanceOnly?: boolean;
+  children?: ReactNode;
 }) {
   const shopify = useAppBridge();
   const scopeKey = useId();
@@ -58,6 +60,7 @@ export default function SettingsPage({
         <Link to="/">Weletic</Link>
       </nav>
       <MerchantSettingsSession transport={transport} canEdit />
+      {children}
     </main>
   );
 }

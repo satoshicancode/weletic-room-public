@@ -19,6 +19,26 @@ const lockProgram = vi.fn();
 const fetchVerifiedShop = vi.fn();
 const ensureWebhooks = vi.fn();
 const advanceLegacyRevision = vi.fn();
+vi.mock(
+  "@/lib/weletic/shopify/store-owned-credential",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@/lib/weletic/shopify/store-owned-credential")
+    >()),
+    assertLegacyShopifyCredentialAuthority: vi.fn(async () => undefined),
+  }),
+);
+
+// These fixtures model pre-admission custom installations, not public installs.
+vi.mock(
+  "@/lib/weletic/shopify/installation-admission",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@/lib/weletic/shopify/installation-admission")
+    >()),
+    readPendingInstallation: vi.fn(async () => null),
+  }),
+);
 
 vi.mock(
   "@/lib/weletic/shopify/session-coordination",
@@ -27,6 +47,10 @@ vi.mock(
       typeof import("@/lib/weletic/shopify/session-coordination")
     >()),
     advanceLegacyShopifySessionRevision: advanceLegacyRevision,
+    observeShopifySessionCoordination: vi.fn(async () => ({
+      revision: "0",
+      epoch: "0",
+    })),
   }),
 );
 
@@ -332,6 +356,11 @@ describe("Shopify offline session tenant binding", () => {
       accessToken: "fresh-offline-token",
     });
     expect(ensureWebhooks).toHaveBeenCalledOnce();
+    expect(ensureWebhooks).toHaveBeenCalledWith({
+      shopDomain: shop,
+      accessToken: "fresh-offline-token",
+      allowSdkFallback: false,
+    });
     expect(queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
       ensureWebhooks.mock.invocationCallOrder[0],
     );

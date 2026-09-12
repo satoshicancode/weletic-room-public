@@ -71,6 +71,26 @@ it("passes the exact queue binding through recovery into a bounded batch", async
   expect(mocks.batch).toHaveBeenCalledWith({ lease, maxRows: 50 });
   expect(mocks.continuation).not.toHaveBeenCalled();
 });
+it("dispatches a real full outbox claim through the strict import claim parser", async () => {
+  const { executeOutboxJob } = await import(
+    "../../lib/weletic/loyalty/outbox-worker"
+  );
+  await expect(
+    executeOutboxJob(job, new Date(), undefined, {
+      ...queueClaim,
+      candidate: job,
+    }),
+  ).resolves.toEqual({ historicalImportOutcome: "completed" });
+  expect(mocks.recover).toHaveBeenCalledWith(
+    expect.objectContaining({
+      claim: {
+        ...queueClaim,
+        jobId: job.id,
+        sourceRevision: payload.sourceRevision,
+      },
+    }),
+  );
+});
 it("acknowledges verified terminal replay without recovering or posting again", async () => {
   mocks.terminal.mockResolvedValue(true);
   await expect(run()).resolves.toEqual({

@@ -5,6 +5,9 @@ import { VITEST_TEST_TIMEOUT_MS } from "./lib/constants/misc";
 
 export default defineConfig({
   plugins: [tsconfigPaths()],
+  // Match Next.js's JSX runtime. Import organization correctly removes unused
+  // React default imports; classic JSX evaluation would then fail only in tests.
+  esbuild: { jsx: "automatic" },
   test: {
     dir: "./tests",
     include: ["**/*.test.{ts,tsx}"],

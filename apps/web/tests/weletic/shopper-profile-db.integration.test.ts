@@ -166,6 +166,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
     // IDs. No retained workspace, merchant, integration or token is reused.
     await database.weleticShopifyStore.create({
       data: {
+        storeAccessState: "active",
         id: storeId,
         projectId,
         programId: `affiliate-${id}`,
