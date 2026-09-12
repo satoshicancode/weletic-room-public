@@ -1,5 +1,12 @@
 # Smile reference preservation and loyalty backlog — 2026-09-09
 
+Current execution status is reconciled in the
+[September 12 launch inventory](launch-status-2026-09-12.md). The tonight/freeze,
+draft-PR and disconnected-producer statements below retain their dated September
+9–10 meaning; they are not current blockers. PRs #13/#15/#18 and later appearance,
+nudge and selected communication increments have merged. All task scopes and
+definitions of done remain applicable; no live acceptance is inferred.
+
 Deadline: September 9, 21:00 JST. **Loyalty is not live-accepted or production-ready.**
 Tonight removes dependence on the paid reference and verifies a bounded existing
 shopper flow. Tomorrow means work can start, not that all remaining work will finish.
