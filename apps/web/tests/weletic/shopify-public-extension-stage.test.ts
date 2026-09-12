@@ -69,6 +69,28 @@ describe("offline public extension staging", () => {
       expect(catalog.balanceAvailable).toContain("{{points}}");
       expect(catalog.balancePending).toContain("{{points}}");
     }
+    for (const locale of ["en.default", "ja", "vi"]) {
+      const catalog = JSON.parse(
+        files[
+          `extensions/weletic-customer-account-blocks/locales/${locale}.json`
+        ],
+      );
+      for (const key of [
+        "rewards",
+        "viewHub",
+        "points",
+        "pointsUnavailable",
+        "member",
+        "rewardOne",
+        "rewardMany",
+        "summary",
+        "unavailable",
+        "retry",
+        "loading",
+        "join",
+      ])
+        expect(typeof catalog[key]).toBe("string");
+    }
     expect(
       Object.keys(
         JSON.parse(files["extensions/loyalty-checkout-slider/manifest.json"]),

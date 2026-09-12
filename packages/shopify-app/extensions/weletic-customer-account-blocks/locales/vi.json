@@ -1,0 +1,14 @@
+{
+  "rewards": "Phần thưởng",
+  "viewHub": "Xem trang khách hàng thân thiết",
+  "points": "{{points}} điểm",
+  "pointsUnavailable": "Không thể hiển thị điểm",
+  "member": "Thành viên",
+  "rewardOne": "{{formattedCount}} phần thưởng có thể sử dụng",
+  "rewardMany": "{{formattedCount}} phần thưởng có thể sử dụng",
+  "summary": "{{tier}} · {{rewards}}",
+  "unavailable": "Tạm thời không thể hiển thị phần thưởng.",
+  "retry": "Thử lại",
+  "loading": "Đang tải phần thưởng",
+  "join": "Tham gia chương trình để bắt đầu tích điểm."
+}

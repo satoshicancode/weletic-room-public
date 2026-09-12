@@ -16,6 +16,24 @@ type ProfileLoyaltySummary = {
   rewardWallet?: Array<{ status: string }>;
 };
 
+type ProfileLocaleApi = {
+  formatNumber: (value: number | bigint) => string;
+  translate: (
+    key: string,
+    replacements?: Record<string, string | number>,
+  ) => string;
+};
+
+export function parseProfilePoints(value: unknown): bigint | null {
+  if (typeof value !== "string" || !/^-?(?:0|[1-9]\d{0,18})$/.test(value))
+    return null;
+  const points = BigInt(value);
+  return points >= BigInt("-9223372036854775808") &&
+    points <= BigInt("9223372036854775807")
+    ? points
+    : null;
+}
+
 export function availableRewardCount(summary: ProfileLoyaltySummary) {
   return (summary.rewardWallet || []).filter(
     (reward) => reward.status === "available",
@@ -24,29 +42,36 @@ export function availableRewardCount(summary: ProfileLoyaltySummary) {
 
 export function ProfileLoyaltySummaryView({
   summary,
+  i18n = shopify.i18n,
 }: {
   summary: ProfileLoyaltySummary;
+  i18n?: ProfileLocaleApi;
 }) {
-  const points = Number(summary.account?.pointsBalance || "0");
-  const tier = summary.tier?.currentTier?.name || "Member";
+  const rawPoints = parseProfilePoints(summary.account?.pointsBalance);
+  const points =
+    rawPoints === null
+      ? i18n.translate("pointsUnavailable")
+      : i18n.translate("points", { points: i18n.formatNumber(rawPoints) });
+  const tier = summary.tier?.currentTier?.name || i18n.translate("member");
   const availableRewards = availableRewardCount(summary);
-  const rewardsLabel = `${availableRewards} available ${
-    availableRewards === 1 ? "reward" : "rewards"
-  }`;
+  const rewardsLabel = i18n.translate(
+    availableRewards === 1 ? "rewardOne" : "rewardMany",
+    { formattedCount: i18n.formatNumber(availableRewards) },
+  );
 
   return (
-    <s-section heading="Rewards">
+    <s-section heading={i18n.translate("rewards")}>
       <s-button
         slot="primary-action"
         href={LOYALTY_PAGE_URL}
         variant="secondary"
       >
-        View Loyalty Hub
+        {i18n.translate("viewHub")}
       </s-button>
       <s-stack direction="block" gap="small-200">
-        <s-heading>{points.toLocaleString()} points</s-heading>
+        <s-heading>{points}</s-heading>
         <s-text color="subdued">
-          {tier} · {rewardsLabel}
+          {i18n.translate("summary", { tier, rewards: rewardsLabel })}
         </s-text>
       </s-stack>
     </s-section>
@@ -102,18 +127,20 @@ export function CustomerAccountLoyaltyProfileBlock() {
 
   if (error) {
     return (
-      <s-section heading="Rewards">
+      <s-section heading={shopify.i18n.translate("rewards")}>
         <s-button
           slot="primary-action"
           href={LOYALTY_PAGE_URL}
           variant="secondary"
         >
-          View Loyalty Hub
+          {shopify.i18n.translate("viewHub")}
         </s-button>
         <s-stack direction="block" gap="small-200">
-          <s-text color="subdued">Rewards are temporarily unavailable.</s-text>
+          <s-text color="subdued">
+            {shopify.i18n.translate("unavailable")}
+          </s-text>
           <s-button onClick={loadSummary} variant="secondary">
-            Try again
+            {shopify.i18n.translate("retry")}
           </s-button>
         </s-stack>
       </s-section>
@@ -122,25 +149,23 @@ export function CustomerAccountLoyaltyProfileBlock() {
 
   if (!summary) {
     return (
-      <s-section heading="Rewards">
-        <s-skeleton-paragraph content="0 points · Member · 0 available rewards" />
+      <s-section heading={shopify.i18n.translate("rewards")}>
+        <s-skeleton-paragraph content={shopify.i18n.translate("loading")} />
       </s-section>
     );
   }
 
   if (!summary.isEnrolled) {
     return (
-      <s-section heading="Rewards">
+      <s-section heading={shopify.i18n.translate("rewards")}>
         <s-button
           slot="primary-action"
           href={LOYALTY_PAGE_URL}
           variant="secondary"
         >
-          View Loyalty Hub
+          {shopify.i18n.translate("viewHub")}
         </s-button>
-        <s-text color="subdued">
-          Join the rewards program to start earning points.
-        </s-text>
+        <s-text color="subdued">{shopify.i18n.translate("join")}</s-text>
       </s-section>
     );
   }

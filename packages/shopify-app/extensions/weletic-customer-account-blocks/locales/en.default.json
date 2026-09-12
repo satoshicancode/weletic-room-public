@@ -1,0 +1,14 @@
+{
+  "rewards": "Rewards",
+  "viewHub": "View Loyalty Hub",
+  "points": "{{points}} points",
+  "pointsUnavailable": "Points unavailable",
+  "member": "Member",
+  "rewardOne": "{{formattedCount}} available reward",
+  "rewardMany": "{{formattedCount}} available rewards",
+  "summary": "{{tier}} · {{rewards}}",
+  "unavailable": "Rewards are temporarily unavailable.",
+  "retry": "Try again",
+  "loading": "Loading rewards",
+  "join": "Join the rewards program to start earning points."
+}
