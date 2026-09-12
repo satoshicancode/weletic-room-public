@@ -227,10 +227,10 @@
     return formatInteger(value);
   }
 
-  function formatPoints(value, singular, plural) {
+  function formatPoints(value, singular, plural, locale) {
     var amount = parseIntegerValue(value);
     var name = amount === BigInt(1) ? singular || "Point" : plural || "Points";
-    return formatNumber(amount) + " " + name;
+    return formatInteger(amount, locale) + " " + name;
   }
 
   function parseUnsignedDecimal(value) {
@@ -279,10 +279,10 @@
     return digits.slice(0, -decimal.scale) + "." + digits.slice(-decimal.scale);
   }
 
-  function formatCurrencyUnit(currency) {
+  function formatCurrencyUnit(currency, locale) {
     var currencyCode = currency || "USD";
     try {
-      return new Intl.NumberFormat(undefined, {
+      return new Intl.NumberFormat(locale, {
         style: "currency",
         currency: currencyCode,
         minimumFractionDigits: 0,
@@ -302,13 +302,10 @@
       if (effectiveRate !== null) {
         var rateName =
           effectiveRate === "1" ? singular || "Point" : plural || "Points";
-        return (
-          effectiveRate +
-          " " +
-          rateName +
-          " per " +
-          formatCurrencyUnit(context.currency)
-        );
+        return translatedValue(context, "{points} per {amount}", {
+          points: effectiveRate + " " + rateName,
+          amount: formatCurrencyUnit(context.currency, context.locale),
+        });
       }
 
       var numericMultiplier = Number(multiplier);
@@ -316,12 +313,15 @@
         (Number.isFinite(numericMultiplier)
           ? numericMultiplier
           : 1
-        ).toLocaleString() +
+        ).toLocaleString(context?.locale) +
         "\u00d7 " +
         String(plural || "Points").toLowerCase()
       );
     }
-    return "+" + formatPoints(rule?.fixedPoints || 0, singular, plural);
+    return (
+      "+" +
+      formatPoints(rule?.fixedPoints || 0, singular, plural, context?.locale)
+    );
   }
 
   function formatMinorMoney(value, currency, locale) {
@@ -373,8 +373,16 @@
     }
   }
 
-  function formatRewardValue(reward, currency) {
-    if (!reward) return "Reward";
+  function translatedValue(context, message, values) {
+    if (typeof context?.translate === "function")
+      return context.translate(message, values);
+    return message.replace(/\{(\w+)\}/g, function (match, key) {
+      return values && own(values, key) ? String(values[key]) : match;
+    });
+  }
+
+  function formatRewardValue(reward, currency, context) {
+    if (!reward) return translatedValue(context, "Reward");
     switch (reward.rewardType) {
       case "amount_off":
         var discountValue = parseIntegerValue(reward.discountValue);
@@ -402,21 +410,35 @@
             }
           }
         }
-        return formatMinorMoney(discountValue, currency) + " off";
+        return translatedValue(context, "{amount} off", {
+          amount: formatMinorMoney(discountValue, currency, context?.locale),
+        });
       case "percentage_off":
-        return formatDecimal(reward.discountValue) + "% off";
+        return translatedValue(context, "{amount} off", {
+          amount: formatDecimal(reward.discountValue) + "%",
+        });
       case "free_shipping":
-        return "Free shipping";
+        return translatedValue(context, "Free shipping");
       case "free_product":
-        return "Free product";
+        return translatedValue(context, "Free product");
       case "gift_card":
-        return formatMinorMoney(reward.discountValue, currency) + " gift card";
+        return translatedValue(context, "{amount} gift card", {
+          amount: formatMinorMoney(
+            reward.discountValue,
+            currency,
+            context?.locale,
+          ),
+        });
       case "store_credit":
-        return (
-          formatMinorMoney(reward.discountValue, currency) + " store credit"
-        );
+        return translatedValue(context, "{amount} store credit", {
+          amount: formatMinorMoney(
+            reward.discountValue,
+            currency,
+            context?.locale,
+          ),
+        });
       default:
-        return rewardTypeLabel(reward.rewardType);
+        return translatedValue(context, rewardTypeLabel(reward.rewardType));
     }
   }
 
