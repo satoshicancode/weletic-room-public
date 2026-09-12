@@ -2,11 +2,7 @@
 
 import useIntegrations from "@/lib/swr/use-integrations";
 import useWorkspace from "@/lib/swr/use-workspace";
-import { InstalledIntegrationProps } from "@/lib/types";
-import { IntegrationLogo } from "@/ui/integrations/integration-logo";
-import { IntegrationStatusBadge } from "@/ui/integrations/integration-status-badge";
-import { cn } from "@dub/utils";
-import { ChevronRight } from "lucide-react";
+import { IntegrationInventoryList } from "@/ui/integrations/integration-inventory-list";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -16,7 +12,21 @@ export function EnabledIntegrations() {
   const search = searchParams.get("search");
 
   const { slug } = useWorkspace();
-  const { integrations: activeIntegrations } = useIntegrations();
+  const {
+    integrations: activeIntegrations,
+    error,
+    loading,
+  } = useIntegrations();
+
+  if (search) return null;
+  if (error)
+    return (
+      <p role="alert">
+        Integration inventory is unavailable. Refresh this page to try again.
+      </p>
+    );
+  if (loading || !slug)
+    return <p role="status">Loading configured integrations…</p>;
 
   return activeIntegrations?.length ? (
     <AnimatePresence initial={false}>
@@ -30,7 +40,7 @@ export function EnabledIntegrations() {
         >
           <div className="flex items-center justify-between text-sm">
             <h2 className="font-medium leading-4 text-neutral-800">
-              Enabled integrations
+              Configured integrations
             </h2>
             <Link
               href={`/${slug}/settings/integrations/enabled`}
@@ -39,49 +49,12 @@ export function EnabledIntegrations() {
               View all ({activeIntegrations.length})
             </Link>
           </div>
-          <ul className="mt-4 divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200">
-            {activeIntegrations.slice(0, 3).map((integration) => (
-              <li key={integration.id}>
-                <IntegrationRow integration={integration} />
-              </li>
-            ))}
-          </ul>
+          <IntegrationInventoryList
+            integrations={activeIntegrations.slice(0, 3)}
+            workspaceSlug={slug}
+          />
         </motion.div>
       )}
     </AnimatePresence>
   ) : null;
-}
-
-function IntegrationRow({
-  integration,
-}: {
-  integration: InstalledIntegrationProps;
-}) {
-  const { slug } = useWorkspace();
-
-  return (
-    <Link
-      href={`/${slug}/settings/integrations/${integration?.slug}`}
-      className={cn(
-        "group flex items-center justify-between p-3 pr-5 text-sm",
-        "transition-colors duration-75 hover:bg-neutral-50",
-      )}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <IntegrationLogo
-          src={integration.logo ?? null}
-          alt={`Logo for ${integration.name}`}
-        />
-
-        <span className="flex items-center gap-1.5 text-sm font-medium text-neutral-800">
-          {integration.name}
-          <IntegrationStatusBadge
-            projectId={integration.projectId}
-            verified={integration.verified}
-          />
-        </span>
-      </div>
-      <ChevronRight className="size-4 text-neutral-400 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-neutral-600" />
-    </Link>
-  );
 }

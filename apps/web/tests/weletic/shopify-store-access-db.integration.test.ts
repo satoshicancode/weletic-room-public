@@ -10,6 +10,7 @@ let ready = false;
 
 describe("company store admission using MySQL row locks", () => {
   beforeAll(async () => {
+    vi.stubEnv("ENCRYPTION_KEY", "34".repeat(32));
     const url = new URL(process.env.DATABASE_URL || "invalid:");
     if (
       process.env.LOYALTY_DATABASE_INTEGRATION !== "1" ||
@@ -36,6 +37,22 @@ describe("company store admission using MySQL row locks", () => {
       id VARCHAR(191) PRIMARY KEY, storeId VARCHAR(191), requestType VARCHAR(32), status VARCHAR(32))`);
     await database.$executeRawUnsafe(`CREATE TABLE WeleticLoyaltyProgram (
       id VARCHAR(191) PRIMARY KEY, storeId VARCHAR(191), status VARCHAR(32), killSwitchActive BOOLEAN, metadata JSON)`);
+    await database.$executeRawUnsafe(`CREATE TABLE WeleticShopifyShopPrivacyTombstone (
+      id VARCHAR(64) PRIMARY KEY, identityKeyId VARCHAR(64), shopDomainDigest VARCHAR(64), expiresAt DATETIME(3))`);
+    await database.$executeRawUnsafe(`CREATE TABLE WeleticShopifySessionCoordination (
+      id VARCHAR(64) PRIMARY KEY, revision BIGINT NOT NULL DEFAULT 0, leaseEpoch BIGINT NOT NULL DEFAULT 0)`);
+    const credentialSql = readFileSync(
+      new URL(
+        "../../../../infra/shopify-development/migrations/20260909_store_owned_shopify_credentials.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    for (const statement of credentialSql
+      .replace(/^--.*$/gm, "")
+      .split(";")
+      .filter((value) => value.trim()))
+      await database.$executeRawUnsafe(statement);
     await database.$executeRaw`INSERT INTO WeleticShopifyStore (id, shopDomain, projectId) VALUES ('retained', 'retained.myshopify.com', 'retained')`;
     const sql = readFileSync(
       new URL(
@@ -50,17 +67,33 @@ describe("company store admission using MySQL row locks", () => {
       .filter((value) => value.trim())) {
       await database.$executeRawUnsafe(statement);
     }
+    const pendingSql = readFileSync(
+      new URL(
+        "../../../../infra/shopify-development/migrations/20260909_pending_installations.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    for (const statement of pendingSql
+      .replace(/^--.*$/gm, "")
+      .split(";")
+      .filter((value) => value.trim())) {
+      await database.$executeRawUnsafe(statement);
+    }
     ready = true;
     ids.push("retained");
   });
   afterAll(async () => {
     if (ready)
       for (const id of ids) {
+        await database.$executeRaw`DELETE FROM WeleticShopifyInstallationCredential WHERE storeId = ${id}`;
+        await database.$executeRaw`DELETE FROM WeleticShopifyPendingInstallation WHERE id = ${id}`;
         await database.$executeRaw`DELETE FROM WeleticShopifyStoreAccessChange WHERE storeId = ${id}`;
         await database.$executeRaw`DELETE FROM WeleticLoyaltyProgram WHERE storeId = ${id}`;
         await database.$executeRaw`DELETE FROM WeleticShopifyStore WHERE id = ${id}`;
       }
     await database.$disconnect();
+    vi.unstubAllEnvs();
   });
   async function seed() {
     const id = `access_${randomUUID()}`;
@@ -106,6 +139,69 @@ describe("company store admission using MySQL row locks", () => {
         where: { storeId: input.storeId },
       }),
     ).toBe(1);
+  });
+  it("cannot activate a public installation until the exact generation is mapped", async () => {
+    const { deriveAllShopifyShopPrivacyIdentities } = await import(
+      "../../lib/weletic/shopify/privacy-identity"
+    );
+    const { configuredShopifySessionScope } = await import(
+      "../../lib/weletic/shopify/session-snapshot"
+    );
+    const { changeShopifyStoreAccess } = await import(
+      "../../lib/weletic/shopify/store-access-operator"
+    );
+    const input = await seed();
+    const scope = configuredShopifySessionScope(input.shopDomain);
+    const identity = deriveAllShopifyShopPrivacyIdentities({
+      shopDomain: input.shopDomain,
+    })[0];
+    await database.weleticShopifyPendingInstallation.create({
+      data: {
+        id: input.storeId,
+        appId: scope.appId,
+        ...identity,
+        installationGeneration: input.expectedInstallationGeneration,
+        authenticatedAt: new Date(),
+      },
+    });
+    await expect(changeShopifyStoreAccess(input)).rejects.toThrow(
+      "reviewed installation mapping",
+    );
+    expect(
+      await database.weleticShopifyStoreAccessChange.count({
+        where: { storeId: input.storeId },
+      }),
+    ).toBe(0);
+    await database.$executeRaw`UPDATE WeleticShopifyPendingInstallation SET state = 'mapped', mappedStoreId = ${input.storeId}, installationGeneration = 'stale' WHERE id = ${input.storeId}`;
+    await expect(changeShopifyStoreAccess(input)).rejects.toThrow(
+      "reviewed installation mapping",
+    );
+    await database.$executeRaw`UPDATE WeleticShopifyPendingInstallation SET installationGeneration = ${input.expectedInstallationGeneration} WHERE id = ${input.storeId}`;
+    await expect(changeShopifyStoreAccess(input)).rejects.toThrow(
+      "fresh Shopify authentication",
+    );
+    const { publishStoreOwnedShopifyCredential } = await import(
+      "../../lib/weletic/shopify/store-owned-credential"
+    );
+    await database.$transaction((tx) =>
+      publishStoreOwnedShopifyCredential(tx, {
+        identity: {
+          ...scope,
+          storeId: input.storeId,
+          workspaceId: input.storeId,
+          installationGeneration: input.expectedInstallationGeneration,
+        },
+        material: {
+          accessToken: "synthetic-approved-token",
+          scope: "read_orders",
+        },
+        expectedRevision: null,
+      }),
+    );
+    await expect(changeShopifyStoreAccess(input)).resolves.toMatchObject({
+      applied: true,
+      revision: 2,
+    });
   });
   it("rolls back the state change when its audit cannot commit", async () => {
     const { changeShopifyStoreAccess } = await import(

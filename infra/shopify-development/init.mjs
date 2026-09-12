@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PUBLIC_LOYALTY_SCOPES } from "../../packages/shopify-app/app/public-runtime-policy.mjs";
 
 export const databaseName = "weletic_loyalty_dev";
 export const buckets = [
@@ -130,8 +131,7 @@ export function initializeLocalServices(root) {
     WELETIC_API_URL: web.NEXTAUTH_URL,
     WELETIC_SHOPIFY_SERVICE_SECRET: serviceSecret,
     PORT: "3002",
-    SCOPES:
-      "read_products,write_products,read_markets,read_orders,read_translations,read_discounts,write_discounts,read_price_rules,write_price_rules,read_customers,write_customers,read_gift_cards,write_gift_cards,read_store_credit_accounts,write_store_credit_account_transactions,write_app_proxy",
+    SCOPES: PUBLIC_LOYALTY_SCOPES.join(","),
   };
   const dotenv = (values) =>
     Object.entries(values)

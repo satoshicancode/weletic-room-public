@@ -13,8 +13,15 @@ import {
   extractOrderDiscountCodes,
   ordersPaid,
 } from "../../app/(ee)/api/shopify/integration/webhook/orders-paid";
+import { legacyCredentialSqlFixture } from "./helpers/legacy-credential-sql-fixture";
 
 vi.mock("server-only", () => ({}));
+
+// This suite exercises archived-code behavior with a legacy integration fixture.
+// Native/legacy authority and fail-closed selection have separate contract tests.
+vi.mock("@/lib/weletic/shopify/credential-source", () => ({
+  readShopifyCredentialSource: vi.fn(async () => ({ source: "legacy" })),
+}));
 
 vi.mock("@/lib/api/links/cache", () => ({
   linkCache: {
@@ -438,18 +445,21 @@ vi.mock("@/lib/prisma", () => ({
         return order;
       }),
     },
-    $queryRaw: vi.fn(async () => [
-      {
-        id: "store_enterprise",
-        projectId: "ws_enterprise",
-        installationGeneration: "sgen_enterprise",
-      },
-    ]),
+    $queryRaw: vi.fn((query: Prisma.Sql) => legacySql.queryRaw(query)),
+    $executeRaw: vi.fn((query: Prisma.Sql) => legacySql.executeRaw(query)),
     $transaction: vi.fn(async (operation: any) =>
       typeof operation === "function" ? operation(prisma) : operation,
     ),
   },
 }));
+
+const legacySql = legacyCredentialSqlFixture({
+  readStore: () =>
+    prisma.weleticShopifyStore.findUnique({
+      where: { id: "store_enterprise" },
+    }),
+  readInstallation: async (id) => testDb.installedIntegrations.get(id) ?? null,
+});
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
   shopifyAdminGraphql: vi.fn(async () => ({

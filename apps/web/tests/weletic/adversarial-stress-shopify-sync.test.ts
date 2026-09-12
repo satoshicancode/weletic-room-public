@@ -7,6 +7,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+// This suite supplies legacy integration fixtures. Native credential-source
+// authorization and lifecycle fences are covered by their dedicated suites.
+vi.mock("@/lib/weletic/shopify/credential-source", () => ({
+  readShopifyCredentialSource: vi.fn(async () => ({ source: "legacy" })),
+}));
+
 vi.mock("@vercel/functions", () => ({
   waitUntil: (fn: any) => Promise.resolve(fn),
 }));
@@ -545,9 +551,41 @@ vi.mock("@/lib/prisma", () => ({
         return results;
       }),
     },
-    $queryRaw: vi.fn(async () => {
+    $queryRaw: vi.fn(async (query: Prisma.Sql) => {
+      const sql = query.strings.join("?");
+      if (sql.includes("FROM InstalledIntegration")) {
+        const id = query.values[0];
+        if (typeof id !== "string") throw new Error("Expected installation ID");
+        const installation = db.installedIntegrations.get(id);
+        return installation ? [installation] : [];
+      }
+      // This discount/webhook fixture has no loyalty program configured.
+      if (sql.includes("FROM WeleticLoyaltyProgram")) return [];
+      // Legacy fixtures have no privacy tombstone, public admission or native
+      // credential. The real legacy ownership fence still executes these reads.
+      if (
+        sql.includes("FROM WeleticShopifyShopPrivacyTombstone") ||
+        sql.includes("FROM WeleticShopifyPendingInstallation") ||
+        sql.includes("FROM WeleticShopifyInstallationCredential")
+      )
+        return [];
+      if (!sql.includes("FROM WeleticShopifyStore")) {
+        throw new Error("Unhandled SQL in webhook simulation");
+      }
       const store = db.weleticShopifyStores.values().next().value;
       return store ? [store] : [];
+    }),
+    $executeRaw: vi.fn(async (query: Prisma.Sql) => {
+      if (
+        !query.strings
+          .join("?")
+          .includes("INSERT INTO WeleticShopifySessionCoordination")
+      ) {
+        throw new Error("Unhandled SQL write in webhook simulation");
+      }
+      // These in-memory webhook tests do not model database locking. Real
+      // coordinator contention is covered by isolated SQL integration tests.
+      return 1;
     }),
     $transaction: vi.fn(async function (this: any, action: any) {
       return typeof action === "function" ? action(this) : Promise.all(action);

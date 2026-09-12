@@ -6,6 +6,10 @@ import { createWeleticId } from "@/lib/weletic/ids";
 import { lockLoyaltyProgramRowIfPresent } from "@/lib/weletic/loyalty/program-write-fence";
 import { resolveComplianceShopifyStoreByDomain } from "@/lib/weletic/shopify/compliance-store-resolver";
 import {
+  ensurePendingInstallationAfterAuthentication,
+  readPendingInstallation,
+} from "@/lib/weletic/shopify/installation-admission";
+import {
   ensureShopifyWebhooksRegistered,
   SHOPIFY_CANONICAL_WEBHOOK_TOPICS,
 } from "@/lib/weletic/shopify/provision-webhooks";
@@ -21,6 +25,7 @@ import {
 import {
   advanceLegacyShopifySessionRevision,
   advanceShopifySessionRevision,
+  observeShopifySessionCoordination,
   renewShopifySessionLease,
   ShopifySessionCoordinationError,
   type ShopifySessionLease,
@@ -38,6 +43,11 @@ import {
   configuredShopifySessionScope,
   readShopifySessionSnapshot,
 } from "@/lib/weletic/shopify/session-snapshot";
+import {
+  assertLegacyShopifyCredentialAuthority,
+  publishStoreOwnedShopifyCredential,
+  readStoreOwnedShopifyCredential,
+} from "@/lib/weletic/shopify/store-owned-credential";
 import {
   canonicalizeShopifyDomain,
   fetchVerifiedShopifyShopDetails,
@@ -362,6 +372,45 @@ export async function POST(request: Request) {
         storeId,
       });
 
+      // Unknown installs may publish coordinated offline authentication only.
+      // Online merchant authority requires the existing exact mapped store.
+      if (!lockedStore && (isOnline || !coordination)) {
+        throw new SessionCredentialWriteBlockedError(
+          "Unmapped installation requires coordinated offline authentication.",
+        );
+      }
+
+      const publicationScope = configuredShopifySessionScope(shop);
+      // Even tokenless invalidations and new online IDs must pass the public
+      // admission boundary. Keep Store → coordinator → admission lock order.
+      await observeShopifySessionCoordination(tx, publicationScope);
+      const publicAdmission = await readPendingInstallation(
+        tx,
+        publicationScope,
+      );
+      if (lockedStore && publicAdmission) {
+        if (
+          (isOnline && !onlineCoordination) ||
+          (!isOnline && !coordination) ||
+          !lockedStore.installationGeneration
+        )
+          throw new SessionCredentialWriteBlockedError(
+            "Public session publication requires coordinated authentication.",
+          );
+        await readStoreOwnedShopifyCredential(tx, {
+          ...publicationScope,
+          storeId: lockedStore.id,
+          workspaceId: lockedStore.projectId,
+          installationGeneration: lockedStore.installationGeneration,
+        });
+      } else if (lockedStore) {
+        await assertLegacyShopifyCredentialAuthority(
+          tx,
+          lockedStore.id,
+          publicationScope.appId,
+        );
+      }
+
       let storedPayload = payload;
       if (isOnline && !onlineCoordination) {
         const existing = await tx.weleticShopifyAppSession.findUnique({
@@ -482,53 +531,99 @@ export async function POST(request: Request) {
       let currentInstallation:
         | { id: string; credentials: Prisma.JsonValue }
         | undefined;
+      let nativePublication:
+        | {
+            identity: {
+              appId: string;
+              shop: string;
+              storeId: string;
+              workspaceId: string;
+              installationGeneration: string;
+            };
+            expectedRevision: number | null;
+          }
+        | undefined;
       if (
         lockedStore &&
         !isOnline &&
         values.accessToken &&
         typeof values.accessToken === "string"
       ) {
-        const installations = await tx.installedIntegration.findMany({
-          where: {
-            projectId: lockedStore.projectId,
-            integrationId: SHOPIFY_INTEGRATION_ID,
-          },
-          orderBy: { id: "asc" },
-          take: 2,
-          select: { id: true, credentials: true },
-        });
-        if (installations.length > 1) {
-          throw new SessionCredentialWriteBlockedError(
-            "Ambiguous Shopify installation authority cannot accept session credentials.",
-          );
-        }
-        currentInstallation = installations[0];
-        if (currentInstallation) {
-          const currentCredentials = integrationCredentialsSchema.safeParse(
-            currentInstallation.credentials || {},
-          ).data;
-          const currentTokenHash = readShopifyCredentialTokenHash(
-            currentInstallation.credentials,
-          );
-          const activatingLegacyCredential = Boolean(
-            legacyActivation &&
-              currentInstallation.id === legacyActivation.installationId &&
-              lockedStore.installationGeneration === null &&
-              currentCredentials?.installationGeneration == null &&
-              currentTokenHash === legacyActivation.observedCredentialTokenHash,
-          );
+        const scope = configuredShopifySessionScope(shop);
+        if (publicAdmission) {
+          // Public admissions use only the store/app-owned credential. A
+          // legacy integration is neither an owner nor a recovery fallback.
           if (
-            expectedCredentialTokenHash === undefined ||
-            expectedCredentialTokenHash !== currentTokenHash ||
-            (!activatingLegacyCredential &&
-              (!lockedStore.installationGeneration ||
-                currentCredentials?.installationGeneration !==
-                  lockedStore.installationGeneration)) ||
-            canonicalizeShopifyDomain(currentCredentials?.shop || "") !== shop
-          ) {
+            !coordination ||
+            !lockedStore.installationGeneration ||
+            legacyActivation
+          )
             throw new SessionCredentialWriteBlockedError(
-              "A newer or invalid Shopify credential prevents this session refresh.",
+              "Public credential publication requires coordinated authentication.",
             );
+          const identity = {
+            ...scope,
+            storeId: lockedStore.id,
+            workspaceId: lockedStore.projectId,
+            installationGeneration: lockedStore.installationGeneration,
+          };
+          const credential = await readStoreOwnedShopifyCredential(
+            tx,
+            identity,
+          );
+          const tokenHash = credential
+            ? shopifyCredentialVerificationHash(credential.accessToken)
+            : null;
+          if (expectedCredentialTokenHash !== tokenHash)
+            throw new ShopifySessionCoordinationError("stale_session");
+          nativePublication = {
+            identity,
+            expectedRevision: credential?.revision ?? null,
+          };
+        } else {
+          const installations = await tx.installedIntegration.findMany({
+            where: {
+              projectId: lockedStore.projectId,
+              integrationId: SHOPIFY_INTEGRATION_ID,
+            },
+            orderBy: { id: "asc" },
+            take: 2,
+            select: { id: true, credentials: true },
+          });
+          if (installations.length > 1) {
+            throw new SessionCredentialWriteBlockedError(
+              "Ambiguous Shopify installation authority cannot accept session credentials.",
+            );
+          }
+          currentInstallation = installations[0];
+          if (currentInstallation) {
+            const currentCredentials = integrationCredentialsSchema.safeParse(
+              currentInstallation.credentials || {},
+            ).data;
+            const currentTokenHash = readShopifyCredentialTokenHash(
+              currentInstallation.credentials,
+            );
+            const activatingLegacyCredential = Boolean(
+              legacyActivation &&
+                currentInstallation.id === legacyActivation.installationId &&
+                lockedStore.installationGeneration === null &&
+                currentCredentials?.installationGeneration == null &&
+                currentTokenHash ===
+                  legacyActivation.observedCredentialTokenHash,
+            );
+            if (
+              expectedCredentialTokenHash === undefined ||
+              expectedCredentialTokenHash !== currentTokenHash ||
+              (!activatingLegacyCredential &&
+                (!lockedStore.installationGeneration ||
+                  currentCredentials?.installationGeneration !==
+                    lockedStore.installationGeneration)) ||
+              canonicalizeShopifyDomain(currentCredentials?.shop || "") !== shop
+            ) {
+              throw new SessionCredentialWriteBlockedError(
+                "A newer or invalid Shopify credential prevents this session refresh.",
+              );
+            }
           }
         }
       }
@@ -550,6 +645,7 @@ export async function POST(request: Request) {
         const webhookProvisioning = await ensureShopifyWebhooksRegistered({
           shopDomain: shop,
           accessToken: values.accessToken as string,
+          allowSdkFallback: false,
         });
         const provisionedTopics = new Set([
           ...webhookProvisioning.registered,
@@ -592,11 +688,36 @@ export async function POST(request: Request) {
         credentialGeneration = legacyActivation.installationGeneration;
       }
 
+      if (
+        !lockedStore &&
+        !isOnline &&
+        typeof values.accessToken === "string" &&
+        values.accessToken
+      ) {
+        const [clock] = await tx.$queryRaw<Array<{ now: Date }>>(
+          Prisma.sql`SELECT CURRENT_TIMESTAMP(3) AS now`,
+        );
+        await ensurePendingInstallationAfterAuthentication(
+          tx,
+          configuredShopifySessionScope(shop),
+          clock.now,
+        );
+      }
       await tx.weleticShopifyAppSession.upsert({
         where: { id },
         update: { shop, isOnline, expiresAt, payload: storedPayload },
         create: { id, shop, isOnline, expiresAt, payload: storedPayload },
       });
+
+      if (nativePublication) {
+        await publishStoreOwnedShopifyCredential(tx, {
+          ...nativePublication,
+          material: {
+            accessToken: values.accessToken,
+            scope: String(values.scope || ""),
+          },
+        });
+      }
 
       if (
         currentInstallation &&
@@ -630,7 +751,10 @@ export async function POST(request: Request) {
       if (nextLease) {
         const snapshot = await readShopifySessionSnapshot(
           tx,
-          nextLease,
+          // Snapshot identity is only app/shop. Passing the entire lease leaks
+          // token/epoch/revision into the strict native credential identity and
+          // rolls back an otherwise valid SDK publication as an invalid request.
+          publicationScope,
           lockedStore,
         );
         return {

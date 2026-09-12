@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   encrypt: vi.fn((value: string) => `encrypted:${value}`),
@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   installationFindFirst: vi.fn(),
   appSessionFindFirst: vi.fn(),
   queryRaw: vi.fn(),
+  admissionQueryRaw: vi.fn(),
+  admissionUpdate: vi.fn(),
   programQueryRaw: vi.fn(),
   transaction: vi.fn(),
   publishPolicyRevision: vi.fn(),
@@ -49,6 +51,9 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 vi.mock("@/lib/weletic/shopify/privacy-identity", () => ({
+  deriveAllShopifyShopPrivacyIdentities: () => [
+    { identityKeyId: "test-key", shopDomainDigest: "A".repeat(64) },
+  ],
   createAllShopifyWebhookBodyDigests: mocks.createBodyDigests,
   deriveShopifyCustomerPrivacyIdentity: mocks.deriveCustomer,
   VERSIONED_SHOPIFY_PRIVACY_DIGEST_PATTERN:
@@ -76,8 +81,12 @@ import {
 const BODY_DIGESTS = [`hmac:v1:kid_1:${"A".repeat(64)}`] as const;
 
 describe("durable Shopify compliance persistence", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
+    vi.stubEnv("SHOPIFY_API_KEY", "public-test");
     vi.clearAllMocks();
+    mocks.admissionQueryRaw.mockResolvedValue([]);
+    mocks.admissionUpdate.mockResolvedValue({});
     mocks.requestCreate.mockResolvedValue({
       id: "wcomp_1",
       status: "pending",
@@ -113,11 +122,14 @@ describe("durable Shopify compliance persistence", () => {
       callback({
         $queryRaw: (query: any) => {
           const sql = query?.strings?.join("") ?? "";
+          if (sql.includes("WeleticShopifyPendingInstallation"))
+            return mocks.admissionQueryRaw(query);
           return sql.includes("WeleticLoyaltyProgram")
             ? mocks.programQueryRaw(query)
             : mocks.queryRaw(query);
         },
         weleticShopifyStore: { update: mocks.storeUpdate },
+        weleticShopifyPendingInstallation: { update: mocks.admissionUpdate },
         weleticLoyaltyProgram: { updateMany: mocks.programUpdateMany },
         installedIntegration: { findFirst: mocks.installationFindFirst },
         weleticShopifyAppSession: { findFirst: mocks.appSessionFindFirst },
@@ -494,6 +506,48 @@ describe("durable Shopify compliance persistence", () => {
     expect(mocks.programUpdateMany).toHaveBeenCalledOnce();
     expect(mocks.publishPolicyRevision).not.toHaveBeenCalled();
   });
+  it.each([false, true])(
+    "integrates mapped admission before store/program freezing (newer authentication=%s)",
+    async (newer) => {
+      const cutoff = new Date("2026-08-30T00:00:00Z");
+      mocks.admissionQueryRaw.mockResolvedValue([
+        {
+          id: "pending-1",
+          appId: process.env.SHOPIFY_API_KEY?.trim(),
+          mappedStoreId: "store_1",
+          installationGeneration: "sgen_one",
+          state: "mapped",
+          revision: 1,
+          redactedAt: null,
+          uninstalledAt: null,
+          authenticatedAt: new Date(cutoff.getTime() + (newer ? 1000 : -1000)),
+          identityKeyId: "test-key",
+          shopDomainDigest: "A".repeat(64),
+        },
+      ]);
+      const result = await freezeShopifyStoreForUninstall({
+        storeId: "store_1",
+        canonicalShopDomain: "target.myshopify.com",
+        cutoff,
+        expectedInstallationGeneration: "sgen_one",
+      });
+      expect(result.complianceState).toBe(newer ? "stale_reinstall" : "frozen");
+      if (newer) {
+        expect(mocks.admissionUpdate).not.toHaveBeenCalled();
+        expect(mocks.storeUpdate).not.toHaveBeenCalled();
+        expect(mocks.programUpdateMany).not.toHaveBeenCalled();
+      } else {
+        expect(mocks.admissionUpdate).toHaveBeenCalledWith({
+          where: { id: "pending-1" },
+          data: { state: "uninstalled", revision: 2, uninstalledAt: cutoff },
+        });
+        expect(mocks.admissionUpdate.mock.invocationCallOrder[0]).toBeLessThan(
+          mocks.storeUpdate.mock.invocationCallOrder[0],
+        );
+        expect(mocks.storeUpdate).toHaveBeenCalledOnce();
+      }
+    },
+  );
 
   it("does not move an uninstall kill-switch later when shop-redact arrives afterward", async () => {
     const uninstallCutoff = new Date("2026-08-29T23:58:00.000Z");
@@ -697,6 +751,7 @@ describe("durable Shopify compliance persistence", () => {
       storeId: "store_1",
       canonicalShopDomain: "target.myshopify.com",
       idempotencyKey: "installation_1:2026-08-30T00:00:00.000Z",
+      expectedInstallationGeneration: "sgen_one",
     });
 
     expect(result.requestId).toBe("wcomp_1");
@@ -715,6 +770,44 @@ describe("durable Shopify compliance persistence", () => {
     );
     expect(mocks.publishJSON).toHaveBeenCalled();
   });
+  it("rejects a disconnect delayed across reinstall before durable persistence or freeze", async () => {
+    mocks.queryRaw.mockResolvedValue([
+      {
+        id: "store_1",
+        projectId: "workspace_1",
+        shopDomain: "target.myshopify.com",
+        complianceState: "active",
+        installationGeneration: "sgen_new",
+        uninstalledAt: null,
+      },
+    ]);
+    await expect(
+      persistAndQueueInternalShopifyDisconnect({
+        storeId: "store_1",
+        canonicalShopDomain: "target.myshopify.com",
+        idempotencyKey: "synthetic-old-command",
+        expectedInstallationGeneration: "sgen_one",
+      }),
+    ).rejects.toThrow("installation changed");
+    expect(mocks.requestCreate).not.toHaveBeenCalled();
+    expect(mocks.storeUpdate).not.toHaveBeenCalled();
+    expect(mocks.publishJSON).not.toHaveBeenCalled();
+  });
+  it.each([undefined, "", "x".repeat(65)])(
+    "requires bounded disconnect generation %s",
+    async (expectedInstallationGeneration) => {
+      await expect(
+        persistAndQueueInternalShopifyDisconnect({
+          storeId: "store_1",
+          canonicalShopDomain: "target.myshopify.com",
+          idempotencyKey: "synthetic",
+          expectedInstallationGeneration,
+        } as any),
+      ).rejects.toThrow("exact installation generation");
+      expect(mocks.requestCreate).not.toHaveBeenCalled();
+      expect(mocks.queryRaw).not.toHaveBeenCalled();
+    },
+  );
 
   it("retries an idempotent manual disconnect when its first dispatch fails", async () => {
     const receivedAt = new Date("2026-08-30T00:00:00.000Z");
@@ -746,6 +839,7 @@ describe("durable Shopify compliance persistence", () => {
       storeId: "store_1",
       canonicalShopDomain: "target.myshopify.com",
       idempotencyKey: "installation_1:2026-08-30T00:00:00.000Z",
+      expectedInstallationGeneration: "sgen_one",
     };
 
     await expect(
@@ -783,6 +877,7 @@ describe("durable Shopify compliance persistence", () => {
       storeId: "store_1",
       canonicalShopDomain: "target.myshopify.com",
       idempotencyKey: "installation_1:2026-08-30T00:00:00.000Z",
+      expectedInstallationGeneration: "sgen_one",
     });
 
     expect(mocks.storeUpdate).toHaveBeenCalledWith(
@@ -812,6 +907,7 @@ describe("durable Shopify compliance persistence", () => {
         storeId: "store_1",
         canonicalShopDomain: "target.myshopify.com",
         idempotencyKey: "installation_1:2026-08-30T00:00:00.000Z",
+        expectedInstallationGeneration: "sgen_one",
       }),
     ).resolves.toMatchObject({ status: "completed" });
 

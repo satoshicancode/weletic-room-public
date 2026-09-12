@@ -222,6 +222,15 @@ async function scrubUninstalledCredentials({
           id: { in: generationInstallations.map(({ id }) => id) },
         },
       });
+      // This Store lock and generation check also fence Shopify-native tokens.
+      // Uninstall erases only this app's completed generation; retained shop
+      // redaction has its separate all-generation final drain.
+      const appId = process.env.SHOPIFY_API_KEY?.trim();
+      if (!appId || !/^[a-z0-9_-]{1,191}$/.test(appId))
+        throw new Error("Shopify credential cleanup app identity is missing.");
+      await tx.weleticShopifyInstallationCredential.deleteMany({
+        where: { storeId, appId, installationGeneration },
+      });
       // Project.updatedAt is shared by unrelated workspace changes and cannot
       // act as an installation-generation clock. The store row lock and exact
       // frozen cutoff are the lifecycle authority for clearing this alias.

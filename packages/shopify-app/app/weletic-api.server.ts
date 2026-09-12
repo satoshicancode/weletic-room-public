@@ -1,5 +1,6 @@
 import { json } from "@remix-run/node";
 import crypto from "node:crypto";
+import { assertPublicShopifyRuntime } from "./public-runtime-policy.mjs";
 
 export const WELETIC_INTERNAL_TIMESTAMP_HEADER = "x-weletic-timestamp";
 export const WELETIC_INTERNAL_SIGNATURE_HEADER = "x-weletic-signature";
@@ -120,6 +121,7 @@ export function requireUrlEnv(name: string) {
 }
 
 function getWeleticApiUrl() {
+  assertPublicShopifyRuntime(process.env);
   const url = requireUrlEnv("WELETIC_API_URL");
 
   url.pathname = "/";

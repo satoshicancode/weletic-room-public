@@ -8,9 +8,12 @@ import {
 } from "@shopify/shopify-app-remix/server";
 import { CoordinatedWeleticSessionStorage } from "./coordinated-session-storage.server";
 import { createMerchantAuthenticator } from "./merchant-authentication.server";
+import { verifyShopifyMerchantIdentity } from "./merchant-identity.server";
+import { assertPublicShopifyRuntime } from "./public-runtime-policy.mjs";
 import { getShopifyRequestedScopes } from "./shopify-scopes";
 import { requireEnv, requireUrlEnv } from "./weletic-api.server";
 
+assertPublicShopifyRuntime(process.env);
 const coordinatedStorage = new CoordinatedWeleticSessionStorage();
 // This is the SDK's supported transport adapter, not a replacement of global
 // fetch. Ownership remains in MySQL; async context only carries its proof.
@@ -45,19 +48,24 @@ const shopify = shopifyApp({
 });
 
 export default shopify;
+const merchantSdk = shopifyApi({
+  apiKey: requireEnv("SHOPIFY_API_KEY"),
+  apiSecretKey: requireEnv("SHOPIFY_API_SECRET"),
+  apiVersion: ApiVersion.July26,
+  hostName: requireUrlEnv("SHOPIFY_APP_URL").host,
+  isEmbeddedApp: true,
+  scopes: [],
+});
+// Minimal identity read only. No token exchange, online session, data access or
+// owner/staff authority is granted by this function.
+export const verifyInstallationIdentity = (request: Request) =>
+  verifyShopifyMerchantIdentity(request, merchantSdk);
 // This separate SDK entry point performs only explicit ONLINE token exchange.
 // Effective scopes come from the validated response, not this SDK configuration.
 // Existing offline install/renewal and authenticate.admin behavior stay intact.
 export const withAuthenticatedMerchant = createMerchantAuthenticator({
   storage: coordinatedStorage,
-  sdk: shopifyApi({
-    apiKey: requireEnv("SHOPIFY_API_KEY"),
-    apiSecretKey: requireEnv("SHOPIFY_API_SECRET"),
-    apiVersion: ApiVersion.July26,
-    hostName: requireUrlEnv("SHOPIFY_APP_URL").host,
-    isEmbeddedApp: true,
-    scopes: [],
-  }),
+  sdk: merchantSdk,
 });
 export const authenticate = {
   ...shopify.authenticate,

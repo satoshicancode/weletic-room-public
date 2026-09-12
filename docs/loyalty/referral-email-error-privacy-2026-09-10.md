@@ -32,6 +32,26 @@ or existing stored-error cleanup is claimed.
 
 ## Verification
 
+### Post-installation-merge refresh — September 12
+
+After PR #15 merged as `69149d76d8`, its changes were incorporated through a
+normal merge without conflicts. Independent review confirmed the four-file
+privacy diff does not alter the new native credential selection, tenant/generation
+checks or pre-delivery store authorization. All 117 focused referral/route/outbox
+tests, repository lint and changed-file formatting passed on the combined source.
+The full regression passed all 436 files: 6,806 tests passed and six existing
+tests skipped. The production build, including type validation and all 367 static
+pages, passed using only temporary SELECT access to the isolated PR #15 fixture
+on port 3307. All 154 tables remained empty and that grant was revoked afterward.
+Fresh CI for the resulting commit is required before merging PR #18.
+
+Hiro's continuation instruction approved the specific path-filtered Shopify-check
+exception for this backend-only PR. The required Fast Quality Gate and every
+applicable check must still pass; this does not change CI configuration or the
+general merge policy. No deployment, application startup or real email is included.
+
+### Earlier checkpoints
+
 - Five new regression cases failed before the fix, demonstrating returned and
   thrown provider/callback error disclosure plus inconsistent empty-response
   handling. The corrected claim and route suites passed all 30 tests.

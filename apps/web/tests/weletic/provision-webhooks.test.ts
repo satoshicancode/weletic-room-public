@@ -6,6 +6,11 @@ import {
 } from "@/lib/weletic/shopify/provision-webhooks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const sdk = vi.hoisted(() => ({ admin: vi.fn() }));
+vi.mock("../../../../packages/shopify-app/app/shopify.server", () => ({
+  unauthenticated: { admin: sdk.admin },
+}));
+
 describe("Requirement R1: Multi-Tenant Automated Webhook Provisioning", () => {
   const originalEnv = { ...process.env };
 
@@ -25,10 +30,12 @@ describe("Requirement R1: Multi-Tenant Automated Webhook Provisioning", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    sdk.admin.mockReset();
     process.env = { ...originalEnv };
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     process.env = { ...originalEnv };
   });
 
@@ -103,6 +110,80 @@ describe("Requirement R1: Multi-Tenant Automated Webhook Provisioning", () => {
   });
 
   describe("3. Webhook Registration & GraphQL Execution", () => {
+    it.each(["creation", "audit"])(
+      "does not enter SDK recovery after a direct 401 during %s under the lock-safe policy",
+      async (phase) => {
+        const directFetch = vi.fn(
+          async (_input: unknown, init?: RequestInit) => {
+            const { query, variables } = JSON.parse(String(init?.body));
+            if (
+              phase === "creation" ||
+              query.includes("WeleticAuditWebhookSubscriptions")
+            )
+              return new Response(null, { status: 401 });
+            return Response.json({
+              data: {
+                webhookSubscriptionCreate: {
+                  userErrors: [],
+                  webhookSubscription: {
+                    id: "synthetic",
+                    topic: variables.topic,
+                  },
+                },
+              },
+            });
+          },
+        );
+        vi.stubGlobal("fetch", directFetch);
+        const result = await ensureShopifyWebhooksRegistered({
+          shopDomain: "synthetic.myshopify.com",
+          accessToken: "synthetic-token",
+          allowSdkFallback: false,
+        });
+        expect(result.success).toBe(false);
+        expect(result.registered).toHaveLength(0);
+        expect(result.skipped).toHaveLength(0);
+        expect(result.failed).toHaveLength(16);
+        expect(directFetch).toHaveBeenCalledTimes(
+          phase === "creation" ? 16 : 17,
+        );
+        expect(sdk.admin).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([false, true])(
+      "preserves SDK fallback policy %s for every mutation and the final audit",
+      async (allowSdkFallback) => {
+        const graphql = vi
+          .spyOn(adminGraphqlModule, "shopifyAdminGraphql")
+          .mockImplementation(async ({ query, variables }) => {
+            if (query.includes("WeleticAuditWebhookSubscriptions"))
+              return auditedSubscriptions(variables!.topics as string[]);
+            return {
+              webhookSubscriptionCreate: {
+                userErrors: [],
+                webhookSubscription: {
+                  id: "gid://shopify/WebhookSubscription/synthetic",
+                  topic: variables!.topic,
+                },
+              },
+            };
+          });
+        const result = await ensureShopifyWebhooksRegistered({
+          shopDomain: "synthetic.myshopify.com",
+          accessToken: "synthetic-token",
+          allowSdkFallback,
+        });
+        expect(result.success).toBe(true);
+        expect(graphql).toHaveBeenCalledTimes(17);
+        for (const [request] of graphql.mock.calls)
+          expect(request.allowSdkFallback).toBe(allowSdkFallback);
+        expect(graphql.mock.calls[16][0].query).toContain(
+          "WeleticAuditWebhookSubscriptions",
+        );
+      },
+    );
+
     it("successfully registers all canonical topics on a fresh Shopify store", async () => {
       const graphqlSpy = vi
         .spyOn(adminGraphqlModule, "shopifyAdminGraphql")

@@ -1,6 +1,8 @@
 import { decryptOrPassthrough } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 import { decimalToMinorUnits, minorUnitsToDecimal } from "@/lib/weletic/money";
+import { ShopifyCredentialUnavailableError } from "@/lib/weletic/shopify/credential-errors";
+import { readShopifyCredentialSource } from "@/lib/weletic/shopify/credential-source";
 import {
   resolveShopifyStoreByDomain,
   verifyAndBindShopifyIntegrationCredential,
@@ -65,6 +67,7 @@ export interface ResolvedShopifyCredentials {
     | "token_authority"
     | "app_session"
     | "installed_integration"
+    | "store_owned"
     | "store_resolver";
   readonly [TRUSTED_RESOLVED_SHOPIFY_CREDENTIALS]?: true;
 }
@@ -241,11 +244,31 @@ export async function resolveShopifyOfflineCredentials(params: {
     }
   }
 
-  // 4. InstalledIntegration is the only local versioned credential authority.
-  // Session refresh publishes its token into this row under the exact prior
-  // token hash; reading the app-session payload directly could reuse a stale
-  // same-generation token from another process.
+  // 4. Public admission selects the native Store/app credential exclusively.
+  // Only pre-admission custom installations may use the legacy projection.
+  // Never read an SDK payload as fallback after either authority fails.
   if (resolvedProjectId) {
+    const source = await readShopifyCredentialSource({
+      storeId: exactStore!.id,
+      workspaceId: resolvedProjectId,
+      shop: fullDomain,
+      installationGeneration: exactStore!.installationGeneration,
+    }).catch((error: unknown) => {
+      if (error instanceof ShopifyCredentialUnavailableError)
+        throw new ShopifyDiscountError(
+          "AUTH_EXPIRED",
+          "Reconnect the Shopify app before accessing this store.",
+        );
+      throw error;
+    });
+    if (source.source === "native") {
+      return trustedResolvedShopifyCredentials({
+        shopDomain: fullDomain,
+        accessToken: source.accessToken,
+        scope: source.scope,
+        source: "store_owned",
+      });
+    }
     const installation = await prisma.installedIntegration.findFirst({
       where: {
         projectId: resolvedProjectId,

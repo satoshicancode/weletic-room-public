@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    $transaction: async (operation: any) =>
+      operation({ $queryRaw: async () => [], $executeRaw: mocks.executeRaw }),
     $executeRaw: mocks.executeRaw,
     weleticShopifyCustomerPrivacyTombstone: {
       findMany: mocks.customerFindMany,
@@ -51,6 +53,7 @@ describe("Shopify privacy tombstone retention", () => {
     await expect(
       deleteExpiredShopifyPrivacyTombstonesBatch({ batchSize: 1, now }),
     ).resolves.toEqual({
+      pendingInstallations: { deleted: 0 },
       referralSnapshots: { deleted: 0 },
       customer: { selected: 1, deleted: 1 },
       shop: { selected: 1, deleted: 1 },
@@ -94,6 +97,7 @@ describe("Shopify privacy tombstone retention", () => {
     await expect(
       deleteExpiredShopifyPrivacyTombstonesBatch({ now }),
     ).resolves.toEqual({
+      pendingInstallations: { deleted: 0 },
       referralSnapshots: { deleted: 0 },
       customer: { selected: 1, deleted: 0 },
       shop: { selected: 1, deleted: 0 },

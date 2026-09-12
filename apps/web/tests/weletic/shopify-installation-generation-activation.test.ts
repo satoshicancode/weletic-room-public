@@ -20,6 +20,21 @@ const mocks = vi.hoisted(() => ({
   lockProgram: vi.fn(),
   fetchVerifiedShop: vi.fn(),
   ensureWebhooks: vi.fn(),
+  lockLegacyConnection: vi.fn(),
+  advanceLegacyRevision: vi.fn(),
+}));
+
+vi.mock("@/lib/weletic/shopify/legacy-connection-fence", () => ({
+  lockLegacyShopifyConnection: mocks.lockLegacyConnection,
+}));
+vi.mock("@/lib/weletic/shopify/session-coordination", () => ({
+  advanceLegacyShopifySessionRevision: mocks.advanceLegacyRevision,
+}));
+vi.mock("@/lib/weletic/shopify/session-snapshot", () => ({
+  configuredShopifySessionScope: (shop: string) => ({
+    appId: "legacy-app",
+    shop,
+  }),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -117,6 +132,8 @@ const canonicalTopics = [
 describe("legacy Shopify installation-generation activation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.lockLegacyConnection.mockReset().mockResolvedValue(undefined);
+    mocks.advanceLegacyRevision.mockReset().mockResolvedValue(undefined);
     mocks.storeFindUnique.mockResolvedValue({ ...store });
     mocks.installationFindMany.mockResolvedValue([{ ...installation }]);
     mocks.installationFindUnique.mockResolvedValue({ ...installation });
@@ -197,7 +214,55 @@ describe("legacy Shopify installation-generation activation", () => {
       accessToken: credentials.accessToken,
     });
     expect(mocks.ensureWebhooks).not.toHaveBeenCalled();
-    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.lockLegacyConnection).toHaveBeenCalledTimes(1);
+    expect(mocks.advanceLegacyRevision).not.toHaveBeenCalled();
+  });
+
+  it("rejects native ownership before reading or using retained legacy credentials", async () => {
+    mocks.lockLegacyConnection.mockRejectedValueOnce(
+      new Error("Managed by Shopify"),
+    );
+    await expect(
+      activateShopifyInstallationGeneration({ storeDomain: store.shopDomain }),
+    ).rejects.toThrow("Managed by Shopify");
+    expect(mocks.installationFindMany).not.toHaveBeenCalled();
+    expect(mocks.fetchVerifiedShop).not.toHaveBeenCalled();
+    expect(mocks.ensureWebhooks).not.toHaveBeenCalled();
+  });
+
+  it("rechecks native ownership under the final write lock before provider mutations", async () => {
+    mocks.lockLegacyConnection
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("Managed by Shopify"));
+    await expect(
+      activateShopifyInstallationGeneration({
+        storeDomain: store.shopDomain,
+        apply: true,
+        maintenanceFence: SHOPIFY_INSTALLATION_ACTIVATION_MAINTENANCE_FENCE,
+      }),
+    ).rejects.toThrow("Managed by Shopify");
+    expect(mocks.fetchVerifiedShop).not.toHaveBeenCalled();
+    expect(mocks.ensureWebhooks).not.toHaveBeenCalled();
+    expect(mocks.storeUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.installationUpdate).not.toHaveBeenCalled();
+  });
+
+  it("rejects SDK promotion before remote provisioning or credential writes", async () => {
+    mocks.advanceLegacyRevision.mockRejectedValueOnce(
+      new Error("stale_session"),
+    );
+    await expect(
+      activateShopifyInstallationGeneration({
+        storeDomain: store.shopDomain,
+        apply: true,
+        maintenanceFence: SHOPIFY_INSTALLATION_ACTIVATION_MAINTENANCE_FENCE,
+      }),
+    ).rejects.toThrow("stale_session");
+    expect(mocks.fetchVerifiedShop).not.toHaveBeenCalled();
+    expect(mocks.ensureWebhooks).not.toHaveBeenCalled();
+    expect(mocks.storeUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.installationUpdate).not.toHaveBeenCalled();
   });
 
   it("fails closed before Shopify writes when the maintenance fence is not drained", async () => {
@@ -246,7 +311,8 @@ describe("legacy Shopify installation-generation activation", () => {
     ).rejects.toThrow("blockingLifecycleRequests=1");
     expect(mocks.fetchVerifiedShop).not.toHaveBeenCalled();
     expect(mocks.ensureWebhooks).not.toHaveBeenCalled();
-    expect(mocks.transaction).not.toHaveBeenCalled();
+    expect(mocks.transaction).toHaveBeenCalledTimes(1);
+    expect(mocks.advanceLegacyRevision).not.toHaveBeenCalled();
   });
 
   it("publishes one generation only after live verification, webhook provisioning, and locked rechecks", async () => {
@@ -264,6 +330,19 @@ describe("legacy Shopify installation-generation activation", () => {
     });
     expect(result.installationGeneration).toMatch(/^sgen_/);
     expect(mocks.ensureWebhooks).toHaveBeenCalledOnce();
+    expect(mocks.ensureWebhooks).toHaveBeenCalledWith({
+      shopDomain: store.shopDomain,
+      accessToken: credentials.accessToken,
+      allowSdkFallback: false,
+    });
+    expect(mocks.lockLegacyConnection).toHaveBeenCalledTimes(2);
+    expect(mocks.advanceLegacyRevision).toHaveBeenCalledWith(
+      expect.anything(),
+      { appId: "legacy-app", shop: store.shopDomain },
+    );
+    expect(
+      mocks.advanceLegacyRevision.mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.ensureWebhooks.mock.invocationCallOrder[0]);
     expect(mocks.queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.ensureWebhooks.mock.invocationCallOrder[0],
     );
@@ -310,7 +389,7 @@ describe("legacy Shopify installation-generation activation", () => {
         maintenanceFence: SHOPIFY_INSTALLATION_ACTIVATION_MAINTENANCE_FENCE,
       }),
     ).rejects.toThrow("APP_UNINSTALLED");
-    expect(mocks.transaction).toHaveBeenCalledOnce();
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
     expect(mocks.storeUpdateMany).not.toHaveBeenCalled();
     expect(mocks.installationUpdate).not.toHaveBeenCalled();
   });
