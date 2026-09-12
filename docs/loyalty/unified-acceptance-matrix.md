@@ -256,6 +256,12 @@ No checkbox below is promoted solely by these local checks.
       September 12: [schema preflight and compatibility checkpoint](historical-import-schema-release-gate.md)
       adds isolated metadata/privacy-failure evidence; shared rollout,
       authenticated journeys and full 50,000-row execution remain unaccepted.
+      September 13: the full-scale run stopped at 44,285 committed rows on an
+      empty worker poll, without terminal commit/rollback proof. Two isolated
+      [future-due scheduling checks](import-scheduling-evidence-2026-09-13.md)
+      passed, including unchanged pre-due state and exact post-due balance/SQL
+      reconciliation. They prove legitimate empty polls, not the failed run's
+      cause. Sanitized failure diagnostics and bounded lifecycle reruns remain.
       The local [dedicated-instance scale continuation](historical-import-implementation.md)
       adds grouped rollback and projected evidence reads. Its latest synthetic
       50,000-row profile reached 30 real reversals and safe continuation, with

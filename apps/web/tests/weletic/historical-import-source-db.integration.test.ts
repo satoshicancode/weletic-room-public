@@ -1907,6 +1907,94 @@ it("dead letters a contained rollback immediately instead of acknowledging or au
     }),
   ).toBe(2);
 });
+it.each(["scheduledFor", "nextRetryAt"] as const)(
+  "leaves a future-due import %s untouched until eligible",
+  async (field) => {
+    const { source, job } = await queuedWorkerFixture();
+    await releaseFixtureJobToRealWorker(job.id);
+    const dueAt = new Date(Date.now() + 5_000);
+    await database.weleticLoyaltyOutboxJob.update({
+      where: { id: job.id },
+      data: { [field]: dueAt },
+    });
+    const readJob = () =>
+      database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id: job.id },
+      });
+    const readSource = () =>
+      database.weleticLoyaltyImportSource.findUniqueOrThrow({
+        where: { id: source.id },
+      });
+    const beforeJob = await readJob();
+    const beforeSource = await readSource();
+    const readAccounts = () =>
+      database.weleticLoyaltyAccount.findMany({
+        where: { storeId: source.storeId },
+        orderBy: { id: "asc" },
+      });
+    const beforeAccounts = await readAccounts();
+    const run = () =>
+      processOutboxJobsBatch({
+        storeId: source.storeId,
+        jobIds: [job.id],
+        workerId: "isolated-future-due-import-worker",
+      });
+    // Real wall clocks and the real claim path: a legitimate empty poll must
+    // neither claim the job nor consume its failure budget or write a balance.
+    expect(Date.now()).toBeLessThan(dueAt.getTime());
+    expect(await run()).toMatchObject({
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+      deadLettered: 0,
+    });
+    expect(await readJob()).toEqual(beforeJob);
+    expect(await readSource()).toEqual(beforeSource);
+    expect(await readAccounts()).toEqual(beforeAccounts);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: source.storeId },
+      }),
+    ).toBe(0);
+    expect(
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: source.id },
+      }),
+    ).toBe(0);
+    // Wait for this synthetic job, without moving either application's or
+    // database's clock and without changing the stored eligibility timestamp.
+    while (Date.now() <= dueAt.getTime()) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.max(1, dueAt.getTime() - Date.now() + 1)),
+      );
+    }
+    expect(await run()).toMatchObject({
+      processed: 1,
+      succeeded: 1,
+      failed: 0,
+      deadLettered: 0,
+    });
+    expect(await readJob()).toMatchObject({ status: "completed" });
+    expect(await readSource()).toMatchObject({ status: "committed" });
+    const expectedBalance = beforeSource.totalOpeningBalance.toFixed(0);
+    expect(await readAccounts()).toMatchObject([
+      { cachedPointsBalance: BigInt(expectedBalance) },
+    ]);
+    // Independently reconcile the one-row monetary result, not just row count.
+    expect(
+      await database.$queryRaw<Array<{ entries: string; net: string }>>`
+        SELECT CAST(COUNT(*) AS CHAR) AS entries,
+          CAST(COALESCE(SUM(pointsDelta), 0) AS CHAR) AS net
+        FROM WeleticPointsLedgerEntry WHERE storeId = ${source.storeId}
+      `,
+    ).toEqual([{ entries: "1", net: expectedBalance }]);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: source.storeId },
+      }),
+    ).toBe(1);
+  },
+);
 it("runs the real outbox claim/dispatch/acknowledgement and safely replays after source completion", async () => {
   const { source, job } = await queuedWorkerFixture();
   await releaseFixtureJobToRealWorker(job.id);
