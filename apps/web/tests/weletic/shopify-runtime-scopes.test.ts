@@ -5,7 +5,68 @@ import { getShopifyRequestedScopes } from "../../../../packages/shopify-app/app/
 import { DEVELOPMENT_SHOPIFY_SCOPES } from "../../lib/weletic/shopify/development-preflight";
 
 describe("Shopify runtime requested scopes", () => {
-  it("matches the checked-in manifest and isolated development preflight", () => {
+  const publicManifest = readFileSync(
+    resolve(
+      process.cwd(),
+      "../../packages/shopify-app/shopify.app.loyalty-public.toml",
+    ),
+    "utf8",
+  );
+
+  it("keeps the public installation loyalty-only and optional permissions separate", () => {
+    const required = publicManifest.match(/^scopes = "([^"]+)"/m)?.[1];
+    expect(required).toBeDefined();
+    expect(getShopifyRequestedScopes(required)).toEqual([
+      "read_products",
+      "read_markets",
+      "read_orders",
+      "read_translations",
+      "write_discounts",
+      "write_customers",
+      "write_app_proxy",
+    ]);
+    expect(required!.split(",")).toEqual([...DEVELOPMENT_SHOPIFY_SCOPES]);
+    const optional = JSON.parse(
+      publicManifest.match(/^optional_scopes = (\[.*\])/m)![1],
+    );
+    expect(optional).toEqual([
+      "write_gift_cards",
+      "read_store_credit_accounts",
+      "write_store_credit_account_transactions",
+    ]);
+    expect(
+      optional.every((scope: string) => !required!.split(",").includes(scope)),
+    ).toBe(true);
+    expect(publicManifest).not.toMatch(
+      /read_price_rules|write_price_rules|write_products/,
+    );
+  });
+
+  it("isolates public identity, endpoints, managed installation and extension discovery", () => {
+    expect(publicManifest).toContain(
+      'client_id = "c7d49cebb06e445db345bb200f966a03"',
+    );
+    expect(publicManifest).toMatch(/^extension_directories = \[\]$/m);
+    expect(publicManifest).toMatch(
+      /^automatically_update_urls_on_dev = false$/m,
+    );
+    expect(publicManifest).toMatch(/^use_legacy_install_flow = false$/m);
+    const urls = [...publicManifest.matchAll(/https:\/\/[^"\s]+/g)].map(
+      ([url]) => new URL(url),
+    );
+    expect(urls.map((url) => url.href)).toEqual([
+      "https://loyalty-shopify-dev.weletic.com/",
+      "https://loyalty-shopify-dev.weletic.com/auth/callback",
+      "https://loyalty-api-dev.weletic.com/api/shopify/integration/webhook",
+      "https://loyalty-api-dev.weletic.com/api/shopify/integration/webhook",
+      "https://loyalty-shopify-dev.weletic.com/apps/proxy",
+    ]);
+    expect(publicManifest).toContain(
+      'compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]',
+    );
+  });
+
+  it("preserves the custom-app fallback and its original manifest", () => {
     const manifest = readFileSync(
       resolve(process.cwd(), "../../packages/shopify-app/shopify.app.toml"),
       "utf8",
@@ -20,7 +81,6 @@ describe("Shopify runtime requested scopes", () => {
     expect(runtime).toContain("write_app_proxy");
     expect(new Set(runtime).size).toBe(runtime.length);
     expect([...runtime].sort()).toEqual(declared!.split(",").sort());
-    expect([...runtime].sort()).toEqual([...DEVELOPMENT_SHOPIFY_SCOPES].sort());
   });
 
   it.each(["read_orders", "read_orders,read_products", ""])(

@@ -8,8 +8,15 @@ import {
 } from "@/lib/zod/schemas/discount";
 import { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { legacyCredentialSqlFixture } from "./helpers/legacy-credential-sql-fixture";
 
 vi.mock("server-only", () => ({}));
+
+// This suite supplies legacy integration fixtures. Native credential-source
+// authorization and lifecycle fences are covered by their dedicated suites.
+vi.mock("@/lib/weletic/shopify/credential-source", () => ({
+  readShopifyCredentialSource: vi.fn(async () => ({ source: "legacy" })),
+}));
 
 vi.mock("@/lib/api/links/cache", () => ({
   linkCache: {
@@ -107,6 +114,7 @@ vi.mock("@/lib/prisma", () => ({
               id: "wstore_challenger",
               projectId: "ws_challenger",
               shopDomain: "challenger-demo.myshopify.com",
+              complianceState: "active",
               installationGeneration: "sgen_challenger",
             }
           : null,
@@ -342,13 +350,8 @@ vi.mock("@/lib/prisma", () => ({
     },
     $transaction: vi.fn(async (callback: (tx: any) => unknown) =>
       callback({
-        $queryRaw: vi.fn().mockResolvedValue([
-          {
-            id: "wstore_challenger",
-            projectId: "ws_challenger",
-            installationGeneration: "sgen_challenger",
-          },
-        ]),
+        $queryRaw: vi.fn((query: Prisma.Sql) => legacySql.queryRaw(query)),
+        $executeRaw: vi.fn((query: Prisma.Sql) => legacySql.executeRaw(query)),
         installedIntegration: {
           findUnique: vi.fn(
             async ({ where }: any) =>
@@ -361,6 +364,14 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 import { prisma } from "@/lib/prisma";
+
+const legacySql = legacyCredentialSqlFixture({
+  readStore: () =>
+    prisma.weleticShopifyStore.findUnique({
+      where: { projectId: "ws_challenger" },
+    }),
+  readInstallation: async (id) => testDb.installedIntegrations.get(id) ?? null,
+});
 
 function seedChallengerEnv() {
   testDb.projects.clear();

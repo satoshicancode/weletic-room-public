@@ -4,10 +4,13 @@ import { integrationCredentialsSchema } from "@/lib/integrations/shopify/schema"
 import { prisma } from "@/lib/prisma";
 import { createWeleticId } from "@/lib/weletic/ids";
 import { lockLoyaltyProgramRowIfPresent } from "@/lib/weletic/loyalty/program-write-fence";
+import { lockLegacyShopifyConnection } from "@/lib/weletic/shopify/legacy-connection-fence";
 import {
   ensureShopifyWebhooksRegistered,
   SHOPIFY_CANONICAL_WEBHOOK_TOPICS,
 } from "@/lib/weletic/shopify/provision-webhooks";
+import { advanceLegacyShopifySessionRevision } from "@/lib/weletic/shopify/session-coordination";
+import { configuredShopifySessionScope } from "@/lib/weletic/shopify/session-snapshot";
 import {
   canonicalizeShopifyDomain,
   fetchVerifiedShopifyShopDetails,
@@ -142,6 +145,15 @@ export async function activateShopifyInstallationGeneration({
     );
   }
 
+  // This maintenance command is not a public-app authentication alternative.
+  // Reject native ownership before reading or remotely using legacy credentials.
+  await prisma.$transaction((tx) =>
+    lockLegacyShopifyConnection(tx, {
+      workspaceId: store.projectId,
+      shop: canonicalStoreDomain,
+    }),
+  );
+
   const installations = await prisma.installedIntegration.findMany({
     where: {
       projectId: store.projectId,
@@ -247,6 +259,17 @@ export async function activateShopifyInstallationGeneration({
         );
       }
 
+      await lockLegacyShopifyConnection(tx, {
+        workspaceId: store.projectId,
+        shop: canonicalStoreDomain,
+      });
+      // Fence observations and reject SDK-promoted coordinators before any
+      // provider mutation. Revision advancement rolls back with local writes.
+      await advanceLegacyShopifySessionRevision(
+        tx,
+        configuredShopifySessionScope(canonicalStoreDomain),
+      );
+
       const lockedProgram = await lockLoyaltyProgramRowIfPresent({
         tx,
         storeId: store.id,
@@ -304,6 +327,7 @@ export async function activateShopifyInstallationGeneration({
       const webhookProvisioning = await ensureShopifyWebhooksRegistered({
         shopDomain: canonicalStoreDomain,
         accessToken,
+        allowSdkFallback: false,
       });
       const provisionedTopics = new Set([
         ...webhookProvisioning.registered,

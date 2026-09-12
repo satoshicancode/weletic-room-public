@@ -1,5 +1,6 @@
 import { shopifyAdminGraphql } from "@/lib/integrations/shopify/admin-graphql";
 import { APP_DOMAIN_WITH_NGROK } from "@dub/utils";
+import { resolvePublicShopifyWebhookCallback } from "./public-webhook-policy";
 
 export const SHOPIFY_CANONICAL_WEBHOOK_TOPICS = [
   "PRODUCTS_CREATE",
@@ -24,6 +25,21 @@ export type ShopifyCanonicalWebhookTopic =
   (typeof SHOPIFY_CANONICAL_WEBHOOK_TOPICS)[number];
 
 export function resolveShopifyWebhookCallbackUrl(customUrl?: string): string {
+  const publicCallback = resolvePublicShopifyWebhookCallback(
+    process.env,
+    customUrl,
+  );
+  if (publicCallback !== null) return publicCallback;
+  const legacyCallback = resolveLegacyWebhookCallbackUrl(customUrl);
+  // Legacy normalization and preview fallbacks can introduce a public host
+  // that was absent from the raw configuration. Validate the effective target.
+  return (
+    resolvePublicShopifyWebhookCallback(process.env, legacyCallback) ??
+    legacyCallback
+  );
+}
+
+function resolveLegacyWebhookCallbackUrl(customUrl?: string): string {
   if (customUrl) return customUrl;
   if (process.env.DEV_WEBHOOK_URL) {
     return `${process.env.DEV_WEBHOOK_URL.replace(/\/+$/, "")}/api/shopify/integration/webhook`;
@@ -96,12 +112,14 @@ async function auditExactWebhookSubscriptions({
   callbackUrl,
   topics,
   expectedFilters,
+  allowSdkFallback = true,
 }: {
   shopDomain: string;
   accessToken: string;
   callbackUrl: string;
   topics: readonly string[];
   expectedFilters?: ReadonlyMap<string, string | null>;
+  allowSdkFallback?: boolean;
 }) {
   if (topics.length === 0) return new Set<string>();
   const response = await shopifyAdminGraphql<{
@@ -112,6 +130,7 @@ async function auditExactWebhookSubscriptions({
     apiVersion: "2026-07",
     query: AUDIT_WEBHOOK_SUBSCRIPTIONS_QUERY,
     variables: { first: 250, topics },
+    allowSdkFallback,
   });
   const nodes = response.webhookSubscriptions?.nodes;
   if (!Array.isArray(nodes)) {
@@ -138,10 +157,14 @@ export async function ensureShopifyWebhooksRegistered({
   shopDomain,
   accessToken,
   callbackUrl: explicitCallbackUrl,
+  allowSdkFallback = true,
 }: {
   shopDomain: string;
   accessToken: string;
   callbackUrl?: string;
+  /** Disable when the caller holds installation/session locks: SDK recovery
+   * needs those locks and must not substitute a different credential. */
+  allowSdkFallback?: boolean;
 }): Promise<ProvisionWebhooksResult> {
   const callbackUrl = resolveShopifyWebhookCallbackUrl(explicitCallbackUrl);
   const registered: string[] = [];
@@ -160,6 +183,7 @@ export async function ensureShopifyWebhooksRegistered({
         accessToken,
         apiVersion: "2026-07",
         query: CREATE_WEBHOOK_MUTATION,
+        allowSdkFallback,
         variables: {
           topic,
           webhookSubscription: {
@@ -217,6 +241,7 @@ export async function ensureShopifyWebhooksRegistered({
         accessToken,
         callbackUrl,
         topics: candidates,
+        allowSdkFallback,
       });
       for (const topic of candidates) {
         if (!verified.has(topic)) {

@@ -5,7 +5,7 @@ import type {
   ShopifySessionProperty,
   ShopifySessionSnapshot,
 } from "@/lib/weletic/shopify/session-contract";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CoordinatedWeleticSessionStorage } from "../../../../packages/shopify-app/app/coordinated-session-storage.server";
 
@@ -17,7 +17,7 @@ const digest = (input: string) =>
 
 // This gateway is an intercepted HTTP fixture, NOT database/live proof. The
 // actual Shopify SDK, storage adapter, signed client and transport run below.
-function gateway() {
+function gateway(preparedReconnect = false) {
   let epoch = "0";
   let revision = "0";
   let owner: ShopifySessionLeaseProof | null = null;
@@ -32,20 +32,27 @@ function gateway() {
     ["refreshToken", "synthetic-refresh"],
     ["refreshTokenExpires", Date.now() + 86_400_000],
   ];
+  if (preparedReconnect) properties = null;
   const snapshot = (): ShopifySessionSnapshot => ({
     properties: controls.missingSession ? null : properties,
     observed: {
       epoch,
       revision,
-      sessionDigest: digest(JSON.stringify(properties)),
+      sessionDigest: digest(
+        properties ? JSON.stringify(properties) : "missing",
+      ),
       installationGeneration: controls.generation,
       credentialTokenHash: controls.credentialTokenHash,
     },
   });
   const controls = {
-    generation: "generation-1" as string | null,
+    generation: (preparedReconnect ? "prepared-generation" : "generation-1") as
+      | string
+      | null,
     missingSession: false,
-    credentialTokenHash: digest("synthetic-old-token") as string | null,
+    credentialTokenHash: (preparedReconnect
+      ? null
+      : digest("synthetic-old-token")) as string | null,
     reconnectBeforeRenew: false,
     rejectAcquire: false,
     invalidAcquireAck: false,
@@ -66,6 +73,13 @@ function gateway() {
           controls.providerCalls++;
           expect(owner).not.toBeNull();
           expect(request.signal).toBeDefined();
+          if (preparedReconnect) {
+            expect(await request.clone().json()).toMatchObject({
+              grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+              requested_token_type:
+                "urn:shopify:params:oauth:token-type:offline-access-token",
+            });
+          }
           if (controls.providerFailure)
             throw new Error("synthetic transport uncertainty");
           return Response.json({
@@ -160,6 +174,7 @@ describe("coordinated Shopify SDK operations", () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("SHOPIFY_API_KEY", "synthetic-app-key");
     vi.stubEnv("SHOPIFY_API_SECRET", "synthetic-app-secret");
+    vi.stubEnv("SCOPES", "read_products");
     vi.stubEnv("SHOPIFY_APP_URL", "https://shopify-runtime.invalid");
     vi.stubEnv("WELETIC_API_URL", "https://session-gateway.invalid");
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", serviceSecret);
@@ -168,6 +183,61 @@ describe("coordinated Shopify SDK operations", () => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+  });
+
+  it("recovers a prepared mapped reconnect through real SDK token exchange after provider failure", async () => {
+    const fixture = gateway(true);
+    fixture.controls.providerFailure = true;
+    vi.stubGlobal("fetch", fixture.fetcher);
+    const sdk = await import(
+      "../../../../packages/shopify-app/app/shopify.server"
+    );
+    const now = Math.floor(Date.now() / 1000);
+    const encoded = [
+      Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString(
+        "base64url",
+      ),
+      Buffer.from(
+        JSON.stringify({
+          iss: `https://${shop}/admin`,
+          dest: `https://${shop}`,
+          aud: "synthetic-app-key",
+          sub: "123",
+          iat: now - 1,
+          nbf: now - 1,
+          exp: now + 60,
+          sid: "synthetic-session",
+          jti: "synthetic-reconnect",
+        }),
+      ).toString("base64url"),
+    ].join(".");
+    const token = `${encoded}.${createHmac("sha256", "synthetic-app-secret").update(encoded).digest("base64url")}`;
+    const request = () =>
+      new Request(`https://shopify-runtime.invalid/?shop=${shop}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    await expect(sdk.authenticate.admin(request())).rejects.toBeDefined();
+    expect(fixture.controls.providerCalls).toBe(1);
+    expect(fixture.controls.mutationCalls).toBe(0);
+    expect(fixture.snapshot().observed).toMatchObject({
+      installationGeneration: "prepared-generation",
+      credentialTokenHash: null,
+      revision: "0",
+    });
+    expect(fixture.owner()).toBeNull();
+    fixture.controls.providerFailure = false;
+    const result = await sdk.authenticate.admin(request());
+    expect(result.session.accessToken).toBe("synthetic-fresh-token");
+    expect(fixture.controls.providerCalls).toBe(2);
+    expect(fixture.controls.mutationCalls).toBe(1);
+    expect(fixture.snapshot().observed).toMatchObject({
+      installationGeneration: "prepared-generation",
+      credentialTokenHash: digest("synthetic-fresh-token"),
+      revision: "1",
+    });
+    expect(fixture.owner()).toBeNull();
+    // Simulated backend transport, not SQL or live-install acceptance. No
+    // generic integration, workspace user, or generation recreation is modeled.
   });
 
   it("uses the production SDK refresh path, saves its NEW Session, then releases ownership", async () => {

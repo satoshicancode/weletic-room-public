@@ -21,17 +21,22 @@ import {
   isShopifyDurableComplianceTopic,
   parseShopifyComplianceSubject,
 } from "@/lib/weletic/shopify/compliance-types";
+import { handlePendingInstallationPrivacy } from "@/lib/weletic/shopify/pending-installation-privacy";
 import { createAllShopifyWebhookBodyDigests } from "@/lib/weletic/shopify/privacy-identity";
 import {
   readWeleticShopifyRequestBodyBytes,
   WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
 } from "@/lib/weletic/shopify/service-auth";
+import { configuredShopifySessionScope } from "@/lib/weletic/shopify/session-snapshot";
 import {
   assertShopifyStoreAcceptsOperationalWrites,
   assertShopifyStoreMatchesInstallationGeneration,
   isShopifyStoreOperationalWritesBlocked,
 } from "@/lib/weletic/shopify/store-compliance-state";
-import { resolveShopifyStoreByDomain } from "@/lib/weletic/shopify/store-resolver";
+import {
+  canonicalizeShopifyDomain,
+  resolveShopifyStoreByDomain,
+} from "@/lib/weletic/shopify/store-resolver";
 import { verifyShopifyWebhookSignature } from "@/lib/weletic/shopify/webhook-signature";
 import { APP_DOMAIN_WITH_NGROK, log } from "@dub/utils";
 import { Prisma } from "@prisma/client";
@@ -484,6 +489,59 @@ export const POST = async (req: Request) => {
       resolveComplianceShopifyStoreByDomain(shopDomain),
       resolveComplianceShopifyStoreByDomain(subject.shopDomain),
     ]);
+    // A real public install need not have a company workspace yet. Required
+    // privacy handling must not fabricate one or ingest its customer payload.
+    // Header/body equality is still mandatory after HMAC verification above.
+    if (!headerStore && !signedBodyStore) {
+      const canonicalShop = canonicalizeShopifyDomain(shopDomain);
+      if (
+        !canonicalShop ||
+        canonicalShop !== canonicalizeShopifyDomain(subject.shopDomain)
+      ) {
+        return new Response(
+          "[Shopify] Signed compliance shop does not match the webhook tenant.",
+          { status: 401 },
+        );
+      }
+      if (!webhookId.trim())
+        return new Response("[Shopify] Missing webhook identifier.", {
+          status: 400,
+        });
+      const cutoff =
+        topic === "app/uninstalled"
+          ? parseAuthenticatedShopifyTriggeredAt(
+              headers.get("x-shopify-triggered-at"),
+            )
+          : null;
+      if (topic === "app/uninstalled" && !cutoff)
+        return new Response(
+          "[Shopify] Missing or invalid uninstall event timestamp.",
+          { status: 400 },
+        );
+      try {
+        const result = await prisma.$transaction((tx) =>
+          handlePendingInstallationPrivacy(
+            tx,
+            configuredShopifySessionScope(canonicalShop),
+            topic,
+            cutoff,
+          ),
+        );
+        if (result.disposition === "mapped")
+          return new Response(
+            "[Shopify] Installation mapping changed; retry compliance delivery.",
+            { status: 503, headers: { "Retry-After": "5" } },
+          );
+        return new Response(
+          "[Shopify] Unmapped installation privacy handling completed.",
+        );
+      } catch {
+        return new Response(
+          "[Shopify] Unmapped installation privacy handling unavailable.",
+          { status: 503 },
+        );
+      }
+    }
     if (
       !headerStore ||
       !signedBodyStore ||

@@ -3,6 +3,13 @@ import { createWeleticId } from "@/lib/weletic/ids";
 import { lockLoyaltyProgramRowIfPresent } from "@/lib/weletic/loyalty/program-write-fence";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { readPendingInstallation } from "./installation-admission";
+import { observeShopifySessionCoordination } from "./session-coordination";
+import { configuredShopifySessionScope } from "./session-snapshot";
+import {
+  assertLegacyShopifyCredentialAuthority,
+  readStoreOwnedShopifyCredential,
+} from "./store-owned-credential";
 
 export const storeAccessChangeInput = z
   .object({
@@ -25,6 +32,7 @@ export async function changeShopifyStoreAccess(input: unknown) {
     const rows = await tx.$queryRaw<
       Array<{
         id: string;
+        projectId: string;
         shopDomain: string;
         installationGeneration: string | null;
         complianceState: string;
@@ -32,7 +40,7 @@ export async function changeShopifyStoreAccess(input: unknown) {
         storeAccessRevision: number;
       }>
     >(Prisma.sql`
-      SELECT id, shopDomain, installationGeneration, complianceState,
+      SELECT id, projectId, shopDomain, installationGeneration, complianceState,
              storeAccessState, storeAccessRevision
       FROM WeleticShopifyStore WHERE id = ${options.storeId}
       LIMIT 1 FOR UPDATE
@@ -55,6 +63,41 @@ export async function changeShopifyStoreAccess(input: unknown) {
     }
     if (store.complianceState !== "active") {
       throw new Error("Store approval cannot override the privacy lifecycle.");
+    }
+    if (options.nextState === "active") {
+      // Admission is checked under the store lock before the program lock.
+      // Legacy company stores without a pending record retain their explicit
+      // operator path; a public installation cannot skip its reviewed mapping.
+      // Suspension must remain possible even if admission is inconsistent.
+      const scope = configuredShopifySessionScope(store.shopDomain);
+      await observeShopifySessionCoordination(tx, scope);
+      const pending = await readPendingInstallation(tx, scope);
+      if (
+        pending &&
+        (pending.state !== "mapped" ||
+          pending.mappedStoreId !== store.id ||
+          pending.installationGeneration !== store.installationGeneration ||
+          !pending.authenticatedAt ||
+          pending.uninstalledAt !== null ||
+          pending.redactedAt !== null)
+      ) {
+        throw new Error(
+          "Store approval requires the current reviewed installation mapping.",
+        );
+      }
+      if (pending) {
+        const credential = await readStoreOwnedShopifyCredential(tx, {
+          ...scope,
+          storeId: store.id,
+          workspaceId: store.projectId,
+          installationGeneration: store.installationGeneration,
+        });
+        if (!credential)
+          throw new Error(
+            "Store approval requires fresh Shopify authentication.",
+          );
+      } else
+        await assertLegacyShopifyCredentialAuthority(tx, store.id, scope.appId);
     }
     const blocking = await tx.weleticShopifyComplianceRequest.count({
       where: {

@@ -3,9 +3,10 @@ import {
   type HeadersFunction,
   type LoaderFunctionArgs,
 } from "@remix-run/node";
-import { Link, useRouteError } from "@remix-run/react";
+import { Link, useLocation, useRouteError } from "@remix-run/react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
+  AppProvider,
   Banner,
   BlockStack,
   Button,
@@ -16,11 +17,22 @@ import {
 } from "@shopify/polaris";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  installationAdmissionStatusSchema,
+  type InstallationAdmissionStatus,
+} from "../../../../apps/web/lib/weletic/shopify/installation-admission-contract";
 import type { ShopifyMerchantOverview } from "../../../../apps/web/lib/weletic/shopify/staff-contract";
+import { installationBootstrapError } from "../installation-bootstrap-error";
+import { createInstallationStatusClient } from "../installation-status-client";
+import { installationStatusCopy } from "../installation-status-copy";
 import { createMerchantOverviewClient } from "../merchant-overview-client";
 import { merchantOverviewCopy } from "../merchant-overview-copy";
+import { merchantPolarisTranslations } from "../merchant-polaris-translations";
 import { authenticate } from "../shopify.server";
-import { StaffAccessClientError } from "../staff-access-client";
+import {
+  createMerchantJsonPost,
+  StaffAccessClientError,
+} from "../staff-access-client";
 
 export const headers: HeadersFunction = (args) => {
   const result = new Headers(boundary.headers(args));
@@ -28,7 +40,18 @@ export const headers: HeadersFunction = (args) => {
   return result;
 };
 export function ErrorBoundary() {
-  return boundary.error(useRouteError());
+  const location = useLocation();
+  const error = installationBootstrapError(useRouteError());
+  return (
+    <>
+      {error}
+      <p>
+        <Link to={{ pathname: "/installation", search: location.search }}>
+          Installation status / インストール状況 / Trạng thái cài đặt
+        </Link>
+      </p>
+    </>
+  );
 }
 
 // Legacy form submissions must not invoke service-only/offline catalog sync.
@@ -55,6 +78,16 @@ export default function IndexPage() {
     [shopify],
   );
   const [locale, setLocale] = useState<"en" | "ja" | "vi">("en");
+  const readStatus = useMemo(
+    () => createInstallationStatusClient(() => shopify.idToken()),
+    [shopify],
+  );
+  const [admission, setAdmission] =
+    useState<InstallationAdmissionStatus | null>(null);
+  const postReconnect = useMemo(
+    () => createMerchantJsonPost(() => shopify.idToken()),
+    [shopify],
+  );
   const copy = merchantOverviewCopy[locale];
   const [data, setData] = useState<ShopifyMerchantOverview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -73,7 +106,12 @@ export default function IndexPage() {
     setBusy(true);
     setError(null);
     setData(null);
+    setAdmission(null);
     try {
+      const status = await readStatus();
+      if (!mounted.current) return;
+      setAdmission(status);
+      if (status.status !== "active") return;
       const result = await read();
       if (mounted.current) setData(result);
     } catch (failure) {
@@ -87,7 +125,30 @@ export default function IndexPage() {
       inFlight.current = false;
       if (mounted.current) setBusy(false);
     }
-  }, [read]);
+  }, [read, readStatus]);
+  const reconnect = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    setData(null);
+    try {
+      const status = installationAdmissionStatusSchema.parse(
+        await postReconnect("/api/installation/reconnect", {}),
+      );
+      if (mounted.current) setAdmission(status);
+    } catch (failure) {
+      if (mounted.current)
+        setError(
+          failure instanceof StaffAccessClientError
+            ? failure.code
+            : "unavailable",
+        );
+    } finally {
+      inFlight.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }, [postReconnect]);
   useEffect(() => {
     mounted.current = true;
     void reload();
@@ -95,7 +156,7 @@ export default function IndexPage() {
       mounted.current = false;
     };
   }, [reload]);
-  return (
+  const content = (
     <div lang={locale}>
       <Page title={copy.title}>
         <BlockStack gap="400">
@@ -113,44 +174,67 @@ export default function IndexPage() {
             }}
           />
           <Text as="p">{copy.description}</Text>
-          <Link to="/customers">
-            {locale === "ja"
-              ? "顧客"
-              : locale === "vi"
-                ? "Khách hàng"
-                : "Customers"}
-          </Link>
-          <Link to="/reviews">
-            {locale === "ja"
-              ? "レビュー"
-              : locale === "vi"
-                ? "Đánh giá"
-                : "Reviews"}
-          </Link>
-          <Link to="/loyalty">
-            {locale === "ja" ? "ロイヤルティ" : "Loyalty"}
-          </Link>
-          <Link to="/earning-rules">
-            {locale === "ja"
-              ? "獲得ルール"
-              : locale === "vi"
-                ? "Quy tắc tích điểm"
-                : "Earning rules"}
-          </Link>
-          <Link to="/settings">
-            {locale === "ja"
-              ? "設定"
-              : locale === "vi"
-                ? "Cài đặt"
-                : "Settings"}
-          </Link>
-          <Link to="/appearance">
-            {locale === "ja"
-              ? "外観"
-              : locale === "vi"
-                ? "Giao diện"
-                : "Appearance"}
-          </Link>
+          {admission && (
+            <div role="status" aria-live="polite">
+              <Banner
+                title={installationStatusCopy[locale].title}
+                tone={admission.status === "active" ? "success" : "info"}
+              >
+                <p>{installationStatusCopy[locale][admission.status]}</p>
+              </Banner>
+            </div>
+          )}
+          {admission?.status === "reauthenticate" && (
+            <Button onClick={() => void reconnect()} disabled={busy}>
+              {locale === "ja"
+                ? "再認証する"
+                : locale === "vi"
+                  ? "Xác thực lại"
+                  : "Reconnect installation"}
+            </Button>
+          )}
+          {admission?.status === "active" && (
+            <>
+              <Link to="/customers">
+                {locale === "ja"
+                  ? "顧客"
+                  : locale === "vi"
+                    ? "Khách hàng"
+                    : "Customers"}
+              </Link>
+              <Link to="/reviews">
+                {locale === "ja"
+                  ? "レビュー"
+                  : locale === "vi"
+                    ? "Đánh giá"
+                    : "Reviews"}
+              </Link>
+              <Link to="/loyalty">
+                {locale === "ja" ? "ロイヤルティ" : "Loyalty"}
+              </Link>
+              <Link to="/earning-rules">
+                {locale === "ja"
+                  ? "獲得ルール"
+                  : locale === "vi"
+                    ? "Quy tắc tích điểm"
+                    : "Earning rules"}
+              </Link>
+              <Link to="/settings">
+                {locale === "ja"
+                  ? "設定"
+                  : locale === "vi"
+                    ? "Cài đặt"
+                    : "Settings"}
+              </Link>
+              <Link to="/appearance">
+                {locale === "ja"
+                  ? "外観"
+                  : locale === "vi"
+                    ? "Giao diện"
+                    : "Appearance"}
+              </Link>
+            </>
+          )}
           {error && (
             <div tabIndex={-1} ref={notice}>
               <Banner tone="critical">
@@ -200,5 +284,10 @@ export default function IndexPage() {
         </BlockStack>
       </Page>
     </div>
+  );
+  return (
+    <AppProvider i18n={merchantPolarisTranslations[locale]}>
+      {content}
+    </AppProvider>
   );
 }

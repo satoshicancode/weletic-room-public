@@ -1,9 +1,28 @@
 import { prisma } from "@/lib/prisma";
 import { lockLoyaltyProgramRow } from "@/lib/weletic/loyalty/program-write-fence";
+import { readPendingInstallation } from "@/lib/weletic/shopify/installation-admission";
 import { changeShopifyStoreAccess } from "@/lib/weletic/shopify/store-access-operator";
 import { isShopifyStoreAccessActive } from "@/lib/weletic/shopify/store-access-policy";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  assertLegacyShopifyCredentialAuthority,
+  readStoreOwnedShopifyCredential,
+} from "@/lib/weletic/shopify/store-owned-credential";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/weletic/shopify/installation-admission", () => ({
+  readPendingInstallation: vi.fn(),
+}));
+vi.mock("@/lib/weletic/shopify/store-owned-credential", () => ({
+  readStoreOwnedShopifyCredential: vi.fn(),
+  assertLegacyShopifyCredentialAuthority: vi.fn(),
+}));
+vi.mock("@/lib/weletic/shopify/session-coordination", async (original) => ({
+  ...(await original<
+    typeof import("@/lib/weletic/shopify/session-coordination")
+  >()),
+  observeShopifySessionCoordination: vi.fn(),
+}));
 
 vi.mock("@/lib/prisma", () => {
   const client: any = {
@@ -20,6 +39,7 @@ vi.mock("@/lib/prisma", () => {
 
 const store = {
   id: "store_company",
+  projectId: "workspace_company",
   shopDomain: "company.myshopify.com",
   installationGeneration: "generation_1",
   complianceState: "active",
@@ -39,8 +59,16 @@ const input = {
 };
 
 describe("company store admission", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.resetAllMocks();
+    vi.stubEnv("SHOPIFY_API_KEY", "public-test");
+    vi.mocked(readPendingInstallation).mockResolvedValue(null);
+    vi.mocked(readStoreOwnedShopifyCredential).mockResolvedValue({
+      revision: 1,
+      accessToken: "synthetic-fresh-token",
+      scope: "read_orders",
+    });
     vi.mocked(prisma.$transaction).mockImplementation(async (operation: any) =>
       operation(prisma),
     );
@@ -156,5 +184,92 @@ describe("company store admission", () => {
     expect(
       prisma.weleticShopifyStoreAccessChange.create,
     ).not.toHaveBeenCalled();
+  });
+  it.each([
+    { state: "pending_approval", mappedStoreId: null },
+    { state: "uninstalled" },
+    { state: "redacted" },
+    { mappedStoreId: "other-store" },
+    { installationGeneration: "stale-generation" },
+    { authenticatedAt: null },
+    { uninstalledAt: new Date(0) },
+    { redactedAt: new Date(0) },
+  ])(
+    "rejects activation with an invalid pending mapping %j",
+    async (change) => {
+      vi.mocked(readPendingInstallation).mockResolvedValue({
+        state: "mapped",
+        mappedStoreId: store.id,
+        installationGeneration: store.installationGeneration,
+        authenticatedAt: new Date(0),
+        uninstalledAt: null,
+        redactedAt: null,
+        ...change,
+      } as any);
+      await expect(
+        changeShopifyStoreAccess({ ...input, apply: true }),
+      ).rejects.toThrow("reviewed installation mapping");
+      expect(prisma.$executeRaw).not.toHaveBeenCalled();
+      expect(
+        prisma.weleticShopifyStoreAccessChange.create,
+      ).not.toHaveBeenCalled();
+    },
+  );
+  it("allows activation only after the exact current installation is mapped", async () => {
+    vi.mocked(readPendingInstallation).mockResolvedValue({
+      state: "mapped",
+      mappedStoreId: store.id,
+      installationGeneration: store.installationGeneration,
+      authenticatedAt: new Date(0),
+      uninstalledAt: null,
+      redactedAt: null,
+    } as any);
+    await expect(
+      changeShopifyStoreAccess({ ...input, apply: true }),
+    ).resolves.toMatchObject({ applied: true });
+    expect(readPendingInstallation).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({ shop: store.shopDomain }),
+    );
+  });
+  it("allows suspension without requiring a healthy pending mapping", async () => {
+    vi.mocked(readPendingInstallation).mockRejectedValue(
+      new Error("Ambiguous installation admission"),
+    );
+    await expect(
+      changeShopifyStoreAccess({
+        ...input,
+        nextState: "suspended",
+        apply: true,
+      }),
+    ).resolves.toMatchObject({ applied: true, nextState: "suspended" });
+    expect(readPendingInstallation).not.toHaveBeenCalled();
+  });
+  it("does not activate a prepared reconnect until fresh credentials are published", async () => {
+    vi.mocked(readPendingInstallation).mockResolvedValue({
+      state: "mapped",
+      mappedStoreId: store.id,
+      installationGeneration: store.installationGeneration,
+      authenticatedAt: new Date(0),
+      uninstalledAt: null,
+      redactedAt: null,
+    } as any);
+    vi.mocked(readStoreOwnedShopifyCredential).mockResolvedValue(null);
+    await expect(
+      changeShopifyStoreAccess({ ...input, apply: true }),
+    ).rejects.toThrow("fresh Shopify authentication");
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(
+      prisma.weleticShopifyStoreAccessChange.create,
+    ).not.toHaveBeenCalled();
+  });
+  it("does not approve orphan native authority as a legacy installation", async () => {
+    vi.mocked(assertLegacyShopifyCredentialAuthority).mockRejectedValue(
+      new Error("Native credential requires admission"),
+    );
+    await expect(
+      changeShopifyStoreAccess({ ...input, apply: true }),
+    ).rejects.toThrow("requires admission");
+    expect(prisma.$executeRaw).not.toHaveBeenCalled();
   });
 });

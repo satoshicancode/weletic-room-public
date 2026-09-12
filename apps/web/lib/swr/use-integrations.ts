@@ -9,13 +9,14 @@ export default function useIntegrations({
   const { id } = useWorkspace();
 
   const { data: integrations, error } = useSWR<InstalledIntegrationProps[]>(
-    `/api/integrations?workspaceId=${id}`,
+    id ? `/api/integrations?workspaceId=${encodeURIComponent(id)}` : null,
     fetcher,
     {
       dedupingInterval: 20000,
       revalidateOnFocus: false,
-      keepPreviousData: true,
       ...swrOpts,
+      // Never display the previous workspace's configured connections.
+      keepPreviousData: false,
     },
   );
 

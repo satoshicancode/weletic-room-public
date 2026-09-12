@@ -1,24 +1,12 @@
 // Offline checks only: this module never imports a database, transport or SDK.
-export const DEVELOPMENT_SHOPIFY_CLIENT_ID = "c7d49cebb06e445db345bb200f966a03";
-
-export const DEVELOPMENT_SHOPIFY_SCOPES = [
-  "read_products",
-  "write_products",
-  "read_markets",
-  "read_orders",
-  "read_translations",
-  "read_discounts",
-  "write_discounts",
-  "read_price_rules",
-  "write_price_rules",
-  "read_customers",
-  "write_customers",
-  "read_gift_cards",
-  "write_gift_cards",
-  "read_store_credit_accounts",
-  "write_store_credit_account_transactions",
-  "write_app_proxy",
-] as const;
+export {
+  PUBLIC_LOYALTY_CLIENT_ID as DEVELOPMENT_SHOPIFY_CLIENT_ID,
+  PUBLIC_LOYALTY_SCOPES as DEVELOPMENT_SHOPIFY_SCOPES,
+} from "../../../../../packages/shopify-app/app/public-runtime-policy.mjs";
+import {
+  PUBLIC_LOYALTY_CLIENT_ID as DEVELOPMENT_SHOPIFY_CLIENT_ID,
+  hasPublicLoyaltyScopes,
+} from "../../../../../packages/shopify-app/app/public-runtime-policy.mjs";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -221,12 +209,7 @@ export function checkDevelopmentEnvironment({
       url(web.NEXT_PUBLIC_APP_DOMAIN)?.pathname === "/" &&
       url(web.NEXT_PUBLIC_APP_DOMAIN)?.origin === url(web.NEXTAUTH_URL)?.origin,
   );
-  const scopes = (shopify.SCOPES || "").split(",").map((scope) => scope.trim());
-  check(
-    "reviewed_scope_inventory",
-    scopes.length === DEVELOPMENT_SHOPIFY_SCOPES.length &&
-      DEVELOPMENT_SHOPIFY_SCOPES.every((scope) => scopes.includes(scope)),
-  );
+  check("reviewed_scope_inventory", hasPublicLoyaltyScopes(shopify.SCOPES));
   check("cron_auth_enforced", web.WELETIC_ENFORCE_CRON_AUTH === "1");
   check(
     "email_and_scheduler_delivery_disabled",

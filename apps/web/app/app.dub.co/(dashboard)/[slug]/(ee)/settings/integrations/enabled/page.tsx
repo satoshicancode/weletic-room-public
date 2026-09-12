@@ -1,155 +1,36 @@
-import { prisma } from "@/lib/prisma";
-import { IntegrationLogo } from "@/ui/integrations/integration-logo";
-import { IntegrationStatusBadge } from "@/ui/integrations/integration-status-badge";
-import LayoutLoader from "@/ui/layout/layout-loader";
-import { AnimatedEmptyState } from "@/ui/shared/animated-empty-state";
-import { UserAvatar } from "@/ui/users/user-avatar";
-import { ConnectedDots, TimestampTooltip } from "@dub/ui";
-import { cn, formatDate, truncate } from "@dub/utils";
-import { ChevronRight } from "lucide-react";
-import Link from "next/link";
-import { Suspense } from "react";
+"use client";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+import useIntegrations from "@/lib/swr/use-integrations";
+import useWorkspace from "@/lib/swr/use-workspace";
+import { IntegrationInventoryList } from "@/ui/integrations/integration-inventory-list";
 
-export default async function EnabledIntegrationsPage(props: {
-  params: Promise<{ slug: string }>;
-}) {
-  const params = await props.params;
-
-  return (
-    <Suspense fallback={<LayoutLoader />}>
-      <EnabledIntegrationsPageRSC slug={params.slug} />
-    </Suspense>
-  );
-}
-
-async function EnabledIntegrationsPageRSC({ slug }: { slug: string }) {
-  const integrations = await prisma.integration.findMany({
-    where: {
-      installations: {
-        some: {
-          project: {
-            slug,
-          },
-        },
-      },
-    },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      projectId: true,
-      verified: true,
-      logo: true,
-      installations: {
-        where: {
-          project: {
-            slug,
-          },
-        },
-        select: {
-          createdAt: true,
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-            },
-          },
-        },
-        orderBy: {
-          createdAt: "desc",
-        },
-      },
-    },
-  });
-
-  if (!integrations || integrations.length === 0) {
+/** Fetch through the workspace-authorized API. A client layout is not
+ * authorization for a server query using an untrusted route slug.
+ */
+export default function EnabledIntegrationsPage() {
+  const { slug } = useWorkspace();
+  const { integrations, error, loading } = useIntegrations();
+  if (error)
     return (
-      <AnimatedEmptyState
-        title="No integrations enabled"
-        description="When you enable an integration, it will appear here."
-        cardContent={
-          <>
-            <ConnectedDots className="size-4 text-neutral-700" />
-            <div className="h-2.5 w-24 min-w-0 rounded-sm bg-neutral-200" />
-          </>
-        }
-        className="min-h-[400px]"
-      />
+      <p role="alert">
+        Integration inventory is unavailable. Refresh this page to try again.
+      </p>
     );
-  }
-
+  if (loading || !slug)
+    return <p role="status">Loading configured integrations…</p>;
   return (
-    <ul className="flex flex-col gap-2">
-      {integrations.map((integration) => {
-        const installation = integration.installations?.[0];
-        const installerName =
-          installation?.user?.name || installation?.user?.email;
-
-        return (
-          <li key={integration.id}>
-            <Link
-              href={`/${slug}/settings/integrations/${integration?.slug}`}
-              className={cn(
-                "group flex items-center justify-between rounded-lg border border-neutral-200 p-3 pr-5 text-sm",
-                "transition-colors duration-75 hover:bg-neutral-50",
-              )}
-            >
-              <div className="flex min-w-0 items-center justify-between gap-3">
-                <IntegrationLogo
-                  src={integration.logo}
-                  alt={`Logo for ${integration.name}`}
-                  className="size-10"
-                />
-
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="flex items-center gap-1.5 text-sm font-medium text-neutral-800">
-                    {integration.name}
-                    <IntegrationStatusBadge
-                      projectId={integration.projectId}
-                      verified={integration.verified}
-                    />
-                  </span>
-                  {installation && (
-                    <span className="truncate text-[0.8125rem] text-neutral-500">
-                      Enabled{" "}
-                      {installerName ? (
-                        <>
-                          by{" "}
-                          <UserAvatar
-                            user={installation.user}
-                            className="inline-block size-3 -translate-y-0.5 border-0"
-                          />{" "}
-                          <span className="text-neutral-600">
-                            {truncate(installerName, 24)}
-                          </span>{" "}
-                        </>
-                      ) : null}
-                      •{" "}
-                      <TimestampTooltip
-                        timestamp={installation.createdAt}
-                        rows={["local", "utc", "unix"]}
-                      >
-                        <span className="text-xs text-neutral-500 underline decoration-neutral-300 decoration-dotted underline-offset-2">
-                          {formatDate(installation.createdAt, {
-                            month: "short",
-                            year: "numeric",
-                          })}
-                        </span>
-                      </TimestampTooltip>
-                    </span>
-                  )}
-                </div>
-              </div>
-              <ChevronRight className="size-4 shrink-0 text-neutral-400 transition-all duration-150 group-hover:translate-x-0.5 group-hover:text-neutral-600" />
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
+    <section>
+      <h1 className="text-lg font-semibold">Configured integrations</h1>
+      {integrations?.length ? (
+        <IntegrationInventoryList
+          integrations={integrations}
+          workspaceSlug={slug}
+        />
+      ) : (
+        <p className="mt-4 text-sm text-neutral-600">
+          No integrations configured for this workspace.
+        </p>
+      )}
+    </section>
   );
 }

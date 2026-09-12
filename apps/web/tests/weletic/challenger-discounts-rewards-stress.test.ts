@@ -14,6 +14,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+// This suite supplies legacy integration fixtures. Native credential-source
+// authorization and lifecycle fences are covered by their dedicated suites.
+vi.mock("@/lib/weletic/shopify/credential-source", () => ({
+  readShopifyCredentialSource: vi.fn(async () => ({ source: "legacy" })),
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     weleticShopifyStore: {

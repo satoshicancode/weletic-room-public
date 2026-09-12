@@ -1,7 +1,8 @@
 import { Prisma } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  nativeCredentialDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   merchantSettingsDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   staffGrantFindMany: vi.fn().mockResolvedValue([]),
   staffActionFindMany: vi.fn().mockResolvedValue([]),
@@ -368,7 +369,9 @@ import {
 } from "../../lib/weletic/shopify/compliance-worker";
 
 describe("durable compliance worker boundaries", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
+    vi.stubEnv("SHOPIFY_API_KEY", "public-app-test");
     vi.clearAllMocks();
     mocks.shopperFindMany.mockResolvedValue([]);
     mocks.customerFindMany.mockResolvedValue([]);
@@ -563,6 +566,7 @@ describe("durable compliance worker boundaries", () => {
         },
         $queryRaw: (query: any) => {
           const sql = query?.strings?.join("") ?? "";
+          if (sql.includes("WeleticShopifyPendingInstallation")) return [];
           if (sql.includes("WeleticShopifyComplianceRequest")) {
             return mocks.requestLeaseQueryRaw(query);
           }
@@ -574,6 +578,9 @@ describe("durable compliance worker boundaries", () => {
         project: {
           findUnique: mocks.projectFindUnique,
           update: mocks.projectUpdate,
+        },
+        weleticShopifyInstallationCredential: {
+          deleteMany: mocks.nativeCredentialDeleteMany,
         },
         installedIntegration: {
           findMany: mocks.installationFindMany,
@@ -3311,6 +3318,9 @@ describe("durable compliance worker boundaries", () => {
       where: { storeId: "store_1" },
     });
     expect(mocks.installationDeleteMany).toHaveBeenCalledOnce();
+    expect(mocks.nativeCredentialDeleteMany).toHaveBeenCalledWith({
+      where: { storeId: "store_1" },
+    });
     expect(mocks.projectUpdate).toHaveBeenCalledWith({
       where: { id: "workspace_1" },
       data: { shopifyStoreId: null },

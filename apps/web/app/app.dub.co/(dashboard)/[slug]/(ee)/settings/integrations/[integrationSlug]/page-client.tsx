@@ -21,6 +21,7 @@ import { useUninstallIntegrationModal } from "@/ui/modals/uninstall-integration-
 import { CheckCircleFill, ThreeDots } from "@/ui/shared/icons";
 import { Markdown } from "@/ui/shared/markdown";
 import { UserAvatar } from "@/ui/users/user-avatar";
+import { ShopifyConnectionManagementNotice } from "@/ui/weletic/shopify/connection-management-notice";
 import {
   BlurImage,
   Button,
@@ -74,10 +75,27 @@ const integrationSettings = {
   [STRIPE_INTEGRATION_ID]: StripeIntegrationSettings,
   [APPSFLYER_INTEGRATION_ID]: AppsFlyerSettings,
   [GOOGLE_ADS_INTEGRATION_ID]: GoogleAdsSettings,
-  [SHOPIFY_INTEGRATION_ID]: ShopifyIntegrationSettings,
 };
 
 export default function IntegrationPageClient({
+  integration,
+}: {
+  integration: InstalledIntegrationInfoProps;
+}) {
+  // Shopify's store-owned installation must never use generic installer
+  // attribution, install actions, or user-owned uninstall controls.
+  if (integration.id === SHOPIFY_INTEGRATION_ID) {
+    return (
+      <MaxWidthWrapper className="grid max-w-screen-lg grid-cols-1 gap-6">
+        <ShopifyConnectionManagementNotice />
+        <ShopifyIntegrationSettings />
+      </MaxWidthWrapper>
+    );
+  }
+  return <GenericIntegrationPageClient integration={integration} />;
+}
+
+function GenericIntegrationPageClient({
   integration,
 }: {
   integration: InstalledIntegrationInfoProps;

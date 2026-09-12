@@ -33,11 +33,15 @@ const mocks = vi.hoisted(() => ({
   transaction: vi.fn(),
   enqueueOutbox: vi.fn(),
   resolveCredentials: vi.fn(),
+  frozenCredentials: vi.fn(),
   lookupDiscount: vi.fn(),
   deactivateDiscount: vi.fn(),
   compensate: vi.fn(),
   appendLedger: vi.fn(),
   operationOrder: [] as string[],
+}));
+vi.mock("@/lib/weletic/shopify/store-owned-credential", () => ({
+  readFrozenStoreOwnedVoucherCredential: mocks.frozenCredentials,
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -198,6 +202,15 @@ async function execute() {
 describe("durable privacy voucher cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.storeFindUnique.mockReset().mockResolvedValue({
+      complianceState: "active",
+      shopDomain: "privacy-cleanup.myshopify.com",
+    });
+    mocks.frozenCredentials.mockReset().mockResolvedValue({
+      shopDomain: "privacy-cleanup.myshopify.com",
+      accessToken: "frozen-token",
+      installationGeneration: "generation",
+    });
     mocks.operationOrder.length = 0;
     installMutableCleanup();
     mocks.redemptionFindUnique.mockResolvedValue(redemptionFixture());
@@ -461,6 +474,55 @@ describe("durable privacy voucher cleanup", () => {
     expect(cleanup.remoteUsageCount).toBe(0);
     expect(cleanup.remoteDeactivationStartedAt).toBeInstanceOf(Date);
     expect(cleanup.nextRetryAt).toBeInstanceOf(Date);
+  });
+  it("resolves frozen native credentials under each remote-operation transaction without ordinary refresh", async () => {
+    installMutableCleanup(
+      cleanupFixture({ source: WeleticVoucherCleanupSource.app_uninstalled }),
+    );
+    mocks.storeFindUnique.mockResolvedValue({ complianceState: "frozen" });
+    await expect(execute()).rejects.toBeInstanceOf(
+      VoucherCleanupRetryableError,
+    );
+    expect(mocks.resolveCredentials).not.toHaveBeenCalled();
+    expect(mocks.frozenCredentials).toHaveBeenCalledTimes(2);
+    expect(mocks.frozenCredentials).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        storeId,
+        cleanupId,
+        redemptionId,
+        source: "app_uninstalled",
+        leaseVersion: 1,
+        expectedCode: "WL-PRIVATE-10",
+      }),
+    );
+    expect(mocks.lookupDiscount).toHaveBeenCalledWith(
+      "privacy-cleanup.myshopify.com",
+      "frozen-token",
+      "WL-PRIVATE-10",
+    );
+    expect(mocks.deactivateDiscount).toHaveBeenCalledWith(
+      "privacy-cleanup.myshopify.com",
+      "frozen-token",
+      discountId,
+    );
+    expect(mocks.compensate).not.toHaveBeenCalled();
+  });
+  it("stops before deactivation if frozen cleanup credential authority is lost after lookup", async () => {
+    installMutableCleanup(
+      cleanupFixture({ source: WeleticVoucherCleanupSource.app_uninstalled }),
+    );
+    mocks.storeFindUnique.mockResolvedValue({ complianceState: "frozen" });
+    mocks.frozenCredentials
+      .mockResolvedValueOnce({
+        shopDomain: "privacy-cleanup.myshopify.com",
+        accessToken: "frozen-token",
+      })
+      .mockRejectedValueOnce(new Error("cleanup authority lost"));
+    await expect(execute()).rejects.toThrow();
+    expect(mocks.lookupDiscount).toHaveBeenCalledOnce();
+    expect(mocks.deactivateDiscount).not.toHaveBeenCalled();
+    expect(mocks.compensate).not.toHaveBeenCalled();
   });
 
   it("starts the strict two-minute reconciliation window only after confirmed deactivation", async () => {

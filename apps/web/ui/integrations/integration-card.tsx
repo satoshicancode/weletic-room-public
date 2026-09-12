@@ -3,7 +3,7 @@
 import useIntegrations from "@/lib/swr/use-integrations";
 import useWorkspace from "@/lib/swr/use-workspace";
 import { InstalledIntegrationProps } from "@/lib/types";
-import { cn } from "@dub/utils/src";
+import { cn, SHOPIFY_INTEGRATION_ID } from "@dub/utils/src";
 import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { HTMLProps, PropsWithChildren } from "react";
@@ -19,11 +19,13 @@ export default function IntegrationCard(
 
   return (
     <Wrapper integration={integration}>
-      {installed ? (
+      {integration.id === SHOPIFY_INTEGRATION_ID && installed ? (
+        <Badge className="bg-blue-100 text-blue-800">Managed in Shopify</Badge>
+      ) : installed ? (
         <Badge className="bg-green-100 text-green-800">Enabled</Badge>
       ) : integration.comingSoon ? (
         <Badge className="bg-violet-100 text-violet-800">Coming Soon</Badge>
-      ) : integration.guideUrl ? (
+      ) : integration.id !== SHOPIFY_INTEGRATION_ID && integration.guideUrl ? (
         <Badge className="bg-blue-100 text-blue-800">
           <span>Guide</span>
           <div className="flex w-0 justify-end overflow-hidden opacity-0 transition-[width,opacity] group-hover:w-3 group-hover:opacity-100">
@@ -64,10 +66,14 @@ function Wrapper({
   ) : (
     <Link
       href={
-        integration.guideUrl ||
+        (integration.id !== SHOPIFY_INTEGRATION_ID && integration.guideUrl) ||
         `/${slug}/settings/integrations/${integration.slug}`
       }
-      target={integration.guideUrl ? "_blank" : undefined}
+      target={
+        integration.id !== SHOPIFY_INTEGRATION_ID && integration.guideUrl
+          ? "_blank"
+          : undefined
+      }
       className={className}
     >
       {children}

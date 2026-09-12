@@ -18,6 +18,7 @@ import {
   parseShopifyComplianceSubject,
   ShopifyDurableComplianceTopic,
 } from "./compliance-types";
+import { freezeMappedInstallationAdmission } from "./mapped-installation-privacy";
 
 export const SHOPIFY_COMPLIANCE_WORKER_PATH =
   "/api/cron/weletic/shopify/compliance";
@@ -113,6 +114,14 @@ export async function freezeShopifyStoreForUninstall({
 
     const transitionsToFrozen = store.complianceState === "active";
     const effectiveCutoff = earlierDate(store.uninstalledAt, cutoff);
+    const admission = await freezeMappedInstallationAdmission(tx, {
+      storeId: store.id,
+      shop: normalizedShopDomain,
+      installationGeneration: store.installationGeneration,
+      cutoff: effectiveCutoff,
+    });
+    if (admission === "stale_generation")
+      return { complianceState: "stale_reinstall", cutoff };
     const programs = await tx.$queryRaw<LockedLoyaltyProgram[]>(Prisma.sql`
       SELECT id, disabledAt
       FROM WeleticLoyaltyProgram
@@ -279,6 +288,7 @@ export async function persistShopifyComplianceRequest({
   canonicalShopDomain,
   storageShopDomain = canonicalShopDomain,
   alreadyRedacted = false,
+  expectedInstallationGeneration,
   triggeredAt,
   webhookId,
   authenticatedBodyDigests,
@@ -289,6 +299,9 @@ export async function persistShopifyComplianceRequest({
   canonicalShopDomain: string;
   storageShopDomain?: string;
   alreadyRedacted?: boolean;
+  // Internal lifecycle commands bind the generation observed by their caller.
+  // Signed Shopify webhooks retain their timestamp-based ingress behavior.
+  expectedInstallationGeneration?: string;
   triggeredAt?: Date | null;
   webhookId: string;
   authenticatedBodyDigests: readonly string[];
@@ -335,6 +348,16 @@ export async function persistShopifyComplianceRequest({
     }
     const lockedDomain = canonicalizeShopifyDomain(store.shopDomain);
     const isRedacted = store.complianceState === "redacted";
+    if (
+      !isRedacted &&
+      expectedInstallationGeneration !== undefined &&
+      (!expectedInstallationGeneration ||
+        expectedInstallationGeneration.length > 64 ||
+        store.installationGeneration !== expectedInstallationGeneration)
+    )
+      throw new Error(
+        "The Shopify installation changed before the lifecycle command was persisted.",
+      );
     if (
       (!isRedacted && lockedDomain !== canonicalShopDomain) ||
       (alreadyRedacted && !isRedacted) ||
@@ -497,11 +520,20 @@ export async function persistAndQueueInternalShopifyDisconnect({
   storeId,
   canonicalShopDomain,
   idempotencyKey,
+  expectedInstallationGeneration,
 }: {
   storeId: string;
   canonicalShopDomain: string;
   idempotencyKey: string;
+  expectedInstallationGeneration: string;
 }) {
+  if (
+    !expectedInstallationGeneration ||
+    expectedInstallationGeneration.length > 64
+  )
+    throw new Error(
+      "An exact installation generation is required for disconnect.",
+    );
   const normalizedKey = idempotencyKey.trim();
   if (!normalizedKey || normalizedKey.length > 180) {
     throw new Error("A bounded installation lifecycle key is required.");
@@ -526,6 +558,7 @@ export async function persistAndQueueInternalShopifyDisconnect({
   const result = await persistShopifyComplianceRequest({
     storeId,
     canonicalShopDomain,
+    expectedInstallationGeneration,
     webhookId: `internal-disconnect:${normalizedKey}`,
     authenticatedBodyDigests: createAllShopifyWebhookBodyDigests({
       topic: "app/uninstalled",

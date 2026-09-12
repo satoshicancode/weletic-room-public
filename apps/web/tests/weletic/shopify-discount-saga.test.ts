@@ -3906,3 +3906,8 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
     });
   });
 });
+// Legacy local-token cases retain their pre-admission contract; native reads
+// are covered by shopify-native-credential-readers.test.ts.
+vi.mock("@/lib/weletic/shopify/credential-source", () => ({
+  readShopifyCredentialSource: vi.fn(async () => ({ source: "legacy" })),
+}));
