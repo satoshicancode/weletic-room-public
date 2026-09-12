@@ -57,5 +57,8 @@ state/locale and complete accessibility acceptance remain separate tasks.
 The first web typecheck failed because the new worktree lacked its generated
 Prisma client; generation was corrected and the web typecheck rerun passed.
 Full repository lint also passed. The full unit suite passed: 498 files,
-8,056 tests passed and 6 skipped (762.72 seconds). The complete web build remains
-pending at this checkpoint. No launch checkbox is closed by this patch.
+8,056 tests passed and 6 skipped (762.72 seconds). The complete web build passed
+using an empty loopback fixture with temporary SELECT-only privileges; those
+privileges were revoked and independent SQL verified all 157 tables empty
+afterward. Prisma validation also passed without applying a schema.
+No launch checkbox is closed by this patch.
