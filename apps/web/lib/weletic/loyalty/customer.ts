@@ -2,6 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { normalizeStoredLoyaltyBranding } from "@/lib/weletic/loyalty/branding";
 import { serializeCustomerEarningRule } from "@/lib/weletic/loyalty/earning-actions";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
+import {
+  DEFAULT_REWARD_PURCHASE_POLICY,
+  readLoyaltyPurchasePolicy,
+  type LoyaltyPurchasePolicy,
+} from "@/lib/weletic/loyalty/purchase-policy";
 import { getPersistedLoyaltyDiscountProvisioningIdentity } from "@/lib/weletic/loyalty/redemption-discount-identity";
 import { readRedemptionMetadataDate } from "@/lib/weletic/loyalty/redemption-metadata";
 import {
@@ -23,6 +28,7 @@ import {
 } from "@/lib/weletic/loyalty/rewards";
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
 import { getAccountTierProgress } from "@/lib/weletic/loyalty/tiers";
+import { currencyMinorUnits } from "@/lib/weletic/money";
 import { hasShopifyCustomerPrivacyTombstone } from "@/lib/weletic/shopify/privacy-identity";
 import {
   Prisma,
@@ -170,14 +176,21 @@ type RewardDisplaySnapshot = {
 
 type CustomerRewardTermsSnapshot = {
   version: 1;
+  exchangeType: "fixed" | "incremental" | null;
+  startsAt: string;
+  purchasePolicy: LoyaltyPurchasePolicy;
   rewardType: RewardDisplaySnapshot["rewardType"];
   salesChannel: "online_store" | "pos" | "both" | null;
   currency: string;
+  currencyMinorUnits: number;
   minOrderAmount: string | null;
   expiresInDays: number | null;
   usageLimitPerCustomer: number | null;
   appliesToResource: string | null;
   entitlementCount: number;
+  entitledProductIds: string[];
+  entitledVariantIds: string[];
+  entitledCollectionIds: string[];
   combinesWithProductDiscounts: boolean;
   combinesWithOrderDiscounts: boolean;
   combinesWithShippingDiscounts: boolean;
@@ -385,13 +398,23 @@ function readCustomerRewardTermsSnapshot(
         },
         snapshot: {
           version: 1,
+          exchangeType: snapshot.exchangeType ?? null,
+          startsAt: snapshot.startsAt,
+          purchasePolicy: readLoyaltyPurchasePolicy(
+            snapshot.purchasePolicy,
+            DEFAULT_REWARD_PURCHASE_POLICY,
+          ),
           rewardType: snapshot.rewardType,
           salesChannel: snapshot.salesChannel ?? null,
           currency: snapshot.shopCurrency,
+          currencyMinorUnits: currencyMinorUnits(snapshot.shopCurrency),
           minOrderAmount: snapshot.minOrderAmount,
           expiresInDays: snapshot.expiresInDays,
           usageLimitPerCustomer: snapshot.usageLimitPerCustomer,
           appliesToResource: snapshot.appliesToResource,
+          entitledProductIds: [...snapshot.entitledProductIds],
+          entitledVariantIds: [...snapshot.entitledVariantIds],
+          entitledCollectionIds: [...snapshot.entitledCollectionIds],
           entitlementCount:
             snapshot.entitledCollectionIds.length +
             snapshot.entitledProductIds.length +
@@ -465,13 +488,23 @@ function readCustomerRewardTermsSnapshot(
       },
       snapshot: {
         version: 1,
+        exchangeType: snapshot.exchangeType ?? null,
+        startsAt: snapshot.startsAt,
+        purchasePolicy: readLoyaltyPurchasePolicy(
+          snapshot.purchasePolicy,
+          DEFAULT_REWARD_PURCHASE_POLICY,
+        ),
         rewardType: snapshot.rewardType,
         salesChannel: snapshot.salesChannel ?? null,
         currency: snapshot.shopCurrency,
+        currencyMinorUnits: currencyMinorUnits(snapshot.shopCurrency),
         minOrderAmount: snapshot.minOrderAmount,
         expiresInDays: snapshot.expiresInDays,
         usageLimitPerCustomer: snapshot.usageLimitPerCustomer,
         appliesToResource: snapshot.appliesToResource,
+        entitledProductIds: [...snapshot.entitledProductIds],
+        entitledVariantIds: [...snapshot.entitledVariantIds],
+        entitledCollectionIds: [...snapshot.entitledCollectionIds],
         entitlementCount:
           snapshot.entitledCollectionIds.length +
           snapshot.entitledProductIds.length +
@@ -519,6 +552,8 @@ function getCustomerRewardStatusDate(
 }
 
 export interface GetCustomerLoyaltySummaryParams {
+  /** Internal read-only consumers must not create referral identities/links. */
+  provisionReferralIdentity?: boolean;
   storeId?: string;
   shopDomain?: string;
   shopifyCustomerId: string;
@@ -568,6 +603,7 @@ export async function getCustomerLoyaltySummary({
   shopDomain,
   shopifyCustomerId,
   redemptionChannel = "online_store",
+  provisionReferralIdentity = true,
   loyaltyMaintenancePermit,
   onTiming,
 }: GetCustomerLoyaltySummaryParams) {
@@ -836,7 +872,9 @@ export async function getCustomerLoyaltySummary({
       )
     : Promise.resolve(null);
   const canProvisionReferralIdentity =
-    canParticipate && !hasShopifyCustomerRedactionTombstone(account.metadata);
+    provisionReferralIdentity &&
+    canParticipate &&
+    !hasShopifyCustomerRedactionTombstone(account.metadata);
   const unavailableReferralLink = {
     referralCode: null,
     referralLink: null,
@@ -945,6 +983,10 @@ export async function getCustomerLoyaltySummary({
     : [];
   const rewardCatalog = rewards.map((reward) => ({
     id: reward.id,
+    purchasePolicy: readLoyaltyPurchasePolicy(
+      reward.purchasePolicy,
+      DEFAULT_REWARD_PURCHASE_POLICY,
+    ),
     name: reward.name,
     description: reward.description,
     rewardType: reward.rewardType,
@@ -1145,6 +1187,7 @@ export async function getCustomerLoyaltySummary({
       vipMilestoneMode: program?.vipMilestoneMode || "amount_spent",
       vipTimeframe: program?.vipTimeframe || "rolling_12m",
       currency: shopper.store.shopCurrency,
+      currencyMinorUnits: currencyMinorUnits(shopper.store.shopCurrency),
       branding: {
         title: programBranding.panelTitle,
         subtitle: programBranding.panelWelcomeSubtitle,

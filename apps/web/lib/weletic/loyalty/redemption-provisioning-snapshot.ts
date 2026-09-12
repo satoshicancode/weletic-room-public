@@ -32,6 +32,7 @@ export const LoyaltyRedemptionProvisioningSnapshotSchema = z
       "store_credit",
     ]),
     salesChannel: z.enum(["online_store", "pos", "both"]).optional(),
+    exchangeType: z.enum(["fixed", "incremental"]).optional(),
     purchasePolicy: loyaltyPurchasePolicySchema.optional(),
     pointsCost: z.string().regex(/^\d+$/),
     discountValue: NullableDecimalStringSchema,
@@ -78,6 +79,7 @@ type RewardDefinitionForSnapshot = {
   description?: string | null;
   rewardType: unknown;
   salesChannel?: unknown;
+  exchangeType?: unknown;
   purchasePolicy?: unknown;
   discountValue?: unknown;
   maxDiscountValue?: unknown;
@@ -114,6 +116,9 @@ function getContentDigest(snapshot: SnapshotContent) {
         snapshot.name,
         snapshot.description,
         snapshot.rewardType,
+        ...(Object.prototype.hasOwnProperty.call(snapshot, "exchangeType")
+          ? [snapshot.exchangeType]
+          : []),
         ...(Object.prototype.hasOwnProperty.call(snapshot, "salesChannel")
           ? [snapshot.salesChannel]
           : []),
@@ -170,6 +175,13 @@ export function createLoyaltyRedemptionProvisioningSnapshot({
 }): LoyaltyRedemptionProvisioningSnapshot {
   const rewardType = String(reward.rewardType);
   if (
+    reward.exchangeType !== undefined &&
+    reward.exchangeType !== "fixed" &&
+    reward.exchangeType !== "incremental"
+  ) {
+    throw new Error("Invalid reward exchange type.");
+  }
+  if (
     rewardType !== "amount_off" &&
     rewardType !== "percentage_off" &&
     rewardType !== "free_shipping" &&
@@ -186,6 +198,9 @@ export function createLoyaltyRedemptionProvisioningSnapshot({
     name: reward.name,
     description: reward.description ?? null,
     rewardType,
+    ...(reward.exchangeType === "fixed" || reward.exchangeType === "incremental"
+      ? { exchangeType: reward.exchangeType }
+      : {}),
     ...(reward.salesChannel === "online_store" ||
     reward.salesChannel === "pos" ||
     reward.salesChannel === "both"

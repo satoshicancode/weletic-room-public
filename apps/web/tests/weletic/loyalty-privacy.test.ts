@@ -928,8 +928,13 @@ describe("Shopify GDPR & Privacy Compliance", () => {
         scrubCustomerContextJsonValue({
           accountId: "account",
           expiryDeliverySnapshot: "ciphertext",
+          communicationDeliverySnapshot: "communication-ciphertext",
           nested: [
-            { expiryDeliverySnapshot: "nested-ciphertext", stage: "warning" },
+            {
+              expiryDeliverySnapshot: "nested-ciphertext",
+              communicationDeliverySnapshot: "nested-communication-ciphertext",
+              stage: "warning",
+            },
           ],
         }),
       ).toEqual({ accountId: "account", nested: [{ stage: "warning" }] });

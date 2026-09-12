@@ -23,6 +23,12 @@ import {
 } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// This suite isolates accounting and storefront projections. Promotion-created
+// notification transactions and privacy cleanup have separate SQL coverage.
+vi.mock("@/lib/weletic/loyalty/vip-achievement-communication-producer", () => ({
+  enqueueVipAchievementCommunication: vi.fn().mockResolvedValue(null),
+}));
+
 // Mock Prisma
 vi.mock("@/lib/prisma", () => ({
   prisma: {

@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-Unpublished safety fix. No real email, order, redemption, installation or
+Safety fix published in public PR #18. No real email, order, redemption, installation or
 deployment occurred. This does not connect the referral communication editor or
 complete referral delivery acceptance.
 
@@ -18,6 +18,17 @@ alternate delivery callbacks. Successful delivery, discount issuance, provider
 selection, idempotency keys, lease ownership and retry timing are unchanged.
 Existing stored errors are not rewritten; historical data cleanup requires its
 own scoped audit and authorization.
+
+## September 12 integration review
+
+Integrated public main `2c9a37ac19` using a normal merge without rewriting branch
+history. Independent review of the resulting four-file PR diff found no blocking
+source defect: successful delivery, lease predicates and retry behavior remain
+unchanged. All 117 focused referral/route/outbox tests, web typecheck, root lint
+and changed-file formatting passed. The refreshed full regression passed all 406
+files: 6,389 tests passed and six existing tests skipped. Build and refreshed public
+CI results are recorded in the PR before a merge decision. No live acceptance
+or existing stored-error cleanup is claimed.
 
 ## Verification
 

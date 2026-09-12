@@ -37,6 +37,16 @@ vi.mock("@/lib/weletic/loyalty/tier-review-scheduling", () => ({
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
 }));
+// This synthetic ledger harness does not model communication persistence.
+vi.mock("@/lib/weletic/loyalty/birthday-communication-producer", () => ({
+  enqueueBirthdayCommunication: vi.fn().mockResolvedValue(null),
+}));
+
+// This synthetic ledger stress harness does not model communication persistence.
+// Real signup ledger/outbox atomicity is covered by the isolated MySQL suite.
+vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
+  enqueueSignupPointsCommunication: vi.fn().mockResolvedValue(null),
+}));
 
 describe("Empirical Challenger 1: Non-Purchase Earning & Birthday Anti-Fraud Stress Harness", () => {
   beforeEach(() => {

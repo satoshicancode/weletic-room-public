@@ -28,6 +28,7 @@ export type ShopifyDerivedPrivacyDigestPurpose =
   | "referral_ip"
   | "referral_user_agent"
   | "customer_activity"
+  | "nudge_membership"
   | "webhook_body";
 
 type ShopifyPrivacyHmacKey = {

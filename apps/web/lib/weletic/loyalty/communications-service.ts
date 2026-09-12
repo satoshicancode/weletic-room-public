@@ -66,7 +66,12 @@ export function snapshotLoyaltyCommunicationPolicy({
   storeId: string;
   programId: string;
   metadata: Prisma.JsonValue | null;
-  journey: "points_warning" | "points_last_chance";
+  journey:
+    | "points_warning"
+    | "points_last_chance"
+    | "points_earned"
+    | "birthday"
+    | "vip_achieved";
 }) {
   const state = project(storeId, programId, decodeMetadata(metadata).stored);
   const policy = state.policies.find(
