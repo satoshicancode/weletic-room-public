@@ -57,7 +57,10 @@ vi.mock("@/lib/weletic/loyalty/shopify-discounts", async () => {
   };
 });
 
-vi.mock("@/lib/weletic/loyalty/shopify-financial-rewards", () => {
+vi.mock("@/lib/weletic/loyalty/shopify-financial-rewards", async () => {
+  const actual = await vi.importActual<
+    typeof import("@/lib/weletic/loyalty/shopify-financial-rewards")
+  >("@/lib/weletic/loyalty/shopify-financial-rewards");
   class ShopifyFinancialRewardError extends Error {
     constructor(
       public readonly code: string,
@@ -68,6 +71,7 @@ vi.mock("@/lib/weletic/loyalty/shopify-financial-rewards", () => {
     }
   }
   return {
+    assertFinancialRewardScope: actual.assertFinancialRewardScope,
     ShopifyFinancialRewardError,
     createShopifyGiftCard: mocks.giftCreate,
     lookupShopifyGiftCard: mocks.giftLookup,
@@ -76,6 +80,7 @@ vi.mock("@/lib/weletic/loyalty/shopify-financial-rewards", () => {
 });
 
 import { provisionFinancialRewardReservation } from "@/lib/weletic/loyalty/financial-reward-saga";
+import { resolveShopifyOfflineCredentials } from "@/lib/weletic/loyalty/shopify-discounts";
 import { ShopifyFinancialRewardError } from "@/lib/weletic/loyalty/shopify-financial-rewards";
 
 function reservation(
@@ -149,6 +154,49 @@ describe("financial reward saga dispatch safety", () => {
     vi.clearAllMocks();
     mocks.updateMany.mockResolvedValue({ count: 1 });
     mocks.enqueue.mockResolvedValue({ id: "job_1" });
+  });
+
+  it.each(["gift_card", "store_credit"] as const)(
+    "does not mark a fresh %s dispatch when scope evidence is missing",
+    async (rewardType) => {
+      vi.mocked(resolveShopifyOfflineCredentials).mockResolvedValueOnce({
+        shopDomain: "financial-test.myshopify.com",
+        accessToken: "offline-token",
+        source: "app_session",
+      });
+      const input = reservation(rewardType);
+      await expect(provision(input)).rejects.toMatchObject({
+        code: "MISSING_SCOPE",
+      });
+      expect(input.redemption.metadata).toEqual({});
+      expect(mocks.updateMany).not.toHaveBeenCalled();
+      expect(mocks.giftCreate).not.toHaveBeenCalled();
+      expect(mocks.giftLookup).not.toHaveBeenCalled();
+      expect(mocks.storeCreditCreate).not.toHaveBeenCalled();
+      expect(mocks.enqueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it("can retry untouched store credit after fresh credential scope evidence", async () => {
+    vi.mocked(resolveShopifyOfflineCredentials).mockResolvedValueOnce({
+      shopDomain: "financial-test.myshopify.com",
+      accessToken: "offline-token",
+      source: "app_session",
+      scope: "read_customers",
+    });
+    const input = reservation("store_credit");
+    await expect(provision(input)).rejects.toMatchObject({
+      code: "MISSING_SCOPE",
+    });
+    expect(mocks.updateMany).not.toHaveBeenCalled();
+    mocks.storeCreditCreate.mockResolvedValueOnce({
+      transactionId: "gid://shopify/StoreCreditAccountTransaction/503",
+      accountId: "gid://shopify/StoreCreditAccount/11",
+      amount: "10.00",
+      currencyCode: "USD",
+    });
+    await expect(provision(input)).resolves.toMatchObject({ success: true });
+    expect(mocks.storeCreditCreate).toHaveBeenCalledTimes(1);
   });
 
   it("finalizes a store-credit transaction after one remote mutation", async () => {

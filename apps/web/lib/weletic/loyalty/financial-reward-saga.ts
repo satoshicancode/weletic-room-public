@@ -17,6 +17,7 @@ import {
   type ResolvedShopifyCredentials,
 } from "@/lib/weletic/loyalty/shopify-discounts";
 import {
+  assertFinancialRewardScope,
   createShopifyGiftCard,
   createShopifyStoreCredit,
   lookupShopifyGiftCard,
@@ -222,6 +223,9 @@ export async function provisionFinancialRewardReservation({
   const credentials =
     testCredentials({ shopDomain, accessToken, customFetch }) ??
     (await resolveShopifyOfflineCredentials({ storeId }));
+  // Reject known pre-dispatch failures before recording an ambiguous attempt.
+  // Existing attempts must retain their reconciliation/adoption semantics.
+  if (!priorAttempt) assertFinancialRewardScope({ credentials, rewardType });
   const preparationId = priorAttempt ? null : `frp_${nanoid(16)}`;
   let effectiveMetadata = reservation.redemption
     .metadata as Prisma.InputJsonValue | null;

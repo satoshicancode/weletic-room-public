@@ -3,6 +3,7 @@ import {
   assertFinancialRewardScope,
   createShopifyGiftCard,
   createShopifyStoreCredit,
+  deactivateShopifyGiftCard,
   debitShopifyStoreCredit,
   lookupShopifyGiftCard,
   lookupShopifyStoreCreditAccount,
@@ -40,6 +41,66 @@ function giftCardNode(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Shopify financial loyalty rewards", () => {
+  it.each([undefined, "", " \t\n", ", ,"])(
+    "rejects unavailable scope evidence (%s) before issuance or recovery requests",
+    async (scope) => {
+      const customFetch = vi.fn();
+      const unverified = { ...credentials, scope };
+      for (const rewardType of ["gift_card", "store_credit"] as const) {
+        expect(() =>
+          assertFinancialRewardScope({ credentials: unverified, rewardType }),
+        ).toThrowError(expect.objectContaining({ code: "MISSING_SCOPE" }));
+      }
+      await expect(
+        createShopifyGiftCard({
+          credentials: unverified,
+          code: "WLGCABCD1234CD12",
+          customerId: "77",
+          amountMinor: BigInt(2500),
+          currencyCode: "USD",
+          expiresAt: null,
+          note: "Synthetic scope rejection",
+          customFetch,
+        }),
+      ).rejects.toMatchObject({ code: "MISSING_SCOPE" });
+      await expect(
+        createShopifyStoreCredit({
+          credentials: unverified,
+          customerId: "77",
+          amountMinor: BigInt(1000),
+          currencyCode: "USD",
+          expiresAt: null,
+          notify: false,
+          customFetch,
+        }),
+      ).rejects.toMatchObject({ code: "MISSING_SCOPE" });
+      await expect(
+        deactivateShopifyGiftCard({
+          credentials: unverified,
+          giftCardId: "101",
+          customFetch,
+        }),
+      ).rejects.toMatchObject({ code: "MISSING_SCOPE" });
+      await expect(
+        lookupShopifyStoreCreditAccount({
+          credentials: unverified,
+          accountId: "201",
+          customFetch,
+        }),
+      ).rejects.toMatchObject({ code: "MISSING_SCOPE" });
+      await expect(
+        debitShopifyStoreCredit({
+          credentials: unverified,
+          accountId: "201",
+          amountMinor: BigInt(1000),
+          currencyCode: "USD",
+          customFetch,
+        }),
+      ).rejects.toMatchObject({ code: "MISSING_SCOPE" });
+      expect(customFetch).not.toHaveBeenCalled();
+    },
+  );
+
   it("accepts a write scope as the stronger equivalent of its read scope", () => {
     expect(() =>
       assertFinancialRewardScope({
