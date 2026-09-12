@@ -8,6 +8,8 @@ import {
   type CommunicationDeliveryClaim,
 } from "../../lib/weletic/loyalty/communication-delivery-snapshot";
 import { purchasePointsCommunicationSchema } from "../../lib/weletic/loyalty/points-communication-contract";
+import { createRewardRedeemedCommunication } from "../../lib/weletic/loyalty/reward-redeemed-communication-contract";
+import { rewardCommunicationFixture } from "./reward-communication-fixture";
 
 const mocks = vi.hoisted(() => ({
   findFirst: vi.fn(),
@@ -18,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   settings: vi.fn(),
   recipient: vi.fn(),
   history: vi.fn(),
+  redemption: vi.fn(),
+  ledger: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 vi.mock("@/lib/weletic/loyalty/merchant-write-fence", () => ({
@@ -122,6 +126,8 @@ beforeEach(() => {
       weleticMerchantSettings: { findUnique: mocks.settings },
       weleticLoyaltyAccount: { findFirst: mocks.recipient },
       weleticLoyaltyTierHistory: { findFirst: mocks.history },
+      weleticRewardRedemption: { findFirst: mocks.redemption },
+      weleticPointsLedgerEntry: { findFirst: mocks.ledger },
       weleticLoyaltyOutboxJob: {
         findFirst: mocks.findFirst,
         updateMany: mocks.updateMany,
@@ -172,6 +178,95 @@ it("retains and retries birthday content while the points-earned journey is disa
   expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
   expect(args.prepare).not.toHaveBeenCalled();
 });
+
+function redemptionFixture() {
+  const args = fixture();
+  const evidence = rewardCommunicationFixture();
+  const event = createRewardRedeemedCommunication(evidence);
+  args.claim.candidate.payload = event;
+  args.expectedInstallationGeneration = evidence.installationGeneration;
+  args.wallClockNow = new Date("2026-09-12T00:02:00Z");
+  const currentPolicy = structuredClone(event.policy);
+  mocks.program.mockResolvedValue({
+    id: "program",
+    status: "active",
+    killSwitchActive: false,
+    metadata: {
+      loyaltyCommunications: {
+        version: 1,
+        sequence: 1,
+        policies: [currentPolicy],
+      },
+    },
+  });
+  mocks.redemption.mockResolvedValue({
+    ...evidence.redemption,
+    expiresAt: null,
+  });
+  mocks.ledger.mockImplementation(async ({ where }) =>
+    where.referenceType === "REDEMPTION_REFUND" ? null : evidence.ledger,
+  );
+  return { args, evidence, currentPolicy };
+}
+
+it("retains encrypted redemption requests and reuses them after legitimate used progression", async () => {
+  const { args, evidence } = redemptionFixture();
+  expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
+  const payload = args.claim.candidate.payload as {
+    communicationDeliverySnapshot: string;
+  };
+  expect(payload.communicationDeliverySnapshot).toEqual(expect.any(String));
+  expect(payload.communicationDeliverySnapshot).not.toContain(request.to);
+  mocks.redemption.mockResolvedValue({
+    ...evidence.redemption,
+    status: "used",
+    expiresAt: null,
+  });
+  args.prepare.mockClear();
+  expect(await retainCommunicationDeliveryRequest(args)).toEqual(request);
+  expect(args.prepare).not.toHaveBeenCalled();
+});
+
+it.each([false, true])(
+  "rechecks redemption source and consent at retention (retry=%s)",
+  async (retry) => {
+    for (const reason of [
+      "cancelled",
+      "refund",
+      "policy",
+      "consent",
+    ] as const) {
+      const { args, evidence, currentPolicy } = redemptionFixture();
+      mocks.recipient.mockResolvedValue({
+        shopper: { email: request.to, acceptsMarketing: true },
+      });
+      if (retry) await retainCommunicationDeliveryRequest(args);
+      if (reason === "cancelled")
+        mocks.redemption.mockResolvedValue({
+          ...evidence.redemption,
+          status: "cancelled",
+        });
+      if (reason === "refund")
+        mocks.ledger.mockImplementation(async ({ where }) =>
+          where.referenceType === "REDEMPTION_REFUND"
+            ? { id: "refund" }
+            : evidence.ledger,
+        );
+      if (reason === "policy") currentPolicy.enabled = false;
+      if (reason === "consent")
+        mocks.recipient.mockResolvedValue({
+          shopper: { email: request.to, acceptsMarketing: false },
+        });
+      args.prepare.mockClear();
+      mocks.updateMany.mockClear();
+      await expect(retainCommunicationDeliveryRequest(args)).rejects.toThrow(
+        "no longer eligible",
+      );
+      expect(args.prepare).not.toHaveBeenCalled();
+      expect(mocks.updateMany).not.toHaveBeenCalled();
+    }
+  },
+);
 
 function vipFixture() {
   const args = fixture();

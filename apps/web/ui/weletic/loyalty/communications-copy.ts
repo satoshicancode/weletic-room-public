@@ -1,5 +1,11 @@
 export const communicationsCopy = {
   en: {
+    redemptionConnected:
+      "New reservations with verified installation provenance can produce notices after confirmed reward issuance. Existing reservations are not backfilled. Consent and delivery settings still apply.",
+    redemptionSaved:
+      "Saved for future confirmed-redemption notices. No email was sent.",
+    redemptionEnabled:
+      "Allow confirmed-redemption notices (consent and delivery settings required)",
     vipConnected:
       "Connected for new threshold-based VIP promotions, including requalification after a downgrade. Manual or imported tier placement, maintenance and downgrades do not send achievement notices. Superseded notices are suppressed. Delivery requires an approved sender, running worker, customer consent and an active program. Queued notices keep saved content; disabling also stops queued notices. Saving does not send email.",
     vipSaved: "Saved for future VIP achievement notices. No email was sent.",
@@ -58,6 +64,11 @@ export const communicationsCopy = {
     dirty: "Unsaved changes. Save or discard before changing journeys.",
   },
   ja: {
+    redemptionConnected:
+      "インストール時の情報を確認できる新規予約では、特典の発行確定後に通知できます。既存の予約には遡って適用しません。同意と配信設定が必要です。",
+    redemptionSaved:
+      "今後の特典交換確定通知用に保存しました。メールは送信していません。",
+    redemptionEnabled: "特典交換確定通知を許可する（同意と配信設定が必要）",
     vipConnected:
       "条件達成による新しいVIP昇格に対応しています。降格後の再昇格も対象です。手動設定、インポート、ランク維持、降格では達成通知を送りません。後のランク変更により古くなった通知は送信しません。配信には承認済み送信者、稼働中のワーカー、お客様の同意、有効なプログラムが必要です。待機中の通知は保存時の内容を保持します。無効化すると待機中の通知も停止します。保存だけではメールを送信しません。",
     vipSaved: "今後のVIP達成通知用に保存しました。メールは送信していません。",
@@ -112,6 +123,12 @@ export const communicationsCopy = {
       "未保存の変更があります。通知を切り替える前に保存または破棄してください。",
   },
   vi: {
+    redemptionConnected:
+      "Các yêu cầu đổi thưởng mới có thông tin cài đặt đã xác minh có thể tạo thông báo sau khi phần thưởng được cấp thành công. Không áp dụng hồi tố cho yêu cầu cũ. Vẫn cần sự đồng ý và cấu hình gửi.",
+    redemptionSaved:
+      "Đã lưu cho các thông báo đổi thưởng thành công trong tương lai. Chưa gửi email.",
+    redemptionEnabled:
+      "Cho phép thông báo đổi thưởng thành công (cần sự đồng ý và cấu hình gửi)",
     vipConnected:
       "Đã kết nối với lần thăng hạng VIP mới khi đạt điều kiện, kể cả thăng hạng lại sau khi bị hạ hạng. Không gửi thông báo thành tích khi gán hạng thủ công, nhập dữ liệu, duy trì hoặc hạ hạng. Thông báo đã lỗi thời do thay đổi hạng sau đó sẽ không được gửi. Cần người gửi được phê duyệt, worker đang chạy, sự đồng ý của khách hàng và chương trình đang hoạt động. Thông báo chờ giữ nguyên nội dung đã lưu; tắt cũng dừng thông báo đang chờ. Lưu không gửi email.",
     vipSaved:

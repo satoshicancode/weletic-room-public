@@ -56,6 +56,48 @@ async function submit() {
 }
 
 it.each(["en", "ja", "vi"] as const)(
+  "exposes redemption readiness without claiming referral delivery in %s",
+  async (locale) => {
+    const connectedResponse = {
+      ...response,
+      deliveryIntegration:
+        "purchase_signup_birthday_vip_redemption_and_expiry_policies",
+    };
+    const request = vi.fn().mockImplementation(async (input) =>
+      input.operation === "read"
+        ? connectedResponse
+        : {
+            ...connectedResponse,
+            revision: "b".repeat(64),
+            policies: [input.policy],
+          },
+    );
+    await act(async () =>
+      root.render(createElement(CommunicationsScreen, { request })),
+    );
+    await select(0, locale);
+    await select(1, "reward_redeemed");
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].redemptionConnected,
+    );
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].redemptionEnabled,
+    );
+    await editSubject("Redeemed {{reward_name}}");
+    await submit();
+    expect(request.mock.calls[1][0].policy.journey).toBe("reward_redeemed");
+    expect(request.mock.calls[1][0].policy.enabled).toBe(false);
+    expect(node.textContent).toContain(
+      communicationsCopy[locale].redemptionSaved,
+    );
+    await select(1, "referral_friend");
+    expect(node.textContent).toContain(communicationsCopy[locale].disconnected);
+    expect(node.innerHTML).not.toContain("private-store");
+    expect(node.innerHTML).not.toContain("private-generation");
+  },
+);
+
+it.each(["en", "ja", "vi"] as const)(
   "exposes separate VIP readiness and saves its policy in %s",
   async (locale) => {
     const connectedResponse = {

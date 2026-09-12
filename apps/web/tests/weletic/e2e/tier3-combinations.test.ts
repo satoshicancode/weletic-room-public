@@ -192,6 +192,15 @@ describe("Tier 3: Cross-Feature Combinations (Weletic Loyalty Production-Core)",
   });
 
   it("Combo 2: Reward Reservation + Compensating Cancellation + Concurrent Order Points Earn", async () => {
+    // The real issuance producer reads the store's program even when its
+    // notification policy is absent. Model that owned row, not a missing mock.
+    vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValue({
+      id: "wprog_1",
+      storeId: TEST_STORE_ID,
+      status: "active",
+      killSwitchActive: false,
+      metadata: null,
+    } as Awaited<ReturnType<typeof prisma.weleticLoyaltyProgram.findUnique>>);
     // 1. Initial account balance: 500 points
     (prisma.weleticLoyaltyAccount.findFirst as any).mockResolvedValue({
       id: ADVOCATE_ACC_ID,

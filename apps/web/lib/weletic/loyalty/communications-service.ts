@@ -71,6 +71,7 @@ export function snapshotLoyaltyCommunicationPolicy({
     | "points_last_chance"
     | "points_earned"
     | "birthday"
+    | "reward_redeemed"
     | "vip_achieved";
 }) {
   const state = project(storeId, programId, decodeMetadata(metadata).stored);
