@@ -58,10 +58,168 @@ afterEach(() => {
   delete (window as any).WeleticLoyaltyLandingRuntime;
   window.sessionStorage.clear();
   document.body.innerHTML = "";
+  document.documentElement.lang = "";
   Reflect.deleteProperty(document, "execCommand");
 });
 
 describe("Shopify Basic loyalty theme assets", () => {
+  it.each([
+    ["en", "Ways to Earn Points", "Join Now & Earn Points", "100 Coins"],
+    ["ja-JP", "ポイントの貯め方", "登録してポイントを貯める", "100 Coins"],
+    ["vi_VN", "Cách tích điểm", "Tham gia và tích điểm", "100 Coins"],
+    ["fr", "Ways to Earn Points", "Join Now & Earn Points", "100 Coins"],
+  ])(
+    "localizes the %s landing interface without translating merchant copy",
+    async (locale, heading, join, points) => {
+      loadShared();
+      document.documentElement.lang = locale;
+      document.body.innerHTML = `<div data-weletic-loyalty-landing-root data-shop="fixture.myshopify.com" data-logged-in="false"><div data-weletic-landing-auth-banner></div><div data-weletic-landing-sections></div></div>`;
+      setReadyStateComplete();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          jsonResponse({
+            data: {
+              program: {
+                isActive: true,
+                pointNameSingular: "Coin",
+                pointNamePlural: "Coins",
+              },
+              earningRules: [
+                {
+                  name: "Merchant <script>name</script>",
+                  triggerCode: "signup",
+                  fixedPoints: "100",
+                },
+              ],
+              tiers: [],
+              rewards: [],
+            },
+          }),
+        ),
+      );
+      new Function(landingSource)();
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(heading),
+      );
+      expect(document.body.textContent).toContain(join);
+      expect(document.body.textContent).toContain(points);
+      expect(document.body.textContent).toContain(
+        "Merchant <script>name</script>",
+      );
+      expect(document.querySelector("script")).toBeNull();
+    },
+  );
+
+  it.each([
+    ["ja", "プログラム情報を読み込めませんでした。", "再試行"],
+    ["vi", "Không thể tải thông tin chương trình.", "Thử lại"],
+  ])(
+    "uses the root %s locale for retry errors ahead of document language",
+    async (locale, message, retry) => {
+      loadShared();
+      document.documentElement.lang = "en";
+      document.body.innerHTML = `<div data-weletic-loyalty-landing-root data-locale="${locale}" data-shop="fixture.myshopify.com" data-logged-in="false"><div data-weletic-landing-auth-banner></div><div data-weletic-landing-sections></div></div>`;
+      setReadyStateComplete();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          jsonResponse({ error: { message: "Synthetic failure" } }, 503),
+        ),
+      );
+      new Function(landingSource)();
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(message),
+      );
+      expect(document.querySelector("button")?.textContent).toContain(retry);
+    },
+  );
+
+  it("preserves exact shared formatter arithmetic with an optional localization context", () => {
+    const shared = loadShared();
+    expect(shared.formatPoints("9007199254740993", "Coin", "Coins", "vi")).toBe(
+      "9.007.199.254.740.993 Coins",
+    );
+    const translate = vi.fn(
+      (message: string, values?: Record<string, string>) =>
+        `${message}:${JSON.stringify(values || {})}`,
+    );
+    const context = {
+      locale: "ja",
+      translate,
+      currency: "JPY",
+      pointsPerCurrencyUnit: "5",
+    };
+    shared.formatEarningValue(
+      { triggerCode: "order_paid", multiplier: "2" },
+      "Coin",
+      "Coins",
+      context,
+    );
+    expect(translate).toHaveBeenLastCalledWith("{points} per {amount}", {
+      points: "10 Coins",
+      amount: "￥1",
+    });
+    shared.formatRewardValue(
+      {
+        rewardType: "amount_off",
+        exchangeType: "incremental",
+        discountValue: "300",
+        pointsStep: "100",
+        minPointsCost: "300",
+        maxDiscountValue: "800",
+      },
+      "JPY",
+      context,
+    );
+    expect(translate).toHaveBeenLastCalledWith("{amount} off", {
+      amount: "￥800",
+    });
+    shared.formatRewardValue(
+      { rewardType: "percentage_off", discountValue: "12.5" },
+      "JPY",
+      context,
+    );
+    expect(translate).toHaveBeenLastCalledWith("{amount} off", {
+      amount: "12.5%",
+    });
+  });
+
+  it.each(["ja", "vi", "en"])(
+    "preserves four-decimal VIP multipliers in %s",
+    async (locale) => {
+      loadShared();
+      document.body.innerHTML = `<div data-weletic-loyalty-landing-root data-locale="${locale}" data-shop="fixture.myshopify.com" data-logged-in="false"><div data-weletic-landing-auth-banner></div><div data-weletic-landing-sections></div></div>`;
+      setReadyStateComplete();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          jsonResponse({
+            data: {
+              program: { isActive: true },
+              earningRules: [],
+              rewards: [],
+              tiers: [
+                { name: "Precise Gold", pointsMultiplier: "1.2345" },
+                { name: "Precise Silver", pointsMultiplier: "1.0001" },
+              ],
+            },
+          }),
+        ),
+      );
+      new Function(landingSource)();
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain("Precise Gold"),
+      );
+      expect(document.body.textContent).toContain(
+        (1.2345).toLocaleString(locale, { maximumFractionDigits: 4 }),
+      );
+      expect(document.body.textContent).toContain(
+        (1.0001).toLocaleString(locale, { maximumFractionDigits: 4 }),
+      );
+    },
+  );
+
   it("normalizes the canonical customer envelope and formats shopper values", () => {
     const shared = loadShared();
     const customer = shared.normalizeCustomer({

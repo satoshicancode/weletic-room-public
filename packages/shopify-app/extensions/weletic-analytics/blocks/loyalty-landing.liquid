@@ -7,11 +7,31 @@
 
 {{ 'weletic-loyalty-styles.css' | asset_url | stylesheet_tag }}
 
+{% liquid
+  assign loyalty_locale = request.locale.iso_code | downcase | replace: '_', '-' | split: '-' | first
+  assign loyalty_loading_balance = 'Loading your member rewards balance...'
+  assign loyalty_loading_program = 'Loading loyalty program details...'
+  assign loyalty_join = 'Join Now & Earn Points'
+  assign loyalty_sign_in = 'Already a Member? Sign In'
+  if loyalty_locale == 'ja'
+    assign loyalty_loading_balance = '会員特典の残高を読み込み中…'
+    assign loyalty_loading_program = '特典プログラムを読み込み中…'
+    assign loyalty_join = '登録してポイントを貯める'
+    assign loyalty_sign_in = '会員の方はこちらからログイン'
+  elsif loyalty_locale == 'vi'
+    assign loyalty_loading_balance = 'Đang tải số dư phần thưởng thành viên…'
+    assign loyalty_loading_program = 'Đang tải thông tin chương trình…'
+    assign loyalty_join = 'Tham gia và tích điểm'
+    assign loyalty_sign_in = 'Đã là thành viên? Đăng nhập'
+  endif
+%}
+
 <div
   id="weletic-loyalty-landing-root-{{ block.id | escape }}"
   class="weletic-landing-container"
   data-weletic-loyalty-landing-root
   data-weletic-instance-id="{{ block.id | escape }}"
+  data-locale="{{ request.locale.iso_code | escape }}"
   data-shop="{{ shop.permanent_domain | escape }}"
   data-logged-in="{% if customer %}true{% else %}false{% endif %}"
   data-currency="{{ cart.currency.iso_code | default: shop.currency | escape }}"
@@ -39,12 +59,12 @@
     >
       {% if customer %}
         <div class="weletic-landing-user-badge">
-          <span class="weletic-spinner-sm"></span> Loading your member rewards balance...
+          <span class="weletic-spinner-sm"></span> {{ loyalty_loading_balance | escape }}
         </div>
       {% else %}
         <div class="weletic-landing-guest-actions">
-          <a href="{{ routes.account_register_url | escape }}" class="weletic-btn-hero-primary">Join Now & Earn Points</a>
-          <a href="{{ routes.account_login_url | escape }}" class="weletic-btn-hero-secondary">Already a Member? Sign In</a>
+          <a href="{{ routes.account_register_url | escape }}" class="weletic-btn-hero-primary">{{ loyalty_join | escape }}</a>
+          <a href="{{ routes.account_login_url | escape }}" class="weletic-btn-hero-secondary">{{ loyalty_sign_in | escape }}</a>
         </div>
       {% endif %}
     </div>
@@ -58,7 +78,7 @@
   >
     <div class="weletic-loading-placeholder">
       <div class="weletic-spinner"></div>
-      <p>Loading loyalty program details...</p>
+      <p>{{ loyalty_loading_program | escape }}</p>
     </div>
   </div>
 </div>
