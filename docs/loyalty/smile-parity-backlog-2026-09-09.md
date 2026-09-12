@@ -299,6 +299,10 @@ No task below silently authorizes an external gate or a new product policy.
 
 ### L11 — Exact analytics, cohorts and report disposition
 
+September 13: the [complete S01–S36 coverage map](analytics-report-coverage.md)
+now records current code evidence and implementation tasks A01–A09. This is an
+inventory, not analytics completion or authorization for customer-row exports.
+
 - **Scope/reference:** R6/S01–S36; PR #7 provides signed aggregates and exact CSV/
   JSON. Current status cohorts are not a sequential referral funnel; existing
   cohort analytics are not exposed in this screen.
