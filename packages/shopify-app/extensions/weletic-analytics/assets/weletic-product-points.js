@@ -22,13 +22,41 @@
       if (!pointsNumberEl) return;
 
       var pointsRate = null;
+      var locale =
+        container.getAttribute("data-locale") ||
+        document.documentElement.lang ||
+        "en";
+
+      function integerPrice(value) {
+        if (typeof value === "number" && !Number.isSafeInteger(value))
+          return null;
+        if (typeof value !== "string" && typeof value !== "number") return null;
+        var text = String(value);
+        return /^(?:0|[1-9]\d{0,29})$/.test(text) ? BigInt(text) : null;
+      }
+
+      function exactRate(value) {
+        if (typeof value !== "string" && typeof value !== "number") return null;
+        var text = String(value);
+        if (!/^(?:0|[1-9]\d{0,5})(?:\.\d{1,4})?$/.test(text)) return null;
+        var parts = text.split(".");
+        var scaled =
+          BigInt(parts[0]) * BigInt(10000) +
+          BigInt((parts[1] || "").padEnd(4, "0"));
+        return scaled > BigInt(0) ? scaled : null;
+      }
 
       function currencyFractionDigits() {
         try {
-          return new Intl.NumberFormat(undefined, {
-            style: "currency",
-            currency: currency.toUpperCase(),
-          }).resolvedOptions().maximumFractionDigits;
+          // Liquid appends two decimal places even for JPY/KRW. This is
+          // Shopify's theme-price representation, not ISO minor-unit money.
+          return Math.max(
+            2,
+            new Intl.NumberFormat("en", {
+              style: "currency",
+              currency: currency.toUpperCase(),
+            }).resolvedOptions().maximumFractionDigits,
+          );
         } catch (_error) {
           return 2;
         }
@@ -40,17 +68,17 @@
       // base program rate rather than inventing an uplift.
       fetch(proxyPrefix + "/program?shop=" + encodeURIComponent(shop))
         .then(function (r) {
+          if (!r.ok) throw new Error("Program unavailable");
           return r.json();
         })
         .then(function (res) {
           var payload = res && res.data ? res.data : res;
           var program = payload && payload.program;
-          var configuredRate = Number(program?.pointsPerCurrencyUnit);
+          var configuredRate = exactRate(program?.pointsPerCurrencyUnit);
           if (
             !program ||
             program.isActive !== true ||
-            !Number.isFinite(configuredRate) ||
-            configuredRate <= 0
+            configuredRate === null
           ) {
             pointsNumberEl.textContent = "—";
             return;
@@ -72,22 +100,30 @@
               ? variantSelect.options[variantSelect.selectedIndex]
               : null;
             if (selectedOption && selectedOption.getAttribute("data-price")) {
-              return parseFloat(selectedOption.getAttribute("data-price"));
+              return integerPrice(selectedOption.getAttribute("data-price"));
             }
           }
         }
 
         var priceAttr = container.getAttribute("data-current-price");
-        return parseFloat(priceAttr) || 0;
+        return integerPrice(priceAttr);
       }
 
       function recalculate() {
         if (!pointsNumberEl || pointsRate === null) return;
         var rawPrice = getCurrentPriceCents();
-        var currencyScale = Math.pow(10, currencyFractionDigits());
-        var priceUnits = rawPrice / currencyScale;
-        var projected = Math.max(0, Math.floor(priceUnits * pointsRate));
-        pointsNumberEl.textContent = projected.toLocaleString();
+        if (rawPrice === null) {
+          pointsNumberEl.textContent = "—";
+          return;
+        }
+        var currencyScale = BigInt(10) ** BigInt(currencyFractionDigits());
+        var projected =
+          (rawPrice * pointsRate) / (currencyScale * BigInt(10000));
+        try {
+          pointsNumberEl.textContent = projected.toLocaleString(locale);
+        } catch (_error) {
+          pointsNumberEl.textContent = projected.toLocaleString("en");
+        }
       }
 
       // Variant Change Listeners
@@ -102,8 +138,16 @@
       });
 
       window.addEventListener("variant:change", function (e) {
-        if (e.detail && e.detail.variant && e.detail.variant.price) {
-          container.setAttribute("data-current-price", e.detail.variant.price);
+        if (
+          e.detail &&
+          e.detail.variant &&
+          Object.prototype.hasOwnProperty.call(e.detail.variant, "price")
+        ) {
+          var price = integerPrice(e.detail.variant.price);
+          container.setAttribute(
+            "data-current-price",
+            price === null ? "" : price.toString(),
+          );
           recalculate();
         }
       });

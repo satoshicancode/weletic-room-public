@@ -86,6 +86,22 @@ describe("offline public extension staging", () => {
   });
 
   it("rejects changed source anchors instead of broad replacements", () => {
+    const previewPath =
+      "weletic-analytics/blocks/product-points-preview.liquid";
+    const preview = readFileSync(
+      join(root, "packages/shopify-app/extensions", previewPath),
+      "utf8",
+    );
+    expect(transformPublicExtension(previewPath, preview)).toBe(preview);
+    expect(() =>
+      transformPublicExtension(
+        previewPath,
+        preview.replace("        —", "        100"),
+      ),
+    ).toThrow("Public staging source anchor changed");
+    expect(() =>
+      transformPublicExtension(previewPath, preview + preview),
+    ).toThrow("Public staging source anchor changed");
     for (const assignment of [
       'uid="inherited"',
       "uid = 'inherited'",
