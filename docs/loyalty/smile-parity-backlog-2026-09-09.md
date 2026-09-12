@@ -327,6 +327,13 @@ inventory, not analytics completion or authorization for customer-row exports.
 
 ### L12 — Historical imports (frozen tonight)
 
+- **September 13 update:** the freeze and PR references below describe the
+  September 9 checkpoint, not current merge status. The dedicated 50,000-row
+  candidate rerun failed after 8,100 confirmed commits; its nested cause remains
+  unknown. The new test-only observer passed an expired-lease probe and a
+  500-row commit/rollback lifecycle, with independent empty-fixture cleanup.
+  See [failure evidence and controlled reproduction next step](import-failure-evidence-2026-09-13.md).
+  Full-scale acceptance and named live acceptance remain open.
 - **Scope/reference:** generic opening balance/birthday/optional tier, no Smile
   migration. PR #13 draft provides immutable source/row provenance, preview,
   commit, durable orchestration, append-only rollback and containment.
