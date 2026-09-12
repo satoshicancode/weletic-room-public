@@ -1,0 +1,5 @@
+{
+  "balanceTitle": "保有ポイント",
+  "balanceAvailable": "利用可能なポイント：{{points}}",
+  "balancePending": "確定待ちのポイント：{{points}}"
+}

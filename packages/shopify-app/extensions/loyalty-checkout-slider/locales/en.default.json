@@ -1,4 +1,7 @@
 {
+  "balanceTitle": "Your loyalty points",
+  "balanceAvailable": "{{points}} points available",
+  "balancePending": "{{points}} points pending",
   "title": "Redeem VIP Points",
   "pointsAvailable": "{{points}} points available",
   "sliderLabel": "Choose points to apply",

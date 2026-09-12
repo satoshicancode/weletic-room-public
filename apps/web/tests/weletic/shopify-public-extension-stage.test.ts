@@ -61,6 +61,14 @@ describe("offline public extension staging", () => {
     expect(checkout).toContain("purchase.thank-you.block.render");
     expect(checkout).toContain('handle = "weletic-public-loyalty-thank-you"');
     expect(checkout).not.toContain("purchase.checkout.reductions");
+    for (const locale of ["en.default", "ja", "vi"]) {
+      const catalog = JSON.parse(
+        files[`extensions/loyalty-checkout-slider/locales/${locale}.json`],
+      );
+      expect(catalog.balanceTitle).toBeTruthy();
+      expect(catalog.balanceAvailable).toContain("{{points}}");
+      expect(catalog.balancePending).toContain("{{points}}");
+    }
     expect(
       Object.keys(
         JSON.parse(files["extensions/loyalty-checkout-slider/manifest.json"]),

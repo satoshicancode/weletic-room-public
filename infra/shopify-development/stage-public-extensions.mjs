@@ -57,7 +57,7 @@ export const publicExtensionFiles = Object.freeze({
     manifest,
     "manifest.json",
     "src/ThankYou.tsx",
-    "locales/en.default.json",
+    ...locales.map((name) => `locales/${name}`),
   ],
   "weletic-analytics": [
     manifest,
