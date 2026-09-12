@@ -500,6 +500,69 @@ describe("Smile-compatible anonymous referral friend claims", () => {
     },
   );
 
+  it.each(["returned", "thrown", "empty"])(
+    "sanitizes %s provider failures before referral persistence or logging",
+    async (mode) => {
+      const privateDetail = "friend@example.com secret-provider-token";
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        if (mode === "thrown")
+          emailMocks.sendBatch.mockRejectedValue(new Error(privateDetail));
+        else
+          emailMocks.sendBatch.mockResolvedValue(
+            mode === "returned"
+              ? { error: { message: privateDetail }, data: null }
+              : undefined,
+          );
+        const result = await claimReferralFriendReward({
+          storeId: "store_1",
+          referralCode: "alice-1234",
+          friendEmail: "friend@example.com",
+          now: new Date("2026-08-31T00:00:00.000Z"),
+        });
+        expect(result).toMatchObject({ status: "claimed", emailSent: false });
+        expect(state.referral.friendEmailLastError).toBe(
+          "Referral email delivery failed",
+        );
+        expect(log).not.toHaveBeenCalled();
+        expect(JSON.stringify(result)).not.toContain(privateDetail);
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+
+  it.each(["returned", "thrown"])(
+    "sanitizes %s callback errors at the lease persistence boundary",
+    async (mode) => {
+      state.referral = {
+        id: "referral_email_lease",
+        storeId: "store_1",
+        friendRewardEmailedAt: null,
+        friendEmailLeaseToken: null,
+        friendEmailLeaseExpiresAt: new Date(0),
+        friendEmailDeliveryAttempts: 0,
+      };
+      await deliverReferralEmailUnderLease({
+        referralId: state.referral.id,
+        storeId: "store_1",
+        deliver: async () => {
+          if (mode === "thrown")
+            throw new Error("friend@example.com secret-provider-token");
+          return {
+            success: false,
+            error: "friend@example.com secret-provider-token",
+          };
+        },
+      });
+      expect(state.referral.friendEmailLastError).toBe(
+        "Referral email delivery failed",
+      );
+      expect(state.referral.friendEmailLeaseToken).toBeNull();
+      expect(state.referral.friendRewardEmailedAt).toBeNull();
+    },
+  );
+
   it("issues a one-time Shopify voucher without storing raw friend email", async () => {
     const result = await claimReferralFriendReward({
       storeId: "store_1",
