@@ -1713,7 +1713,10 @@ for (const rowCount of [500, 50_000]) {
           { entries: entries.toString(), net: net.toString() },
         ]);
       };
-      await assertLedgerSql(rowCount, BigInt(rowCount) * BigInt("9007199254740993"));
+      await assertLedgerSql(
+        rowCount,
+        BigInt(rowCount) * BigInt("9007199254740993"),
+      );
       const source =
         await database.weleticLoyaltyImportSource.findUniqueOrThrow({
           where: { id: fixture.source.id },
