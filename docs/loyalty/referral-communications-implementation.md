@@ -1,5 +1,17 @@
 # Referral communications — next implementation scope
 
+## Public integration update — September 13, 2026
+
+[PR #30](https://github.com/satoshicancode/weletic-room-public/pull/30) merged as
+`c5f2b8fa8fb06bfb3bad6e539c7ee9cf561d54dc`. Earlier draft/publication statements
+below are chronological checkpoints, not current PR status. The merged source
+connects account-backed benefit producers and shared retained delivery; anonymous
+friend policy delivery still requires its separate consent/retention decision.
+Full qualification/coupon races, real inbox delivery and launch acceptance remain
+open. Do not create a second producer because an older paragraph says draft.
+
+## Historical implementation record
+
 This is the next part of the approved L06/L10 loyalty stream, not evidence of
 completion or authorization to send mail. Its worktree now starts from public
 main `a1a7bb0d7736c2e534d9b9fed7a659a3b6e94645`, after the verified redemption

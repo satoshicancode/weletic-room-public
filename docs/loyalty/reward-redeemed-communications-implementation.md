@@ -1,5 +1,15 @@
 # Reward-redeemed communications — local implementation
 
+## Public integration update — September 13, 2026
+
+[PR #29](https://github.com/satoshicancode/weletic-room-public/pull/29) merged as
+`a1a7bb0d7736c2e534d9b9fed7a659a3b6e94645`. Earlier draft/publication wording in
+this document is historical. Confirmed redemption communication code is
+integrated; real delivery, platform capability and named live acceptance remain
+open. No message is sent or feature activated by this status correction.
+
+## Historical implementation record
+
 Approved loyalty communications stream, September 12, 2026. Base is public main
 `a3d8c28422281ea550bda6913dd72fb38d07edb9`. No deployment, activation, schema
 application, provider change or real send is authorized by this implementation.

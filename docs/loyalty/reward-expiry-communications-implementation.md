@@ -1,5 +1,14 @@
 # Reward-expiry communications — implementation in progress
 
+## Public integration update — September 13, 2026
+
+[PR #31](https://github.com/satoshicancode/weletic-room-public/pull/31) merged as
+`979c8f9786b44eb889ae3ecab81ac1ba6a7a9620`. The draft/publication statements below
+are historical checkpoints. Supported discount reminders and the bounded
+authenticated scheduler are integrated code; deployed supervision, timezone
+decisions, real delivery and named live acceptance remain open. This update
+neither enables a policy nor authorizes deployment or email sends.
+
 ## Latest checkpoint — September 13, 2026
 
 The local draft now includes a strict `reward_expiry_due` event for ordinary

@@ -37,7 +37,37 @@ code integration, and all original requirements below remain in scope.
   the public repository. This is not removal from Git history, nor a repository-
   wide claim that all historical private references have been eliminated.
 
-## Public implementation checkpoints — not live acceptance
+## Current public integration — September 13, 2026
+
+Verified through public main `322c41d44c19689be370041a054a19095e518f9a`.
+The dated snapshots below preserve earlier evidence; their draft/publication
+wording must not be used as current PR status. No live checkbox is changed.
+
+- [PR #13](https://github.com/satoshicancode/weletic-room-public/pull/13) is merged
+  as `a09df959abe4540914b1bf03863fbd0d31099c55`; import code integration does not
+  authorize schema application or prove full-scale execution.
+- [PR #15](https://github.com/satoshicancode/weletic-room-public/pull/15) is merged
+  as `69149d76d898b6e14c5c54c5cd07568821e704f9`; public installation and runtime
+  acceptance remain open.
+- [PR #29](https://github.com/satoshicancode/weletic-room-public/pull/29) merged
+  confirmed redemption communications. [PR #30](https://github.com/satoshicancode/weletic-room-public/pull/30)
+  merged account-backed referral benefit communications; anonymous friend policy
+  delivery remains a separate consent/retention decision. [PR #31](https://github.com/satoshicancode/weletic-room-public/pull/31)
+  merged verified discount reward-expiry reminders. None establishes live sends.
+- [PR #34](https://github.com/satoshicancode/weletic-room-public/pull/34) reconciles
+  [34 included and two locked report dispositions](analytics-report-coverage.md),
+  not implemented analytics parity or permission for customer-row exports.
+- [PR #35](https://github.com/satoshicancode/weletic-room-public/pull/35) and
+  [PR #37](https://github.com/satoshicancode/weletic-room-public/pull/37) merged
+  [landing](landing-locales-acceptance-2026-09-13.md) and
+  [referral](referral-locales-acceptance-2026-09-13.md) locale fixes. Their browser
+  evidence uses synthetic transports; complete EN/JA/VI live coverage is open.
+- [PR #36](https://github.com/satoshicancode/weletic-room-public/pull/36) records
+  the [later 50,000-row failure](import-failure-evidence-2026-09-13.md): 8,100
+  confirmed commits followed by a failed worker delivery. Its cause is unknown;
+  diagnostic/500-row success does not establish full-scale acceptance.
+
+## Historical public implementation checkpoints — not live acceptance
 
 Initial snapshot verified on September 9; PRs #14–#16 rechecked against public
 GitHub state on September 10. Bootstrap is a subsequent draft PR #15 update;
@@ -241,6 +271,10 @@ No checkbox below is promoted solely by these local checks.
       checks pass. Full regression passes (7,997 tests, 6 skipped, 496 suites). Publication and
       named live acceptance remain open; mocked transport is not real delivery.
       D1/D2 are not complete.
+      September 13 integration update: the publication wording above describes
+      pre-merge checkpoints. PRs #29–#31 are now merged. See the current public
+      integration section and the implementation documents; anonymous friend
+      consent/retention, remaining races and named live inbox evidence stay open.
 - [ ] D3: Confirm the intended timezone before birthday/campaign/expiry/email
       activation. Do not silently replace a retained store timezone with Tokyo.
       Prove boundary timing and approved real inbox delivery.
@@ -265,6 +299,10 @@ No checkbox below is promoted solely by these local checks.
       explicit unexplained-poll failures and bounded observed-due waiting;
       22 focused unit cases, three real diagnostic cases and the 500-row
       commit/rollback lifecycle passed. Full-scale acceptance remains open.
+      The subsequent candidate failed after 8,100 confirmed commits; see
+      [the preserved failure and test-only stage diagnostics](import-failure-evidence-2026-09-13.md).
+      Both failures are retained separately. Neither has terminal 50,000-row
+      commit/rollback acceptance, and no cause is inferred from elapsed time.
       The local [dedicated-instance scale continuation](historical-import-implementation.md)
       adds grouped rollback and projected evidence reads. Its latest synthetic
       50,000-row profile reached 30 real reversals and safe continuation, with
@@ -294,6 +332,10 @@ No checkbox below is promoted solely by these local checks.
 - [ ] E2: Merchant editors and shopper surfaces at 375px, keyboard/accessibility,
       loading/error/permission states and performance; no cleartext shopper
       identifiers in DOM. Identify mocked versus authenticated/live browser evidence.
+      Merged local evidence: [landing locales](landing-locales-acceptance-2026-09-13.md)
+      and [referral claim/sharing locales](referral-locales-acceptance-2026-09-13.md).
+      These selected synthetic-browser checks do not close E1/E2 or establish
+      installed theme/account-extension behavior.
 - [ ] E3: Supervise outbox, expiry, birthday, tier-review, voucher, token-renewal
       and privacy workers. Prove retry/dead-letter/stuck-job alerts, lease recovery,
       shutdown behavior and kill-switch/containment runbooks.
