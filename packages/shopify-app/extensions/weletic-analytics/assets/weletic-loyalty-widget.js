@@ -780,7 +780,9 @@
       nudge = document.createElement("aside");
       nudge.className =
         "weletic-nudge " +
-        (position === "bottom_left" ? "weletic-pos-left" : "weletic-pos-right");
+        (launcherBtn.classList.contains("weletic-pos-left")
+          ? "weletic-pos-left"
+          : "weletic-pos-right");
       nudge.lang = locale;
       nudge.setAttribute("aria-label", template.title);
       var icon = document.createElement("span");
@@ -814,6 +816,34 @@
       });
       nudge.append(icon, title, description, action, close);
       document.body.appendChild(nudge);
+      alignNudgeWithLauncher();
+    }
+
+    function alignNudgeWithLauncher() {
+      if (!nudge) return;
+      var left = launcherBtn.classList.contains("weletic-pos-left");
+      nudge.classList.toggle("weletic-pos-left", left);
+      nudge.classList.toggle("weletic-pos-right", !left);
+      if (state.program?.branding?.launcherPresentation) {
+        var side = launcherBtn.style.getPropertyValue(
+          "--weletic-launcher-side",
+        );
+        var bottom = parseFloat(
+          launcherBtn.style.getPropertyValue("--weletic-launcher-bottom"),
+        );
+        var offset =
+          bottom + (launcherBtn.getBoundingClientRect().height || 44) + 16;
+        // Optional prompts must never escape the viewport or cover the launcher.
+        if (window.innerHeight - offset - 16 < 96) {
+          dismissNudge(false);
+          return;
+        }
+        nudge.style.left = left ? side : "auto";
+        nudge.style.right = left ? "auto" : side;
+        nudge.style.bottom = offset + "px";
+        nudge.style.maxWidth = "calc(100vw - 2 * " + side + ")";
+        nudge.style.maxHeight = "calc(100vh - " + (offset + 16) + "px)";
+      }
     }
 
     // DOM Elements
@@ -855,8 +885,10 @@
       return "✨";
     }
 
+    var lastProgramPresentationSource = null;
     function applyProgramBranding(programData) {
       if (destroyed) return;
+      lastProgramPresentationSource = programData;
       var branding = programData?.branding || {};
       position =
         branding.launcherPosition === "bottom_left"
@@ -868,6 +900,17 @@
       headerTextColor = branding.headerTextColor || headerTextColor;
       launcherText = branding.launcherText || launcherText;
       launcherIcon = branding.launcherIcon || launcherIcon;
+      var presentation = shared.resolveLauncherPresentation(branding, {
+        defaultText: launcherText,
+        defaultPosition: position,
+        width: window.innerWidth,
+        pathname: window.location.pathname,
+        url: window.location.href,
+        rootPath:
+          window.Shopify?.routes?.root ||
+          root.getAttribute("data-locale-root") ||
+          "/",
+      });
 
       document.documentElement.style.setProperty(
         "--weletic-primary",
@@ -882,28 +925,54 @@
       drawer.style.setProperty("--weletic-header-text", headerTextColor);
       launcherBtn.className =
         "weletic-launcher-btn " +
-        (position === "bottom_left" ? "weletic-pos-left" : "weletic-pos-right");
+        (presentation.position === "bottom_left"
+          ? "weletic-pos-left"
+          : "weletic-pos-right");
+      launcherBtn.dataset.layout = presentation.layout;
+      launcherBtn.dataset.shape = presentation.shape;
+      launcherBtn.style.setProperty(
+        "--weletic-launcher-side",
+        presentation.sideSpacing + "px",
+      );
+      launcherBtn.style.setProperty(
+        "--weletic-launcher-bottom",
+        presentation.bottomSpacing + "px",
+      );
       drawer.className =
         "weletic-drawer " +
-        (position === "bottom_left"
+        (presentation.position === "bottom_left"
           ? "weletic-pos-left"
           : "weletic-pos-right") +
         (state.isOpen ? " weletic-open" : "");
-      launcherBtn.setAttribute("aria-label", launcherText);
+      launcherBtn.setAttribute("aria-label", presentation.text);
       launcherBtn.innerHTML =
-        '<span class="weletic-launcher-icon">' +
+        '<span class="weletic-launcher-icon" aria-hidden="true">' +
         launcherIconGlyph(launcherIcon) +
         '</span><span class="weletic-launcher-text">' +
-        escapeHtml(launcherText) +
+        escapeHtml(presentation.text) +
         "</span>";
       var showLauncher =
-        (isProgramActive(programData) || isLoggedIn) &&
-        branding.enableFloatingLauncher !== false;
+        (isProgramActive(programData) || isLoggedIn) && presentation.visible;
       launcherBtn.hidden = !showLauncher;
+      if (!showLauncher) dismissNudge(false);
+      else alignNudgeWithLauncher();
       if (!showLauncher && state.isOpen) {
         toggleDrawer(false);
       }
     }
+
+    function refreshLauncherPresentation() {
+      if (lastProgramPresentationSource && !destroyed)
+        applyProgramBranding(lastProgramPresentationSource);
+    }
+    function preserveLauncherVisibilityOnFailure() {
+      if (lastProgramPresentationSource) refreshLauncherPresentation();
+      else launcherBtn.hidden = true;
+      dismissNudge(false);
+    }
+    ["resize", "popstate", "hashchange"].forEach(function (name) {
+      window.addEventListener(name, refreshLauncherPresentation);
+    });
 
     function loadProgramMetadata() {
       if (!shared) {
@@ -1109,7 +1178,7 @@
             state.programError = translate(
               "Program details are temporarily unavailable. Member rewards already issued to your account remain visible.",
             );
-            launcherBtn.hidden = !isLoggedIn;
+            preserveLauncherVisibilityOnFailure();
           }
           state.loading = false;
           state.error = null;
@@ -1140,7 +1209,7 @@
       state.programError = translate(
         "Program details are temporarily unavailable. Member rewards already issued to your account remain visible.",
       );
-      launcherBtn.hidden = !isLoggedIn;
+      preserveLauncherVisibilityOnFailure();
     });
 
     if (isLoggedIn && capturedReferralCode) {
@@ -2776,6 +2845,9 @@
     }
 
     function destroy() {
+      ["resize", "popstate", "hashchange"].forEach(function (name) {
+        window.removeEventListener(name, refreshLauncherPresentation);
+      });
       cartNudgeEvents.forEach(function (name) {
         document.removeEventListener(name, invalidateCartNudge, true);
       });

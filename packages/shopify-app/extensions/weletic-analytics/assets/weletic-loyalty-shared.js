@@ -104,6 +104,109 @@
       });
   }
 
+  // Optional presentation preserves legacy stores. Invalid policies fail closed.
+  // Bounds and URL matching are Weletic rules, not inferred Smile behavior.
+  function resolveLauncherPresentation(branding, context) {
+    var result = {
+      text: branding.launcherText || context.defaultText,
+      position: branding.launcherPosition || context.defaultPosition,
+      layout: "icon_text",
+      shape: "circular",
+      sideSpacing: 24,
+      bottomSpacing: 24,
+      visible: branding.enableFloatingLauncher !== false,
+    };
+    var policy = branding.launcherPresentation;
+    if (policy === undefined) return result;
+    function exactKeys(value, keys) {
+      return (
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        Object.keys(value).length === keys.length &&
+        keys.every(function (key) {
+          return Object.prototype.hasOwnProperty.call(value, key);
+        })
+      );
+    }
+    function validDevice(device) {
+      return (
+        exactKeys(device, [
+          "text",
+          "position",
+          "layout",
+          "sideSpacing",
+          "bottomSpacing",
+        ]) &&
+        (device.text === null ||
+          (typeof device.text === "string" &&
+            device.text.trim().length > 0 &&
+            device.text.trim().length <= 40 &&
+            !/[\u0000-\u001f\u007f]/.test(device.text.trim()))) &&
+        [null, "bottom_left", "bottom_right"].includes(device.position) &&
+        ["icon_text", "text_icon", "icon_only", "text_only"].includes(
+          device.layout,
+        ) &&
+        [device.sideSpacing, device.bottomSpacing].every(function (value) {
+          return Number.isInteger(value) && value >= 0 && value <= 128;
+        })
+      );
+    }
+    if (
+      !exactKeys(policy, [
+        "desktop",
+        "mobile",
+        "shape",
+        "visibility",
+        "hideOnHomepage",
+        "excludedUrlContains",
+      ]) ||
+      !validDevice(policy.desktop) ||
+      !validDevice(policy.mobile) ||
+      !["square", "shaved", "rounded", "circular"].includes(policy.shape) ||
+      !["all", "desktop_only", "hidden"].includes(policy.visibility) ||
+      typeof policy.hideOnHomepage !== "boolean" ||
+      !Array.isArray(policy.excludedUrlContains) ||
+      policy.excludedUrlContains.length > 20 ||
+      !policy.excludedUrlContains.every(function (value) {
+        return (
+          typeof value === "string" &&
+          value.trim().length > 0 &&
+          value.trim().length <= 256 &&
+          !/[\u0000-\u001f\u007f]/.test(value.trim())
+        );
+      }) ||
+      new Set(
+        policy.excludedUrlContains.map(function (value) {
+          return value.trim();
+        }),
+      ).size !== policy.excludedUrlContains.length
+    ) {
+      result.visible = false;
+      return result;
+    }
+    var mobile = context.width <= 767;
+    var device = mobile ? policy.mobile : policy.desktop;
+    result.text = device.text === null ? result.text : device.text.trim();
+    result.position =
+      device.position === null ? result.position : device.position;
+    result.layout = device.layout;
+    result.shape = policy.shape;
+    result.sideSpacing = device.sideSpacing;
+    result.bottomSpacing = device.bottomSpacing;
+    var path = String(context.pathname || "/").replace(/\/+$/, "") || "/";
+    var root = String(context.rootPath || "/").replace(/\/+$/, "") || "/";
+    result.visible =
+      result.visible &&
+      policy.visibility !== "hidden" &&
+      !(mobile && policy.visibility === "desktop_only") &&
+      !(policy.hideOnHomepage && (path === "/" || path === root)) &&
+      !policy.excludedUrlContains.some(function (part) {
+        return String(context.url || "").includes(part.trim());
+      });
+    return result;
+  }
+
   function normalizeProgram(payload) {
     var program = unwrapPayload(payload);
     if (!program || typeof program !== "object") {
@@ -983,6 +1086,7 @@
     minIntegerValue: minIntegerValue,
     normalizeCustomer: normalizeCustomer,
     normalizeProgram: normalizeProgram,
+    resolveLauncherPresentation: resolveLauncherPresentation,
     rewardTypeLabel: rewardTypeLabel,
     unwrapPayload: unwrapPayload,
   });

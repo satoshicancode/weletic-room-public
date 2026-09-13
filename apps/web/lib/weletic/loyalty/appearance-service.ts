@@ -104,6 +104,8 @@ export async function saveLoyaltyAppearanceInTransaction({
   const { metadata, sequence } = readMetadata(program.metadata);
   if (
     data.expectedRevision !== current.revision ||
+    (current.branding.launcherPresentation !== undefined &&
+      data.branding.launcherPresentation === undefined) ||
     sequence === Number.MAX_SAFE_INTEGER
   )
     throw new LoyaltyAppearanceConflictError();
