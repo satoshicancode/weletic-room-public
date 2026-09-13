@@ -39,7 +39,8 @@ code integration, and all original requirements below remain in scope.
 
 ## Current public integration — September 13, 2026
 
-Verified through public main `322c41d44c19689be370041a054a19095e518f9a`.
+Latest integration update verified against public main
+`2403dd4718e8e23cbd6c4cf6bb9a3cd492e4ce7d`.
 The dated snapshots below preserve earlier evidence; their draft/publication
 wording must not be used as current PR status. No live checkbox is changed.
 
@@ -66,6 +67,19 @@ wording must not be used as current PR status. No live checkbox is changed.
   the [later 50,000-row failure](import-failure-evidence-2026-09-13.md): 8,100
   confirmed commits followed by a failed worker delivery. Its cause is unknown;
   diagnostic/500-row success does not establish full-scale acceptance.
+- [PR #43](https://github.com/satoshicancode/weletic-room-public/pull/43) merged
+  bounded import diagnostics as `91d88e2e78052e2e5968dd579cfe86276f5c600e`.
+  Passing bounded probes does not close the full 50,000-row lifecycle gate.
+- [PR #44](https://github.com/satoshicancode/weletic-room-public/pull/44) merged
+  undefined monetary cohort-comparison handling as
+  `908a627cd734b0c9d219fa3af637f114505b323f`. Signed cohort exposure, membership
+  semantics and independent SQL acceptance remain open; see A07 in the
+  [report coverage](analytics-report-coverage.md).
+- [PR #45](https://github.com/satoshicancode/weletic-room-public/pull/45) merged
+  [responsive launcher controls](launcher-controls-2026-09-13.md) as
+  `2403dd4718e8e23cbd6c4cf6bb9a3cd492e4ce7d`. Both exact-head pre-merge CI runs
+  passed all jobs. Panel customization, artwork and named live evidence remain
+  open. No deployment, schema application or live activation is implied.
 
 ## Historical public implementation checkpoints — not live acceptance
 
@@ -155,7 +169,7 @@ proof only.
 
 ## B — Merchant control plane and immutable contracts
 
-September 13 [launcher controls draft](launcher-controls-2026-09-13.md) adds
+September 13 [merged launcher controls](launcher-controls-2026-09-13.md) add
 per-device appearance and visibility through the existing fenced gateway. Local
 browser/test evidence does not promote B/E checkboxes or establish deployment.
 
