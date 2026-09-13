@@ -61,3 +61,8 @@ do not substitute for full-scale or live acceptance.
 After bounded verification, use the diagnostic evidence to design a controlled
 reproduction. Do not simply rerun 50,000 rows or relax the zero-failure/financial
 assertions. The full-scale requirement remains open under L12.
+
+The [controlled reproduction record](./import-controlled-reproduction-2026-09-13.md)
+now contains bounded transaction-error and populated-journal evidence. Both
+probes passed without reproducing this historical failure. The full-scale
+requirement remains open; these results do not approve a full-scale rerun.

@@ -261,7 +261,8 @@ beforeAll(async () => {
     process.env.HISTORICAL_IMPORT_SOURCE_DATABASE_INTEGRATION !== "1" ||
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
-    (process.env.HISTORICAL_IMPORT_FULL_LIFECYCLE_INTEGRATION === "1" &&
+    ((process.env.HISTORICAL_IMPORT_FULL_LIFECYCLE_INTEGRATION === "1" ||
+      process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE === "1") &&
       (url.port !== "3308" ||
         process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE !== "1" ||
         fixtureDatabase === undefined)) ||
@@ -357,6 +358,7 @@ afterAll(
     // 50,000-row profile. Application transaction and delivery deadlines are unchanged.
   },
   process.env.HISTORICAL_IMPORT_POPULATED_ROLLBACK_PROFILE === "1" ||
+    process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE === "1" ||
     process.env.HISTORICAL_IMPORT_FULL_LIFECYCLE_INTEGRATION === "1"
     ? 300_000
     : 120_000,
@@ -544,6 +546,83 @@ async function seedExecutableRow(
   );
   return { ...fixture, shopper, lease: claimed.lease };
 }
+
+it.each([false, true])(
+  "preserves a real transaction failure after its deadline when diagnostic reporting throws: %s",
+  async (reporterThrows) => {
+    const fixture = await seedExecutableRow();
+    const { importStageEvidence, observeImportStage } = await import(
+      "./helpers/import-stage-evidence"
+    );
+    let original: unknown;
+    let changedInsideTransaction = false;
+    const run = vi.fn(async () => {
+      try {
+        return await database.$transaction(
+          async (tx) => {
+            await tx.weleticLoyaltyImportRowSnapshot.update({
+              where: { id: fixture.snapshot.id },
+              data: { openingBalance: { increment: 1 } },
+            });
+            changedInsideTransaction = true;
+            // Test-only deadline. Never alter an import runtime timeout.
+            await new Promise((resolve) => setTimeout(resolve, 1_200));
+            await tx.$queryRaw`SELECT 1`;
+          },
+          { ...options, timeout: 1_000 },
+        );
+      } catch (error) {
+        original = error;
+        throw error;
+      }
+    });
+    const report = vi.fn(() => {
+      if (reporterThrows) throw new Error("Synthetic reporter failure");
+    });
+    let observed: unknown;
+    try {
+      await observeImportStage("commit_batch", run, report);
+      throw new Error("Expected the isolated transaction to expire");
+    } catch (error) {
+      observed = error;
+    }
+    expect(changedInsideTransaction).toBe(true);
+    expect(original).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    // Observed with this pinned client; P2028 is a transaction-API category,
+    // not by itself proof of timeout as the cause of a historical failure.
+    expect(importStageEvidence("commit_batch", original).prismaCode).toBe(
+      "P2028",
+    );
+    expect(observed).toBe(original);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      importStageEvidence("commit_batch", original),
+    );
+    expect(
+      await database.weleticLoyaltyImportRowSnapshot.findUniqueOrThrow({
+        where: { id: fixture.snapshot.id },
+      }),
+    ).toEqual(fixture.snapshot);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: fixture.source.storeId },
+      }),
+    ).toBe(0);
+    expect(
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: fixture.source.id },
+      }),
+    ).toBe(0);
+    console.log(
+      JSON.stringify({
+        event: "isolated_induced_transaction_failure",
+        reporterThrows,
+        ...importStageEvidence("commit_batch", original),
+      }),
+    );
+  },
+  15_000,
+);
 
 it("records a real expired import lease failure without changing accounting", async () => {
   const fixture = await seedExecutableRow();
@@ -1653,6 +1732,203 @@ it.skipIf(process.env.HISTORICAL_IMPORT_MAX_SOURCE_WORKER_INTEGRATION !== "1")(
   },
   180_000,
 );
+it.skipIf(process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1")(
+  "profiles two real commit deliveries against an explicitly synthetic journal prefix",
+  async () => {
+    // Execute each prefix in its own runner invocation. afterAll plus the
+    // runner's independent empty-table proof must finish before the other case.
+    const configuredPrefix = process.env.HISTORICAL_IMPORT_PROFILE_PREFIX_ROWS;
+    expect(["0", "8100"]).toContain(configuredPrefix);
+    const prefix = Number(configuredPrefix);
+    const fixture = await queuedWorkerFixture(50_000);
+    const { source } = fixture;
+    const amount = BigInt("9007199254740993");
+    // No runtime row executions during setup: all prefix records are synthetic.
+    for (let offset = 0; offset < prefix; offset += 250) {
+      const rows = Array.from(
+        { length: Math.min(250, prefix - offset) },
+        (_, index) => {
+          const number = offset + index + 1;
+          return {
+            snapshotId:
+              number === 1
+                ? fixture.snapshot.id
+                : `snapshot-${number}-${source.storeId}`,
+            shopperId:
+              number === 1
+                ? `shopper-${source.storeId}`
+                : `shopper-${number}-${source.storeId}`,
+            accountId: `synthetic-account-${number}-${source.storeId}`,
+            ledgerId: `synthetic-ledger-${number}-${source.storeId}`,
+          };
+        },
+      );
+      await database.weleticLoyaltyAccount.createMany({
+        data: rows.map((row) => ({
+          id: row.accountId,
+          storeId: source.storeId,
+          programId: source.programId,
+          shopperId: row.shopperId,
+          ledgerVersion: 1,
+          cachedPointsBalance: amount,
+        })),
+      });
+      await database.weleticPointsLedgerEntry.createMany({
+        data: rows.map((row) => ({
+          id: row.ledgerId,
+          storeId: source.storeId,
+          accountId: row.accountId,
+          sequenceNumber: 1,
+          entryType: "MANUAL_ADJUSTMENT",
+          pointsDelta: amount,
+          balanceAfter: amount,
+          referenceType: "LOYALTY_IMPORT_OPENING_BALANCE",
+          referenceId: row.snapshotId,
+          idempotencyKey: `loyalty_import_opening:${source.id}:${row.snapshotId}`,
+          metadata: {
+            sourceId: source.id,
+            snapshotId: row.snapshotId,
+            normalizedSha256: source.normalizedSha256,
+          },
+        })),
+      });
+      await database.weleticLoyaltyImportRowExecution.createMany({
+        data: rows.map((row) => {
+          const fields = historicalImportFieldStateSchema.parse({
+            version: 1,
+            storeId: source.storeId,
+            programId: source.programId,
+            accountId: row.accountId,
+            birthday: { present: false },
+            currentTierId: null,
+            tierExpiresAt: null,
+            lastQualifyingActivityAt: null,
+            nextExpiryDate: null,
+            pointsExpiryPolicyVersion: 0,
+            pointsExpiryJobsScheduledAt: null,
+          });
+          return {
+            id: `synthetic-execution-${row.accountId}`,
+            sourceId: source.id,
+            snapshotId: row.snapshotId,
+            storeId: source.storeId,
+            programId: source.programId,
+            accountId: row.accountId,
+            status: "committed",
+            ledgerEntryId: row.ledgerId,
+            ledgerVersionBefore: 0,
+            ledgerVersionAfter: 1,
+            fieldStateBefore: fields,
+            fieldStateAfter: fields,
+            committedAt: new Date(),
+          };
+        }),
+      });
+    }
+    const reconcile = async (committed: number) => {
+      const proof = await database.$transaction(
+        (tx) =>
+          readHistoricalImportExecutionProofInTransaction({
+            tx,
+            sourceId: source.id,
+            storeId: source.storeId,
+            programId: source.programId,
+          }),
+        { ...options, timeout: HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS },
+      );
+      expect(proof.summary).toMatchObject({
+        rowCount: 50_000,
+        reconciled: true,
+        fullyCommitted: false,
+        observedNetPoints: (BigInt(committed) * amount).toString(),
+      });
+      const where = { storeId: source.storeId };
+      expect(await database.weleticPointsLedgerEntry.count({ where })).toBe(
+        committed,
+      );
+      const accounts = await database.weleticLoyaltyAccount.findMany({ where });
+      expect(accounts).toHaveLength(committed);
+      for (const account of accounts) {
+        expect(account).toMatchObject({
+          programId: source.programId,
+          cachedPointsBalance: amount,
+          cachedPendingPoints: BigInt(0),
+          ledgerVersion: 1,
+          lifetimePointsEarned: BigInt(0),
+          lifetimePointsRedeemed: BigInt(0),
+        });
+      }
+    };
+    await reconcile(prefix);
+    stageDiagnostics.active = true;
+    await releaseFixtureJobToRealWorker(fixture.job.id);
+    let committed = prefix;
+    for (let delivery = 1; delivery <= 2; delivery++) {
+      const started = performance.now();
+      const result = await processOutboxJobsBatch({
+        storeId: source.storeId,
+        jobIds: [fixture.job.id],
+        workerId: "isolated-populated-commit-profile",
+      });
+      const elapsedMs = Math.round(performance.now() - started);
+      if (result.failed || result.deadLettered) {
+        console.log(
+          JSON.stringify({
+            event: "isolated_populated_commit_failure",
+            prefix,
+            delivery,
+            elapsedMs,
+            evidence: await readImportPollEvidence({
+              storeId: source.storeId,
+              sourceId: source.id,
+              jobId: fixture.job.id,
+              terminal: "committed",
+            }),
+          }),
+        );
+      }
+      expect(result).toMatchObject({
+        processed: 1,
+        failed: 0,
+        deadLettered: 0,
+        succeeded: 0,
+      });
+      const next = await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: source.id, status: "committed" },
+      });
+      expect(next - committed).toBeGreaterThan(0);
+      expect(next - committed).toBeLessThanOrEqual(50);
+      await reconcile(next);
+      expect(
+        await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+          where: { id: fixture.job.id },
+        }),
+      ).toMatchObject({
+        status: "pending",
+        attempts: 0,
+        lockedAt: null,
+        lockedBy: null,
+      });
+      expect(
+        await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+          where: { id: source.id },
+        }),
+      ).toMatchObject({ status: "committing" });
+      console.log(
+        JSON.stringify({
+          event: "isolated_populated_commit_delivery",
+          syntheticPrefix: prefix,
+          delivery,
+          realCommittedDelta: next - committed,
+          elapsedMs,
+        }),
+      );
+      committed = next;
+    }
+  },
+  240_000,
+);
+
 it.skipIf(process.env.HISTORICAL_IMPORT_POPULATED_ROLLBACK_PROFILE !== "1")(
   "profiles a bounded real rollback delivery against a synthetic 50,000-row committed fixture",
   async () => {
