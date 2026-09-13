@@ -186,7 +186,10 @@ const queryProfile = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/prisma", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/prisma")>();
-  if (process.env.HISTORICAL_IMPORT_POPULATED_ROLLBACK_PROFILE !== "1")
+  if (
+    process.env.HISTORICAL_IMPORT_POPULATED_ROLLBACK_PROFILE !== "1" &&
+    process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1"
+  )
     return actual;
   return {
     ...actual,
@@ -1864,12 +1867,44 @@ it.skipIf(process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1")(
     await releaseFixtureJobToRealWorker(fixture.job.id);
     let committed = prefix;
     for (let delivery = 1; delivery <= 2; delivery++) {
+      // Only measure the real delivery: exclude synthetic setup, independent
+      // reconciliation and cleanup. Never log query arguments or result rows.
+      // $allModels excludes raw SQL/lock calls. These aggregate model timings
+      // are partial evidence, not a complete SQL profile or root-cause proof.
+      queryProfile.timings.clear();
+      queryProfile.active = true;
       const started = performance.now();
-      const result = await processOutboxJobsBatch({
-        storeId: source.storeId,
-        jobIds: [fixture.job.id],
-        workerId: "isolated-populated-commit-profile",
-      });
+      const result = await (async () => {
+        try {
+          return await processOutboxJobsBatch({
+            storeId: source.storeId,
+            jobIds: [fixture.job.id],
+            workerId: "isolated-populated-commit-profile",
+          });
+        } finally {
+          queryProfile.active = false;
+          try {
+            console.log(
+              JSON.stringify({
+                event: "isolated_populated_commit_query_timings",
+                syntheticPrefix: prefix,
+                delivery,
+                operations: [...queryProfile.timings].map(
+                  ([operation, value]) => ({
+                    operation,
+                    count: value.count,
+                    ms: Math.round(value.ms),
+                  }),
+                ),
+              }),
+            );
+          } catch {
+            // Diagnostic output must not replace the worker's result/error.
+          } finally {
+            queryProfile.timings.clear();
+          }
+        }
+      })();
       const elapsedMs = Math.round(performance.now() - started);
       if (result.failed || result.deadLettered) {
         console.log(

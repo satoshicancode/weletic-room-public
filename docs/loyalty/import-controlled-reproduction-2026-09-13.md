@@ -174,6 +174,50 @@ unexplained; a complete lifecycle rerun is not implicitly approved by this resul
 
 ## Local verification
 
+### September 13 model-operation timing follow-up
+
+The existing test-only Prisma model-operation hook now also covers the bounded
+commit probe. Timing is active only around each real worker delivery, excluding
+synthetic setup, independent reconciliation and cleanup. Output contains static
+model/operation labels, counts and durations, not query arguments or results.
+Raw SQL and lock calls are **not measured** by this hook; delivery duration also
+includes instrumentation overhead. These are partial timings, not SQL plans or
+a diagnosis of the original failure.
+
+Two sequential invocations used MySQL 8.0.46, base commit
+`2403dd4718e8e23cbd6c4cf6bb9a3cd492e4ce7d` and test blob
+`a6679f8ddf06062fdf6d5b1223eceb07fc22f4c4`. Local typechecking and lint had
+finished before measurement. Each selected test passed with 56 unrelated cases
+skipped (77.98 seconds for prefix 0; 111.10 seconds for prefix 8,100).
+
+| Synthetic prefix | Delivery 1 | Delivery 2 | New real commits |
+| ---------------- | ---------- | ---------- | ---------------- |
+| 0                | 7,959 ms   | 7,047 ms   | 50 + 50          |
+| 8,100            | 10,592 ms  | 9,915 ms   | 50 + 50          |
+
+For delivery 2, account evidence reads increased from 1 call/6 ms to 9 calls/
+644 ms; ledger `findMany` used 51 calls in both cases (653 versus 1,272 ms).
+The 50 ledger `findFirst` calls also increased from 97 to 1,274 ms. Thus the
+observed difference is not confined to source-wide reconciliation. Inspect the
+specific ledger lookup and discovery query plans next; do not infer missing
+indexes, timeout causality or a production fix from these single samples.
+
+Both runs retained the original accounting and zero-failure assertions. Temporary
+fixture grants were revoked, and independent SQL verified all 157 fixture tables
+empty after each run, before starting the next. No full-scale lifecycle rerun,
+schema change, production write or runtime policy change occurred. L12 stays open.
+
+Focused lint, formatting and web typechecking passed. The first typecheck failed
+because package dependency links were missing in the new checkout; the corrected
+run passed after restoring those ignored links. Independent review found no
+blocker and confirmed the raw-SQL coverage limitation. Full repository lint
+passed all 10 tasks. The full web unit suite passed: 503 files, 8,159 tests passed
+and 6 skipped (664.82 seconds). This default suite excludes the isolated database
+file; the two bounded invocations above provide that execution evidence.
+Publication remains pending; none of these results closes L12.
+
+### Original bounded probe verification
+
 The full web unit suite passed: 500 files, 8,095 tests passed and 6 skipped
 (629.61 seconds). This default suite excludes the isolated integration file;
 the database evidence above comes from separate opt-in executions. Web typecheck
