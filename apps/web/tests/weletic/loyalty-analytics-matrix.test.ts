@@ -794,6 +794,75 @@ describe("Loyalty Analytics & Financial Liability Engine — Deterministic Matri
       expect(lift.aovLiftPercentage).toBe(-50);
     });
 
+    it.each([
+      ["both cohorts empty", []],
+      [
+        "comparison cohort empty",
+        [{ shopperId: "member", totalMinorUnits: BigInt(100) }],
+      ],
+      [
+        "member cohort empty",
+        [{ shopperId: "guest", totalMinorUnits: BigInt(100) }],
+      ],
+      [
+        "comparison spend zero",
+        [
+          { shopperId: "member", totalMinorUnits: BigInt(100) },
+          { shopperId: "guest", totalMinorUnits: BigInt(0) },
+        ],
+      ],
+      [
+        "both observed spends zero",
+        [
+          { shopperId: "member", totalMinorUnits: BigInt(0) },
+          { shopperId: "guest", totalMinorUnits: BigInt(0) },
+        ],
+      ],
+      [
+        "comparison spend negative",
+        [
+          { shopperId: "member", totalMinorUnits: BigInt(100) },
+          { shopperId: "guest", totalMinorUnits: BigInt(-100) },
+        ],
+      ],
+    ])("returns undefined monetary lift as null: %s", (_name, orders) => {
+      const result = calculateCohortMetricsPure(
+        orders,
+        new Set(["member"]),
+        "USD",
+      );
+      expect(result.lift.aovLiftPercentage).toBeNull();
+      expect(result.lift.ltvLiftPercentage).toBeNull();
+    });
+
+    it("distinguishes observed zero member spend from an empty member cohort", () => {
+      const result = calculateCohortMetricsPure(
+        [
+          { shopperId: "member", totalMinorUnits: BigInt(0) },
+          { shopperId: "guest", totalMinorUnits: BigInt(100) },
+        ],
+        new Set(["member"]),
+        "USD",
+      );
+      expect(result.lift.aovLiftPercentage).toBe(-100);
+      expect(result.lift.ltvLiftPercentage).toBe(-100);
+    });
+
+    it("exports undefined monetary lift as null in JSON and blank CSV cells", async () => {
+      const params = { storeId, callerRole: "owner" as const, currency: "USD" };
+      const json = await exportLoyaltyMetricsJson(params);
+      expect(json.cohortAttribution?.lift.aovLiftPercentage).toBeNull();
+      expect(json.cohortAttribution?.lift.ltvLiftPercentage).toBeNull();
+      const csv = await exportLoyaltyMetricsCsv(params);
+      const row = csv
+        .split(/\r?\n/)
+        .find((line) => line.startsWith("Cohort Lift,"));
+      expect(row).toBeDefined();
+      expect(row?.split(",")[5]).toBe("");
+      expect(row?.split(",")[8]).toBe("");
+      expect(csv).not.toContain("null%");
+    });
+
     it("evaluates calculateMemberCohortAttribution with database queries", async () => {
       vi.mocked(prisma.weleticLoyaltyAccount.findMany).mockResolvedValueOnce([
         { shopperId: "sh_mem_1" },

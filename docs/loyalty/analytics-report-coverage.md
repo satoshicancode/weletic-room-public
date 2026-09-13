@@ -191,6 +191,16 @@ orders, mixed currencies, zero baseline and amounts above Number precision.
 Done: approved/labeled definitions, exact SQL comparison and shared signed
 UI/export contracts. The current helper is a starting point, not acceptance.
 
+September 13 calculation correction: monetary relative comparisons now return
+`null` when either cohort has no observations or the comparison cohort has
+nonpositive spend. An observed zero-spend member cohort against a positive
+comparison remains -100%, not unavailable. JSON preserves null and CSV leaves
+the monetary lift cells blank instead of emitting `null%`. The existing API
+types and dashboard already support unavailable monetary lift. Focused tests
+cover empty/zero/negative baselines and exact fractional-average comparisons.
+This corrects one prerequisite; it does not close A07 or validate membership,
+anonymous identity, refunds, causal lift, or named-store SQL acceptance.
+
 ### A08 — Financial and reward-usage reconciliation
 
 Scope: S05/S18/S35/S36. Preserve rational point valuation and exact accounting
