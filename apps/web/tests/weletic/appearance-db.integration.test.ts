@@ -6,6 +6,10 @@ import {
 } from "@/lib/weletic/loyalty/appearance-service";
 import { DEFAULT_LOYALTY_BRANDING } from "@/lib/weletic/loyalty/branding";
 import {
+  getDefaultLauncherPresentation,
+  type LoyaltyLauncherPresentation,
+} from "@/lib/weletic/loyalty/launcher-presentation";
+import {
   assertShopifyStoreAcceptsOperationalWrites,
   ShopifyStoreOperationalWritesBlockedError,
 } from "@/lib/weletic/shopify/store-compliance-state";
@@ -48,33 +52,39 @@ beforeAll(async () => {
   );
 });
 afterAll(async () => {
-  if (verified && fixtures.length) {
-    await prisma.weleticLoyaltyProgram.deleteMany({
-      where: { storeId: { in: fixtures } },
-    });
-    await prisma.weleticShopifyStore.deleteMany({
-      where: { id: { in: fixtures } },
-    });
-    expect(
-      await prisma.programEnrollment.count({
-        where: { programId: { in: fixtures } },
-      }),
-    ).toBe(0);
-    // Exact fixture parents only; avoid the legacy relation-mode enrollment
-    // cascade, without changing shared schema or deleting unknown records.
-    await prisma.$executeRaw(
-      Prisma.sql`DELETE FROM Program WHERE id IN (${Prisma.join(fixtures)})`,
-    );
-    await prisma.$executeRaw(
-      Prisma.sql`DELETE FROM Project WHERE id IN (${Prisma.join(fixtures)})`,
-    );
-    expect(await prisma.weleticLoyaltyProgram.count()).toBe(0);
-    expect(await prisma.weleticShopifyStore.count()).toBe(0);
-    expect(await prisma.program.count()).toBe(0);
-    expect(await prisma.project.count()).toBe(0);
+  try {
+    if (verified && fixtures.length) {
+      await prisma.weleticLoyaltyProgram.deleteMany({
+        where: { storeId: { in: fixtures } },
+      });
+      // This historical fixture predates optional public-installation tables.
+      // No test creates related installation rows; avoid Prisma's newer cascade
+      // and delete only the exact store IDs created by this run.
+      await prisma.$executeRaw(
+        Prisma.sql`DELETE FROM WeleticShopifyStore WHERE id IN (${Prisma.join(fixtures)})`,
+      );
+      expect(
+        await prisma.programEnrollment.count({
+          where: { programId: { in: fixtures } },
+        }),
+      ).toBe(0);
+      // Exact fixture parents only; avoid the legacy relation-mode enrollment
+      // cascade, without changing shared schema or deleting unknown records.
+      await prisma.$executeRaw(
+        Prisma.sql`DELETE FROM Program WHERE id IN (${Prisma.join(fixtures)})`,
+      );
+      await prisma.$executeRaw(
+        Prisma.sql`DELETE FROM Project WHERE id IN (${Prisma.join(fixtures)})`,
+      );
+      expect(await prisma.weleticLoyaltyProgram.count()).toBe(0);
+      expect(await prisma.weleticShopifyStore.count()).toBe(0);
+      expect(await prisma.program.count()).toBe(0);
+      expect(await prisma.project.count()).toBe(0);
+    }
+  } finally {
+    vi.unstubAllGlobals();
+    await prisma.$disconnect();
   }
-  vi.unstubAllGlobals();
-  await prisma.$disconnect();
 });
 async function seed() {
   const id = `appearance-${randomUUID()}`;
@@ -121,7 +131,12 @@ const read = (storeId: string) =>
     (tx) => readLoyaltyAppearanceInTransaction(tx, storeId),
     options,
   );
-function save(storeId: string, revision: string, text: string) {
+function save(
+  storeId: string,
+  revision: string,
+  text: string,
+  presentation?: LoyaltyLauncherPresentation,
+) {
   return prisma.$transaction(async (tx) => {
     // Real operational store lock/generation gate; actor authentication is
     // separately covered by the signed gateway tests, not claimed here.
@@ -139,7 +154,11 @@ function save(storeId: string, revision: string, text: string) {
         operation: "save",
         expectedInstallationGeneration: "g1",
         expectedRevision: revision,
-        branding: { ...DEFAULT_LOYALTY_BRANDING, launcherText: text },
+        branding: {
+          ...DEFAULT_LOYALTY_BRANDING,
+          launcherText: text,
+          ...(presentation ? { launcherPresentation: presentation } : {}),
+        },
       },
     });
   }, options);
@@ -174,6 +193,34 @@ it("commits exactly one of two competing revisions without activating loyalty", 
   );
   expect((await read(id)).revision).not.toBe(initial.revision);
 });
+it("persists a complete launcher policy atomically and rejects stale or legacy erasure", async () => {
+  const id = await seed();
+  const initial = await read(id);
+  const presentation = getDefaultLauncherPresentation();
+  presentation.mobile.text = "特典 / Ưu đãi";
+  presentation.mobile.sideSpacing = 16;
+  presentation.excludedUrlContains = ["/checkout"];
+  const alternative = { ...presentation, visibility: "desktop_only" as const };
+  const results = await Promise.allSettled([
+    save(id, initial.revision, "One", presentation),
+    save(id, initial.revision, "Two", alternative),
+  ]);
+  expect(
+    results.filter((result) => result.status === "fulfilled"),
+  ).toHaveLength(1);
+  expect(results.filter((result) => result.status === "rejected")).toHaveLength(
+    1,
+  );
+  const saved = await read(id);
+  expect(saved.branding.launcherPresentation).toEqual(
+    saved.branding.launcherText === "One" ? presentation : alternative,
+  );
+  await expect(save(id, saved.revision, "Older editor")).rejects.toBeInstanceOf(
+    LoyaltyAppearanceConflictError,
+  );
+  expect(await read(id)).toEqual(saved);
+});
+
 it("rejects a foreign store revision without changing either program", async () => {
   const first = await seed();
   const second = await seed();

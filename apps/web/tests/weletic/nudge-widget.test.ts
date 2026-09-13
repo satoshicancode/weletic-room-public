@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { getDefaultLauncherPresentation } from "../../lib/weletic/loyalty/launcher-presentation";
 import { defaultLoyaltyNudgeSettings } from "../../lib/weletic/loyalty/nudge-contract";
 const assets = path.resolve(
   __dirname,
@@ -52,6 +53,9 @@ async function mount({
   locale = "en",
   enabled = true,
   visible = true,
+  launcherPresentation = undefined as
+    | ReturnType<typeof getDefaultLauncherPresentation>
+    | undefined,
   loggedIn = false,
   authAttribute = "default" as string | null,
   cartNudge = false,
@@ -201,7 +205,7 @@ async function mount({
         JSON.stringify({
           data: {
             program: { isActive: true },
-            branding: { enableFloatingLauncher: visible },
+            branding: { enableFloatingLauncher: visible, launcherPresentation },
             nudges: settings,
             earningRules: [],
             rewards: [],
@@ -495,6 +499,41 @@ it.each(["en", "ja", "vi"] as const)(
     ).toBe(true);
   },
 );
+it("suppresses a configured nudge when the viewport has insufficient space above its launcher", async () => {
+  vi.stubGlobal("innerHeight", 160);
+  const presentation = getDefaultLauncherPresentation();
+  presentation.mobile.bottomSpacing = 128;
+  presentation.desktop.bottomSpacing = 128;
+  await mount({ launcherPresentation: presentation });
+  expect(document.querySelector(".weletic-nudge")).toBeNull();
+});
+
+it("dismisses an existing signup nudge when responsive launcher visibility changes", async () => {
+  vi.stubGlobal("innerWidth", 1024);
+  await mount({
+    launcherPresentation: {
+      ...getDefaultLauncherPresentation(),
+      visibility: "desktop_only",
+    },
+  });
+  expect(document.querySelector(".weletic-nudge")).not.toBeNull();
+  vi.stubGlobal("innerWidth", 375);
+  window.dispatchEvent(new Event("resize"));
+  expect(document.querySelector(".weletic-nudge")).toBeNull();
+});
+it("aligns an existing nudge with mobile launcher overrides", async () => {
+  vi.stubGlobal("innerWidth", 1024);
+  const presentation = getDefaultLauncherPresentation();
+  presentation.mobile.position = "bottom_left";
+  presentation.mobile.sideSpacing = 20;
+  await mount({ launcherPresentation: presentation });
+  vi.stubGlobal("innerWidth", 375);
+  window.dispatchEvent(new Event("resize"));
+  const nudge = document.querySelector<HTMLElement>(".weletic-nudge")!;
+  expect(nudge.classList.contains("weletic-pos-left")).toBe(true);
+  expect(nudge.style.left).toBe("20px");
+});
+
 it("dismisses with Escape, returns focus, and does not redisplay on another page", async () => {
   await mount();
   const close = document.querySelectorAll<HTMLButtonElement>(

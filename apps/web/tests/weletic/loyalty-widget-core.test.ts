@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 
+import { getDefaultLauncherPresentation } from "@/lib/weletic/loyalty/launcher-presentation";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -48,9 +49,11 @@ function response(data: unknown, status = 200) {
 async function mount(
   options: {
     locale?: string;
+    branding?: Record<string, unknown>;
     balance?: string;
     guest?: boolean;
     initialStatus?: number;
+    programStatus?: number;
     activity?: boolean;
     redeem?: (
       body: Record<string, unknown>,
@@ -123,6 +126,8 @@ async function mount(
           : [],
       });
     }
+    if (options.programStatus)
+      return response({ code: "unavailable" }, options.programStatus);
     return response(
       options.activity
         ? {
@@ -135,7 +140,10 @@ async function mount(
               },
             ],
           }
-        : program,
+        : {
+            ...program,
+            branding: { ...program.branding, ...options.branding },
+          },
     );
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -171,6 +179,66 @@ afterEach(() => {
 });
 
 describe("actual loyalty drawer core journey with mocked transport", () => {
+  it("does not expose the floating launcher when initial visibility policy cannot load", async () => {
+    await mount({ programStatus: 503 });
+    expect(button(".weletic-launcher-btn").hidden).toBe(true);
+  });
+  it("applies device overrides and updates visibility on resize", async () => {
+    vi.stubGlobal("innerWidth", 375);
+    const presentation = getDefaultLauncherPresentation();
+    presentation.mobile = {
+      ...presentation.mobile,
+      text: "Quà <b>tặng</b>",
+      position: "bottom_left",
+      layout: "text_only",
+      sideSpacing: 16,
+      bottomSpacing: 20,
+    };
+    presentation.shape = "rounded";
+    await mount({ branding: { launcherPresentation: presentation } });
+    const launcher = button(".weletic-launcher-btn");
+    expect(launcher.getAttribute("aria-label")).toBe("Quà <b>tặng</b>");
+    expect(launcher.querySelector("b")).toBeNull();
+    expect(launcher.dataset.layout).toBe("text_only");
+    expect(launcher.dataset.shape).toBe("rounded");
+    expect(launcher.classList.contains("weletic-pos-left")).toBe(true);
+    expect(launcher.style.getPropertyValue("--weletic-launcher-side")).toBe(
+      "16px",
+    );
+    vi.stubGlobal("innerWidth", 1024);
+    window.dispatchEvent(new Event("resize"));
+    expect(launcher.dataset.layout).toBe("icon_text");
+    expect(launcher.style.getPropertyValue("--weletic-launcher-side")).toBe(
+      "24px",
+    );
+  });
+
+  it("hides a desktop-only launcher on mobile and removes responsive listeners on disposal", async () => {
+    vi.stubGlobal("innerWidth", 1024);
+    const remove = vi.spyOn(window, "removeEventListener");
+    await mount({
+      branding: {
+        launcherPresentation: {
+          ...getDefaultLauncherPresentation(),
+          visibility: "desktop_only",
+        },
+      },
+    });
+    const launcher = button(".weletic-launcher-btn");
+    expect(launcher.hidden).toBe(false);
+    vi.stubGlobal("innerWidth", 375);
+    window.dispatchEvent(new Event("resize"));
+    expect(launcher.hidden).toBe(true);
+    (window as any).WeleticLoyaltyWidgetRuntime.dispose();
+    for (const name of ["resize", "popstate", "hashchange"])
+      expect(remove).toHaveBeenCalledWith(name, expect.any(Function));
+  });
+
+  it("fails closed on malformed presentation", async () => {
+    await mount({ branding: { launcherPresentation: { visibility: "all" } } });
+    expect(button(".weletic-launcher-btn").hidden).toBe(true);
+  });
+
   it.each([
     [
       "en",

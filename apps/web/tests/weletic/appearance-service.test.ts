@@ -7,6 +7,7 @@ import {
   saveLoyaltyAppearanceInTransaction,
 } from "@/lib/weletic/loyalty/appearance-service";
 import { DEFAULT_LOYALTY_BRANDING } from "@/lib/weletic/loyalty/branding";
+import { getDefaultLauncherPresentation } from "@/lib/weletic/loyalty/launcher-presentation";
 import type { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -137,6 +138,18 @@ describe("loyalty appearance revision service", () => {
   it("rejects a lost compare-and-swap", async () => {
     updateMany.mockResolvedValue({ count: 0 });
     await expect(save(await request())).rejects.toThrow("changed");
+  });
+
+  it("rejects legacy replacement saves that would erase configured launcher controls", async () => {
+    findUnique.mockImplementation(async () => ({
+      ...program,
+      branding: {
+        ...program.branding,
+        launcherPresentation: getDefaultLauncherPresentation(),
+      },
+    }));
+    await expect(save(await request())).rejects.toThrow("changed");
+    expect(updateMany).not.toHaveBeenCalled();
   });
 
   it.each([null, "1", -1, 1.5])(

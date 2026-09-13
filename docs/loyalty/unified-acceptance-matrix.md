@@ -155,6 +155,10 @@ proof only.
 
 ## B — Merchant control plane and immutable contracts
 
+September 13 [launcher controls draft](launcher-controls-2026-09-13.md) adds
+per-device appearance and visibility through the existing fenced gateway. Local
+browser/test evidence does not promote B/E checkboxes or establish deployment.
+
 September 10 local [appearance editor checkpoint](merchant-appearance-editor-2026-09-10.md)
 adds the existing nine branding fields through a signed revision-fenced gateway.
 Its synthetic browser and contract evidence does not close B1/B4 or live shopper

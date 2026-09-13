@@ -1136,10 +1136,12 @@ describe("Shopify Basic loyalty theme assets", () => {
         "1,250",
       );
       expect(document.querySelector("[data-redeem-id]")).toBeNull();
+      // Keep already-open wallet/landing content, but do not reveal a floating
+      // launcher whose initial visibility policy could not be loaded.
       expect(
         document.querySelector<HTMLButtonElement>(".weletic-launcher-btn")
           ?.hidden,
-      ).toBe(false);
+      ).toBe(true);
     });
   });
 

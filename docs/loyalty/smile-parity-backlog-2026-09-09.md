@@ -198,6 +198,10 @@ No task below silently authorizes an external gate or a new product policy.
 
 ### L07 — Merchant appearance controls
 
+- **September 13 draft:** [launcher controls checkpoint](launcher-controls-2026-09-13.md)
+  connects optional per-device settings and visibility to the shared editor and
+  widget. Local tests are not publication or named live acceptance; panel and
+  artwork gaps below remain open.
 - **Scope/reference:** R2 plus September 8 Appearance; field-level missing surface:
   desktop/mobile copy/layout/position/spacing/visibility; homepage/URL exclusions;
   shape/icon; panel visitor/member copy, section order/default view; color roles,

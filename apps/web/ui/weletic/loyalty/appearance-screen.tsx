@@ -12,6 +12,7 @@ import {
   type LoyaltyBranding,
 } from "../../../lib/weletic/loyalty/branding";
 import { appearanceCopy } from "./appearance-copy";
+import { LauncherPresentationFields } from "./launcher-presentation-fields";
 
 type Locale = keyof typeof appearanceCopy;
 export function LoyaltyAppearanceScreen({
@@ -238,6 +239,11 @@ export function LoyaltyAppearanceScreen({
                 />
                 {copy.enableFloatingLauncher}
               </label>
+              <LauncherPresentationFields
+                value={draft.launcherPresentation}
+                locale={locale}
+                onChange={(value) => change("launcherPresentation", value)}
+              />
             </>
           )}
           <button type="submit" disabled={!dirty}>

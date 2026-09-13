@@ -1,3 +1,9 @@
+import {
+  getDefaultLauncherPresentation,
+  loyaltyLauncherPresentationSchema,
+  type LoyaltyLauncherPresentation,
+} from "./launcher-presentation";
+
 export const LOYALTY_LAUNCHER_POSITIONS = [
   "bottom_right",
   "bottom_left",
@@ -25,6 +31,7 @@ export interface LoyaltyBranding {
   panelWelcomeSubtitle: string;
   heroImageUrl: string | null;
   enableFloatingLauncher: boolean;
+  launcherPresentation?: LoyaltyLauncherPresentation;
 }
 
 export type LoyaltyBrandingInput = Partial<LoyaltyBranding>;
@@ -63,6 +70,7 @@ const BRANDING_KEYS = [
   "panelWelcomeSubtitle",
   "heroImageUrl",
   "enableFloatingLauncher",
+  "launcherPresentation",
 ] as const satisfies readonly (keyof LoyaltyBranding)[];
 
 const BRANDING_KEY_SET = new Set<string>(BRANDING_KEYS);
@@ -241,6 +249,15 @@ export function parseLoyaltyBrandingInput(
     branding.enableFloatingLauncher = value.enableFloatingLauncher;
   }
 
+  if (Object.hasOwn(value, "launcherPresentation")) {
+    const parsed = loyaltyLauncherPresentationSchema.safeParse(
+      value.launcherPresentation,
+    );
+    if (!parsed.success)
+      throw new InvalidLoyaltyBrandingError("Invalid launcher presentation.");
+    branding.launcherPresentation = parsed.data;
+  }
+
   return branding;
 }
 
@@ -260,6 +277,14 @@ export function normalizeStoredLoyaltyBranding(
       );
     } catch (error) {
       if (!(error instanceof InvalidLoyaltyBrandingError)) throw error;
+      // A malformed saved visibility policy must not silently reveal a launcher
+      // the merchant intended to hide. The editor can repair this safe projection.
+      if (key === "launcherPresentation") {
+        normalized.launcherPresentation = {
+          ...getDefaultLauncherPresentation(),
+          visibility: "hidden",
+        };
+      }
     }
   }
   return normalized;

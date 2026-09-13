@@ -4,6 +4,7 @@ import {
   LOYALTY_LAUNCHER_POSITIONS,
   parseLoyaltyBrandingInput,
 } from "./branding";
+import { loyaltyLauncherPresentationSchema } from "./launcher-presentation";
 
 const text = (maximum: number) =>
   z
@@ -17,7 +18,7 @@ const color = z
   .regex(/^#[0-9a-fA-F]{6}$/)
   .transform((value) => value.toLowerCase());
 
-// Full replacement of the existing nine-field projection. Never accept store,
+// Full replacement of the branding projection. Never accept store,
 // program, ownership, HTML, or arbitrary metadata from an appearance editor.
 export const loyaltyAppearanceBrandingSchema = z
   .object({
@@ -30,6 +31,7 @@ export const loyaltyAppearanceBrandingSchema = z
     panelWelcomeSubtitle: text(300),
     heroImageUrl: z.string().trim().max(2048).nullable(),
     enableFloatingLauncher: z.boolean(),
+    launcherPresentation: loyaltyLauncherPresentationSchema.optional(),
   })
   .strict()
   .superRefine((branding, context) => {
@@ -60,6 +62,7 @@ const storedBrandingSchema = z
     panelWelcomeSubtitle: z.string().max(300),
     heroImageUrl: z.string().max(2048).nullable(),
     enableFloatingLauncher: z.boolean(),
+    launcherPresentation: loyaltyLauncherPresentationSchema.optional(),
   })
   .strict()
   .superRefine((branding, context) => {
