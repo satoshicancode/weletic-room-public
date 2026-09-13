@@ -46,6 +46,7 @@ export const publicExtensionFiles = Object.freeze({
     manifest,
     "manifest.json",
     "src/CustomerAccountLoyalty.tsx",
+    "src/localization.ts",
     ...locales.map((name) => `locales/${name}`),
   ],
   "weletic-customer-account-blocks": [

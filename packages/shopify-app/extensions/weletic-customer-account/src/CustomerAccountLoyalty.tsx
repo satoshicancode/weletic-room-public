@@ -2,6 +2,16 @@
 import type { Api } from "@shopify/ui-extensions/customer-account.page.render";
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import {
+  hubActivityLabel,
+  hubDate,
+  hubEarningActionLabel,
+  hubErrorText,
+  hubLocale,
+  hubNumber,
+  hubRequestError,
+  hubText,
+} from "./localization";
 
 declare const shopify: Api;
 
@@ -10,9 +20,10 @@ const CUSTOMER_REQUEST_TIMEOUT_MS = 10_000;
 
 export function formatCustomerTierDestination(
   tier: { name: string } | null,
-  locale = "en",
+  locale?: string,
 ) {
   if (tier) return tier.name;
+  if (!locale) return hubText("noTier");
   const language = locale.toLowerCase().split(/[-_]/)[0];
   return language === "ja"
     ? "ランクなし"
@@ -341,7 +352,124 @@ export function formatCustomerRewardDate(
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date);
+  return hubDate(date, locale);
+}
+
+export function formatCustomerPointsExpiry(
+  policy: { nextExpiryDate?: unknown; days?: unknown; months?: unknown },
+  pointName: string,
+) {
+  if (policy.nextExpiryDate != null && policy.nextExpiryDate !== "") {
+    const date =
+      typeof policy.nextExpiryDate === "string"
+        ? formatCustomerRewardDate(policy.nextExpiryDate)
+        : null;
+    return date
+      ? hubText("expiryOn", { name: pointName, date })
+      : hubText("expiryUnavailable");
+  }
+  const validInterval = (value: unknown): value is number =>
+    typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+  // The customer summary serializes disabled day-based expiry as zero.
+  if (policy.days != null && policy.days !== 0) {
+    return validInterval(policy.days)
+      ? hubText("expiryDays", { name: pointName, days: hubNumber(policy.days) })
+      : hubText("expiryUnavailable");
+  }
+  return validInterval(policy.months)
+    ? hubText("expiryMonths", {
+        name: pointName,
+        months: hubNumber(policy.months),
+      })
+    : hubText("expiryUnavailable");
+}
+
+export function formatSavedCustomerBirthday(birthday: {
+  birthMonth?: unknown;
+  birthDay?: unknown;
+  nextEligibleYear?: unknown;
+}) {
+  const { birthMonth: month, birthDay: day, nextEligibleYear: year } = birthday;
+  if (
+    typeof month !== "number" ||
+    !Number.isInteger(month) ||
+    month < 1 ||
+    month > 12 ||
+    typeof day !== "number" ||
+    !Number.isInteger(day) ||
+    day < 1 ||
+    day > [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+  ) {
+    return hubText("birthdayDetailsUnavailable");
+  }
+  return hubText("birthdaySaved", {
+    month: hubNumber(month),
+    day: hubNumber(day),
+    year:
+      typeof year === "number" &&
+      Number.isInteger(year) &&
+      year > 0 &&
+      year <= 9999
+        ? String(year)
+        : hubText("yearUnavailable"),
+  });
+}
+
+export function customerVipCompletionLabel(tier: LoyaltySummary["tier"]) {
+  const tiers = tier?.allTiers;
+  if (
+    tier?.currentTier === null &&
+    tier.nextTier === null &&
+    Array.isArray(tiers) &&
+    tiers.length === 0
+  )
+    return hubText("vipUnavailable");
+  const current = tier?.currentTier;
+  if (
+    current &&
+    typeof current.id === "string" &&
+    current.id.length > 0 &&
+    Number.isSafeInteger(current.tierOrder) &&
+    tier?.nextTier === null &&
+    Array.isArray(tiers) &&
+    tiers.some(
+      (item) => item?.id === current.id && item.tierOrder === current.tierOrder,
+    ) &&
+    tiers.every(
+      (item) =>
+        item &&
+        Number.isSafeInteger(item.tierOrder) &&
+        item.tierOrder <= current.tierOrder,
+    )
+  )
+    return hubText("highestTier");
+  return hubText("vipProgressUnavailable");
+}
+
+export function customerVipPeriodLabel(period: unknown) {
+  switch (period) {
+    case "rolling_12m":
+      return hubText("periodRolling");
+    case "calendar_year":
+      return hubText("periodCalendar");
+    case "lifetime":
+      return hubText("periodLifetime");
+    default:
+      return hubText("periodUnknown");
+  }
+}
+
+export function customerAccountStatusLabel(status: unknown) {
+  switch (status) {
+    case "active":
+      return hubText("accountActive");
+    case "suspended":
+      return hubText("accountSuspended");
+    case "closed":
+      return hubText("accountClosed");
+    default:
+      return hubText("accountUnavailable");
+  }
 }
 
 export function customerCanParticipate(
@@ -357,11 +485,16 @@ export function customerCanParticipate(
 
 export function formatCustomerPoints(
   value: string | number | bigint,
-  pointNameSingular = "point",
-  pointNamePlural = "points",
+  pointNameSingular?: string,
+  pointNamePlural?: string,
 ) {
   const amount = readExactSignedInteger(value) ?? BigInt(0);
-  return `${amount.toLocaleString()} ${amount === BigInt(1) ? pointNameSingular : pointNamePlural}`;
+  if (pointNameSingular === undefined && pointNamePlural === undefined) {
+    return hubText(amount === BigInt(1) ? "pointAmount" : "pointsAmount", {
+      points: hubNumber(amount),
+    });
+  }
+  return `${hubNumber(amount)} ${amount === BigInt(1) ? pointNameSingular ?? "point" : pointNamePlural ?? "points"}`;
 }
 
 function readExactSignedInteger(value: string | number | bigint) {
@@ -455,42 +588,42 @@ export function validateIncrementalPointsSelection({
     return {
       valid: false,
       pointsRequested: null,
-      error: "This reward's point limits are unavailable.",
+      error: hubText("limitsUnavailable"),
     };
   }
   if (requested === null) {
     return {
       valid: false,
       pointsRequested: null,
-      error: "Enter a whole number of points.",
+      error: hubText("wholePoints"),
     };
   }
   if (requested < minimum) {
     return {
       valid: false,
       pointsRequested: null,
-      error: `Redeem at least ${minimum.toLocaleString()} points.`,
+      error: hubText("minimumPoints", { points: hubNumber(minimum) }),
     };
   }
   if (maximum !== null && requested > maximum) {
     return {
       valid: false,
       pointsRequested: null,
-      error: `Redeem no more than ${maximum.toLocaleString()} points.`,
+      error: hubText("maximumPoints", { points: hubNumber(maximum) }),
     };
   }
   if (requested > balance) {
     return {
       valid: false,
       pointsRequested: null,
-      error: "You do not have enough points for this selection.",
+      error: hubText("insufficientPoints"),
     };
   }
   if (requested % step !== BigInt(0)) {
     return {
       valid: false,
       pointsRequested: null,
-      error: `Redeem points in increments of ${step.toLocaleString()}.`,
+      error: hubText("pointsStep", { points: hubNumber(step) }),
     };
   }
   return {
@@ -500,15 +633,51 @@ export function validateIncrementalPointsSelection({
   };
 }
 
-function formatStoreCurrency(
+function storeCurrencyFormatter(currency: string, locale?: string) {
+  if (!/^[A-Z]{3}$/i.test(currency)) return null;
+  try {
+    return new Intl.NumberFormat(hubLocale(locale), {
+      style: "currency",
+      currency,
+    });
+  } catch {
+    return null;
+  }
+}
+
+export function formatStoreCurrency(
   value: string | number,
   currency = "USD",
   locale?: string,
 ) {
-  return new Intl.NumberFormat(locale, {
-    style: "currency",
+  const formatter = storeCurrencyFormatter(currency, locale);
+  if (
+    !formatter ||
+    (typeof value === "number" &&
+      (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER))
+  ) {
+    return hubText("amountUnavailable");
+  }
+  const decimal = String(value);
+  // Wire values are plain decimal strings. Bound parsing; never coerce a
+  // malformed or imprecise transport value into a plausible monetary amount.
+  const match =
+    decimal.length <= 128 ? /^(-?)(\d+)(?:\.(\d+))?$/.exec(decimal) : null;
+  if (!match) return hubText("amountUnavailable");
+  const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
+  const fraction = match[3] || "";
+  const scale = BigInt(`1${"0".repeat(digits)}`);
+  let minorUnits =
+    BigInt(match[2]) * scale +
+    BigInt(fraction.slice(0, digits).padEnd(digits, "0") || "0");
+  // Intl's default half-expand display rounding, performed on decimal digits.
+  if (fraction.length > digits && fraction[digits] >= "5")
+    minorUnits += BigInt(1);
+  return formatStoreMinorCurrency(
+    match[1] ? -minorUnits : minorUnits,
     currency,
-  }).format(Number(value || 0));
+    locale,
+  );
 }
 
 export function formatStoreMinorCurrency(
@@ -516,11 +685,10 @@ export function formatStoreMinorCurrency(
   currency = "USD",
   locale?: string,
 ) {
-  const minorUnits = readExactSignedInteger(value) ?? BigInt(0);
-  const formatter = new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency,
-  });
+  locale = hubLocale(locale);
+  const minorUnits = readExactSignedInteger(value);
+  const formatter = storeCurrencyFormatter(currency, locale);
+  if (minorUnits === null || !formatter) return hubText("amountUnavailable");
   const fractionDigits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
   const scale = BigInt(`1${"0".repeat(fractionDigits)}`);
   const absoluteMinorUnits = minorUnits < BigInt(0) ? -minorUnits : minorUnits;
@@ -550,19 +718,19 @@ export function customerRewardTypeLabel(
 ) {
   switch (rewardType) {
     case "amount_off":
-      return "Amount off";
+      return hubText("typeAmount");
     case "percentage_off":
-      return "Percentage off";
+      return hubText("typePercentage");
     case "free_shipping":
-      return "Free shipping";
+      return hubText("typeShipping");
     case "free_product":
-      return "Free product";
+      return hubText("typeProduct");
     case "gift_card":
-      return "Gift card";
+      return hubText("typeGiftCard");
     case "store_credit":
-      return "Store credit";
+      return hubText("typeStoreCredit");
     default:
-      return "Reward";
+      return hubText("typeReward");
   }
 }
 
@@ -579,9 +747,9 @@ export function customerRewardTerms<TReward extends CustomerRewardTerms>(
 ) {
   const terms: string[] = [];
   if (reward.salesChannel === "pos") {
-    terms.push("Available in Shopify POS");
+    terms.push(hubText("termsPos"));
   } else if (reward.salesChannel === "both") {
-    terms.push("Available online and in Shopify POS");
+    terms.push(hubText("termsBoth"));
   }
   const minimumOrderAmount =
     reward.minOrderAmount == null
@@ -589,15 +757,22 @@ export function customerRewardTerms<TReward extends CustomerRewardTerms>(
       : readExactSignedInteger(reward.minOrderAmount);
   if (minimumOrderAmount !== null && minimumOrderAmount > BigInt(0)) {
     terms.push(
-      `Minimum purchase ${formatStoreMinorCurrency(minimumOrderAmount, currency, locale)}`,
+      hubText("termsMinimum", {
+        amount: formatStoreMinorCurrency(minimumOrderAmount, currency, locale),
+      }),
     );
   }
   if (reward.expiresInDays && reward.expiresInDays > 0) {
-    terms.push(`Expires ${reward.expiresInDays} days after redemption`);
+    terms.push(
+      hubText("termsExpiry", { days: hubNumber(reward.expiresInDays) }),
+    );
   }
   if (reward.usageLimitPerCustomer) {
     terms.push(
-      `${reward.usageLimitPerCustomer} use${reward.usageLimitPerCustomer === 1 ? "" : "s"} per customer`,
+      hubText(
+        reward.usageLimitPerCustomer === 1 ? "termsUseOne" : "termsUseMany",
+        { uses: hubNumber(reward.usageLimitPerCustomer) },
+      ),
     );
   }
   const targetCount =
@@ -606,23 +781,26 @@ export function customerRewardTerms<TReward extends CustomerRewardTerms>(
       (reward.entitledProductIds?.length || 0) +
       (reward.entitledVariantIds?.length || 0);
   if (targetCount > 0) {
-    terms.push("Applies to selected products or collections");
+    terms.push(hubText("termsSelected"));
   } else if (reward.appliesToResource === "entire_order") {
-    terms.push("Applies to the entire eligible order");
+    terms.push(hubText("termsEntire"));
   }
   if (
     reward.combinesWithProductDiscounts ||
     reward.combinesWithOrderDiscounts ||
     reward.combinesWithShippingDiscounts
   ) {
-    terms.push("Can combine with selected Shopify discounts");
+    terms.push(hubText("termsCombine"));
   }
   return terms;
 }
 
 function earningValueLabel(way: WayToEarn, singular: string, plural: string) {
   return way.triggerCode === "order_paid"
-    ? `${way.multiplier}× ${plural.toLowerCase()} on eligible purchases`
+    ? hubText("earningPurchase", {
+        multiplier: hubNumber(way.multiplier),
+        pointsName: plural.toLowerCase(),
+      })
     : formatCustomerPoints(way.fixedPoints || 0, singular, plural);
 }
 
@@ -634,14 +812,14 @@ function referralRewardLabel(
   plural: string,
 ) {
   return kind === "coupon"
-    ? rewardName || "a coupon reward"
+    ? rewardName || hubText("couponReward")
     : formatCustomerPoints(points, singular, plural);
 }
 
 export function customerReferralOfferCopy(
   offer: CustomerReferralOffer,
-  pointNameSingular = "Point",
-  pointNamePlural = "Points",
+  pointNameSingular = hubText("pointName"),
+  pointNamePlural = hubText("pointsName"),
 ) {
   const friendReward = referralRewardLabel(
     offer.refereeRewardKind,
@@ -659,11 +837,17 @@ export function customerReferralOfferCopy(
   );
   const friendTiming =
     offer.refereeRewardKind === "coupon"
-      ? `Your friend can claim ${friendReward} before their first eligible order.`
-      : `Your friend receives ${friendReward} after completing their first eligible order.`;
+      ? hubText("referralBefore", { reward: friendReward })
+      : hubText("referralAfter", { reward: friendReward });
   return {
-    heading: `Give ${friendReward}, get ${advocateReward}`,
-    qualification: `${friendTiming} You receive ${advocateReward} when they qualify.`,
+    heading: hubText("referralHeading", {
+      friend: friendReward,
+      advocate: advocateReward,
+    }),
+    qualification: hubText("referralQualification", {
+      friendTiming,
+      reward: advocateReward,
+    }),
     showPointsEarned: offer.advocateRewardKind === "points",
   };
 }
@@ -674,8 +858,8 @@ export function customerReferralActivityRewardLabel(
     | null
     | undefined,
   advocatePointsAwarded: string | number | bigint,
-  pointNameSingular = "Point",
-  pointNamePlural = "Points",
+  pointNameSingular = hubText("pointName"),
+  pointNamePlural = hubText("pointsName"),
 ) {
   return advocateRewardKind === "coupon"
     ? null
@@ -689,25 +873,25 @@ export function customerReferralActivityRewardLabel(
 function referralShareLinks(url: string, programName: string) {
   const encodedUrl = encodeURIComponent(url);
   const message = encodeURIComponent(
-    `Join me in ${programName} and claim your welcome reward.`,
+    hubText("shareMessage", { program: programName }),
   );
   return {
     facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
     x: `https://x.com/intent/post?url=${encodedUrl}&text=${message}`,
-    email: `mailto:?subject=${encodeURIComponent(`Your ${programName} invitation`)}&body=${message}%0A%0A${encodedUrl}`,
+    email: `mailto:?subject=${encodeURIComponent(hubText("shareSubject", { program: programName }))}&body=${message}%0A%0A${encodedUrl}`,
   };
 }
 
 export function customerRewardStatusLabel(status: CustomerReward["status"]) {
   switch (status) {
     case "available":
-      return "Available";
+      return hubText("statusAvailable");
     case "used":
-      return "Used";
+      return hubText("statusUsed");
     case "expired":
-      return "Expired";
+      return hubText("statusExpired");
     case "cancelled":
-      return "Cancelled";
+      return hubText("statusCancelled");
   }
 }
 
@@ -721,34 +905,64 @@ export function customerRewardStatusDetail(
   const statusLabel = customerRewardStatusLabel(reward.status);
 
   if (reward.status === "used") {
-    return `Used${statusDate ? ` on ${statusDate}` : ""}${reward.orderName ? ` · Order ${reward.orderName}` : ""}`;
+    const status = statusDate
+      ? hubText("usedOn", { date: statusDate })
+      : statusLabel;
+    return reward.orderName
+      ? hubText("usedOrder", { status, order: reward.orderName })
+      : status;
   }
   if (reward.status === "expired") {
-    return `Expired${statusDate ? ` on ${statusDate}` : ""}`;
+    return statusDate
+      ? hubText("expiredOn", { date: statusDate })
+      : statusLabel;
   }
   if (reward.status === "cancelled") {
-    return `Cancelled${statusDate ? ` on ${statusDate}` : ""}`;
+    return statusDate
+      ? hubText("cancelledOn", { date: statusDate })
+      : statusLabel;
   }
-  if (expiryDate) return `Expires ${expiryDate}`;
-  return `${statusLabel}${issuedDate ? ` · Issued ${issuedDate}` : ""}`;
+  if (expiryDate) return hubText("expiresDate", { date: expiryDate });
+  return issuedDate
+    ? hubText("issuedDate", { status: statusLabel, date: issuedDate })
+    : statusLabel;
 }
 
-export function normalizeIssuedRewardArtifact(issued: {
-  artifactKind?: "discount_code" | "gift_card" | "store_credit";
-  artifactCode?: string | null;
-  giftCardCode?: string | null;
-  discountCode?: string | null;
-}) {
-  const artifactKind = issued.artifactKind || "discount_code";
+export function normalizeIssuedRewardArtifact(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw hubRequestError("redeem");
+  }
+  const issued = value as Record<string, unknown>;
+  if (issued.success !== undefined && issued.success !== true) {
+    throw hubRequestError("redeem");
+  }
+  for (const key of ["artifactCode", "giftCardCode", "discountCode"]) {
+    if (issued[key] != null && typeof issued[key] !== "string") {
+      throw hubRequestError("redeem");
+    }
+  }
+  const explicitKind = issued.artifactKind;
+  if (
+    explicitKind !== undefined &&
+    explicitKind !== "discount_code" &&
+    explicitKind !== "gift_card" &&
+    explicitKind !== "store_credit"
+  )
+    throw hubRequestError("redeem");
+  // Legacy responses may omit kind, but must contain a usable code. Empty
+  // objects cannot prove issuance. Explicit kinds retain wallet-only support.
+  const code =
+    [issued.artifactCode, issued.giftCardCode, issued.discountCode].find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" && candidate.trim().length > 0,
+    ) ?? null;
+  if (explicitKind === undefined && code === null)
+    throw hubRequestError("redeem");
+  const artifactKind: "discount_code" | "gift_card" | "store_credit" =
+    explicitKind ?? "discount_code";
   return {
     artifactKind,
-    artifactCode:
-      artifactKind === "store_credit"
-        ? null
-        : issued.artifactCode ||
-          issued.giftCardCode ||
-          issued.discountCode ||
-          null,
+    artifactCode: artifactKind === "store_credit" ? null : code,
   };
 }
 
@@ -763,7 +977,8 @@ export function CustomerRewardCard({
   currency?: string;
   actionsEnabled?: boolean;
 }) {
-  const clipboardId = `weletic-reward-${reward.id}`;
+  // This is a DOM command target, not a persisted reward identity.
+  const clipboardId = `weletic-reward-${crypto.randomUUID()}`;
   const statusLabel = customerRewardStatusLabel(reward.status);
   const statusDetail = customerRewardStatusDetail(reward);
   const showStatusDetail = statusDetail !== statusLabel;
@@ -786,10 +1001,10 @@ export function CustomerRewardCard({
         null;
   const artifactLabel =
     artifactKind === "gift_card"
-      ? "Gift card code"
+      ? hubText("giftCode")
       : artifactKind === "store_credit"
-        ? "Shopify store credit"
-        : "Discount code";
+        ? hubText("storeCredit")
+        : hubText("discountCode");
 
   return (
     <s-stack
@@ -828,8 +1043,7 @@ export function CustomerRewardCard({
           ))}
           {useLegacyDefinition && rewardDefinition ? (
             <s-text color="subdued" type="small">
-              Original terms are unavailable for this legacy reward; current
-              reward terms are shown.
+              {hubText("legacyCurrent")}
             </s-text>
           ) : null}
         </s-stack>
@@ -837,8 +1051,8 @@ export function CustomerRewardCard({
         reward.termsSource === "unavailable" ? (
         <s-text color="subdued" type="small">
           {reward.termsSource === "unavailable"
-            ? "Original reward terms could not be verified and are unavailable."
-            : "Original terms are unavailable for this legacy reward."}
+            ? hubText("termsUnverified")
+            : hubText("legacyUnavailable")}
         </s-text>
       ) : null}
 
@@ -848,11 +1062,13 @@ export function CustomerRewardCard({
         </s-text>
         <s-text type="strong">
           {artifactKind === "store_credit"
-            ? "Added to your customer balance"
+            ? hubText("addedBalance")
             : artifactCode}
         </s-text>
         <s-text color="subdued" type="small">
-          {formatCustomerPoints(reward.pointsSpent)} redeemed
+          {hubText("redeemedPoints", {
+            points: formatCustomerPoints(reward.pointsSpent),
+          })}
         </s-text>
       </s-stack>
 
@@ -860,7 +1076,9 @@ export function CustomerRewardCard({
         <>
           <s-clipboard-item id={clipboardId} text={artifactCode} />
           <s-button-group
-            accessibilityLabel={`Actions for ${reward.rewardName}`}
+            accessibilityLabel={hubText("rewardActions", {
+              reward: reward.rewardName,
+            })}
           >
             <s-button
               slot="secondary-actions"
@@ -868,7 +1086,7 @@ export function CustomerRewardCard({
               commandFor={clipboardId}
               variant="secondary"
             >
-              Copy code
+              {hubText("copyCode")}
             </s-button>
             {reward.applyUrl ? (
               <s-button
@@ -877,7 +1095,7 @@ export function CustomerRewardCard({
                 target="_blank"
                 variant="primary"
               >
-                Use reward
+                {hubText("useReward")}
               </s-button>
             ) : null}
           </s-button-group>
@@ -959,12 +1177,14 @@ export function RedeemRewardCard({
         <s-badge>{customerRewardTypeLabel(reward.rewardType)}</s-badge>
         <s-text>
           {reward.exchangeType === "incremental"
-            ? `From ${(minimum ?? BigInt(0)).toLocaleString()} points`
-            : `${(pointsCost ?? BigInt(0)).toLocaleString()} points`}
+            ? hubText("fromPoints", { points: hubNumber(minimum ?? BigInt(0)) })
+            : hubText("pointsAmount", {
+                points: hubNumber(pointsCost ?? BigInt(0)),
+              })}
         </s-text>
         {!reward.canRedeem && pointsRemaining > BigInt(0) ? (
           <s-text color="subdued" type="small">
-            Earn {pointsRemaining.toLocaleString()} more points to redeem.
+            {hubText("earnRemaining", { points: hubNumber(pointsRemaining) })}
           </s-text>
         ) : null}
       </s-stack>
@@ -979,7 +1199,7 @@ export function RedeemRewardCard({
       ) : null}
       {reward.exchangeType === "incremental" ? (
         <s-number-field
-          label="Points to redeem"
+          label={hubText("pointsToRedeem")}
           min={minimumNumber}
           max={maximumNumber}
           step={stepNumber}
@@ -1014,10 +1234,22 @@ export function RedeemRewardCard({
         }}
         variant={reward.canRedeem ? "primary" : "secondary"}
       >
-        Redeem
+        {hubText("redeem")}
       </s-button>
     </s-stack>
   );
+}
+
+async function readCustomerResponseJson(response: Response) {
+  try {
+    return await response.json();
+  } catch (cause) {
+    // Preserve HTTP authentication/permission/rate-limit status even when an
+    // upstream failure has no JSON body. Successful malformed bodies still
+    // reject, retaining mutation retry keys and the uncertain-outcome message.
+    if (!response.ok) return null;
+    throw cause;
+  }
 }
 
 async function authenticatedRequest(path: string, init?: RequestInit) {
@@ -1110,6 +1342,7 @@ export function CustomerAccountLoyalty() {
   async function loadMoreActivity(type: "points" | "referrals" | "vip") {
     const current = activityPagination[type];
     if (current.loading || !current.hasMore) return;
+    setError(null);
     setActivityPagination((prev) => ({
       ...prev,
       [type]: { ...prev[type], loading: true },
@@ -1119,10 +1352,12 @@ export function CustomerAccountLoyalty() {
       const response = await authenticatedRequest(
         `/customer/activity?type=${type}&page=${nextPage}&limit=20`,
       );
-      const payload = await response.json();
+      const payload = await readCustomerResponseJson(response);
       if (!response.ok) {
-        throw new Error(
-          payload?.error?.message || "Failed to load more activity",
+        throw hubRequestError(
+          "activity",
+          response.status,
+          payload?.error?.message,
         );
       }
       const data = payload.data || payload;
@@ -1139,7 +1374,8 @@ export function CustomerAccountLoyalty() {
           loading: false,
         },
       }));
-    } catch {
+    } catch (cause) {
+      setError(hubErrorText(cause, "activity"));
       setActivityPagination((prev) => ({
         ...prev,
         [type]: { ...prev[type], loading: false },
@@ -1155,15 +1391,19 @@ export function CustomerAccountLoyalty() {
   async function loadSummary() {
     setError(null);
     const response = await authenticatedRequest("/customer");
-    const payload = await response.json();
+    const payload = await readCustomerResponseJson(response);
     if (!response.ok) {
-      throw new Error(payload?.error?.message || "Unable to load rewards");
+      throw hubRequestError(
+        "summary",
+        response.status,
+        payload?.error?.message,
+      );
     }
     setSummary(payload.data || payload);
   }
 
   function handleSummaryError(cause: unknown) {
-    setError(cause instanceof Error ? cause.message : "Unable to load rewards");
+    setError(hubErrorText(cause, "summary"));
   }
 
   useEffect(() => {
@@ -1185,7 +1425,7 @@ export function CustomerAccountLoyalty() {
         summary?.account,
       )
     ) {
-      setError("This loyalty account cannot redeem rewards right now.");
+      setError(hubText("cannotRedeem"));
       return;
     }
     setRedeeming(reward.id);
@@ -1204,25 +1444,28 @@ export function CustomerAccountLoyalty() {
           idempotencyKey,
         }),
       });
-      const payload = await response.json();
+      const payload = await readCustomerResponseJson(response);
       if (!response.ok) {
-        throw new Error(payload?.error?.message || "Unable to redeem reward");
+        throw hubRequestError(
+          "redeem",
+          response.status,
+          payload?.error?.message,
+        );
       }
-      // Only a successful response proves the issued coupon reached the UI.
+      const issued = normalizeIssuedRewardArtifact(payload?.data ?? payload);
+      // Validate the response before releasing this intent's retry key.
+      // Only a usable successful response proves issuance reached the UI.
       // Transport failures and gateway/core errors retain the key so the next
       // click safely replays the same durable saga.
       if (shouldClearRedemptionIntentKey(response.status)) {
         redemptionIntentKeys.current.delete(intentId);
       }
-      const issued = payload.data || payload;
-      setIssuedReward(normalizeIssuedRewardArtifact(issued));
+      setIssuedReward(issued);
       // Coupon issuance has already succeeded. A stale summary must not turn
       // that success into a redemption error or hide the delivered code.
       await loadSummary().catch(() => undefined);
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Unable to redeem reward",
-      );
+      setError(hubErrorText(cause, "redeem"));
     } finally {
       setRedeeming(null);
     }
@@ -1235,7 +1478,7 @@ export function CustomerAccountLoyalty() {
         summary?.account,
       )
     ) {
-      setError("This loyalty account cannot update earning details right now.");
+      setError(hubText("cannotBirthday"));
       return;
     }
     setSavingBirthday(true);
@@ -1248,15 +1491,17 @@ export function CustomerAccountLoyalty() {
           birthDay: Number(birthDay),
         }),
       });
-      const payload = await response.json();
+      const payload = await readCustomerResponseJson(response);
       if (!response.ok) {
-        throw new Error(payload?.error?.message || "Unable to save birthday");
+        throw hubRequestError(
+          "birthday",
+          response.status,
+          payload?.error?.message,
+        );
       }
       await loadSummary();
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Unable to save birthday",
-      );
+      setError(hubErrorText(cause, "birthday"));
     } finally {
       setSavingBirthday(false);
     }
@@ -1270,7 +1515,7 @@ export function CustomerAccountLoyalty() {
         summary?.account,
       )
     ) {
-      setError("This loyalty account cannot earn points right now.");
+      setError(hubText("cannotEarn"));
       return;
     }
     setClaimingActivity(way.id);
@@ -1285,26 +1530,26 @@ export function CustomerAccountLoyalty() {
         method: "POST",
         body: JSON.stringify({ ruleId: way.id, claimKey }),
       });
-      const payload = await response.json();
+      const payload = await readCustomerResponseJson(response);
       if (!response.ok) {
-        throw new Error(
-          payload?.error?.message || "Unable to complete earning action",
-        );
+        throw hubRequestError("earn", response.status, payload?.error?.message);
       }
       activityIntentKeys.current.delete(way.id);
       const result = payload.data || payload;
+      const awardedPoints = readExactSignedInteger(result.pointsAwarded);
       setActivitySuccess(
         result.alreadyCompleted
-          ? `${way.name} was already completed for this earning period.`
-          : `${result.pointsAwarded} points added for ${way.name}.`,
+          ? hubText("activityAlready", { activity: way.name })
+          : awardedPoints === null
+            ? hubText("activityAwardUnavailable")
+            : hubText("activityAwarded", {
+                points: hubNumber(awardedPoints),
+                activity: way.name,
+              }),
       );
       await loadSummary().catch(() => undefined);
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "Unable to complete earning action",
-      );
+      setError(hubErrorText(cause, "earn"));
     } finally {
       setClaimingActivity(null);
     }
@@ -1312,11 +1557,14 @@ export function CustomerAccountLoyalty() {
 
   if (error && !summary) {
     return (
-      <s-page heading="Loyalty Hub" subheading="Your member benefits">
+      <s-page
+        heading={hubText("hubTitle")}
+        subheading={hubText("memberBenefits")}
+      >
         <s-stack direction="block" gap="base">
           <s-banner tone="critical">{error}</s-banner>
           <s-button onClick={retrySummary} variant="primary">
-            Try again
+            {hubText("retry")}
           </s-button>
         </s-stack>
       </s-page>
@@ -1324,13 +1572,16 @@ export function CustomerAccountLoyalty() {
   }
   if (!summary) {
     return (
-      <s-page heading="Loyalty Hub" subheading="Your member benefits">
+      <s-page
+        heading={hubText("hubTitle")}
+        subheading={hubText("memberBenefits")}
+      >
         <s-stack direction="block" gap="base">
-          <s-section heading="Points balance">
-            <s-skeleton-paragraph content="0 points · Member" />
+          <s-section heading={hubText("pointsBalance")}>
+            <s-skeleton-paragraph content={hubText("loadingPoints")} />
           </s-section>
-          <s-section heading="Your rewards">
-            <s-skeleton-paragraph content="Your available rewards are loading" />
+          <s-section heading={hubText("yourRewards")}>
+            <s-skeleton-paragraph content={hubText("loadingRewards")} />
           </s-section>
         </s-stack>
       </s-page>
@@ -1338,18 +1589,18 @@ export function CustomerAccountLoyalty() {
   }
   if (!summary.isEnrolled) {
     return (
-      <s-page heading="Loyalty Hub" subheading="Your member benefits">
-        <s-banner tone="info">
-          Your loyalty account will appear after you join this store’s rewards
-          program.
-        </s-banner>
+      <s-page
+        heading={hubText("hubTitle")}
+        subheading={hubText("memberBenefits")}
+      >
+        <s-banner tone="info">{hubText("joinNotice")}</s-banner>
       </s-page>
     );
   }
 
   const points = summary.account?.pointsBalance || "0";
   const pending = summary.account?.pendingPoints || "0";
-  const tier = summary.tier?.currentTier?.name || "Member";
+  const tier = summary.tier?.currentTier?.name || hubText("member");
   const wallet = summary.rewardWallet || [];
   const programIsActive = summary.program?.isActive === true;
   const canParticipate = customerCanParticipate(
@@ -1385,9 +1636,11 @@ export function CustomerAccountLoyalty() {
           pointsRemaining: "0",
         }
       : null);
-  const programName = summary.program?.name || "Loyalty Program";
-  const pointNameSingular = summary.program?.pointNameSingular || "Point";
-  const pointNamePlural = summary.program?.pointNamePlural || "Points";
+  const programName = summary.program?.name || hubText("program");
+  const pointNameSingular =
+    summary.program?.pointNameSingular || hubText("pointName");
+  const pointNamePlural =
+    summary.program?.pointNamePlural || hubText("pointsName");
   const currency = summary.program?.currency || "USD";
   const rewardDefinitionById = new Map(
     rewardCatalog.map((reward) => [reward.id, reward]),
@@ -1430,28 +1683,33 @@ export function CustomerAccountLoyalty() {
     referralOffer && summary.referral?.referralShareUrl
       ? referralShareLinks(summary.referral.referralShareUrl, programName)
       : null;
+  const referralStats = hubText("referralStats", {
+    qualified: hubNumber(summary.referral?.qualifiedReferrals || 0),
+    invited: hubNumber(summary.referral?.totalReferrals || 0),
+  });
 
   return (
     <s-page
-      heading="Loyalty Hub"
+      heading={hubText("hubTitle")}
       inlineSize="large"
-      subheading={
-        summary.program?.branding?.subtitle ??
-        "Earn points, unlock rewards, and enjoy member benefits."
-      }
+      subheading={summary.program?.branding?.subtitle ?? hubText("subtitle")}
     >
       <s-stack direction="block" gap="base">
         {issuedReward ? (
           <s-banner tone="success">
             {issuedReward.artifactKind === "store_credit"
-              ? "Reward issued. Store credit was added to your Shopify customer balance."
+              ? hubText("issuedCredit")
               : issuedReward.artifactKind === "gift_card"
                 ? issuedReward.artifactCode
-                  ? `Reward issued. Your gift card code is ${issuedReward.artifactCode}.`
-                  : "Reward issued. Your gift card is available in Your rewards."
+                  ? hubText("issuedGiftCode", {
+                      code: issuedReward.artifactCode,
+                    })
+                  : hubText("issuedGiftWallet")
                 : issuedReward.artifactCode
-                  ? `Reward issued. Your discount code is ${issuedReward.artifactCode}.`
-                  : "Reward issued. Your discount is available in Your rewards."}
+                  ? hubText("issuedDiscountCode", {
+                      code: issuedReward.artifactCode,
+                    })
+                  : hubText("issuedDiscountWallet")}
           </s-banner>
         ) : null}
         {activitySuccess ? (
@@ -1459,17 +1717,13 @@ export function CustomerAccountLoyalty() {
         ) : null}
         {error ? <s-banner tone="critical">{error}</s-banner> : null}
         {!programIsActive ? (
-          <s-banner tone="info">
-            This loyalty program is currently paused. Rewards already in your
-            wallet remain visible.
-          </s-banner>
+          <s-banner tone="info">{hubText("paused")}</s-banner>
         ) : null}
         {programIsActive && !canParticipate ? (
           <s-banner tone="warning">
-            Your loyalty account is currently{" "}
-            {summary.account?.status || "unavailable"}. Existing wallet rewards
-            remain visible, but earning, redemption, and referrals are
-            unavailable.
+            {hubText("participationUnavailable", {
+              status: customerAccountStatusLabel(summary.account?.status),
+            })}
           </s-banner>
         ) : null}
 
@@ -1486,7 +1740,7 @@ export function CustomerAccountLoyalty() {
                 {summary.program?.branding?.heroImageUrl ? (
                   <s-image
                     src={summary.program.branding.heroImageUrl}
-                    alt="Loyalty program rewards"
+                    alt={hubText("heroAlt")}
                     aspectRatio="16/5"
                     inlineSize="fill"
                     objectFit="cover"
@@ -1494,18 +1748,19 @@ export function CustomerAccountLoyalty() {
                   />
                 ) : null}
                 <s-text color="subdued">
-                  Welcome
                   {summary.shopper?.firstName
-                    ? `, ${summary.shopper.firstName}`
-                    : ""}
-                  . Your points, VIP status, coupons, and member activity are
-                  all available here.
+                    ? hubText("welcomeNamed", {
+                        name: summary.shopper.firstName,
+                      })
+                    : hubText("welcome")}
                 </s-text>
               </s-stack>
             </s-section>
 
             <s-stack direction="block" gap="base">
-              <s-section heading={`${pointNamePlural} balance`}>
+              <s-section
+                heading={hubText("balanceNamed", { name: pointNamePlural })}
+              >
                 <s-stack direction="block" gap="small-200">
                   <s-heading>
                     {formatCustomerPoints(
@@ -1515,81 +1770,98 @@ export function CustomerAccountLoyalty() {
                     )}
                   </s-heading>
                   <s-text color="subdued">
-                    {formatCustomerPoints(
-                      pending,
-                      pointNameSingular,
-                      pointNamePlural,
-                    )}{" "}
-                    pending
+                    {hubText("pendingNamed", {
+                      points: formatCustomerPoints(
+                        pending,
+                        pointNameSingular,
+                        pointNamePlural,
+                      ),
+                    })}
                   </s-text>
                   <s-text color="subdued" type="small">
-                    {formatCustomerPoints(
-                      summary.account?.lifetimePointsEarned || 0,
-                      pointNameSingular,
-                      pointNamePlural,
-                    )}{" "}
-                    earned since joining
+                    {hubText("lifetimeNamed", {
+                      points: formatCustomerPoints(
+                        summary.account?.lifetimePointsEarned || 0,
+                        pointNameSingular,
+                        pointNamePlural,
+                      ),
+                    })}
                   </s-text>
                   {summary.pointsExpiry?.enabled ? (
                     <s-banner tone="warning">
-                      {summary.pointsExpiry.nextExpiryDate
-                        ? `${pointNamePlural} may expire on ${formatCustomerRewardDate(summary.pointsExpiry.nextExpiryDate)}.`
-                        : summary.pointsExpiry.days
-                          ? `${pointNamePlural} expire after ${summary.pointsExpiry.days} days without qualifying activity.`
-                          : `${pointNamePlural} expire after ${summary.pointsExpiry.months} months without qualifying activity.`}
+                      {formatCustomerPointsExpiry(
+                        summary.pointsExpiry,
+                        pointNamePlural,
+                      )}
                     </s-banner>
                   ) : null}
                 </s-stack>
               </s-section>
 
-              <s-section heading="Current VIP tier">
+              <s-section heading={hubText("currentVip")}>
                 <s-stack direction="block" gap="small-200">
                   <s-heading>{tier}</s-heading>
                   {summary.tier?.currentTier?.pointsMultiplier &&
                   summary.tier.currentTier.pointsMultiplier > 1 ? (
                     <s-badge icon="star">
-                      {summary.tier.currentTier.pointsMultiplier}× earning rate
+                      {hubText("earningRate", {
+                        multiplier: hubNumber(
+                          summary.tier.currentTier.pointsMultiplier,
+                        ),
+                      })}
                     </s-badge>
                   ) : null}
                   {summary.tier?.tierExpiresAt ? (
                     <s-text color="subdued" type="small">
-                      Attained until{" "}
-                      {formatCustomerRewardDate(summary.tier.tierExpiresAt)}
+                      {hubText("attainedUntil", {
+                        date:
+                          formatCustomerRewardDate(
+                            summary.tier.tierExpiresAt,
+                          ) || "",
+                      })}
                     </s-text>
                   ) : null}
                   {nextTier && tierProgress ? (
                     <>
                       <s-text>
-                        {tierProgress.percent}% toward {nextTier.name}
+                        {hubText("tierProgress", {
+                          percent: hubNumber(tierProgress.percent),
+                          tier: nextTier.name,
+                        })}
                       </s-text>
                       <s-progress
                         value={tierProgress.percent}
                         max={100}
-                        accessibilityLabel={`Progress toward ${nextTier.name}`}
+                        accessibilityLabel={hubText("progressToward", {
+                          name: nextTier.name,
+                        })}
                       />
                       {tierProgress.milestoneMode !== "points_earned" ? (
                         <s-text color="subdued" type="small">
-                          {formatStoreMinorCurrency(
-                            tierProgress.spendRemaining,
-                            currency,
-                          )}{" "}
-                          more qualifying spend
+                          {hubText("spendRemaining", {
+                            amount: formatStoreMinorCurrency(
+                              tierProgress.spendRemaining,
+                              currency,
+                            ),
+                          })}
                         </s-text>
                       ) : null}
                       {tierProgress.milestoneMode !== "amount_spent" ? (
                         <s-text color="subdued" type="small">
-                          {formatCustomerPoints(
-                            tierProgress.pointsRemaining,
-                            pointNameSingular,
-                            pointNamePlural,
-                          )}{" "}
-                          more to reach {nextTier.name}
+                          {hubText("pointsToTier", {
+                            points: formatCustomerPoints(
+                              tierProgress.pointsRemaining,
+                              pointNameSingular,
+                              pointNamePlural,
+                            ),
+                            tier: nextTier.name,
+                          })}
                         </s-text>
                       ) : null}
                     </>
                   ) : (
                     <s-text color="subdued">
-                      You are in the highest current tier.
+                      {customerVipCompletionLabel(summary.tier)}
                     </s-text>
                   )}
                   {(summary.tier?.perks || []).map((perk) => (
@@ -1603,7 +1875,7 @@ export function CustomerAccountLoyalty() {
           </s-grid>
         </s-query-container>
 
-        <s-section heading="Your rewards">
+        <s-section heading={hubText("yourRewards")}>
           {availableRewards.length > 0 ? (
             <s-grid
               gridTemplateColumns="repeat(auto-fit, minmax(240px, 1fr))"
@@ -1627,14 +1899,18 @@ export function CustomerAccountLoyalty() {
           ) : (
             <s-text color="subdued">
               {canParticipate
-                ? `Redeem your ${pointNamePlural.toLowerCase()} below to add a reward to your wallet.`
-                : "You do not have any issued rewards in your wallet."}
+                ? hubText("redeemWallet", {
+                    name: pointNamePlural.toLowerCase(),
+                  })
+                : hubText("emptyWallet")}
             </s-text>
           )}
         </s-section>
 
         {canParticipate ? (
-          <s-section heading={`Spend ${pointNamePlural}`}>
+          <s-section
+            heading={hubText("spendPoints", { name: pointNamePlural })}
+          >
             <s-stack direction="block" gap="base">
               {nextReward &&
               nextRewardCost &&
@@ -1642,19 +1918,23 @@ export function CustomerAccountLoyalty() {
               nextRewardProgress ? (
                 <s-stack direction="block" gap="small-200">
                   <s-text>
-                    {formatCustomerPoints(
-                      nextRewardCost > exactPoints
-                        ? nextRewardCost - exactPoints
-                        : BigInt(0),
-                      pointNameSingular,
-                      pointNamePlural,
-                    )}{" "}
-                    until {nextReward.name}
+                    {hubText("pointsToReward", {
+                      points: formatCustomerPoints(
+                        nextRewardCost > exactPoints
+                          ? nextRewardCost - exactPoints
+                          : BigInt(0),
+                        pointNameSingular,
+                        pointNamePlural,
+                      ),
+                      reward: nextReward.name,
+                    })}
                   </s-text>
                   <s-progress
                     value={nextRewardProgress.value}
                     max={nextRewardProgress.max}
-                    accessibilityLabel={`Progress toward ${nextReward.name}`}
+                    accessibilityLabel={hubText("progressToward", {
+                      name: nextReward.name,
+                    })}
                   />
                 </s-stack>
               ) : null}
@@ -1687,16 +1967,14 @@ export function CustomerAccountLoyalty() {
                   ))}
                 </s-grid>
               ) : (
-                <s-text color="subdued">
-                  There are no rewards available to redeem right now.
-                </s-text>
+                <s-text color="subdued">{hubText("noRewards")}</s-text>
               )}
             </s-stack>
           </s-section>
         ) : null}
 
         {canParticipate ? (
-          <s-section heading={`Ways to earn ${pointNamePlural}`}>
+          <s-section heading={hubText("waysToEarn", { name: pointNamePlural })}>
             {waysToEarn.length > 0 ? (
               <s-grid
                 gridTemplateColumns="repeat(auto-fit, minmax(240px, 1fr))"
@@ -1734,12 +2012,10 @@ export function CustomerAccountLoyalty() {
                           onClick={() => claimActivity(way)}
                           variant="secondary"
                         >
-                          {way.action.label}
+                          {hubEarningActionLabel(way.triggerCode)}
                         </s-button>
                         <s-text color="subdued" type="small">
-                          Points are awarded when this signed customer action is
-                          opened. The social network does not confirm
-                          completion.
+                          {hubText("socialDisclaimer")}
                         </s-text>
                       </>
                     ) : null}
@@ -1747,19 +2023,29 @@ export function CustomerAccountLoyalty() {
                 ))}
               </s-grid>
             ) : (
-              <s-text color="subdued">No earning actions are active.</s-text>
+              <s-text color="subdued">{hubText("noEarningActions")}</s-text>
             )}
           </s-section>
         ) : null}
 
         {activeCampaigns.length > 0 ? (
-          <s-section heading="Bonus campaigns">
+          <s-section heading={hubText("bonusCampaigns")}>
             <s-stack direction="block" gap="base">
               {activeCampaigns.map((campaign) => (
                 <s-banner key={campaign.id} tone="info">
-                  {campaign.multiplier}× {campaign.name}
-                  {campaign.description ? ` — ${campaign.description}` : ""}.
-                  Ends {formatCustomerRewardDate(campaign.endAt)}.
+                  {hubText(
+                    campaign.description
+                      ? "campaignDescription"
+                      : "campaignDetails",
+                    {
+                      multiplier: hubNumber(campaign.multiplier),
+                      name: campaign.name,
+                      description: campaign.description || "",
+                      date:
+                        formatCustomerRewardDate(campaign.endAt) ||
+                        hubText("dateUnavailable"),
+                    },
+                  )}
                 </s-banner>
               ))}
             </s-stack>
@@ -1770,26 +2056,31 @@ export function CustomerAccountLoyalty() {
         referralCopy &&
         summary.referral?.referralShareUrl &&
         shareLinks ? (
-          <s-section heading="Refer a friend">
+          <s-section heading={hubText("referFriend")}>
             <s-stack direction="block" gap="base">
               <s-heading>{referralCopy.heading}</s-heading>
               <s-text color="subdued">
-                {referralCopy.qualification}
                 {referralOffer.minQualifyingOrderSubtotal
-                  ? ` Minimum qualifying subtotal: ${formatStoreCurrency(referralOffer.minQualifyingOrderSubtotal, currency)}.`
-                  : ""}
+                  ? hubText("referralMinimum", {
+                      qualification: referralCopy.qualification,
+                      amount: formatStoreCurrency(
+                        referralOffer.minQualifyingOrderSubtotal,
+                        currency,
+                      ),
+                    })
+                  : referralCopy.qualification}
               </s-text>
               <s-text>
-                {summary.referral.qualifiedReferrals || 0} of{" "}
-                {summary.referral.totalReferrals || 0} invited friends have
-                qualified
                 {referralCopy.showPointsEarned
-                  ? ` · ${formatCustomerPoints(
-                      summary.referral.totalPointsEarned || 0,
-                      pointNameSingular,
-                      pointNamePlural,
-                    )} earned`
-                  : ""}
+                  ? hubText("referralStatsPoints", {
+                      stats: referralStats,
+                      points: formatCustomerPoints(
+                        summary.referral.totalPointsEarned || 0,
+                        pointNameSingular,
+                        pointNamePlural,
+                      ),
+                    })
+                  : referralStats}
               </s-text>
               <s-clipboard-item
                 id="weletic-referral-link"
@@ -1801,7 +2092,7 @@ export function CustomerAccountLoyalty() {
                   commandFor="weletic-referral-link"
                   variant="primary"
                 >
-                  Copy link
+                  {hubText("copyLink")}
                 </s-button>
                 <s-button href={shareLinks.facebook} target="_blank">
                   Facebook
@@ -1809,20 +2100,19 @@ export function CustomerAccountLoyalty() {
                 <s-button href={shareLinks.x} target="_blank">
                   X
                 </s-button>
-                <s-button href={shareLinks.email}>Email</s-button>
+                <s-button href={shareLinks.email}>{hubText("email")}</s-button>
               </s-stack>
             </s-stack>
           </s-section>
         ) : null}
 
         {(summary.tier?.allTiers || []).length > 0 ? (
-          <s-section heading="VIP tiers">
+          <s-section heading={hubText("vipTiers")}>
             <s-stack direction="block" gap="base">
               <s-text color="subdued">
-                Qualification uses{" "}
-                {summary.program?.vipTimeframe.replaceAll("_", " ") ||
-                  "the configured period"}
-                .
+                {hubText("qualificationPeriod", {
+                  period: customerVipPeriodLabel(summary.program?.vipTimeframe),
+                })}
               </s-text>
               <s-grid
                 gridTemplateColumns="repeat(auto-fit, minmax(240px, 1fr))"
@@ -1844,33 +2134,39 @@ export function CustomerAccountLoyalty() {
                     >
                       <s-text type="strong">{tierDefinition.name}</s-text>
                       {tierDefinition.id === summary.tier?.currentTier?.id ? (
-                        <s-badge icon="check-circle">Current tier</s-badge>
+                        <s-badge icon="check-circle">
+                          {hubText("currentTier")}
+                        </s-badge>
                       ) : null}
                     </s-stack>
                     <s-text color="subdued">
-                      {tierDefinition.pointsMultiplier}× earning rate
+                      {hubText("earningRate", {
+                        multiplier: hubNumber(tierDefinition.pointsMultiplier),
+                      })}
                     </s-text>
                     {(readExactUnsignedInteger(
                       tierDefinition.minPointsThreshold,
                     ) ?? BigInt(0)) > BigInt(0) ? (
                       <s-text color="subdued" type="small">
-                        {formatCustomerPoints(
-                          tierDefinition.minPointsThreshold,
-                          pointNameSingular,
-                          pointNamePlural,
-                        )}{" "}
-                        required
+                        {hubText("pointsRequired", {
+                          points: formatCustomerPoints(
+                            tierDefinition.minPointsThreshold,
+                            pointNameSingular,
+                            pointNamePlural,
+                          ),
+                        })}
                       </s-text>
                     ) : null}
                     {(readExactUnsignedInteger(
                       tierDefinition.minSpendThreshold,
                     ) ?? BigInt(0)) > BigInt(0) ? (
                       <s-text color="subdued" type="small">
-                        {formatStoreMinorCurrency(
-                          tierDefinition.minSpendThreshold,
-                          currency,
-                        )}{" "}
-                        qualifying spend required
+                        {hubText("spendRequired", {
+                          amount: formatStoreMinorCurrency(
+                            tierDefinition.minSpendThreshold,
+                            currency,
+                          ),
+                        })}
                       </s-text>
                     ) : null}
                     {(tierDefinition.perks || []).map((perk) => (
@@ -1885,7 +2181,7 @@ export function CustomerAccountLoyalty() {
           </s-section>
         ) : null}
 
-        <s-section heading="Activity">
+        <s-section heading={hubText("activity")}>
           <s-stack direction="block" gap="base">
             <s-stack direction="inline" gap="small-200">
               <s-button
@@ -1898,7 +2194,7 @@ export function CustomerAccountLoyalty() {
                 variant={activityView === "referrals" ? "primary" : "secondary"}
                 onClick={() => setActivityView("referrals")}
               >
-                Referrals
+                {hubText("referrals")}
               </s-button>
               <s-button
                 variant={activityView === "vip" ? "primary" : "secondary"}
@@ -1927,8 +2223,9 @@ export function CustomerAccountLoyalty() {
                         >
                           <s-stack direction="block" gap="small-100">
                             <s-text type="strong">
-                              {activity.reason ||
-                                activity.entryType.replaceAll("_", " ")}
+                              {/* Ledger reasons are internal audit text and may
+                                  include order IDs or provider diagnostics. */}
+                              {hubActivityLabel("points", activity.entryType)}
                             </s-text>
                             <s-text color="subdued" type="small">
                               {formatCustomerRewardDate(activity.createdAt)}
@@ -1952,12 +2249,14 @@ export function CustomerAccountLoyalty() {
                           disabled={activityPagination.points.loading}
                           variant="secondary"
                         >
-                          Load more
+                          {hubText("loadMore")}
                         </s-button>
                       ) : null}
                     </s-stack>
                   ) : (
-                    <s-text color="subdued">No points activity yet.</s-text>
+                    <s-text color="subdued">
+                      {hubText("noPointsActivity")}
+                    </s-text>
                   );
                 })()
               : null}
@@ -1989,7 +2288,7 @@ export function CustomerAccountLoyalty() {
                             <s-stack direction="block" gap="small-100">
                               <s-text type="strong">
                                 {activity.refereeName} ·{" "}
-                                {activity.status.replaceAll("_", " ")}
+                                {hubActivityLabel("referrals", activity.status)}
                               </s-text>
                               <s-text color="subdued" type="small">
                                 {formatCustomerRewardDate(
@@ -2011,12 +2310,14 @@ export function CustomerAccountLoyalty() {
                           disabled={activityPagination.referrals.loading}
                           variant="secondary"
                         >
-                          Load more
+                          {hubText("loadMore")}
                         </s-button>
                       ) : null}
                     </s-stack>
                   ) : (
-                    <s-text color="subdued">No referral activity yet.</s-text>
+                    <s-text color="subdued">
+                      {hubText("noReferralActivity")}
+                    </s-text>
                   );
                 })()
               : null}
@@ -2047,7 +2348,7 @@ export function CustomerAccountLoyalty() {
                             )}
                           </s-text>
                           <s-text color="subdued" type="small">
-                            {activity.changeReason.replaceAll("_", " ")} ·{" "}
+                            {hubActivityLabel("vip", activity.changeReason)} ·{" "}
                             {formatCustomerRewardDate(activity.effectiveAt)}
                           </s-text>
                         </s-stack>
@@ -2060,12 +2361,12 @@ export function CustomerAccountLoyalty() {
                           disabled={activityPagination.vip.loading}
                           variant="secondary"
                         >
-                          Load more
+                          {hubText("loadMore")}
                         </s-button>
                       ) : null}
                     </s-stack>
                   ) : (
-                    <s-text color="subdued">No VIP activity yet.</s-text>
+                    <s-text color="subdued">{hubText("noVipActivity")}</s-text>
                   );
                 })()
               : null}
@@ -2073,22 +2374,15 @@ export function CustomerAccountLoyalty() {
         </s-section>
 
         {canParticipate && summary.birthday?.enabled ? (
-          <s-section heading="Birthday reward">
+          <s-section heading={hubText("birthdayReward")}>
             {summary.birthday.isRegistered ? (
-              <s-text>
-                Birthday saved as {summary.birthday.birthMonth}/
-                {summary.birthday.birthDay}. Next eligible year:{" "}
-                {summary.birthday.nextEligibleYear || "upcoming"}.
-              </s-text>
+              <s-text>{formatSavedCustomerBirthday(summary.birthday)}</s-text>
             ) : (
               <s-stack direction="block" gap="base">
-                <s-text color="subdued">
-                  Save your month and day at least 30 days early. It can only be
-                  changed by support.
-                </s-text>
+                <s-text color="subdued">{hubText("birthdayHelp")}</s-text>
                 <s-stack direction="inline" gap="base">
                   <s-number-field
-                    label="Birth month"
+                    label={hubText("birthMonth")}
                     min={1}
                     max={12}
                     value={birthMonth}
@@ -2105,7 +2399,7 @@ export function CustomerAccountLoyalty() {
                     }
                   />
                   <s-number-field
-                    label="Birth day"
+                    label={hubText("birthDay")}
                     min={1}
                     max={31}
                     value={birthDay}
@@ -2128,7 +2422,7 @@ export function CustomerAccountLoyalty() {
                   onClick={saveBirthday}
                   variant="primary"
                 >
-                  Save birthday
+                  {hubText("saveBirthday")}
                 </s-button>
               </s-stack>
             )}
@@ -2136,7 +2430,7 @@ export function CustomerAccountLoyalty() {
         ) : null}
 
         {rewardHistory.length > 0 ? (
-          <s-section heading="Reward history">
+          <s-section heading={hubText("rewardHistory")}>
             <s-stack
               direction="block"
               gap="base"
