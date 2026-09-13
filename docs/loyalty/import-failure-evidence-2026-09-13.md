@@ -61,3 +61,7 @@ do not substitute for full-scale or live acceptance.
 After bounded verification, use the diagnostic evidence to design a controlled
 reproduction. Do not simply rerun 50,000 rows or relax the zero-failure/financial
 assertions. The full-scale requirement remains open under L12.
+
+The next bounded experiment is specified in the
+[controlled reproduction plan](./import-controlled-reproduction-2026-09-13.md).
+That plan is not an executed test result or a full-scale rerun approval.
