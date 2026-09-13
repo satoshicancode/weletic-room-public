@@ -7,6 +7,7 @@ import ja from "../extensions/weletic-customer-account-blocks/locales/ja.json";
 import viLocale from "../extensions/weletic-customer-account-blocks/locales/vi.json";
 import extension, {
   parseProfilePoints,
+  parseProfileSummary,
   ProfileLoyaltySummaryView,
 } from "../extensions/weletic-customer-account-blocks/src/CustomerAccountLoyaltyBlocks";
 
@@ -49,6 +50,59 @@ afterEach(() => {
 });
 
 describe("profile loyalty locales", () => {
+  it.each([
+    null,
+    [],
+    {},
+    { isEnrolled: "true" },
+    { ...summary, rewardWallet: {} },
+    { ...summary, rewardWallet: [null] },
+    { ...summary, rewardWallet: [{ status: {} }] },
+    { ...summary, tier: { currentTier: { name: {} } } },
+    { ...summary, account: [] },
+  ])("rejects malformed summary shapes with a fixed error", (value) => {
+    expect(() => parseProfileSummary(value)).toThrow("Invalid rewards summary");
+  });
+  it("projects rendered fields without retaining private identifiers", () => {
+    const parsed = parseProfileSummary(summary);
+    expect(parsed.account?.pointsBalance).toBe("9007199254740993");
+    expect(JSON.stringify(parsed)).not.toContain("private-account-fixture");
+    expect(parseProfileSummary({ isEnrolled: false }).rewardWallet).toEqual([]);
+  });
+  it.each(["en", "ja", "vi"])(
+    "shows retry instead of crashing on malformed wallet in %s",
+    async (locale) => {
+      const { catalog } = host(locale);
+      const fetcher = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: { ...summary, rewardWallet: [null] } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ data: summary }),
+        });
+      vi.stubGlobal("fetch", fetcher);
+      await act(async () => {
+        extension();
+      });
+      await flushRequests();
+      expect(document.body.textContent).toContain(catalog.unavailable);
+      expect(document.body.innerHTML).not.toContain("private-account-fixture");
+      const retry = [...document.querySelectorAll("s-button")].find(
+        (element) => element.textContent === catalog.retry,
+      )!;
+      await act(async () => {
+        retry.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flushRequests();
+      expect(document.body.textContent).toContain(
+        catalog.rewardOne.replace("{{formattedCount}}", "1"),
+      );
+      expect(document.body.textContent).not.toContain(catalog.unavailable);
+    },
+  );
   it.each([
     "0",
     "9007199254740993",

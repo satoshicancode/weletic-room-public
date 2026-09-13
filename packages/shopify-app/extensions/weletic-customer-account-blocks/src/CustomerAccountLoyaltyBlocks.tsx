@@ -24,6 +24,52 @@ type ProfileLocaleApi = {
   ) => string;
 };
 
+export function parseProfileSummary(value: unknown): ProfileLoyaltySummary {
+  const record = (input: unknown): input is Record<string, unknown> =>
+    input !== null && typeof input === "object" && !Array.isArray(input);
+  const fail = () => new Error("Invalid rewards summary");
+  if (!record(value) || typeof value.isEnrolled !== "boolean") throw fail();
+  if (value.account != null && !record(value.account)) throw fail();
+  if (value.tier != null && !record(value.tier)) throw fail();
+  const account = record(value.account) ? value.account : undefined;
+  const tier = record(value.tier) ? value.tier : undefined;
+  if (tier?.currentTier != null && !record(tier.currentTier)) throw fail();
+  const currentTier = record(tier?.currentTier) ? tier.currentTier : undefined;
+  if (currentTier?.name != null && typeof currentTier.name !== "string")
+    throw fail();
+  if (value.rewardWallet != null && !Array.isArray(value.rewardWallet))
+    throw fail();
+  const wallet = value.rewardWallet ?? [];
+  if (!Array.isArray(wallet)) throw fail();
+  const rewardWallet = wallet.map((reward: unknown) => {
+    if (!record(reward) || typeof reward.status !== "string") throw fail();
+    return { status: reward.status };
+  });
+  // Project only rendered fields; private response identifiers are not retained.
+  return {
+    isEnrolled: value.isEnrolled,
+    account: account
+      ? {
+          pointsBalance:
+            typeof account.pointsBalance === "string"
+              ? account.pointsBalance
+              : "",
+        }
+      : undefined,
+    tier: currentTier
+      ? {
+          currentTier: {
+            name:
+              typeof currentTier.name === "string"
+                ? currentTier.name
+                : undefined,
+          },
+        }
+      : undefined,
+    rewardWallet,
+  };
+}
+
 export function parseProfilePoints(value: unknown): bigint | null {
   if (typeof value !== "string" || !/^-?(?:0|[1-9]\d{0,18})$/.test(value))
     return null;
@@ -113,7 +159,7 @@ export function CustomerAccountLoyaltyProfileBlock() {
       if (!response.ok) {
         throw new Error(payload?.error?.message || "Unable to load rewards");
       }
-      setSummary(payload.data || payload);
+      setSummary(parseProfileSummary(payload?.data ?? payload));
     } catch {
       setError(true);
     } finally {
