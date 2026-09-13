@@ -56,6 +56,89 @@ afterEach(() => {
 });
 
 describe("account hub redemption validation localization", () => {
+  it.each([undefined, null, []])(
+    "keeps legacy empty wallet %j compatible",
+    async (rewardWallet) => {
+      const { catalog } = host("en");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            data: {
+              isEnrolled: true,
+              account: { pointsBalance: "123", pendingPoints: "0" },
+              rewardWallet,
+            },
+          }),
+        }),
+      );
+      await act(async () =>
+        render(h(CustomerAccountLoyalty, {}), document.body),
+      );
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(document.body.textContent).not.toContain(catalog.hub.errorSummary);
+      expect(document.body.textContent).toContain("123");
+    },
+  );
+  it.each(["en", "ja", "vi"])(
+    "rejects malformed wallets and recovers through localized retry in %s",
+    async (locale) => {
+      const { catalog } = host(locale);
+      for (const rewardWallet of [
+        { privateId: "private-wallet" },
+        "bad",
+        [null],
+        [[]],
+        [{}],
+        [{ status: 42 }],
+      ]) {
+        act(() => render(null, document.body));
+        const fetchMock = vi
+          .fn()
+          .mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: { isEnrolled: true, rewardWallet } }),
+          })
+          .mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({
+              data: {
+                isEnrolled: true,
+                account: { pointsBalance: "123", pendingPoints: "0" },
+                rewardWallet: [],
+              },
+            }),
+          });
+        vi.stubGlobal("fetch", fetchMock);
+        await act(async () =>
+          render(h(CustomerAccountLoyalty, {}), document.body),
+        );
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        expect(document.body.textContent).toContain(catalog.hub.errorSummary);
+        expect(document.body.innerHTML).not.toContain("private-wallet");
+        const retry = [...document.querySelectorAll("s-button")].find(
+          (element) => element.textContent === catalog.hub.retry,
+        );
+        expect(retry).toBeTruthy();
+        await act(async () => {
+          retry!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        expect(document.body.textContent).not.toContain(
+          catalog.hub.errorSummary,
+        );
+        expect(document.body.textContent).toContain("123");
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+      }
+    },
+  );
   it.each(["en", "ja", "vi"])(
     "preserves non-JSON HTTP error guidance in %s",
     async (locale) => {

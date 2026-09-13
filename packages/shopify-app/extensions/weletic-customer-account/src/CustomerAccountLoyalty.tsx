@@ -1399,7 +1399,28 @@ export function CustomerAccountLoyalty() {
         payload?.error?.message,
       );
     }
-    setSummary(payload.data || payload);
+    const data = payload?.data ?? payload;
+    // Reject malformed wallet collections before rendering. Keep omitted/null
+    // wallets compatible with older summaries, which represent an empty wallet.
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data) ||
+      typeof data.isEnrolled !== "boolean" ||
+      (data.rewardWallet != null &&
+        (!Array.isArray(data.rewardWallet) ||
+          data.rewardWallet.some(
+            (reward: unknown) =>
+              !reward ||
+              typeof reward !== "object" ||
+              Array.isArray(reward) ||
+              !("status" in reward) ||
+              typeof reward.status !== "string",
+          )))
+    ) {
+      throw new Error("Invalid loyalty wallet summary");
+    }
+    setSummary(data);
   }
 
   function handleSummaryError(cause: unknown) {
