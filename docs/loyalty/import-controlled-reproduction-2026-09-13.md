@@ -1,8 +1,8 @@
 # Controlled import reproduction — September 13, 2026
 
-Status: execution specification only. These probes have not run. L12 remains
-open; this document neither authorizes a full-scale rerun nor establishes a
-cause for the earlier failure.
+Status: both probes are implemented and have bounded isolated evidence below.
+The earlier failure was not reproduced. L12 remains open; this document neither
+authorizes a full-scale rerun nor establishes a cause for the earlier failure.
 
 ## Question and baseline
 
@@ -117,3 +117,66 @@ focused tests and typecheck, adversarial review, recorded run SHA and sanitized
 results for each executed probe, exact accounting reconciliation, and verified
 grant revocation/fixture cleanup. Full-scale import acceptance is a separate
 gate and remains subject to unchanged zero-failure and financial assertions.
+
+## Probe B evidence
+
+On September 13, the isolated MySQL test selected the two new reporter variants
+and the existing expired-lease case: **3 passed, 53 skipped, 8.35 seconds**.
+Both new cases observed the pinned Prisma client's `P2028` transaction-API error
+after a test-only one-second deadline. They prove identical-object propagation,
+one operation and report invocation, preservation when reporting throws, exact
+snapshot rollback, and zero ledger/execution writes. The event deliberately
+says transaction failure, not a diagnosis of the historical import failure.
+
+The runner verified the dedicated loopback instance identity and schema before
+execution, revoked its temporary fixture grant afterward, and independently
+verified all 157 fixture tables empty. No schema, runtime import deadline,
+Shopify data or external delivery was changed. An earlier launch attempt stopped
+before tests because dependency links were missing; its grant was also revoked
+and its fixture verified empty before the corrected run.
+
+The existing observer/polling unit tests also passed (32 tests). The controlled
+transaction uses the real database and diagnostic helper but does not execute
+an import row or reproduce the earlier full-scale failure. Long-duration stability
+and the complete 50,000-row lifecycle remain unverified.
+
+## Probe A evidence
+
+Two separate invocations ran sequentially on isolated MySQL 8.0.46, without
+concurrent builds, typechecks or unit/load tests. Both used base commit
+`1befd02cc4e7dd7eb7b80845e665c2a4d2bb6f16` plus the reviewed test changes,
+identified by test-file Git blob `7d918e51b942165a27f573104769b2e91837ab21`.
+The runner verified this fingerprint was unchanged after each invocation.
+
+| Synthetic committed prefix | Real commits, delivery 1 | Delivery 1 time | Real commits, delivery 2 | Delivery 2 time |
+| -------------------------- | ------------------------ | --------------- | ------------------------ | --------------- |
+| 0                          | 50                       | 7,663 ms        | 50                       | 6,670 ms        |
+| 8,100                      | 50                       | 12,026 ms       | 50                       | 11,246 ms       |
+
+Each source contained 50,000 snapshots. The prefix was wholly synthetic; exactly
+200 new real commits occurred across the four deliveries. Each invocation passed
+one selected test with 56 skipped (73.79 and 107.94 seconds including fixture
+work and cleanup). Source/ledger reconciliation and exact account assertions
+passed before delivery and after each delivery. Both sources remained committing,
+with pending continuation jobs and released worker ownership.
+
+Temporary fixture grants were revoked and independent SQL verified all 157
+tables empty after **each** invocation, before the next fixture was created.
+The runner imposed a 660-second outer test-process-group deadline; neither run
+hit it. No production timeout, schema, query or retry policy was changed.
+
+The populated deliveries were slower in these single samples. This is not a
+statistical benchmark, a query-level diagnosis, or proof that journal size alone
+caused the historical failure. No stage error occurred. Two deliveries following
+a synthetic prefix do not reproduce 162 preceding real deliveries, long-lived
+process/resource history, or full commit/rollback. The original failure remains
+unexplained; a complete lifecycle rerun is not implicitly approved by this result.
+
+## Local verification
+
+The full web unit suite passed: 500 files, 8,095 tests passed and 6 skipped
+(629.61 seconds). This default suite excludes the isolated integration file;
+the database evidence above comes from separate opt-in executions. Web typecheck
+passed after both probe implementations. Repository lint passed, followed by
+focused lint after Probe A was added. Formatting and independent adversarial
+review passed. These checks do not establish native Shopify or launch acceptance.
