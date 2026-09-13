@@ -676,10 +676,10 @@ describe("Milestone 5: Storefront Theme & Customer Account Extensions Test Suite
       );
 
       expect(clipboard?.props).toMatchObject({
-        id: "weletic-reward-reward-1",
+        id: expect.stringMatching(/^weletic-reward-[0-9a-f-]{36}$/),
         text: "WL-COPY-ME",
       });
-      expect(copyButton?.props.commandFor).toBe("weletic-reward-reward-1");
+      expect(copyButton?.props.commandFor).toBe(clipboard?.props.id);
       expect(applyButton?.props.href).toContain("redirect=/cart");
 
       const restrictedView = CustomerRewardCard({
@@ -866,7 +866,7 @@ describe("Milestone 5: Storefront Theme & Customer Account Extensions Test Suite
         "utf-8",
       );
 
-      expect(customerAccountSource).toContain('heading="Loyalty Hub"');
+      expect(customerAccountSource).toContain('heading={hubText("hubTitle")}');
       expect(customerAccountSource).toContain('inlineSize="large"');
       expect(customerAccountSource).toContain("<s-query-container>");
       expect(customerAccountSource).toContain(
@@ -1141,14 +1141,14 @@ describe("Milestone 5: Storefront Theme & Customer Account Extensions Test Suite
 
       expect(customerAccountSource).toContain("rewardWallet");
       expect(customerAccountSource).toContain("<s-clipboard-item");
-      expect(customerAccountSource).toContain("Your rewards");
-      expect(customerAccountSource).toContain("Reward history");
+      expect(customerAccountSource).toContain('hubText("yourRewards")');
+      expect(customerAccountSource).toContain('hubText("rewardHistory")');
       expect(customerAccountSource).toContain("CUSTOMER_REQUEST_TIMEOUT_MS");
       expect(customerAccountSource).not.toContain(
         "CUSTOMER_MUTATION_TIMEOUT_MS",
       );
       expect(customerAccountSource).toContain("AbortController");
-      expect(customerAccountSource).toContain("Try again");
+      expect(customerAccountSource).toContain('hubText("retry")');
       expect(profileBlockSource).toContain("CUSTOMER_REQUEST_TIMEOUT_MS");
       expect(profileBlockSource).toContain('shopify.i18n.translate("retry")');
       expect(profileEnglish.retry).toBe("Try again");

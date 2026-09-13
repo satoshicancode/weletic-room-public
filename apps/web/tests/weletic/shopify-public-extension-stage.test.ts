@@ -34,6 +34,24 @@ describe("offline public extension staging", () => {
     const report = JSON.parse(files["STAGING.json"]);
     expect(report.status).toBe("unowned_not_deployable");
     expect(report.extensionCount).toBe(10);
+    expect(
+      files["extensions/weletic-customer-account/src/localization.ts"],
+    ).toContain("shopify.i18n.translate");
+    for (const locale of ["en.default", "ja", "vi"]) {
+      const catalog = JSON.parse(
+        files[`extensions/weletic-customer-account/locales/${locale}.json`],
+      );
+      expect(Object.keys(catalog.hub)).toEqual(
+        expect.arrayContaining([
+          "limitsUnavailable",
+          "wholePoints",
+          "minimumPoints",
+          "maximumPoints",
+          "insufficientPoints",
+          "pointsStep",
+        ]),
+      );
+    }
     for (const [path, hash] of Object.entries(report.sourceHashes)) {
       expect(
         createHash("sha256")
