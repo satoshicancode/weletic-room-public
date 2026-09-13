@@ -1302,12 +1302,12 @@ function calculateRelativeLiftPercentage(input: {
   subjectCount: number;
   baselineTotal: bigint;
   baselineCount: number;
-}): number {
+}): number | null {
   const { subjectTotal, subjectCount, baselineTotal, baselineCount } = input;
-  if (baselineCount <= 0 || baselineTotal <= BigInt(0)) {
-    return subjectCount > 0 && subjectTotal > BigInt(0) ? 100 : 0;
-  }
-  if (subjectCount <= 0) return -100;
+  // A missing cohort or nonpositive comparison average has no meaningful
+  // relative lift. Observed zero spend is distinct from no observations.
+  if (baselineCount <= 0 || baselineTotal <= BigInt(0) || subjectCount <= 0)
+    return null;
   return (
     finiteCompatibilityNumber(
       formatRationalDecimal({
@@ -2155,10 +2155,14 @@ export async function exportLoyaltyMetricsCsv(
         "-",
         "-",
         "-",
-        `${cohortAttribution.lift.aovLiftPercentage}%`,
+        cohortAttribution.lift.aovLiftPercentage === null
+          ? ""
+          : `${cohortAttribution.lift.aovLiftPercentage}%`,
         "-",
         `${cohortAttribution.lift.repeatPurchaseRateLiftPercentage}%`,
-        `${cohortAttribution.lift.ltvLiftPercentage}%`,
+        cohortAttribution.lift.ltvLiftPercentage === null
+          ? ""
+          : `${cohortAttribution.lift.ltvLiftPercentage}%`,
       ]
         .map(escapeCsvUntrustedTextCell)
         .join(","),
