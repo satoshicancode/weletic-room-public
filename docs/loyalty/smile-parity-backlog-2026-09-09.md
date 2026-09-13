@@ -337,6 +337,11 @@ inventory, not analytics completion or authorization for customer-row exports.
   unknown. The new test-only observer passed an expired-lease probe and a
   500-row commit/rollback lifecycle, with independent empty-fixture cleanup.
   See [failure evidence and controlled reproduction next step](import-failure-evidence-2026-09-13.md).
+  The subsequent [captured-query follow-up](import-controlled-reproduction-2026-09-13.md#captured-query-plan-evidence)
+  passed bounded baseline and synthetic-prefix deliveries and confirmed scans
+  in the orphan lookup. Preserve all global orphan-detection branches in any
+  future optimization; these results do not close the original failure or
+  authorize a new index/schema design or full-scale rerun.
   Full-scale acceptance and named live acceptance remain open.
 - **Scope/reference:** generic opening balance/birthday/optional tier, no Smile
   migration. PR #13 draft provides immutable source/row provenance, preview,

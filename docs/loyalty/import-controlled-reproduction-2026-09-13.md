@@ -216,7 +216,68 @@ and 6 skipped (664.82 seconds). This default suite excludes the isolated databas
 file; the two bounded invocations above provide that execution evidence.
 Publication remains pending; none of these results closes L12.
 
-### Original bounded probe verification
+### Captured-query plan evidence
+
+The opt-in query-plan diagnostic initially failed with Prisma `P2010` and MySQL
+`3141` while replaying query-event parameters through raw EXPLAIN. The same
+failure reproduced against an empty ledger, independently of a populated source.
+This was a diagnostic replay failure, not reproduction of the original import
+failure. The successful model query logged JSON scalar values as plain strings;
+replaying those directly into `JSON_CONTAINS` lost their JSON string encoding.
+
+The test-only replay helper now restores encoding only for four direct
+`JSON_CONTAINS` string arguments. Paths, ordinary identifiers, limits and input
+arrays remain unchanged. Unsupported placeholder shapes fail with fixed errors.
+Neither production queries nor accounting behavior changed. Captured SQL and
+values remain in memory; only sanitized plan fields and error codes are emitted.
+
+The corrected empty-ledger EXPLAIN passed (4.61 seconds). A separate one-row
+fixture then compared the normal Prisma lookup and replayed SELECT, deliberately
+preventing the non-JSON branches from matching. Both agreed on a positive JSON
+identity match and a negative snapshot identity (1 passed, 59 skipped, 4.81
+seconds). This supports the known string-identity query shape, not generic JSON
+parameter replay. Both invocations revoked fixture grants and independently
+verified all 157 tables empty.
+
+The semantic fixture used base `e6a8225ee2a5b0587d4ef75d92a9210e1df1d955`,
+integration blob `ffe80debfb8c00e6d9b071c64ee7883cf8084a64`, and helper blob
+`372d664ea87746d8626d1da5a169a7bd6eed239b`. Focused helper tests passed (43).
+Publication remains pending; L12 is not closed.
+
+The corrected baseline probe then passed (1 passed, 59 skipped, 72.12 seconds).
+It committed 50 rows per delivery in 8,371 and 7,451 ms. EXPLAIN ran after each
+delivery, outside its measured interval: both plans used access type `ALL`, no
+chosen key, and estimated 50 then 100 rows per scan. These are optimizer
+estimates, not measured scanned-row counts. Original financial assertions passed;
+the temporary grant was revoked and independent SQL verified 157 empty tables.
+This invocation used the same integration/helper fingerprints recorded above.
+
+The synthetic 8,100-row-prefix invocation also passed (1 passed, 59 skipped,
+95.03 seconds), completing both deliveries and committing
+50 new rows each in 10,721 and 10,156 ms. Both captured plans used `ALL` with no
+chosen key; optimizer estimates were 7,832 and 7,882 rows per scan. Estimates are
+not exact fixture counts. Financial and zero-failure assertions passed, the
+temporary grant was revoked, and independent SQL verified all 157 tables empty.
+The same source fingerprints were verified before and after this invocation.
+
+These actual captured-query plans confirm a scan for the orphan lookup in both
+fixtures. They do not establish that this scan caused the earlier failure, nor
+justify weakening the global corruption check. A future optimization must retain
+all idempotency, reference and JSON-provenance branches, including foreign-store
+orphan detection. Any new index/schema design remains a separate reviewed change.
+The original long-duration failure and full 50,000-row commit/rollback acceptance
+remain unresolved.
+
+Final local verification passed web typechecking, all 10 repository lint tasks,
+formatting and the full unit suite (504 files; 8,202 passed, 6 skipped; 600.49
+seconds). The first direct unit invocation omitted the existing synthetic CI
+environment and failed 30 tests across six Shopify-related files. The complete
+rerun used the existing CI-fixture runner with external queue/Redis transports
+disabled and sequential files; it passed without changing assertions or
+production code. Both results were retained. Adversarial review found no blockers
+in the known-shape replay or JSON-only match/nonmatch coverage.
+
+### Original bounded probe verification results
 
 The full web unit suite passed: 500 files, 8,095 tests passed and 6 skipped
 (629.61 seconds). This default suite excludes the isolated integration file;

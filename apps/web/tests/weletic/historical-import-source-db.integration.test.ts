@@ -184,6 +184,17 @@ const queryProfile = vi.hoisted(() => ({
   active: false,
   timings: new Map<string, { count: number; ms: number }>(),
 }));
+const queryPlan = vi.hoisted(() => ({
+  active: false,
+  captured: null as ReturnType<
+    typeof import("./helpers/import-query-plan").captureImportLookup
+  >,
+}));
+function takeCapturedImportLookup() {
+  const captured = queryPlan.captured;
+  queryPlan.captured = null;
+  return captured;
+}
 vi.mock("@/lib/prisma", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/prisma")>();
   if (
@@ -191,9 +202,22 @@ vi.mock("@/lib/prisma", async (importOriginal) => {
     process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1"
   )
     return actual;
+  const { PrismaClient } = await import("@prisma/client");
+  const { captureImportLookup } = await import("./helpers/import-query-plan");
+  const planClient =
+    process.env.HISTORICAL_IMPORT_QUERY_PLANS === "1"
+      ? new PrismaClient({
+          omit: { user: { passwordHash: true } },
+          log: [{ emit: "event", level: "query" }],
+        })
+      : null;
+  planClient?.$on("query", (event) => {
+    if (queryPlan.active && !queryPlan.captured)
+      queryPlan.captured = captureImportLookup(event.query, event.params);
+  });
   return {
     ...actual,
-    prisma: actual.prisma.$extends({
+    prisma: (planClient ?? actual.prisma).$extends({
       query: {
         $allModels: {
           async $allOperations({ model, operation, args, query }) {
@@ -219,6 +243,8 @@ vi.mock("@/lib/prisma", async (importOriginal) => {
   };
 });
 afterEach(() => {
+  queryPlan.active = false;
+  queryPlan.captured = null;
   stageDiagnostics.active = false;
   stageDiagnostics.emitted = 0;
   if (!queryProfile.active) return;
@@ -1735,6 +1761,156 @@ it.skipIf(process.env.HISTORICAL_IMPORT_MAX_SOURCE_WORKER_INTEGRATION !== "1")(
   },
   180_000,
 );
+it.skipIf(process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1")(
+  "matches JSON-only identities through Prisma and captured parameter replay",
+  async () => {
+    const fixture = await rollbackFixture();
+    const { importLookupReplayValues } = await import(
+      "./helpers/import-query-plan"
+    );
+    for (const match of [true, false]) {
+      queryPlan.captured = null;
+      queryPlan.active = true;
+      let observed: { id: string } | null;
+      try {
+        observed = await database.weleticPointsLedgerEntry.findFirst({
+          where: {
+            OR: [
+              { idempotencyKey: "diagnostic-no-opening-match" },
+              { idempotencyKey: "diagnostic-no-rollback-match" },
+              {
+                referenceType: { in: ["diagnostic-only"] },
+                referenceId: "diagnostic-no-match",
+              },
+              {
+                AND: [
+                  {
+                    metadata: { path: "$.sourceId", equals: fixture.source.id },
+                  },
+                  {
+                    metadata: {
+                      path: "$.snapshotId",
+                      equals: match
+                        ? fixture.snapshots[0].id
+                        : "diagnostic-no-snapshot",
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+          select: { id: true },
+        });
+      } finally {
+        queryPlan.active = false;
+      }
+      const captured = takeCapturedImportLookup();
+      if (!captured) throw new Error("Semantic lookup capture unavailable.");
+      let replay: Array<{ id: string }>;
+      try {
+        replay = await database.$queryRawUnsafe<Array<{ id: string }>>(
+          captured.query,
+          ...importLookupReplayValues(captured.query, captured.values),
+        );
+      } catch {
+        throw new Error("Semantic lookup replay failed.");
+      }
+      expect(observed !== null).toBe(match);
+      expect(replay.length).toBe(match ? 1 : 0);
+      expect((replay[0]?.id ?? null) === (observed?.id ?? null)).toBe(true);
+    }
+  },
+);
+it.skipIf(process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1")(
+  "explains an engine-generated orphan lookup without fixture writes",
+  async () => {
+    const {
+      readImportPlanColumn,
+      summarizeImportPlan,
+      summarizeImportPlanError,
+    } = await import("./helpers/import-query-plan");
+    const { IMPORT_OPENING_BALANCE_REFERENCE, IMPORT_ROLLBACK_REFERENCE } =
+      await import("../../lib/weletic/loyalty/historical-import-ledger");
+    queryPlan.active = true;
+    try {
+      await database.weleticPointsLedgerEntry.findFirst({
+        where: {
+          OR: [
+            { idempotencyKey: "loyalty_import_opening:diagnostic:row" },
+            { idempotencyKey: "loyalty_import_rollback:diagnostic:row" },
+            {
+              referenceType: {
+                in: [
+                  IMPORT_OPENING_BALANCE_REFERENCE,
+                  IMPORT_ROLLBACK_REFERENCE,
+                ],
+              },
+              referenceId: "row",
+            },
+            {
+              AND: [
+                { metadata: { path: "$.sourceId", equals: "diagnostic" } },
+                { metadata: { path: "$.snapshotId", equals: "row" } },
+              ],
+            },
+          ],
+        },
+        select: { id: true },
+      });
+      queryPlan.active = false;
+      const captured = takeCapturedImportLookup();
+      if (!captured) throw new Error("Lookup capture unavailable.");
+      const { importLookupReplayValues } = await import(
+        "./helpers/import-query-plan"
+      );
+      const plans = await database.$queryRawUnsafe<
+        Array<Record<string, unknown>>
+      >(
+        "EXPLAIN FORMAT=JSON " + captured.query,
+        ...importLookupReplayValues(captured.query, captured.values),
+      );
+      console.log(
+        JSON.stringify({
+          event: "isolated_empty_lookup_plan",
+          tables: summarizeImportPlan(readImportPlanColumn(plans)),
+        }),
+      );
+    } catch (error) {
+      console.log(
+        JSON.stringify({
+          event: "isolated_empty_lookup_error",
+          ...summarizeImportPlanError(error),
+        }),
+      );
+      throw new Error("Read-only lookup EXPLAIN failed.");
+    } finally {
+      queryPlan.active = false;
+      queryPlan.captured = null;
+    }
+  },
+);
+it.skipIf(process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1")(
+  "inspects the Prisma EXPLAIN response shape without fixture writes",
+  async () => {
+    try {
+      const plans = await database.$queryRaw<Array<Record<string, unknown>>>(
+        Prisma.sql`EXPLAIN FORMAT=JSON SELECT 1`,
+      );
+      if (plans.length !== 1) throw new Error("Unexpected plan count.");
+      const columns = Object.values(plans[0]);
+      console.log(
+        JSON.stringify({
+          event: "isolated_explain_response_shape",
+          columnCount: columns.length,
+          valueType: columns[0] === null ? "null" : typeof columns[0],
+          isArray: Array.isArray(columns[0]),
+        }),
+      );
+    } catch {
+      throw new Error("EXPLAIN response shape inspection failed.");
+    }
+  },
+);
 it.skipIf(process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1")(
   "profiles two real commit deliveries against an explicitly synthetic journal prefix",
   async () => {
@@ -1873,6 +2049,8 @@ it.skipIf(process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1")(
       // are partial evidence, not a complete SQL profile or root-cause proof.
       queryProfile.timings.clear();
       queryProfile.active = true;
+      queryPlan.captured = null;
+      queryPlan.active = process.env.HISTORICAL_IMPORT_QUERY_PLANS === "1";
       const started = performance.now();
       const result = await (async () => {
         try {
@@ -1882,6 +2060,7 @@ it.skipIf(process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1")(
             workerId: "isolated-populated-commit-profile",
           });
         } finally {
+          queryPlan.active = false;
           queryProfile.active = false;
           try {
             console.log(
@@ -1906,6 +2085,51 @@ it.skipIf(process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1")(
         }
       })();
       const elapsedMs = Math.round(performance.now() - started);
+      if (process.env.HISTORICAL_IMPORT_QUERY_PLANS === "1") {
+        // EXPLAIN after the delivery, outside the measured interval. Never
+        // expose captured SQL/parameters or an unsanitized Prisma error.
+        const captured = takeCapturedImportLookup();
+        if (!captured) throw new Error("Import lookup query was not captured.");
+        let planStage = "explain";
+        try {
+          const {
+            readImportPlanColumn,
+            summarizeImportPlan,
+            importLookupReplayValues,
+          } = await import("./helpers/import-query-plan");
+          const plans = await database.$queryRawUnsafe<
+            Array<Record<string, unknown>>
+          >(
+            "EXPLAIN FORMAT=JSON " + captured.query,
+            ...importLookupReplayValues(captured.query, captured.values),
+          );
+          planStage = "response_column";
+          const planJson = readImportPlanColumn(plans);
+          planStage = "summarize";
+          console.log(
+            JSON.stringify({
+              event: "isolated_captured_import_lookup_plan",
+              syntheticPrefix: prefix,
+              delivery,
+              tables: summarizeImportPlan(planJson),
+            }),
+          );
+        } catch (error) {
+          const { summarizeImportPlanError } = await import(
+            "./helpers/import-query-plan"
+          );
+          console.log(
+            JSON.stringify({
+              event: "isolated_import_lookup_plan_error",
+              stage: planStage,
+              ...summarizeImportPlanError(error),
+            }),
+          );
+          throw new Error(
+            `Import lookup query plan unavailable at ${planStage}.`,
+          );
+        }
+      }
       if (result.failed || result.deadLettered) {
         console.log(
           JSON.stringify({
