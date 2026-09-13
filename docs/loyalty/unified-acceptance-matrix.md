@@ -321,6 +321,11 @@ No checkbox below is promoted solely by these local checks.
       [the preserved failure and test-only stage diagnostics](import-failure-evidence-2026-09-13.md).
       Both failures are retained separately. Neither has terminal 50,000-row
       commit/rollback acceptance, and no cause is inferred from elapsed time.
+      The [bounded captured-query follow-up](import-controlled-reproduction-2026-09-13.md#captured-query-plan-evidence)
+      passed two deliveries each at baseline and after a synthetic 8,100-row
+      prefix, with exact financial assertions and independent cleanup. The orphan
+      lookup used full scans in both fixtures. This is query-plan evidence, not
+      original-failure causality, long-duration stability or complete rollback.
       The local [dedicated-instance scale continuation](historical-import-implementation.md)
       adds grouped rollback and projected evidence reads. Its latest synthetic
       50,000-row profile reached 30 real reversals and safe continuation, with
