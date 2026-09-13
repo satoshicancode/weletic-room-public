@@ -1,7 +1,14 @@
 # Launcher controls — September 13 implementation checkpoint
 
-Status: locally verified, awaiting public CI; not deployed. This advances L07; it does not
-close merchant or shopper live-acceptance gates.
+Status: merged in [PR #45](https://github.com/satoshicancode/weletic-room-public/pull/45)
+as `2403dd4718e8e23cbd6c4cf6bb9a3cd492e4ce7d`; not deployed. This advances L07;
+it does not close merchant or shopper live-acceptance gates.
+
+Both exact-head pre-merge runs passed all six jobs:
+[automatic PR checks](https://github.com/satoshicancode/weletic-room-public/actions/runs/34733124645)
+and [full manual run](https://github.com/satoshicancode/weletic-room-public/actions/runs/34733142192),
+for `d69ee4c7ba56caf357dbeaeefccd96457a3dc34e`. These are code-verification
+results, not named-store or production evidence.
 
 ## Reference and implementation
 
