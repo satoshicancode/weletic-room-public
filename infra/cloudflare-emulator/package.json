@@ -1,0 +1,14 @@
+{
+  "name": "weletic-cloudflare-local-emulator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:local": "node local.mjs"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "0.3.7"
+  },
+  "devDependencies": {
+    "wrangler": "4.124.0"
+  }
+}
