@@ -1,6 +1,9 @@
 # Cloudflare launch topology review — September 14, 2026
 
 Status: **proposal, not an accepted architecture or execution approval**.
+Subsequent decision: Hiro approved Option A; [ADR 0034](../adr/0034-cloudflare-containers-managed-services.md)
+records the accepted topology and its boundaries. The proposal below remains the
+historical review; specific providers, sizing, costs and execution are not approved.
 Inspected public main `1be898f728fd311d6cfae893551a02fb0a689d19` (PR #51).
 This advances the persistent-services review required by ADR 0032. No resources,
 credentials, DNS, schemas, installations or delivery settings were changed.
