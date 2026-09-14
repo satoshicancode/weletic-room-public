@@ -1,5 +1,6 @@
 import { getProgram } from "@/lib/fetchers/get-program";
 import { getProgramSlugs } from "@/lib/fetchers/get-program-slugs";
+import { deferLocalContainerPrerender } from "@/lib/weletic/local-container-prerender";
 import { formatRewardDescription } from "@/ui/partners/format-reward-description";
 import { Grid } from "@dub/ui";
 import { cn, constructMetadata, PARTNERS_DOMAIN } from "@dub/utils";
@@ -41,6 +42,8 @@ export async function generateMetadata(props: {
 }
 
 export async function generateStaticParams() {
+  if (deferLocalContainerPrerender()) return [];
+
   const programs = await getProgramSlugs();
 
   return programs.map((program) => ({

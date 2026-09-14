@@ -11,7 +11,11 @@ export default defineConfig({
   plugins: [
     shopifyExtensionDevCorsPlugin(),
     remix({
-      presets: [vercelPreset()],
+      // Local container compatibility is opt-in; retain the deployed default.
+      presets:
+        process.env.WELETIC_LOCAL_CONTAINER_BUILD === "1"
+          ? []
+          : [vercelPreset()],
       future: {
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,

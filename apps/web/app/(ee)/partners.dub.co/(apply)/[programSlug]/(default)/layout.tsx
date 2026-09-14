@@ -1,5 +1,6 @@
 import { getProgram } from "@/lib/fetchers/get-program";
 import { getProgramSlugs } from "@/lib/fetchers/get-program-slugs";
+import { deferLocalContainerPrerender } from "@/lib/weletic/local-container-prerender";
 import { DEFAULT_PARTNER_GROUP } from "@/lib/zod/schemas/groups";
 import { formatRewardDescription } from "@/ui/partners/format-reward-description";
 import { BlurImage, Wordmark } from "@dub/ui";
@@ -38,6 +39,8 @@ export async function generateMetadata(props: {
 }
 
 export async function generateStaticParams() {
+  if (deferLocalContainerPrerender()) return [];
+
   const programs = await getProgramSlugs();
 
   return programs.map((program) => ({

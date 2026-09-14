@@ -1,3 +1,4 @@
+import { deferLocalContainerPrerender } from "@/lib/weletic/local-container-prerender";
 import { MarketplaceRouter } from "@/ui/program-marketplace/marketplace-router";
 import {
   generateMarketplaceProgramStaticParams,
@@ -7,6 +8,8 @@ import {
 export { revalidate };
 
 export async function generateStaticParams() {
+  if (deferLocalContainerPrerender()) return [];
+
   return generateMarketplaceProgramStaticParams();
 }
 

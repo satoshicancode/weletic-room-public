@@ -3,6 +3,7 @@ const { withPlausibleProxy } = require("next-plausible");
 // Release CI runs lint and TypeScript as independent required checks. Avoid
 // repeating those memory-intensive passes inside each production/E2E build.
 const hasSeparateCiValidation = process.env.CI_SEPARATE_VALIDATION === "true";
+const isLocalContainerBuild = process.env.WELETIC_LOCAL_CONTAINER_BUILD === "1";
 
 // Suppress specific external package warnings
 const originalConsoleWarn = console.warn;
@@ -66,7 +67,13 @@ module.exports = withPlausibleProxy({
       bodySizeLimit: "4mb",
     },
   },
-  webpack: (config, { webpack, isServer }) => {
+  webpack: (config, { webpack, isServer, dev }) => {
+    if (isLocalContainerBuild && !dev) {
+      // The offline compatibility build has no reusable Webpack cache and a
+      // bounded heap. Keep this experiment out of ordinary builds/dev servers.
+      config.cache = false;
+      config.parallelism = 2;
+    }
     if (isServer) {
       config.plugins.push(
         // mute errors for unused typeorm deps
