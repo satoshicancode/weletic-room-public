@@ -230,6 +230,11 @@ records P01–P09 real-MySQL lifecycle, replay/race, generation-fence and indepe
 SQL checks. This does not close the live `yamaxdev`, delivery, campaign or broader
 concurrency gates below.
 
+Additional September 16 [campaign accounting evidence](campaign-accounting-acceptance-2026-09-16.md)
+covers C01–C06 isolated schedule, targeting, historical VIP/policy, capped allocation,
+refund/replay and merchant transaction checks. The named live campaign and gateway
+gates remain open; synthetic authority is not real authentication.
+
 - [ ] C1: Purchase, signup, birthday and authorized manual points; pending
       maturity, expiry, warning/last-chance timing and replay-safe awards.
 - [ ] C2: Immutable line-level BigInt allocations, specificity/tie-breaking,

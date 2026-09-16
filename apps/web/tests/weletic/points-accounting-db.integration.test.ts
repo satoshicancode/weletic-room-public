@@ -15,6 +15,9 @@ import {
   handleInactivityExpiry,
 } from "@/lib/weletic/loyalty/outbox-worker";
 import { upsertWeleticShopper } from "@/lib/weletic/loyalty/shopper";
+import type { BonusCampaignFields } from "@/lib/weletic/loyalty/vip-campaign-contract";
+import { VipCampaignConflictError } from "@/lib/weletic/loyalty/vip-campaign-service";
+import { manageWorkspaceVipCampaign } from "@/lib/weletic/loyalty/workspace-vip-campaign";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
@@ -73,6 +76,15 @@ afterAll(async () => {
     );
     await prisma.$executeRaw(
       Prisma.sql`DELETE FROM WeleticLoyaltyEarningRule WHERE programId IN (${ids})`,
+    );
+    await prisma.$executeRaw(
+      Prisma.sql`DELETE FROM WeleticLoyaltyBonusCampaign WHERE programId IN (${ids})`,
+    );
+    await prisma.$executeRaw(
+      Prisma.sql`DELETE FROM WeleticLoyaltyTierHistory WHERE accountId IN (SELECT id FROM WeleticLoyaltyAccount WHERE storeId IN (${ids}))`,
+    );
+    await prisma.$executeRaw(
+      Prisma.sql`DELETE FROM WeleticLoyaltyTier WHERE programId IN (${ids})`,
     );
     const tables = await prisma.$queryRaw<
       Array<{ name: string }>
@@ -393,6 +405,431 @@ it("P01: purchase multi-line earn, duplicate delivery and partial/full refund co
   expect(
     await prisma.weleticLoyaltyEarnGrant.count({ where: { storeId: f.id } }),
   ).toBe(1);
+});
+
+async function campaign(f: Fixture, targeted = false) {
+  const result = await prisma.weleticLoyaltyBonusCampaign.create({
+    data: {
+      id: `campaign-${randomUUID()}`,
+      programId: f.id,
+      name: "Synthetic campaign acceptance",
+      multiplier: "2",
+      startAt: epoch,
+      endAt: new Date(epoch.getTime() + 86_400_000),
+      createdAt: new Date("2026-01-02T00:00:00Z"),
+      eligibleSkus: targeted ? ["MATCH"] : [],
+      eligibleCollectionIds: targeted ? ["gid://shopify/Collection/42"] : [],
+    },
+  });
+  await prisma.$transaction((tx) =>
+    publishLoyaltyEarnPolicyRevision({
+      tx,
+      storeId: f.id,
+      programId: f.id,
+      effectiveAt: new Date("2026-01-03T00:00:00Z"),
+      reason: "Synthetic campaign policy",
+    }),
+  );
+  return result;
+}
+
+it("C01: campaign schedule uses event-time start-inclusive/end-exclusive boundaries", async () => {
+  const f = await seed();
+  const configured = await campaign(f);
+  let total = BigInt(0);
+  for (const [offset, expected] of [
+    [-1, 100],
+    [0, 200],
+    [86_399_999, 200],
+    [86_400_000, 100],
+  ]) {
+    const id = await order(f);
+    await prisma.weleticCommerceOrder.update({
+      where: { id },
+      data: { occurredAt: new Date(epoch.getTime() + offset) },
+    });
+    vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
+    await earn(f, id);
+    const grant = await prisma.weleticLoyaltyEarnGrant.findUniqueOrThrow({
+      where: { storeId_orderId: { storeId: f.id, orderId: id } },
+    });
+    expect(
+      await prisma.weleticReconciliationIssue.findMany({
+        where: { storeId: f.id, status: "open" },
+        select: { kind: true, details: true },
+      }),
+    ).toEqual([]);
+    expect(grant?.grossPoints).toBe(BigInt(expected));
+    expect(grant?.selectedCampaignId).toBe(
+      expected === 200 ? configured.id : null,
+    );
+    total += BigInt(expected);
+    await balance(f, total);
+    await conserved(f);
+  }
+});
+
+it("C02: SKU-or-collection campaign allocation, concurrent replay and refunds conserve captured points", async () => {
+  const f = await seed();
+  const configured = await campaign(f, true);
+  const id = await order(f, [BigInt(3000), BigInt(4000), BigInt(3000)]);
+  await prisma.weleticCommerceOrderLine.update({
+    where: { id: `${id}-0` },
+    data: { sku: "MATCH" },
+  });
+  await prisma.weleticCommerceOrderLine.update({
+    where: { id: `${id}-1` },
+    data: { collectionExternalIds: ["gid://shopify/Collection/42"] },
+  });
+  await Promise.all([earn(f, id), earn(f, id)]);
+  await balance(f, BigInt(170));
+  expect(
+    await prisma.$queryRaw(Prisma.sql`
+      SELECT orderLineId, awardedPoints FROM WeleticLoyaltyOrderLineEarn
+      WHERE storeId = ${f.id} ORDER BY orderLineId`),
+  ).toEqual([
+    { orderLineId: `${id}-0`, awardedPoints: BigInt(60) },
+    { orderLineId: `${id}-1`, awardedPoints: BigInt(80) },
+    { orderLineId: `${id}-2`, awardedPoints: BigInt(30) },
+  ]);
+  // Direct fixture edit is not a merchant-write acceptance claim. The later
+  // revision must never change this order's captured grant or refund economics.
+  await prisma.weleticLoyaltyBonusCampaign.update({
+    where: { id: configured.id },
+    data: {
+      multiplier: "5",
+      eligibleSkus: ["OTHER"],
+      eligibleCollectionIds: [],
+    },
+  });
+  await prisma.$transaction((tx) =>
+    publishLoyaltyEarnPolicyRevision({
+      tx,
+      storeId: f.id,
+      programId: f.id,
+      effectiveAt: new Date(epoch.getTime() + 1),
+      reason: "Synthetic later campaign revision",
+    }),
+  );
+  const partial = await refund(f, id, [[0, BigInt(1500)]]);
+  await Promise.all([reverse(f, partial), reverse(f, partial)]);
+  await balance(f, BigInt(140));
+  await conserved(f);
+  const full = await refund(f, id, [
+    [0, BigInt(1500)],
+    [1, BigInt(4000)],
+    [2, BigInt(3000)],
+  ]);
+  await Promise.all([reverse(f, full), reverse(f, full), earn(f, id)]);
+  await balance(f, BigInt(0));
+  await conserved(f);
+  expect(
+    await prisma.weleticLoyaltyEarnGrant.count({ where: { storeId: f.id } }),
+  ).toBe(1);
+});
+
+it("C03: a delayed campaign order uses the event-time policy revision after campaign edits", async () => {
+  const f = await seed();
+  const configured = await campaign(f);
+  await prisma.weleticLoyaltyBonusCampaign.update({
+    where: { id: configured.id },
+    data: { multiplier: "5", isActive: false },
+  });
+  await prisma.$transaction((tx) =>
+    publishLoyaltyEarnPolicyRevision({
+      tx,
+      storeId: f.id,
+      programId: f.id,
+      effectiveAt: new Date(epoch.getTime() + 1),
+      reason: "Synthetic deactivation",
+    }),
+  );
+  vi.setSystemTime(new Date("2026-09-20T00:00:00Z"));
+  const id = await order(f);
+  await earn(f, id);
+  const grant = await prisma.weleticLoyaltyEarnGrant.findUniqueOrThrow({
+    where: { storeId_orderId: { storeId: f.id, orderId: id } },
+  });
+  expect(
+    await prisma.weleticReconciliationIssue.findMany({
+      where: { storeId: f.id, status: "open" },
+      select: { kind: true, details: true },
+    }),
+  ).toEqual([]);
+  expect(grant?.selectedCampaignId).toBe(configured.id);
+  expect(grant?.grossPoints).toBe(BigInt(200));
+  await balance(f, BigInt(200));
+  const later = await order(f);
+  await prisma.weleticCommerceOrder.update({
+    where: { id: later },
+    data: { occurredAt: new Date(epoch.getTime() + 1) },
+  });
+  await earn(f, later);
+  const afterDeactivation =
+    await prisma.weleticLoyaltyEarnGrant.findUniqueOrThrow({
+      where: { storeId_orderId: { storeId: f.id, orderId: later } },
+    });
+  expect(afterDeactivation.selectedCampaignId).toBeNull();
+  expect(afterDeactivation.grossPoints).toBe(BigInt(100));
+  await balance(f, BigInt(300));
+  await conserved(f);
+});
+
+it.each([null, 120])(
+  "C05: fractional campaign allocation preserves nonmatching base points with cap=%s",
+  async (cap) => {
+    const f = await seed();
+    const configured = await campaign(f, true);
+    await prisma.weleticLoyaltyBonusCampaign.update({
+      where: { id: configured.id },
+      data: { multiplier: "1.5" },
+    });
+    await prisma.weleticLoyaltyEarningRule.update({
+      where: { id: `purchase-${f.id}` },
+      data: { maxPointsPerEvent: cap === null ? null : BigInt(cap) },
+    });
+    await prisma.$transaction((tx) =>
+      publishLoyaltyEarnPolicyRevision({
+        tx,
+        storeId: f.id,
+        programId: f.id,
+        effectiveAt: new Date("2026-01-04T00:00:00Z"),
+        reason: "Synthetic fractional capped campaign",
+      }),
+    );
+    const id = await order(f, [BigInt(3333), BigInt(3333), BigInt(3334)]);
+    await prisma.weleticCommerceOrderLine.updateMany({
+      where: { id: { in: [`${id}-0`, `${id}-1`] } },
+      data: { sku: "MATCH" },
+    });
+    await Promise.all([earn(f, id), earn(f, id)]);
+    await balance(f, BigInt(cap ?? 133));
+    const expected = cap === null ? [50, 49, 34] : [43, 43, 34];
+    expect(
+      await prisma.$queryRaw(
+        Prisma.sql`SELECT orderLineId, awardedPoints FROM WeleticLoyaltyOrderLineEarn WHERE storeId = ${f.id} ORDER BY orderLineId`,
+      ),
+    ).toEqual(
+      expected.map((points, i) => ({
+        orderLineId: `${id}-${i}`,
+        awardedPoints: BigInt(points),
+      })),
+    );
+    await conserved(f);
+    const full = await refund(f, id, [
+      [0, BigInt(3333)],
+      [1, BigInt(3333)],
+      [2, BigInt(3334)],
+    ]);
+    await Promise.all([reverse(f, full), reverse(f, full)]);
+    await balance(f, BigInt(0));
+    await conserved(f);
+  },
+);
+
+it.each([true, false])(
+  "C04: campaign VIP intersection uses event-time history, not current tier (eligible=%s)",
+  async (eligible) => {
+    const f = await seed();
+    const bronze = `wtier_${randomUUID().replaceAll("-", "")}`;
+    const gold = `wtier_${randomUUID().replaceAll("-", "")}`;
+    await prisma.weleticLoyaltyTier.createMany({
+      data: [
+        {
+          id: bronze,
+          programId: f.id,
+          name: "Bronze",
+          slug: "bronze",
+          tierOrder: 1,
+          pointsMultiplier: "1",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+        {
+          id: gold,
+          programId: f.id,
+          name: "Gold",
+          slug: "gold",
+          tierOrder: 2,
+          pointsMultiplier: "1.5",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+    });
+    const configured = await campaign(f, true);
+    await prisma.weleticLoyaltyBonusCampaign.update({
+      where: { id: configured.id },
+      data: { eligibleTierIds: [gold] },
+    });
+    await prisma.$transaction((tx) =>
+      publishLoyaltyEarnPolicyRevision({
+        tx,
+        storeId: f.id,
+        programId: f.id,
+        effectiveAt: new Date("2026-01-04T00:00:00Z"),
+        reason: "Synthetic VIP campaign intersection",
+      }),
+    );
+    const eventTier = eligible ? gold : bronze;
+    const currentTier = eligible ? bronze : gold;
+    await prisma.weleticLoyaltyTierHistory.createMany({
+      data: [
+        {
+          id: randomUUID(),
+          accountId: f.accountId,
+          sequenceNumber: 1,
+          toTierId: eventTier,
+          effectiveAt: new Date("2026-01-05T00:00:00Z"),
+        },
+        {
+          id: randomUUID(),
+          accountId: f.accountId,
+          sequenceNumber: 2,
+          fromTierId: eventTier,
+          toTierId: currentTier,
+          effectiveAt: new Date(epoch.getTime() + 1),
+        },
+      ],
+    });
+    await prisma.weleticLoyaltyAccount.update({
+      where: { id: f.accountId },
+      data: { currentTierId: currentTier },
+    });
+    const id = await order(f);
+    await prisma.weleticCommerceOrderLine.update({
+      where: { id: `${id}-0` },
+      data: { sku: "MATCH" },
+    });
+    vi.setSystemTime(new Date(epoch.getTime() + 1000));
+    await Promise.all([earn(f, id), earn(f, id)]);
+    const grant = await prisma.weleticLoyaltyEarnGrant.findUniqueOrThrow({
+      where: { storeId_orderId: { storeId: f.id, orderId: id } },
+    });
+    expect(grant.selectedCampaignId).toBe(eligible ? configured.id : null);
+    await balance(f, BigInt(eligible ? 240 : 100));
+    const partial = await refund(f, id, [[0, BigInt(3000)]]);
+    await reverse(f, partial);
+    await balance(f, BigInt(eligible ? 150 : 70));
+    await conserved(f);
+  },
+);
+
+it("C06: real merchant transactions fence revisions, overlaps and running campaign edits", async () => {
+  const f = await seed();
+  // Synthetic workspace authority: exercises the production transaction, not
+  // HTTP authentication, Shopify sessions or a signed merchant gateway.
+  const authority = {
+    workspaceId: f.id,
+    role: "owner",
+    permissions: ["loyalty.read", "loyalty.write"] as const,
+  };
+  const read = () =>
+    manageWorkspaceVipCampaign(authority, { operation: "read" });
+  const fields: BonusCampaignFields = {
+    name: "Synthetic scheduled campaign",
+    description: null,
+    multiplier: 2,
+    startAt: new Date(epoch.getTime() + 3600000).toISOString(),
+    endAt: new Date(epoch.getTime() + 7200000).toISOString(),
+    isActive: true,
+    eligibleTierIds: [],
+    eligibleSkus: [],
+    eligibleCollectionIds: [],
+  };
+  const save = (
+    revision: string,
+    campaignId: string | null,
+    campaign = fields,
+  ) =>
+    manageWorkspaceVipCampaign(authority, {
+      operation: "save_campaign",
+      input: {
+        expectedInstallationGeneration: "g1",
+        expectedRevision: revision,
+        campaignId,
+        campaign,
+      },
+    });
+  const initial = await read();
+  const created = await save(initial.revision, null);
+  const id = created.affectedResourceId!;
+  await expect(save(initial.revision, id)).rejects.toThrow();
+  await expect(save(created.revision, null)).rejects.toThrow(/overlap/i);
+  expect((await read()).revision).toBe(created.revision);
+  const adjacent = await save(created.revision, null, {
+    ...fields,
+    startAt: fields.endAt,
+    endAt: new Date(epoch.getTime() + 10800000).toISOString(),
+  });
+  expect(adjacent.campaigns).toHaveLength(2);
+  vi.setSystemTime(new Date(fields.startAt));
+  // Revision includes the derived schedule state; refresh at the time boundary.
+  const running = await read();
+  for (const change of [
+    { multiplier: 3 },
+    { eligibleSkus: ["NEW-SKU"] },
+    { endAt: new Date(epoch.getTime() + 7100000).toISOString() },
+  ]) {
+    await expect(
+      save(running.revision, id, { ...fields, ...change }),
+    ).rejects.toThrow();
+    expect((await read()).revision).toBe(running.revision);
+  }
+  const renamed = await save(running.revision, id, {
+    ...fields,
+    name: "Renamed",
+  });
+  const revisionCount = await prisma.weleticLoyaltyEarnPolicyRevision.count({
+    where: { storeId: f.id },
+  });
+  const races = await Promise.allSettled([
+    save(renamed.revision, id, { ...fields, name: "Concurrent A" }),
+    save(renamed.revision, id, { ...fields, name: "Concurrent B" }),
+  ]);
+  expect(races.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+  expect(races.filter(({ status }) => status === "rejected")).toHaveLength(1);
+  const rejected = races.find((result) => result.status === "rejected");
+  if (!rejected || rejected.status !== "rejected")
+    throw new Error("Expected one rejected campaign edit");
+  expect(
+    rejected?.reason instanceof VipCampaignConflictError ||
+      (rejected?.reason instanceof Prisma.PrismaClientKnownRequestError &&
+        (rejected.reason.code === "P2034" ||
+          // The store fence uses raw SQL; MySQL deadlocks surface as P2010.
+          (rejected.reason.code === "P2010" &&
+            rejected.reason.meta?.code === "1213"))),
+    JSON.stringify({
+      code: rejected?.reason.code,
+      meta: rejected?.reason.meta,
+      name: rejected?.reason.name,
+    }),
+  ).toBe(true);
+  const current = await read();
+  const winner = races.find((result) => result.status === "fulfilled");
+  if (!winner || winner.status !== "fulfilled")
+    throw new Error("Expected one successful campaign edit");
+  expect(
+    current.campaigns.find((campaign) => campaign.id === id)?.fields.name,
+  ).toBe(
+    winner?.value.campaigns.find((campaign) => campaign.id === id)?.fields.name,
+  );
+  expect(
+    await prisma.weleticLoyaltyEarnPolicyRevision.count({
+      where: { storeId: f.id },
+    }),
+  ).toBe(revisionCount); // Cosmetic changes do not publish new earning economics.
+  const stopped = await save(current.revision, id, {
+    ...fields,
+    isActive: false,
+  });
+  expect(
+    stopped.campaigns.find((campaign) => campaign.id === id)?.fields.isActive,
+  ).toBe(false);
+  expect(
+    await prisma.weleticLoyaltyEarnPolicyRevision.count({
+      where: { storeId: f.id },
+    }),
+  ).toBe(revisionCount + 1);
+  await balance(f, BigInt("0"));
 });
 
 it("P02: pending partial refund, early release rejection, maturity and replay", async () => {
