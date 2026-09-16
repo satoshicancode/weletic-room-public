@@ -1261,14 +1261,17 @@ describe("Tier 1: Feature Coverage (>=5 tests per feature for all 15 features in
     });
 
     it("8.4: qualifies referral and awards double-sided points on qualifying order", async () => {
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      const referee = {
         id: "wacc_bob",
         programId: "wprog_1",
         storeId: "store_1",
         status: "active",
         metadata: null,
         shopperId: "shop_bob",
-      } as any);
+      } as any;
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique)
+        .mockResolvedValueOnce(referee)
+        .mockResolvedValueOnce(referee);
       vi.mocked(prisma.weleticLoyaltyReferral.findFirst).mockResolvedValueOnce({
         id: "wreferral_101",
         advocateAccountId: "wacc_alice",
@@ -1330,7 +1333,7 @@ describe("Tier 1: Feature Coverage (>=5 tests per feature for all 15 features in
     });
 
     it("8.5: rejects referral qualification when order subtotal is below minimum threshold", async () => {
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "wacc_bob",
         programId: "wprog_1",
         storeId: "store_1",
