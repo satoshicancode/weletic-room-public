@@ -1420,6 +1420,7 @@ describe("Bonus Points Campaigns Engine — Matrix Test Suite", () => {
         accountId: "acc_1",
         orderId: "order_holding_1",
         status: "pending",
+        availableAt: new Date("2026-01-01T00:00:00Z"),
         grossPoints: BigInt(250),
         pendingPoints: BigInt(250),
         settledPoints: BigInt(0),

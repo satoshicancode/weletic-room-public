@@ -358,6 +358,86 @@ describe("M1: Security Boundary & RBAC Suite", () => {
       expect(resAccounts.status).toBe(403);
     });
 
+    describe.each([
+      ["adjust", postAdjust],
+      ["accounts", postAccounts],
+    ] as const)("%s input boundary", (endpoint, handler) => {
+      it.each([
+        { pointsDelta: 10 },
+        { accountId: " ", pointsDelta: 10 },
+        { shopperId: {}, pointsDelta: 10 },
+        { accountId: "acc_1", pointsDelta: 1.5 },
+        { accountId: "acc_1", pointsDelta: 9007199254740992 },
+        { accountId: "acc_1", pointsDelta: true },
+        { accountId: "acc_1", pointsDelta: "1e3" },
+        { accountId: "acc_1", pointsDelta: "9223372036854775808" },
+        { accountId: "acc_1", pointsDelta: "-9223372036854775809" },
+        { accountId: "acc_1", pointsDelta: "0" },
+      ])(
+        "rejects ambiguous/invalid manual adjustment before customer lookup: %j",
+        async (body) => {
+          vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
+            id: "store_tenant_a",
+            projectId: "ws_tenant_a",
+          } as never);
+          const response = await handler(
+            new Request(
+              `http://localhost/api/shopify/loyalty/admin/${endpoint}?workspaceId=ws_tenant_a`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
+              },
+            ) as any,
+            { params: Promise.resolve({}) },
+          );
+          expect(response.status).toBe(400);
+          expect(prisma.weleticShopper.findFirst).not.toHaveBeenCalled();
+          expect(prisma.weleticLoyaltyAccount.findFirst).not.toHaveBeenCalled();
+          expect(prisma.weleticPointsLedgerEntry.create).not.toHaveBeenCalled();
+        },
+      );
+
+      it("accepts an exact large decimal string but rejects contradictory account/customer selectors", async () => {
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
+          id: "store_tenant_a",
+          projectId: "ws_tenant_a",
+        } as never);
+        vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue(
+          null,
+        );
+        const response = await handler(
+          new Request(
+            `http://localhost/api/shopify/loyalty/admin/${endpoint}?workspaceId=ws_tenant_a`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                accountId: "acc_1",
+                shopperId: "other-shopper",
+                shopifyCustomerId: 123,
+                pointsDelta: "9007199254740993",
+              }),
+            },
+          ) as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(response.status).toBe(404);
+        expect(prisma.weleticLoyaltyAccount.findFirst).toHaveBeenCalledWith({
+          where: {
+            id: "acc_1",
+            storeId: "store_tenant_a",
+            shopper: {
+              storeId: "store_tenant_a",
+              id: "other-shopper",
+              shopifyCustomerId: "123",
+            },
+          },
+        });
+        expect(prisma.weleticPointsLedgerEntry.create).not.toHaveBeenCalled();
+      });
+    });
+
     it("allows owner to execute sensitive operations successfully", async () => {
       currentTestRole = "owner";
       vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({

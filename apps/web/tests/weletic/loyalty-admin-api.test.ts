@@ -23,6 +23,7 @@ import {
   POST as postAccounts,
 } from "../../app/(ee)/api/shopify/loyalty/admin/accounts/route";
 import { GET as getActivity } from "../../app/(ee)/api/shopify/loyalty/admin/activity/route";
+import { POST as postAdjust } from "../../app/(ee)/api/shopify/loyalty/admin/adjust/route";
 import { GET as getAnalyticsCohorts } from "../../app/(ee)/api/shopify/loyalty/admin/analytics/cohorts/route";
 import { GET as getAnalyticsExport } from "../../app/(ee)/api/shopify/loyalty/admin/analytics/export/route";
 import { GET as getAnalytics } from "../../app/(ee)/api/shopify/loyalty/admin/analytics/route";
@@ -2614,94 +2615,116 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
       expect(acc.cachedPointsBalance).toBe("750");
     });
 
-    it("applies points balance adjustment via POST /api/shopify/loyalty/admin/accounts with owner role", async () => {
-      currentTestRole = "owner";
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
-        id: "store_yamax",
-        projectId: "ws_tenant_a",
-      } as any);
+    it.each([
+      ["accounts", 200],
+      ["accounts", "9007199254740993"],
+      ["adjust", 200],
+      ["adjust", "9007199254740993"],
+    ] as const)(
+      "applies exact owner adjustment via %s with delta %s",
+      async (endpoint, delta) => {
+        currentTestRole = "owner";
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
+          id: "store_yamax",
+          projectId: "ws_tenant_a",
+        } as any);
 
-      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue({
-        id: "acc_bob",
-        storeId: "store_yamax",
-        status: "active",
-        metadata: null,
-        cachedPointsBalance: BigInt(300),
-        cachedPendingPoints: BigInt(0),
-        cachedRollingSpend: BigInt(15000),
-        lifetimePointsEarned: BigInt(300),
-        lifetimePointsRedeemed: BigInt(0),
-        ledgerVersion: 5,
-        program: {
-          tiers: [],
-        },
-      } as any);
+        vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue({
+          id: "acc_bob",
+          storeId: "store_yamax",
+          status: "active",
+          metadata: null,
+          cachedPointsBalance: BigInt(300),
+          cachedPendingPoints: BigInt(0),
+          cachedRollingSpend: BigInt(15000),
+          lifetimePointsEarned: BigInt(300),
+          lifetimePointsRedeemed: BigInt(0),
+          ledgerVersion: 5,
+          program: {
+            tiers: [],
+          },
+        } as any);
 
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
-        id: "acc_bob",
-        storeId: "store_yamax",
-        cachedPointsBalance: BigInt(300),
-        cachedPendingPoints: BigInt(0),
-        cachedRollingSpend: BigInt(15000),
-        lifetimePointsEarned: BigInt(300),
-        lifetimePointsRedeemed: BigInt(0),
-        ledgerVersion: 5,
-        program: {
-          tiers: [],
-        },
-      } as any);
+        vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
+          id: "acc_bob",
+          storeId: "store_yamax",
+          cachedPointsBalance: BigInt(300),
+          cachedPendingPoints: BigInt(0),
+          cachedRollingSpend: BigInt(15000),
+          lifetimePointsEarned: BigInt(300),
+          lifetimePointsRedeemed: BigInt(0),
+          ledgerVersion: 5,
+          program: {
+            tiers: [],
+          },
+        } as any);
 
-      vi.mocked(prisma.weleticPointsLedgerEntry.findFirst).mockResolvedValue({
-        sequenceNumber: 5,
-      } as any);
+        vi.mocked(prisma.weleticPointsLedgerEntry.findFirst).mockResolvedValue({
+          sequenceNumber: 5,
+        } as any);
 
-      vi.mocked(prisma.weleticPointsLedgerEntry.create).mockResolvedValue({
-        id: "entry_adj_99",
-        accountId: "acc_bob",
-        storeId: "store_yamax",
-        entryType: WeleticPointsLedgerEntryType.MANUAL_ADJUSTMENT,
-        pointsDelta: BigInt(200),
-        balanceAfter: BigInt(500),
-        reason: "Customer Goodwill bonus",
-        createdAt: new Date(),
-      } as any);
+        vi.mocked(prisma.weleticPointsLedgerEntry.create).mockResolvedValue({
+          id: "entry_adj_99",
+          accountId: "acc_bob",
+          storeId: "store_yamax",
+          entryType: WeleticPointsLedgerEntryType.MANUAL_ADJUSTMENT,
+          pointsDelta: BigInt(delta),
+          balanceAfter: BigInt(300) + BigInt(delta),
+          reason: "Customer Goodwill bonus",
+          createdAt: new Date(),
+        } as any);
 
-      vi.mocked(prisma.weleticLoyaltyAccount.update).mockResolvedValue({
-        id: "acc_bob",
-        cachedPointsBalance: BigInt(500),
-      } as any);
-      vi.mocked(prisma.weleticLoyaltyAccount.updateMany).mockResolvedValue({
-        count: 1,
-      });
-      vi.mocked(prisma.weleticLoyaltyTier.findMany).mockResolvedValue([]);
-      vi.mocked(prisma.weleticCommerceOrder.findMany).mockResolvedValue([]);
-      vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([]);
+        vi.mocked(prisma.weleticLoyaltyAccount.update).mockResolvedValue({
+          id: "acc_bob",
+          cachedPointsBalance: BigInt(300) + BigInt(delta),
+        } as any);
+        vi.mocked(prisma.weleticLoyaltyAccount.updateMany).mockResolvedValue({
+          count: 1,
+        });
+        vi.mocked(prisma.weleticLoyaltyTier.findMany).mockResolvedValue([]);
+        vi.mocked(prisma.weleticCommerceOrder.findMany).mockResolvedValue([]);
+        vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue(
+          [],
+        );
 
-      vi.mocked(prisma.weleticCommerceOrder.aggregate).mockResolvedValue({
-        _sum: { presentmentNet: BigInt(15000) },
-      } as any);
+        vi.mocked(prisma.weleticCommerceOrder.aggregate).mockResolvedValue({
+          _sum: { presentmentNet: BigInt(15000) },
+        } as any);
 
-      const req = new Request(
-        "http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            accountId: "acc_bob",
-            pointsDelta: 200,
-            reason: "Customer Goodwill bonus",
+        const req = new Request(
+          `http://localhost/api/shopify/loyalty/admin/${endpoint}?workspaceId=ws_tenant_a`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              accountId: "acc_bob",
+              pointsDelta: delta,
+              reason: "Customer Goodwill bonus",
+            }),
+          },
+        ) as any;
+
+        const res = await (endpoint === "accounts" ? postAccounts : postAdjust)(
+          req,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(200);
+
+        const body = await res.json();
+        expect(body.data).toBeDefined();
+        expect(body.data.success).toBe(true);
+        expect(body.data.pointsDelta).toBe(String(delta));
+        expect(prisma.weleticPointsLedgerEntry.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ pointsDelta: BigInt(delta) }),
           }),
-        },
-      ) as any;
-
-      const res = await postAccounts(req, { params: Promise.resolve({}) });
-      expect(res.status).toBe(200);
-
-      const body = await res.json();
-      expect(body.data).toBeDefined();
-      expect(body.data.success).toBe(true);
-      expect(body.data.pointsDelta).toBe("200");
-      expect(body.data.newBalance).toBe("500");
-    });
+        );
+        expect(
+          endpoint === "accounts"
+            ? body.data.newBalance
+            : body.data.balanceAfter,
+        ).toBe((BigInt(300) + BigInt(delta)).toString());
+      },
+    );
   });
 });

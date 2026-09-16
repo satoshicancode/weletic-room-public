@@ -265,6 +265,16 @@ export async function releaseHoldingPeriodGrant(
       };
     }
 
+    // Enforce the persisted maturity boundary here, not only in queue selection.
+    // Early deliveries/replays must retry rather than permanently complete a job.
+    // A refunded order can still be voided above before its original maturity.
+    if (!Number.isFinite(grant.availableAt?.getTime())) {
+      throw new Error("Holding-period grant has an invalid maturity date");
+    }
+    if (grant.availableAt.getTime() > Date.now()) {
+      throw new Error("Holding-period release attempted before maturity");
+    }
+
     // 3. Claim the exact pending grant snapshot before crediting it. The CAS
     // and ledger write share one serializable transaction, so a concurrent
     // refund can never be overwritten or resurrected as settled points.

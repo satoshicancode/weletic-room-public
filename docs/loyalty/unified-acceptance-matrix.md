@@ -215,6 +215,11 @@ No checkbox below is promoted solely by these local checks.
 
 ## C — Shopper loyalty and financial lifecycle
 
+September 16 isolated evidence: [points/accounting acceptance](points-accounting-acceptance-2026-09-16.md)
+records P01–P09 real-MySQL lifecycle, replay/race, generation-fence and independent
+SQL checks. This does not close the live `yamaxdev`, delivery, campaign or broader
+concurrency gates below.
+
 - [ ] C1: Purchase, signup, birthday and authorized manual points; pending
       maturity, expiry, warning/last-chance timing and replay-safe awards.
 - [ ] C2: Immutable line-level BigInt allocations, specificity/tie-breaking,

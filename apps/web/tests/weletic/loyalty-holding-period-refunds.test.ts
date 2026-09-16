@@ -233,6 +233,30 @@ describe("Milestone 3: Holding Period Lifecycle & Exact Proportional Refunds Tes
   // 2. Holding Period Maturity Release
   // =========================================================================
   describe("2. Holding Period Maturity & releaseHoldingPeriodGrant", () => {
+    it.each([new Date("2999-01-01T00:00:00Z"), new Date("invalid")])(
+      "rejects early or invalid persisted maturity without a financial write: %s",
+      async (availableAt) => {
+        vi.mocked(
+          prisma.weleticLoyaltyEarnGrant.findUnique,
+        ).mockResolvedValueOnce({
+          id: TEST_GRANT_ID,
+          storeId: TEST_STORE_ID,
+          accountId: TEST_ACCOUNT_ID,
+          status: "pending",
+          pendingPoints: BigInt(100),
+          availableAt,
+          order: { status: "paid" },
+        } as never);
+        await expect(
+          releaseHoldingPeriodGrant({ grantId: TEST_GRANT_ID }),
+        ).rejects.toThrow(/maturity/);
+        expect(
+          prisma.weleticLoyaltyEarnGrant.updateMany,
+        ).not.toHaveBeenCalled();
+        expect(prisma.weleticPointsLedgerEntry.create).not.toHaveBeenCalled();
+      },
+    );
+
     it("releases pending grant to settled, decrements pending bucket, credits balance, and enqueues METAFIELD_SYNC", async () => {
       (prisma.weleticLoyaltyEarnGrant.findUnique as any).mockResolvedValueOnce({
         id: TEST_GRANT_ID,
@@ -240,6 +264,7 @@ describe("Milestone 3: Holding Period Lifecycle & Exact Proportional Refunds Tes
         storeId: TEST_STORE_ID,
         accountId: TEST_ACCOUNT_ID,
         orderId: "ord_100",
+        availableAt: new Date("2026-01-01T00:00:00Z"),
         status: "pending",
         pendingPoints: BigInt(150),
         grossPoints: BigInt(150),
