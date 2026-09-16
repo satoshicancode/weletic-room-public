@@ -28,6 +28,7 @@ function fixture() {
       SHOPIFY_WEBHOOK_URL: `${PUBLIC_LOYALTY_API_ORIGIN}/api/shopify/integration/webhook`,
       NEXTAUTH_SECRET: "synthetic-session-secret-not-real".repeat(2),
       CRON_SECRET: "synthetic-cron-secret-not-real".repeat(2),
+      SHOPIFY_WEBHOOK_SECRET: "synthetic-app-secret-not-real".repeat(2),
     },
     shopify: {
       ...common,
@@ -74,6 +75,7 @@ for (const [role, key, value] of [
   ["web", "NEXT_PUBLIC_APP_DOMAIN", "https://app.weletic.com"],
   ["web", "SHOPIFY_WEBHOOK_URL", `${PUBLIC_LOYALTY_API_ORIGIN}/wrong`],
   ["web", "CRON_SECRET", "short"],
+  ["web", "SHOPIFY_WEBHOOK_SECRET", "different-webhook-secret".repeat(3)],
   ["web", "DEV_WEBHOOK_URL", "https://foreign.invalid"],
   ["shopify", "SHOPIFY_APP_DISTRIBUTION", "custom"],
   ["shopify", "WELETIC_API_URL", "https://foreign.invalid"],
