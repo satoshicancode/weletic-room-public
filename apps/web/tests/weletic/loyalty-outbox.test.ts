@@ -20,6 +20,7 @@ import {
   HoldingPeriodReleasePayload,
   processOutboxJobsBatch,
   reapStaleOutboxLocks,
+  TierReviewPayloadSchema,
   validateOutboxPayload,
 } from "@/lib/weletic/loyalty/outbox";
 import { sendPointsEarnedNotification } from "@/lib/weletic/loyalty/points-earned-notifications";
@@ -209,6 +210,37 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
   // 1. Transactional Enqueueing & Atomicity
   // =========================================================================
   describe("1. Transactional Enqueueing & Atomicity", () => {
+    it("preserves omitted tier grace and accepts zero without defaulting it", () => {
+      expect(
+        TierReviewPayloadSchema.parse({ accountId: TEST_ACCOUNT_ID }),
+      ).not.toHaveProperty("gracePeriodDays");
+      expect(
+        TierReviewPayloadSchema.parse({
+          accountId: TEST_ACCOUNT_ID,
+          gracePeriodDays: 0,
+        }),
+      ).toMatchObject({ gracePeriodDays: 0 });
+      expect(() =>
+        validateOutboxPayload("TIER_REVIEW", {
+          accountId: TEST_ACCOUNT_ID,
+          gracePeriodDays: 0,
+        }),
+      ).not.toThrow();
+      for (const gracePeriodDays of [
+        -1,
+        0.5,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+      ]) {
+        expect(() =>
+          validateOutboxPayload("TIER_REVIEW", {
+            accountId: TEST_ACCOUNT_ID,
+            gracePeriodDays,
+          }),
+        ).toThrow();
+      }
+    });
+
     it("accepts birthday and referral coupon provisioning payloads", () => {
       expect(() =>
         validateOutboxPayload("BIRTHDAY_REWARD", {

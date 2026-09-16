@@ -113,7 +113,6 @@ describe("VIP tier review scheduling", () => {
       payload: {
         accountId: "waccount_expired_1",
         reviewPeriod: "rolling_12m",
-        gracePeriodDays: 30,
         reason: "sweep_tier_expiry",
       },
       idempotencyKey: `tier_review_sweep:waccount_expired_1:${expiredAt.getTime()}`,

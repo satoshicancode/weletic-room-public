@@ -94,7 +94,7 @@ export const TierReviewPayloadSchema = z.object({
     ])
     .optional(),
   cycleYear: z.number().int().optional(),
-  gracePeriodDays: z.number().int().positive().optional(),
+  gracePeriodDays: z.number().int().nonnegative().optional(),
   reason: z.string().optional(),
   installationGeneration: z.string().min(1).max(64).nullable().optional(),
 });

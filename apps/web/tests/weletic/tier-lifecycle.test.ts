@@ -519,6 +519,61 @@ describe("VIP Tier Lifecycle Maintenance & Grace Period Engine (Milestone 2)", (
   });
 
   describe("4. 30-Day Soft Downgrade Grace Period (IN_GRACE_PERIOD)", () => {
+    it.each([
+      ["tier overrides program", undefined, 7, 30, 7],
+      ["blank tier inherits program", undefined, null, 14, 14],
+      ["missing settings use fallback", undefined, null, undefined, 30],
+      ["explicit internal override wins", 2, 7, 30, 2],
+      ["zero tier grace is not replaced", undefined, 0, 30, 0],
+      ["zero explicit override wins", 0, 7, 30, 0],
+      ["zero program default is retained", undefined, null, 0, 0],
+    ] as const)(
+      "%s",
+      async (_label, override, tierGrace, programGrace, expectedDays) => {
+        const accountId = "account_grace_precedence";
+        const now = new Date("2026-09-16T00:00:00.000Z");
+        vi.mocked(
+          prisma.weleticLoyaltyAccount.findUnique,
+        ).mockResolvedValueOnce({
+          id: accountId,
+          storeId,
+          shopperId: "shopper_grace_precedence",
+          currentTierId: "tier_gold",
+          currentTier: { ...standardTiers[2], gracePeriodDays: tierGrace },
+          tierExpiresAt: null,
+          program: {
+            tiers: standardTiers,
+            vipDowngradeGraceDays: programGrace,
+          },
+        } as any);
+        vi.mocked(prisma.weleticCommerceOrder.findMany).mockResolvedValueOnce(
+          [],
+        );
+        vi.mocked(
+          prisma.weleticPointsLedgerEntry.findMany,
+        ).mockResolvedValueOnce([]);
+        const result = await evaluateTierMaintenanceCycle({
+          storeId,
+          accountId,
+          now,
+          gracePeriodDays: override,
+        });
+        const deadline = new Date(now.getTime() + expectedDays * 86_400_000);
+        expect(result.status).toBe("IN_GRACE_PERIOD");
+        expect(result.gracePeriodExpiresAt).toEqual(deadline);
+        expect(prisma.weleticLoyaltyOutboxJob.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              scheduledFor: deadline,
+              payload: expect.objectContaining({
+                gracePeriodDays: expectedDays,
+              }),
+            }),
+          }),
+        );
+      },
+    );
+
     it("enters 30-day grace period when Gold member falls short on annual review (¥10,000 < ¥50,000)", async () => {
       const accountId = "acc_gold_underperforming";
       const now = new Date("2026-08-18T00:00:00.000Z");
@@ -588,10 +643,11 @@ describe("VIP Tier Lifecycle Maintenance & Grace Period Engine (Milestone 2)", (
         storeId,
         shopperId: "shopper_mid_grace",
         currentTierId: "tier_gold",
-        currentTier: standardTiers[2],
+        currentTier: { ...standardTiers[2], gracePeriodDays: 1 },
         tierExpiresAt: activeGraceEnd, // Active grace period
         program: {
           tiers: standardTiers,
+          vipDowngradeGraceDays: 2,
         },
       } as any);
 
