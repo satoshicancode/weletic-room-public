@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { purgeAnonymousReferralConfirmations } from "../loyalty/anonymous-referral-retention";
 import {
   addRetentionDays,
   getShopifyCustomerTombstoneRetentionDays,
@@ -107,6 +108,9 @@ export async function deleteExpiredShopifyPrivacyTombstonesBatch({
       ),
     },
     referralSnapshots: { deleted: referralSnapshotsDeleted },
+    anonymousConfirmations: {
+      deleted: await purgeAnonymousReferralConfirmations({ take, now }),
+    },
     customer: {
       selected: customerRows.length,
       deleted: customerResult.count,

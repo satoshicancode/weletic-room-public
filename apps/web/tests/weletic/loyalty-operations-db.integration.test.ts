@@ -5,7 +5,6 @@ import {
   processOutboxJobsBatch,
   reapStaleOutboxLocks,
 } from "@/lib/weletic/loyalty/outbox";
-import { deliverReferralEmailUnderLease } from "@/lib/weletic/loyalty/referral-friend-claim";
 import {
   afterAll,
   afterEach,
@@ -15,7 +14,6 @@ import {
   it,
   vi,
 } from "vitest";
-import { sendBatchEmail } from "../../../../packages/email/src";
 
 const emailTransportMocks = vi.hoisted(() => ({
   resendClient: null as object | null,
@@ -137,81 +135,6 @@ describe("loyalty operational paths real database concurrency", () => {
     emailTransportMocks.sendViaSmtp.mockReset();
     vi.unstubAllEnvs();
   });
-
-  it.each([
-    { transport: "resend", resendConfigured: true },
-    { transport: "smtp", resendConfigured: false },
-  ])(
-    "permits exactly one $transport send under concurrent lease acquisition",
-    async ({ transport, resendConfigured }) => {
-      emailTransportMocks.resendClient = resendConfigured ? {} : null;
-      emailTransportMocks.sendViaResend.mockReset();
-      emailTransportMocks.sendViaSmtp.mockReset();
-      emailTransportMocks.sendViaResend.mockResolvedValue({
-        data: [{ id: `resend_${RUN_ID}` }],
-        error: null,
-      });
-      emailTransportMocks.sendViaSmtp.mockResolvedValue({
-        messageId: `smtp_${RUN_ID}`,
-      });
-      vi.stubEnv("SMTP_HOST", "smtp.test.invalid");
-      vi.stubEnv("SMTP_PORT", "2525");
-
-      const referralId = `referral_${transport}_${RUN_ID}`;
-      await prisma.weleticLoyaltyReferral.create({
-        data: {
-          id: referralId,
-          storeId,
-          advocateAccountId: accountId,
-          friendEmailDigest: `digest_${transport}_${RUN_ID}`,
-          friendRewardProvisionedAt: new Date(),
-        },
-      });
-      let sends = 0;
-      const results = await Promise.all(
-        Array.from({ length: 32 }, () =>
-          deliverReferralEmailUnderLease({
-            referralId,
-            storeId,
-            deliver: async () => {
-              sends++;
-              await new Promise((resolve) => setTimeout(resolve, 40));
-              const delivery = await sendBatchEmail([
-                {
-                  to: `${transport}@example.test`,
-                  subject: "Referral reward",
-                  text: "Referral reward delivery concurrency proof",
-                },
-              ]);
-              return {
-                success: Boolean(delivery?.data),
-                error: delivery?.error
-                  ? String(delivery.error)
-                  : delivery?.data
-                    ? undefined
-                    : "Delivery response data empty",
-              };
-            },
-          }),
-        ),
-      );
-
-      expect(sends).toBe(1);
-      expect(results.filter((result) => result.acquired)).toHaveLength(1);
-      const persisted = await prisma.weleticLoyaltyReferral.findUniqueOrThrow({
-        where: { id: referralId },
-      });
-      expect(persisted.friendRewardEmailedAt).not.toBeNull();
-      expect(persisted.friendEmailDeliveryAttempts).toBe(1);
-      expect(persisted.friendEmailLeaseToken).toBeNull();
-      expect(emailTransportMocks.sendViaResend).toHaveBeenCalledTimes(
-        resendConfigured ? 1 : 0,
-      );
-      expect(emailTransportMocks.sendViaSmtp).toHaveBeenCalledTimes(
-        resendConfigured ? 0 : 1,
-      );
-    },
-  );
 
   it("counts only the single newly-created outbox job during a real burst", async () => {
     const idempotencyKey = `ops_outbox_${RUN_ID}`;
@@ -346,108 +269,5 @@ describe("loyalty operational paths real database concurrency", () => {
         select: { status: true, lockedAt: true, lockedBy: true },
       }),
     ).resolves.toEqual({ status: "failed", lockedAt: null, lockedBy: null });
-  });
-
-  it.each([
-    { status: "cancelled" as const, expiry: null, allowed: false },
-    { status: "fraud_blocked" as const, expiry: null, allowed: false },
-    { status: "pending" as const, expiry: -1, allowed: false },
-    { status: "pending" as const, expiry: 0, allowed: false },
-    { status: "pending" as const, expiry: 1, allowed: true },
-    { status: "qualified" as const, expiry: null, allowed: true },
-    { status: "rewarded" as const, expiry: null, allowed: true },
-  ])(
-    "email lease eligibility: $status, expiry offset $expiry",
-    async ({ status, expiry, allowed }) => {
-      const now = new Date("2026-09-16T00:00:00Z");
-      const referralId = `eligibility_${status}_${expiry}_${RUN_ID}`;
-      await prisma.weleticLoyaltyReferral.create({
-        data: {
-          id: referralId,
-          storeId,
-          advocateAccountId: accountId,
-          status,
-          friendRewardProvisionedAt: now,
-          friendRewardExpiresAt:
-            expiry === null ? null : new Date(now.getTime() + expiry),
-        },
-      });
-      const deliver = vi.fn().mockResolvedValue({ success: true });
-      const result = await deliverReferralEmailUnderLease({
-        referralId,
-        storeId,
-        now,
-        deliver,
-      });
-      expect(result).toEqual({ acquired: allowed, emailSent: allowed });
-      expect(deliver).toHaveBeenCalledTimes(allowed ? 1 : 0);
-      const row = await prisma.weleticLoyaltyReferral.findUniqueOrThrow({
-        where: { id: referralId },
-      });
-      expect(row.friendEmailDeliveryAttempts).toBe(allowed ? 1 : 0);
-      expect(row.friendEmailLeaseToken).toBeNull();
-      expect(Boolean(row.friendRewardEmailedAt)).toBe(allowed);
-    },
-  );
-
-  it("does not disclose another store's emailed status after failed acquisition", async () => {
-    const referralId = `foreign_email_${RUN_ID}`;
-    await prisma.weleticLoyaltyReferral.create({
-      data: {
-        id: referralId,
-        storeId,
-        advocateAccountId: accountId,
-        friendRewardEmailedAt: new Date(),
-      },
-    });
-    const deliver = vi.fn().mockResolvedValue({ success: true });
-    await expect(
-      deliverReferralEmailUnderLease({
-        referralId,
-        storeId: `other_${storeId}`,
-        deliver,
-      }),
-    ).resolves.toEqual({ acquired: false, emailSent: false });
-    expect(deliver).not.toHaveBeenCalled();
-    await expect(
-      deliverReferralEmailUnderLease({ referralId, storeId, deliver }),
-    ).resolves.toEqual({ acquired: false, emailSent: true });
-    expect(deliver).not.toHaveBeenCalled();
-  });
-
-  it("allows one new owner to acquire an expired stale email lease", async () => {
-    const referralId = `referral_stale_${RUN_ID}`;
-    await prisma.weleticLoyaltyReferral.create({
-      data: {
-        id: referralId,
-        storeId,
-        advocateAccountId: accountId,
-        friendEmailDigest: `digest_stale_${RUN_ID}`,
-        friendRewardProvisionedAt: new Date(),
-        friendEmailLeaseToken: "stale-worker",
-        friendEmailLeaseReservedAt: new Date("2026-09-01T00:00:00.000Z"),
-        friendEmailLeaseExpiresAt: new Date("2026-09-01T00:01:00.000Z"),
-        friendEmailDeliveryAttempts: 1,
-      },
-    });
-    let sends = 0;
-    const result = await deliverReferralEmailUnderLease({
-      referralId,
-      storeId,
-      now: new Date("2026-09-01T00:02:00.000Z"),
-      deliver: async () => {
-        sends++;
-        return { success: true };
-      },
-    });
-
-    expect(result).toEqual({ acquired: true, emailSent: true });
-    expect(sends).toBe(1);
-    await expect(
-      prisma.weleticLoyaltyReferral.findUniqueOrThrow({
-        where: { id: referralId },
-        select: { friendEmailDeliveryAttempts: true },
-      }),
-    ).resolves.toEqual({ friendEmailDeliveryAttempts: 2 });
   });
 });

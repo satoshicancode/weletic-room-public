@@ -106,6 +106,22 @@ describe("anonymous referral friend claim internal route", () => {
     expect(mocks.claim).not.toHaveBeenCalled();
   });
 
+  it.each(["en", "ja", "vi"])(
+    "forwards validated %s confirmation locale",
+    async (locale) => {
+      expect((await POST(claimRequest({ locale }))).status).toBe(200);
+      expect(mocks.claim).toHaveBeenCalledWith(
+        expect.objectContaining({ locale }),
+      );
+    },
+  );
+  it("rejects unsupported confirmation locales before creating a claim", async () => {
+    expect((await POST(claimRequest({ locale: "unsupported" }))).status).toBe(
+      422,
+    );
+    expect(mocks.claim).not.toHaveBeenCalled();
+  });
+
   it("returns a generic eligibility error without exposing referral state", async () => {
     mocks.claim.mockRejectedValue(
       new Error("This referral invitation is invalid or has expired."),

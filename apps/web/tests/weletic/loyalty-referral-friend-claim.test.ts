@@ -5,7 +5,6 @@ import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import {
   claimReferralFriendReward,
   deactivateCancelledReferralFriendReward,
-  deliverReferralEmailUnderLease,
   evaluateReferralFriendClaimQualification,
   redactReferralFriendClaimsForEmail,
   redactReferralFriendClaimsForShopBatch,
@@ -20,7 +19,7 @@ import {
 } from "@/lib/weletic/loyalty/shopify-discounts";
 import { sendBatchEmail } from "@dub/email";
 import { WeleticLoyaltyReferralStatus } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   referral: null as any,
@@ -33,26 +32,39 @@ const discountMocks = vi.hoisted(() => ({
   graphql: vi.fn(),
   deactivate: vi.fn(),
 }));
-const emailMocks = vi.hoisted(() => ({ sendBatch: vi.fn() }));
+const emailMocks = vi.hoisted(() => ({
+  sendBatch: vi.fn(),
+  prepared: vi.fn(),
+}));
 
 vi.mock("@/lib/prisma", () => {
   const prismaMock: any = {
-    $queryRaw: vi.fn(async (query: { sql: string; values: unknown[] }) => {
-      if (query.values[0] !== "store_1") return [];
-      if (query.sql.includes("FROM WeleticLoyaltyProgram"))
-        return [
-          {
-            id: "program_1",
-            storeId: "store_1",
-            status: "active",
-            killSwitchActive: false,
-            metadata: null,
-          },
-        ];
-      if (query.sql.includes("FROM WeleticShopifyStore"))
-        return [{ id: "store_1", storeAccessState: "active" }];
-      throw new Error("Unexpected friend-claim SQL query");
-    }),
+    $queryRaw: vi.fn(
+      async (
+        query: { sql: string; values: unknown[] } | TemplateStringsArray,
+      ) => {
+        if (Array.isArray(query)) {
+          if (query.join("").includes("FROM WeleticLoyaltyReferral"))
+            return [{ id: state.referral.id }];
+          throw Error("Unexpected tagged friend-claim SQL");
+        }
+        query = query as { sql: string; values: unknown[] };
+        if (query.values[0] !== "store_1") return [];
+        if (query.sql.includes("FROM WeleticLoyaltyProgram"))
+          return [
+            {
+              id: "program_1",
+              storeId: "store_1",
+              status: "active",
+              killSwitchActive: false,
+              metadata: null,
+            },
+          ];
+        if (query.sql.includes("FROM WeleticShopifyStore"))
+          return [{ id: "store_1", storeAccessState: "active" }];
+        throw new Error("Unexpected friend-claim SQL query");
+      },
+    ),
     weleticLoyaltyProgram: {
       findUnique: vi.fn().mockResolvedValue({
         id: "program_1",
@@ -85,6 +97,10 @@ vi.mock("@/lib/prisma", () => {
       findFirstOrThrow: vi.fn(),
       findUnique: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(async (args: any) => {
+        await prismaMock.weleticLoyaltyReferral.updateMany(args);
+        return state.referral;
+      }),
       updateMany: vi.fn(),
     },
     weleticLoyaltyReferralRule: {
@@ -173,9 +189,13 @@ vi.mock("@/lib/weletic/loyalty/referral-coupon-snapshot", () => ({
   }),
 }));
 
-vi.mock("@dub/email", () => ({
+vi.mock("@dub/email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@dub/email")>()),
   sendBatchEmail: emailMocks.sendBatch,
+  sendPreparedResendEmail: emailMocks.prepared,
 }));
+vi.mock("@dub/email/resend", () => ({ resend: {} }));
+afterEach(() => vi.unstubAllEnvs());
 
 const advocate = {
   id: "account_advocate",
@@ -480,113 +500,46 @@ describe("Smile-compatible anonymous referral friend claims", () => {
       error: null,
     });
     installStatefulReferralMocks();
+    emailMocks.prepared.mockResolvedValue({
+      data: { data: [{ id: "mock-confirmation" }] },
+      error: null,
+    });
   });
 
-  it.each(["resend", "smtp"])(
-    "allows exactly one %s delivery through the token-owned lease",
-    async () => {
-      state.referral = {
-        id: "referral_email_lease",
-        storeId: "store_1",
-        friendRewardEmailedAt: null,
-        friendEmailLeaseToken: null,
-        friendEmailLeaseReservedAt: null,
-        friendEmailLeaseExpiresAt: new Date("1970-01-01T00:00:00.000Z"),
-        friendEmailDeliveryAttempts: 0,
-        friendEmailLastError: null,
-      };
-      let sends = 0;
-      let releaseDelivery!: () => void;
-      const deliveryStarted = new Promise<void>((resolve) => {
-        releaseDelivery = resolve;
-      });
-      const deliver = vi.fn(async () => {
-        sends++;
-        await deliveryStarted;
-        return { success: true };
-      });
-
-      const attempts = Array.from({ length: 20 }, () =>
-        deliverReferralEmailUnderLease({
-          referralId: state.referral.id,
-          storeId: state.referral.storeId,
-          now: new Date("2026-09-04T00:00:00.000Z"),
-          deliver,
-        }),
-      );
-      await vi.waitFor(() => expect(sends).toBe(1));
-      releaseDelivery();
-      const results = await Promise.all(attempts);
-
-      expect(deliver).toHaveBeenCalledTimes(1);
-      expect(results.filter((result) => result.acquired)).toHaveLength(1);
-      expect(state.referral.friendRewardEmailedAt).toBeInstanceOf(Date);
-      expect(state.referral.friendEmailDeliveryAttempts).toBe(1);
-    },
-  );
-
-  it.each(["returned", "thrown", "empty"])(
-    "sanitizes %s provider failures before referral persistence or logging",
-    async (mode) => {
-      const privateDetail = "friend@example.com secret-provider-token";
-      const log = vi.spyOn(console, "error").mockImplementation(() => {});
-      try {
-        if (mode === "thrown")
-          emailMocks.sendBatch.mockRejectedValue(new Error(privateDetail));
-        else
-          emailMocks.sendBatch.mockResolvedValue(
-            mode === "returned"
-              ? { error: { message: privateDetail }, data: null }
-              : undefined,
-          );
-        const result = await claimReferralFriendReward({
-          storeId: "store_1",
-          referralCode: "alice-1234",
-          friendEmail: "friend@example.com",
-          now: new Date("2026-08-31T00:00:00.000Z"),
-        });
-        expect(result).toMatchObject({ status: "claimed", emailSent: false });
-        expect(state.referral.friendEmailLastError).toBe(
-          "Referral email delivery failed",
-        );
-        expect(log).not.toHaveBeenCalled();
-        expect(JSON.stringify(result)).not.toContain(privateDetail);
-      } finally {
-        log.mockRestore();
-      }
-    },
-  );
-
-  it.each(["returned", "thrown"])(
-    "sanitizes %s callback errors at the lease persistence boundary",
-    async (mode) => {
-      state.referral = {
-        id: "referral_email_lease",
-        storeId: "store_1",
-        friendRewardEmailedAt: null,
-        friendEmailLeaseToken: null,
-        friendEmailLeaseExpiresAt: new Date(0),
-        friendEmailDeliveryAttempts: 0,
-      };
-      await deliverReferralEmailUnderLease({
-        referralId: state.referral.id,
-        storeId: "store_1",
-        deliver: async () => {
-          if (mode === "thrown")
-            throw new Error("friend@example.com secret-provider-token");
-          return {
-            success: false,
-            error: "friend@example.com secret-provider-token",
-          };
-        },
-      });
-      expect(state.referral.friendEmailLastError).toBe(
-        "Referral email delivery failed",
-      );
-      expect(state.referral.friendEmailLeaseToken).toBeNull();
-      expect(state.referral.friendRewardEmailedAt).toBeNull();
-    },
-  );
+  it("connects a new Japanese claim through actual rendering, normalization, encrypted retention and delivery", async () => {
+    vi.stubEnv("ENCRYPTION_KEY", "isolated-claim-test-key");
+    vi.stubEnv(
+      "WELETIC_TRANSACTIONAL_EMAIL_FROM",
+      "Weletic <loyalty@example.test>",
+    );
+    vi.stubEnv("WELETIC_TRANSACTIONAL_EMAIL_REPLY_TO", "support@example.test");
+    const result = await claimReferralFriendReward({
+      storeId: "store_1",
+      referralCode: "ALICE-1234",
+      friendEmail: " Friend@Example.com ",
+      locale: "ja",
+    });
+    expect(result.emailSent).toBe(true);
+    expect(emailMocks.prepared).toHaveBeenCalledTimes(1);
+    const [request, key] = emailMocks.prepared.mock.calls[0];
+    expect(request).toMatchObject({
+      to: "friend@example.com",
+      from: "Weletic <loyalty@example.test>",
+      replyTo: ["support@example.test"],
+      subject: "リクエストされた特典の準備ができました",
+    });
+    expect(request.html).toContain(result.discountCode);
+    expect(request.html).not.toContain("Alice Member");
+    expect(key).toBe(`loyalty-referral-friend-${state.referral.id}`);
+    expect(state.referral.metadata.anonymousConfirmationOrigin.locale).toBe(
+      "ja",
+    );
+    expect(
+      state.referral.metadata.anonymousConfirmationDelivery,
+    ).toBeUndefined();
+    expect(state.referral.metadata.anonymousConfirmationTerminal).toBe("sent");
+    expect(sendBatchEmail).not.toHaveBeenCalled();
+  });
 
   it("issues a one-time Shopify voucher without storing raw friend email", async () => {
     const result = await claimReferralFriendReward({
@@ -600,7 +553,7 @@ describe("Smile-compatible anonymous referral friend claims", () => {
 
     expect(result).toMatchObject({
       status: "claimed",
-      emailSent: true,
+      emailSent: false,
       applyUrl: expect.stringContaining("/discount/WLF-"),
     });
     expect(state.referral.friendEmailDigest).toMatch(
@@ -625,7 +578,14 @@ describe("Smile-compatible anonymous referral friend claims", () => {
       state.referral.metadata.friendRewardSnapshot.rewardDefinition
         .salesChannel,
     ).toBe("online_store");
-    expect(sendBatchEmail).toHaveBeenCalledTimes(1);
+    // This financial fixture has no configured retained Resend transport.
+    // Confirmation delivery is covered by the dedicated lifecycle suite.
+    expect(sendBatchEmail).not.toHaveBeenCalled();
+    expect(state.referral.metadata.anonymousConfirmationOrigin).toMatchObject({
+      installationGeneration: "generation_1",
+      locale: "en",
+      referralId: state.referral.id,
+    });
   });
 
   it.each([
@@ -854,10 +814,10 @@ describe("Smile-compatible anonymous referral friend claims", () => {
         friendEmail: "friend@example.com",
         clientIp: "203.0.113.19",
       }),
-    ).resolves.toMatchObject({ status: "claimed", emailSent: true });
+    ).resolves.toMatchObject({ status: "claimed", emailSent: false });
 
     expect(provisionLoyaltyRewardDiscount).toHaveBeenCalledTimes(1);
-    expect(sendBatchEmail).toHaveBeenCalledTimes(1);
+    expect(sendBatchEmail).not.toHaveBeenCalled();
   });
 
   it("fraud-blocks an email that already belongs to a Shopify customer", async () => {

@@ -61,6 +61,7 @@ vi.mock("@/lib/prisma", () => ({
     weleticLoyaltyTierHistory: { findMany: vi.fn() },
     weleticLoyaltyReferral: {
       findMany: vi.fn(),
+      findFirst: vi.fn(),
       updateMany: vi.fn(),
     },
     weleticCommerceOrder: {
@@ -74,6 +75,7 @@ vi.mock("@/lib/prisma", () => ({
     },
     customer: { findUnique: vi.fn() },
     link: { findFirst: vi.fn(), updateMany: vi.fn() },
+    $queryRaw: vi.fn().mockResolvedValue([]),
     $transaction: vi.fn((fn) => (typeof fn === "function" ? fn(prisma) : fn)),
   },
 }));
@@ -1235,6 +1237,14 @@ describe("Shopify GDPR & Privacy Compliance", () => {
           },
         },
       ] as any);
+      vi.mocked(prisma.weleticLoyaltyReferral.findFirst).mockResolvedValueOnce({
+        metadata: {
+          referralCode: "PRIVATE42",
+          orderId: "order_1",
+          anonymousConfirmationDelivery: { ciphertext: "private" },
+          anonymousConfirmationOrigin: { version: 1 },
+        },
+      } as any);
 
       const result = await anonymizeWeleticShopper({
         storeId: "store_gdpr_1",
@@ -1347,6 +1357,10 @@ describe("Shopify GDPR & Privacy Compliance", () => {
           fraudReason: null,
           fraudSignals: Prisma.DbNull,
           metadata: { orderId: "order_1" },
+          friendEmailLeaseToken: null,
+          friendEmailLeaseReservedAt: null,
+          friendEmailLeaseExpiresAt: expect.any(Date),
+          friendEmailLastError: null,
         },
       });
       expect(prisma.weleticLoyaltyOutboxJob.findMany).toHaveBeenCalledWith({

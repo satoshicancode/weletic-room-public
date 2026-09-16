@@ -40,6 +40,7 @@ const evidenceSchema = z
   })
   .strict();
 export type CommunicationDeliveryRequest = z.infer<typeof requestSchema>;
+export const communicationDeliveryRequestSchema = requestSchema;
 export type CommunicationDeliveryClaim = ExpiryDeliveryClaim;
 export class CommunicationDeliveryIneligibleError extends Error {
   constructor() {
