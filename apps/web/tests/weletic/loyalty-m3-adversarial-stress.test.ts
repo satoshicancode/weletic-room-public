@@ -74,7 +74,11 @@ describe("M3 Adversarial Stress Harness: Holding Periods, Negative Balances & OC
   const GRANT_ID = "wgrant_adv_stress";
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+    vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.weleticLoyaltyEarnGrant.updateMany).mockResolvedValue({
+      count: 1,
+    });
   });
 
   // =========================================================================
@@ -228,6 +232,7 @@ describe("M3 Adversarial Stress Harness: Holding Periods, Negative Balances & OC
         storeId: STORE_ID,
         orderId: "ord_multi_step",
         status: "pending",
+        availableAt: new Date("2026-01-01T00:00:00Z"),
         grossPoints: BigInt(100),
         pendingPoints: BigInt(100),
         settledPoints: BigInt(0),
@@ -269,6 +274,7 @@ describe("M3 Adversarial Stress Harness: Holding Periods, Negative Balances & OC
 
       // Step B: Maturity release executes for remaining 70 pending points
       (prisma.weleticLoyaltyEarnGrant.findUnique as any).mockResolvedValueOnce({
+        availableAt: new Date("2026-01-01T00:00:00Z"),
         id: GRANT_ID,
         storeId: STORE_ID,
         accountId: ACCOUNT_ID,
@@ -372,6 +378,7 @@ describe("M3 Adversarial Stress Harness: Holding Periods, Negative Balances & OC
         accountId: ACCOUNT_ID,
         orderId: "ord_retry_1",
         status: "pending",
+        availableAt: new Date("2026-01-01T00:00:00Z"),
         pendingPoints: BigInt(120),
         grossPoints: BigInt(120),
         reversedPoints: BigInt(0),
@@ -462,6 +469,7 @@ describe("M3 Adversarial Stress Harness: Holding Periods, Negative Balances & OC
           accountId: ACCOUNT_ID,
           orderId: "ord_storm_1",
           status: grantStatus,
+          availableAt: new Date("2026-01-01T00:00:00Z"),
           pendingPoints: grantStatus === "pending" ? BigInt(250) : BigInt(0),
           settledPoints: grantStatus === "settled" ? BigInt(250) : BigInt(0),
           grossPoints: BigInt(250),

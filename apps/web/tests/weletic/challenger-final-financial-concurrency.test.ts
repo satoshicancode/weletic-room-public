@@ -349,6 +349,7 @@ describe("Challenger 1 Final Milestone: Financial Ledger, Arithmetic & Concurren
         accountId: "wacc_1",
         orderId: "order_1",
         status: "pending",
+        availableAt: new Date("2026-01-01T00:00:00Z"),
         grossPoints: BigInt(500),
         pendingPoints: BigInt(500),
         settledPoints: BigInt(0),

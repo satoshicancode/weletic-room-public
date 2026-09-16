@@ -2250,6 +2250,7 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
         weleticLoyaltyEarnGrant: {
           findUnique: vi.fn().mockResolvedValue({
             id: "wgrant_holding_1",
+            availableAt: new Date("2026-01-01T00:00:00Z"),
             storeId: TEST_STORE_ID,
             accountId: TEST_ACCOUNT_ID,
             orderId: TEST_ORDER_ID,

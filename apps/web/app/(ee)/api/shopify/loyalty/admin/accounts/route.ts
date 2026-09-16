@@ -4,6 +4,7 @@ import { parseRequestBody } from "@/lib/api/utils";
 import { withWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
+import { validateManualAdjustmentInput } from "@/lib/weletic/loyalty/manual-adjustment-input";
 import {
   assertActiveLoyaltyAccountForMutation,
   withActiveStoreLoyaltyMutation,
@@ -278,12 +279,12 @@ export const POST = withWorkspace(
       idempotencyKey,
     } = body;
 
-    if (pointsDelta === undefined || Number(pointsDelta) === 0) {
-      throw new DubApiError({
-        code: "bad_request",
-        message: "A non-zero 'pointsDelta' is required.",
-      });
-    }
+    validateManualAdjustmentInput({
+      accountId,
+      shopperId,
+      shopifyCustomerId,
+      pointsDelta,
+    });
 
     // Resolve target loyalty account
     let targetAccountId = accountId;
@@ -308,7 +309,21 @@ export const POST = withWorkspace(
       targetAccountId = shopper.loyaltyAccount.id;
     } else {
       const existing = await prisma.weleticLoyaltyAccount.findFirst({
-        where: { id: targetAccountId, storeId },
+        where: {
+          id: targetAccountId,
+          storeId,
+          ...(shopperId || shopifyCustomerId
+            ? {
+                shopper: {
+                  storeId,
+                  ...(shopperId ? { id: shopperId } : {}),
+                  ...(shopifyCustomerId
+                    ? { shopifyCustomerId: String(shopifyCustomerId) }
+                    : {}),
+                },
+              }
+            : {}),
+        },
       });
       if (!existing) {
         throw new DubApiError({
