@@ -51,7 +51,7 @@ privacy, webhook-secret rotation correctness or real authentication.
 ## Tests
 
 ```sh
-node --test infra/cloudflare-release/ingress-policy.test.mjs infra/cloudflare-release/start.test.mjs
+node --test infra/cloudflare-release/ingress-policy.test.mjs infra/cloudflare-release/start.test.mjs infra/cloudflare-release/shopify-image.test.mjs
 ```
 
 All fixtures are synthetic. No database, order, email or Shopify installation is
@@ -95,3 +95,57 @@ real CLI rejection tests only. No successful production server startup, provider
 connection, image build, release manifest, worker supervision, deployment or live
 Shopify journey is claimed by these changes. Existing local probe images and
 ordinary package start scripts do not use this new wrapper.
+
+## Shopify candidate release image
+
+`Shopify.Dockerfile` is a fresh-build recipe, not a promoted local probe image.
+Its dedicated context excludes dotenv/credential files, host dependencies and
+build outputs. Dependency installation is lockfile-frozen; subsequent build
+steps use `--network=none`. No application secret or live provider endpoint is
+supplied at build time. The explicit `WELETIC_SHOPIFY_BUILD_TARGET=node` selector
+chooses standard Remix Node output without the Vercel preset. Ordinary builds
+still use Vercel, and existing local-probe opt-in behavior remains compatible.
+The build selector is rejected if supplied to the runtime guard.
+
+The fresh final stage copies the compiled Shopify build, package manifest,
+pnpm dependency directories and the three startup-policy files. It does not
+inherit the builder environment or copy first-party web/application source.
+It runs as the unprivileged `node` user with the fixed guarded Shopify entrypoint.
+Dependencies currently retain the full lockfile-installed root store, including
+development dependencies. Dependency pruning, image size and vulnerability
+inventory need actual image evidence before deployment; this is not a claim of
+a minimal runtime image. No dependency or lockfile was changed for this recipe.
+
+After local container execution is resumed, build a local-only candidate from
+the reviewed revision, with the prior two-CPU/2 GiB/no-swap Shopify build bounds:
+
+```sh
+docker buildx build --platform linux/amd64 --resource memory=2g --resource memory-swap=2g --resource cpu-quota=200000 --resource cpu-period=100000 -f infra/cloudflare-release/Shopify.Dockerfile --target shopify -t weletic-cloudflare-release:shopify-candidate .
+```
+
+This reference command is not deployment/upload authorization. Check current
+Docker VM headroom first; never increase its limits implicitly or run concurrent
+heavy builds. Record image digest, source revision, architecture, layer/config
+inspection and actual guard/boot/HTTP/shutdown evidence with synthetic credentials
+and no external network before any provider-connected test. Runtime port 3000 is
+not published by the recipe. Do not inject the full paired credential document.
+
+September 16 evidence:
+
+- Explicit Node-target host build passed, producing `build/server/index.js` and
+  browser assets, without application credentials or live provider configuration.
+  Existing sourcemap warnings remain; they did not fail compilation.
+- Default Vercel-target host build also passed, retaining its server-bundle layout.
+- Browser asset scan found no `synthetic-container`, `app.localhost:8890`,
+  `127.0.0.1:3002`, `WELETIC_SHOPIFY_SERVICE_SECRET` or `SHOPIFY_API_SECRET`.
+  This bounded marker scan is not a comprehensive secret scan or browser journey.
+- Node policy/static packaging tests and the focused Vitest wrapper passed.
+  Static Dockerfile tests verify intended wiring/exclusions, not Docker's actual
+  context evaluation, Linux dependencies, layer content or server behavior.
+- Docker remained stopped; no candidate image was built, run, tagged or uploaded.
+  Linux image verification is **outstanding**, not accepted from the host build.
+- Next/web and outbox release images, provider-specific checks, container ingress
+  manifests, scheduler/watchdog wiring and live acceptance remain outstanding.
+
+Reference: [Remix Vite build output](https://v2.remix.run/docs/guides/vite/#new-build-output-paths)
+and [Cloudflare container image requirements](https://developers.cloudflare.com/containers/get-started/#the-container-image).

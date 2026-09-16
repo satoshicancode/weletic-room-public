@@ -26,6 +26,7 @@ export function assertCloudflareRuntime(role, env) {
     env.SHOPIFY_APP_URL !== PUBLIC_LOYALTY_APP_ORIGIN
   )
     fail();
+  if (env.WELETIC_SHOPIFY_BUILD_TARGET !== undefined) fail();
   for (const key of [
     "WELETIC_ISOLATED_DEVELOPMENT",
     "NEXT_PUBLIC_WELETIC_ISOLATED_DEVELOPMENT",

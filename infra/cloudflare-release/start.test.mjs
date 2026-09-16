@@ -98,6 +98,7 @@ for (const role of ["web", "shopify"]) {
     ["SHOPIFY_API_KEY", "legacy"],
     ["SHOPIFY_APP_URL", "http://localhost"],
     ["WELETIC_LOCAL_CONTAINER_BUILD", "1"],
+    ["WELETIC_SHOPIFY_BUILD_TARGET", "node"],
     ["WELETIC_ISOLATED_DEVELOPMENT", "1"],
     ["NEXT_PUBLIC_WELETIC_ISOLATED_DEVELOPMENT", "1"],
     ["WELETIC_SHOPIFY_SERVICE_SECRET", "short"],
