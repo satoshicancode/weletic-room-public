@@ -9,6 +9,11 @@ review features or waive any external execution gate.
 Code, local tests, CI, and competitor observations are evidence at their stated
 level, not substitutes for named journeys on yamaxdev.
 
+September 16 staged rewards evidence:
+[stored-value boundaries and remaining acceptance](financial-reward-boundaries-2026-09-16.md).
+Exact remote amount checks and conservative duplicate Gift Card handling are
+local safety improvements, not live reward or subscription acceptance.
+
 For current merged-code status and every L00–L17 workstream disposition, use the
 [September 12 launch reconciliation](launch-status-2026-09-12.md). In particular,
 PRs #13, #15 and #18 are merged; the September 9–10 draft statements below are

@@ -200,13 +200,20 @@ function normalizeDate(value: Date | null) {
 }
 
 function sameMoney(left: string, right: string) {
-  const leftNumber = Number(left);
-  const rightNumber = Number(right);
-  return (
-    Number.isFinite(leftNumber) &&
-    Number.isFinite(rightNumber) &&
-    Math.abs(leftNumber - rightNumber) < 0.000001
-  );
+  // Remote Decimal values must match exactly, without floating-point rounding.
+  const canonical = (value: string) => {
+    if (!/^-?\d+(?:\.\d+)?$/.test(value)) return null;
+    const negative = value.startsWith("-");
+    const [integer, fraction = ""] = (negative ? value.slice(1) : value).split(
+      ".",
+    );
+    const whole = integer.replace(/^0+(?=\d)/, "");
+    const decimals = fraction.replace(/0+$/, "");
+    const sign = negative && (whole !== "0" || decimals !== "") ? "-" : "";
+    return `${sign}${whole}${decimals ? `.${decimals}` : ""}`;
+  };
+  const expected = canonical(right);
+  return expected !== null && canonical(left) === expected;
 }
 
 function matchesExpectedGiftCard({
@@ -397,6 +404,11 @@ export async function createShopifyGiftCard({
           customFetch,
         });
         if (existing) return existing;
+        throw new ShopifyFinancialRewardError(
+          "REMOTE_OUTCOME_UNKNOWN",
+          "Shopify reported a duplicate Gift Card code without an exact recoverable artifact; reconcile issuance before restoring points.",
+          payload.userErrors,
+        );
       }
       throw new ShopifyFinancialRewardError(
         "GRAPHQL_USER_ERROR",
