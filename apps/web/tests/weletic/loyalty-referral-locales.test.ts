@@ -66,7 +66,7 @@ async function mount(
     configurable: true,
     value: "complete",
   });
-  const fetchMock = vi.fn(async (url: string) =>
+  const fetchMock = vi.fn(async (url: string, _options?: RequestInit) =>
     url.includes("/customer?")
       ? response({
           isEnrolled: true,
@@ -308,6 +308,12 @@ describe("referral claim interface locales with synthetic transport", () => {
       expect(
         fetchMock.mock.calls.filter(([url]) => url.endsWith("/referral/claim")),
       ).toHaveLength(1);
+      const claimCall = fetchMock.mock.calls.find(([url]) =>
+        url.endsWith("/referral/claim"),
+      );
+      expect(JSON.parse(String(claimCall?.[1]?.body))).toMatchObject({
+        locale,
+      });
       expect(document.querySelector("#weletic-friend-email")).toBeNull();
     },
   );

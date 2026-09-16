@@ -521,51 +521,6 @@ describe("shared merchant settings on isolated MySQL", () => {
       }
     },
   );
-  it("blocks referral leases while paused, then permits exactly one resumed delivery callback", async () => {
-    const f = await seed();
-    const referral = await database.weleticLoyaltyReferral.create({
-      data: {
-        id: randomUUID(),
-        storeId: f.storeId,
-        advocateAccountId: "missing-fixture",
-        friendRewardProvisionedAt: new Date(),
-      },
-    });
-    await save(f.workspaceId, { shopperEmailPaused: true });
-    const { deliverReferralEmailUnderLease } = await import(
-      "../../lib/weletic/loyalty/referral-friend-claim"
-    );
-    const deliver = vi.fn(async () => ({ success: true }));
-    const input = { referralId: referral.id, storeId: f.storeId, deliver };
-    expect(await deliverReferralEmailUnderLease(input)).toMatchObject({
-      acquired: false,
-      emailSent: false,
-    });
-    expect(deliver).not.toHaveBeenCalled();
-    expect(
-      await database.weleticLoyaltyReferral.findUnique({
-        where: { id: referral.id },
-      }),
-    ).toMatchObject({
-      friendEmailDeliveryAttempts: 0,
-      friendEmailLeaseToken: null,
-    });
-    await save(f.workspaceId, { shopperEmailPaused: false }, 1);
-    const results = await Promise.all(
-      Array.from({ length: 12 }, () => deliverReferralEmailUnderLease(input)),
-    );
-    expect(results.filter(({ acquired }) => acquired)).toHaveLength(1);
-    expect(deliver).toHaveBeenCalledTimes(1);
-    expect(
-      await database.weleticLoyaltyReferral.findUnique({
-        where: { id: referral.id },
-      }),
-    ).toMatchObject({
-      friendEmailDeliveryAttempts: 1,
-      friendEmailLeaseToken: null,
-      friendRewardEmailedAt: expect.any(Date),
-    });
-  });
   it("rejects one of two racing stale revisions without lost updates", async () => {
     const f = await seed();
     const results = await Promise.allSettled([

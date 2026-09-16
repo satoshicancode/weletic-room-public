@@ -1,5 +1,16 @@
 # Referral communications — next implementation scope
 
+## Anonymous confirmation update — September 17, 2026
+
+Hiro approved the separate requested-confirmation decision in
+[ADR 0035](../adr/0035-anonymous-referral-confirmation-retention.md).
+The [coherent implementation and release gates](anonymous-referral-confirmation-2026-09-17.md)
+cover fixed EN/JA/VI content, immutable encrypted retry envelopes, original
+installation/privacy authority, Resend-only dispatch and physical erasure.
+The decision is no longer pending. This does not connect anonymous friends to
+the account-backed marketing editor or certify live delivery. Older statements
+below remain chronological evidence, not the current decision status.
+
 ## Public integration update — September 13, 2026
 
 [PR #30](https://github.com/satoshicancode/weletic-room-public/pull/30) merged as

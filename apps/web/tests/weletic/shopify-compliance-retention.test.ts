@@ -55,6 +55,7 @@ describe("Shopify privacy tombstone retention", () => {
     ).resolves.toEqual({
       pendingInstallations: { deleted: 0 },
       referralSnapshots: { deleted: 0 },
+      anonymousConfirmations: { deleted: 0 },
       customer: { selected: 1, deleted: 1 },
       shop: { selected: 1, deleted: 1 },
     });
@@ -99,6 +100,7 @@ describe("Shopify privacy tombstone retention", () => {
     ).resolves.toEqual({
       pendingInstallations: { deleted: 0 },
       referralSnapshots: { deleted: 0 },
+      anonymousConfirmations: { deleted: 0 },
       customer: { selected: 1, deleted: 0 },
       shop: { selected: 1, deleted: 0 },
     });

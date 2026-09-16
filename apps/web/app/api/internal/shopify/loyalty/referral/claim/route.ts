@@ -19,6 +19,7 @@ const friendClaimSchema = z.object({
   shop: z.string().min(1).max(255),
   referralCode: z.string().trim().min(1).max(64).toUpperCase(),
   email: z.string().trim().email().max(320),
+  locale: z.enum(["en", "ja", "vi"]).optional(),
   clientIp: z.string().trim().min(1).max(128).optional(),
   userAgent: z.string().trim().max(1024).optional(),
 });
@@ -98,6 +99,7 @@ export async function POST(request: Request) {
       storeId: store.id,
       referralCode: validation.data.referralCode,
       friendEmail: validation.data.email,
+      locale: validation.data.locale,
       clientIp: validation.data.clientIp,
       userAgent: validation.data.userAgent,
     });

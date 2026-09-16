@@ -37,8 +37,10 @@ import {
 } from "@/lib/weletic/shopify/privacy-identity";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import { getWeleticTransactionalEmailOptions } from "@/lib/weletic/transactional-email";
-import { sendBatchEmail } from "@dub/email";
-import ReferralFriendReward from "@dub/email/templates/referral-friend-reward";
+import { prepareResendEmail } from "@dub/email";
+import ReferralFriendReward, {
+  referralConfirmationCopy,
+} from "@dub/email/templates/referral-friend-reward";
 import {
   Prisma,
   WeleticLoyaltyReferralStatus,
@@ -46,8 +48,13 @@ import {
   WeleticRewardExchangeType,
   WeleticRewardStatus,
 } from "@prisma/client";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { z } from "zod";
+import {
+  anonymousConfirmationLocaleSchema,
+  createAnonymousConfirmationOrigin,
+  sendAnonymousReferralConfirmation,
+} from "./anonymous-referral-confirmation";
 import {
   DEFAULT_REFERRAL_PURCHASE_POLICY,
   DEFAULT_REWARD_PURCHASE_POLICY,
@@ -461,270 +468,13 @@ async function shopifyHasCustomerEmail({
   );
 }
 
-const FRIEND_EMAIL_LEASE_TTL_MS = 60_000;
-const FRIEND_EMAIL_DELIVERY_FAILURE = "Referral email delivery failed";
-
-async function deliverFriendRewardEmail({
-  referralId,
-  email,
-  brandName,
-  logoUrl,
-  accentColor,
-  advocateName,
-  rewardName,
-  discountCode,
-  applyUrl,
-  expiresAt,
-}: {
-  referralId: string;
-  email: string;
-  brandName: string;
-  logoUrl?: string | null;
-  accentColor?: string | null;
-  advocateName: string | null;
-  rewardName: string;
-  discountCode: string;
-  applyUrl: string;
-  expiresAt: Date | null;
-}): Promise<{ success: boolean; error?: string }> {
-  let formattedExpiry: string | null = null;
-  if (expiresAt) {
-    formattedExpiry = new Intl.DateTimeFormat("en", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      timeZone: "UTC",
-    }).format(expiresAt);
-  }
-  try {
-    const delivery = await sendBatchEmail(
-      [
-        {
-          ...getWeleticTransactionalEmailOptions(),
-          to: email,
-          subject: `${advocateName || "A friend"} sent you ${rewardName}`,
-          variant: "notifications",
-          react: ReferralFriendReward({
-            brandName,
-            logoUrl,
-            accentColor,
-            advocateName,
-            rewardName,
-            discountCode,
-            applyUrl,
-            expiresAt: formattedExpiry,
-          }),
-        },
-      ],
-      { idempotencyKey: `loyalty-referral-friend-${referralId}` },
-    );
-    if (delivery?.error) {
-      return {
-        success: false,
-        error: FRIEND_EMAIL_DELIVERY_FAILURE,
-      };
-    }
-    return {
-      success: Boolean(delivery?.data),
-      error: delivery?.data ? undefined : FRIEND_EMAIL_DELIVERY_FAILURE,
-    };
-  } catch {
-    // Provider errors can contain recipients, voucher URLs and credentials.
-    // Retain only a fixed failure category, never the raw error or its cause.
-    return {
-      success: false,
-      error: FRIEND_EMAIL_DELIVERY_FAILURE,
-    };
-  }
-}
-
-export async function deliverReferralEmailUnderLease({
-  referralId,
-  storeId,
-  now,
-  deliver,
-}: {
-  referralId: string;
-  storeId: string;
-  now?: Date;
-  deliver: () => Promise<{ success: boolean; error?: string }>;
-}) {
-  const leaseToken = randomUUID();
-  const communications = await readShopperCommunicationSettings({ storeId });
-  if (communications.paused) return { acquired: false, emailSent: false };
-  // Production callers must use acquisition time, after potentially slow reads.
-  // Explicit timestamps remain available for deterministic internal tests.
-  now ??= new Date();
-  if (!Number.isFinite(now.getTime()))
-    throw new Error("Invalid referral email lease timestamp.");
-  const leaseExpiresAt = new Date(now.getTime() + FRIEND_EMAIL_LEASE_TTL_MS);
-  const updatedAt = new Date();
-  // Prisma's MySQL updateMany implementation selects matching IDs before it
-  // updates them. Keep the lease predicate in one SQL UPDATE so concurrent
-  // workers cannot all select the same expired lease and then overwrite it.
-  let claimed: number;
-  if (typeof (prisma as { $executeRaw?: unknown }).$executeRaw !== "function") {
-    if (process.env.NODE_ENV !== "test") {
-      throw new Error("Atomic referral email lease SQL is unavailable.");
-    }
-    const fallback = await prisma.weleticLoyaltyReferral.updateMany({
-      where: {
-        id: referralId,
-        storeId,
-        friendRewardEmailedAt: null,
-        friendEmailLeaseExpiresAt: { lte: now },
-        status: { in: ["pending", "qualified", "rewarded"] },
-        OR: [
-          { friendRewardExpiresAt: null },
-          { friendRewardExpiresAt: { gt: now } },
-        ],
-      },
-      data: {
-        friendEmailLeaseToken: leaseToken,
-        friendEmailLeaseReservedAt: now,
-        friendEmailLeaseExpiresAt: leaseExpiresAt,
-        friendEmailDeliveryAttempts: { increment: 1 },
-        friendEmailLastError: null,
-      },
-    });
-    claimed = fallback.count;
-  } else {
-    claimed = await prisma.$executeRaw`
-      UPDATE \`WeleticLoyaltyReferral\`
-      SET
-        \`friendEmailLeaseToken\` = ${leaseToken},
-        \`friendEmailLeaseReservedAt\` = ${now},
-        \`friendEmailLeaseExpiresAt\` = ${leaseExpiresAt},
-        \`friendEmailDeliveryAttempts\` = \`friendEmailDeliveryAttempts\` + 1,
-        \`friendEmailLastError\` = NULL,
-        \`updatedAt\` = ${updatedAt}
-      WHERE
-        \`id\` = ${referralId}
-        AND \`storeId\` = ${storeId}
-        AND \`friendRewardEmailedAt\` IS NULL
-        AND \`friendEmailLeaseExpiresAt\` <= ${now}
-        AND \`status\` IN ('pending', 'qualified', 'rewarded')
-        AND (\`friendRewardExpiresAt\` IS NULL OR \`friendRewardExpiresAt\` > ${now})
-        AND NOT EXISTS (
-          SELECT 1 FROM \`WeleticMerchantSettings\`
-          WHERE \`storeId\` = ${storeId} AND \`shopperEmailPaused\` = TRUE
-        )
-    `;
-  }
-  if (claimed === 0) {
-    const current = await prisma.weleticLoyaltyReferral.findFirst({
-      where: { id: referralId, storeId },
-      select: { friendRewardEmailedAt: true },
-    });
-    return {
-      acquired: false,
-      emailSent: Boolean(current?.friendRewardEmailedAt),
-    };
-  }
-
-  let delivery: { success: boolean; error?: string };
-  try {
-    delivery = await deliver();
-  } catch {
-    delivery = {
-      success: false,
-      error: FRIEND_EMAIL_DELIVERY_FAILURE,
-    };
-  }
-
-  if (delivery.success) {
-    const deliveredAt = new Date();
-    let finalized: number;
-    if (
-      typeof (prisma as { $executeRaw?: unknown }).$executeRaw !== "function"
-    ) {
-      if (process.env.NODE_ENV !== "test") {
-        throw new Error("Atomic referral email lease SQL is unavailable.");
-      }
-      const fallback = await prisma.weleticLoyaltyReferral.updateMany({
-        where: {
-          id: referralId,
-          storeId,
-          friendRewardEmailedAt: null,
-          friendEmailLeaseToken: leaseToken,
-        },
-        data: {
-          friendRewardEmailedAt: deliveredAt,
-          friendEmailLeaseToken: null,
-          friendEmailLeaseReservedAt: null,
-          friendEmailLeaseExpiresAt: deliveredAt,
-          friendEmailLastError: null,
-        },
-      });
-      finalized = fallback.count;
-    } else {
-      finalized = await prisma.$executeRaw`
-        UPDATE \`WeleticLoyaltyReferral\`
-        SET
-          \`friendRewardEmailedAt\` = ${deliveredAt},
-          \`friendEmailLeaseToken\` = NULL,
-          \`friendEmailLeaseReservedAt\` = NULL,
-          \`friendEmailLeaseExpiresAt\` = ${deliveredAt},
-          \`friendEmailLastError\` = NULL,
-          \`updatedAt\` = ${deliveredAt}
-        WHERE
-          \`id\` = ${referralId}
-          AND \`storeId\` = ${storeId}
-          AND \`friendRewardEmailedAt\` IS NULL
-          AND \`friendEmailLeaseToken\` = ${leaseToken}
-      `;
-    }
-    return { acquired: true, emailSent: finalized === 1 };
-  } else {
-    // This boundary also protects against alternate delivery callbacks that
-    // return an unsanitized error instead of throwing one.
-    const error = FRIEND_EMAIL_DELIVERY_FAILURE;
-    if (
-      typeof (prisma as { $executeRaw?: unknown }).$executeRaw !== "function"
-    ) {
-      if (process.env.NODE_ENV !== "test") {
-        throw new Error("Atomic referral email lease SQL is unavailable.");
-      }
-      await prisma.weleticLoyaltyReferral.updateMany({
-        where: {
-          id: referralId,
-          storeId,
-          friendRewardEmailedAt: null,
-          friendEmailLeaseToken: leaseToken,
-        },
-        data: {
-          friendEmailLeaseToken: null,
-          friendEmailLeaseReservedAt: null,
-          friendEmailLeaseExpiresAt: now,
-          friendEmailLastError: error,
-        },
-      });
-    } else {
-      await prisma.$executeRaw`
-        UPDATE \`WeleticLoyaltyReferral\`
-        SET
-          \`friendEmailLeaseToken\` = NULL,
-          \`friendEmailLeaseReservedAt\` = NULL,
-          \`friendEmailLeaseExpiresAt\` = ${now},
-          \`friendEmailLastError\` = ${error},
-          \`updatedAt\` = ${new Date()}
-        WHERE
-          \`id\` = ${referralId}
-          AND \`storeId\` = ${storeId}
-          AND \`friendRewardEmailedAt\` IS NULL
-          AND \`friendEmailLeaseToken\` = ${leaseToken}
-      `;
-    }
-    return { acquired: true, emailSent: false };
-  }
-}
-
 export async function claimReferralFriendReward({
   storeId,
   referralCode,
   friendEmail,
   clientIp,
   userAgent,
+  locale = "en",
   now = new Date(),
   loyaltyMaintenancePermit,
 }: {
@@ -733,6 +483,7 @@ export async function claimReferralFriendReward({
   friendEmail: string;
   clientIp?: string;
   userAgent?: string;
+  locale?: "en" | "ja" | "vi";
   now?: Date;
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
 }) {
@@ -1008,6 +759,29 @@ export async function claimReferralFriendReward({
               referralCode: normalizedCode,
               claimedAt: now.toISOString(),
               [CLAIM_METADATA_KEY]: rewardSnapshot,
+              ...(store.installationGeneration
+                ? {
+                    anonymousConfirmationOrigin:
+                      createAnonymousConfirmationOrigin({
+                        storeId,
+                        programId: advocate.programId,
+                        referralId,
+                        installationGeneration: store.installationGeneration,
+                        friendEmailDigest: currentEmailDigest,
+                        rewardDefinitionId: reward.id,
+                        discountCode: generatedDiscountCode,
+                        rewardSnapshot,
+                        locale: anonymousConfirmationLocaleSchema.parse(locale),
+                      }),
+                    friendPrivacySnapshot: createReferralPrivacySnapshot({
+                      storeId,
+                      referralId,
+                      friendEmailDigest: currentEmailDigest,
+                      email,
+                      now,
+                    }),
+                  }
+                : {}),
             } as Prisma.InputJsonValue,
           },
         });
@@ -1242,28 +1016,55 @@ export async function claimReferralFriendReward({
       storeId,
       legacyBrandName: reservation.advocate.program.name,
     });
-    const delivery = await deliverReferralEmailUnderLease({
+    const delivery = await sendAnonymousReferralConfirmation({
       referralId: referral.id,
       storeId,
-      deliver: () =>
-        deliverFriendRewardEmail({
-          referralId: referral.id,
-          email,
-          brandName: communications.brandName,
-          logoUrl: communications.logoUrl,
-          accentColor: communications.accentColor,
-          advocateName:
-            [
-              reservation.advocate.shopper.firstName,
-              reservation.advocate.shopper.lastName,
-            ]
-              .filter(Boolean)
-              .join(" ") || null,
-          rewardName: snapshot.rewardDefinition.name,
-          discountCode: finalDiscountCode,
-          applyUrl,
-          expiresAt: referral.friendRewardExpiresAt,
-        }),
+      email,
+      prepare: async (frozenLocale, source) => {
+        const sender = getWeleticTransactionalEmailOptions();
+        if (!sender.from)
+          throw new Error("Approved referral sender unavailable");
+        const prepared = await prepareResendEmail({
+          ...sender,
+          to: email,
+          subject: referralConfirmationCopy[frozenLocale].subject,
+          variant: "notifications",
+          react: ReferralFriendReward({
+            locale: frozenLocale,
+            brandName: communications.brandName,
+            logoUrl: communications.logoUrl,
+            accentColor: communications.accentColor,
+            rewardName: source.rewardName,
+            discountCode: source.discountCode,
+            applyUrl: referralApplyUrl(
+              storeIdentity.shopDomain,
+              source.discountCode,
+            ),
+            expiresAt: source.expiresAt
+              ? new Intl.DateTimeFormat(frozenLocale, {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                  timeZone: "UTC",
+                }).format(source.expiresAt)
+              : null,
+          }),
+        });
+        return {
+          to: typeof prepared.to === "string" ? prepared.to : prepared.to[0],
+          from: prepared.from,
+          subject: prepared.subject,
+          html: prepared.html,
+          ...(prepared.replyTo
+            ? {
+                replyTo: Array.isArray(prepared.replyTo)
+                  ? prepared.replyTo
+                  : [prepared.replyTo],
+              }
+            : {}),
+          ...(prepared.headers ? { headers: prepared.headers } : {}),
+        };
+      },
     });
     emailSent = delivery.emailSent;
   }
@@ -1861,6 +1662,10 @@ export async function redactReferralFriendClaimsForEmail({
         },
         data: {
           friendEmailDigest: null,
+          friendEmailLeaseToken: null,
+          friendEmailLeaseReservedAt: null,
+          friendEmailLeaseExpiresAt: redactedAt,
+          friendEmailLastError: null,
           friendRewardDefinitionId: null,
           friendShopifyDiscountCode: null,
           friendShopifyDiscountCodeCanonical: null,
@@ -1915,6 +1720,19 @@ export async function redactReferralFriendClaimsForShopBatch({
         { friendEmailDigest: { not: null } },
         { friendShopifyDiscountCode: { not: null } },
         { friendShopifyDiscountId: { not: null } },
+        { friendEmailLeaseToken: { not: null } },
+        {
+          metadata: {
+            path: "$.anonymousConfirmationOrigin",
+            not: Prisma.DbNull,
+          },
+        },
+        {
+          metadata: {
+            path: "$.anonymousConfirmationDelivery",
+            not: Prisma.DbNull,
+          },
+        },
       ],
     },
     orderBy: { id: "asc" },
@@ -1947,6 +1765,10 @@ export async function redactReferralFriendClaimsForShopBatch({
       where: { id: referral.id, storeId },
       data: {
         friendEmailDigest: null,
+        friendEmailLeaseToken: null,
+        friendEmailLeaseReservedAt: null,
+        friendEmailLeaseExpiresAt: redactedAt,
+        friendEmailLastError: null,
         friendRewardDefinitionId: null,
         friendShopifyDiscountCode: null,
         friendShopifyDiscountCodeCanonical: null,

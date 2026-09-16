@@ -1708,6 +1708,7 @@
           body: JSON.stringify({
             referralCode: capturedReferralCode,
             email: email,
+            locale: locale,
           }),
         }),
       )

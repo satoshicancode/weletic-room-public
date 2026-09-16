@@ -32,6 +32,9 @@ const BIRTHDAY_JOB_STATUSES_TO_CANCEL = new Set<WeleticLoyaltyOutboxJobStatus>([
 const CUSTOMER_CONTEXT_JSON_KEYS = new Set([
   "expiryDeliverySnapshot",
   "communicationDeliverySnapshot",
+  "anonymousConfirmationOrigin",
+  "anonymousConfirmationDelivery",
+  "friendPrivacySnapshot",
   "birthDate",
   "birthday",
   "registeredAt",
@@ -102,6 +105,46 @@ function scrubCustomerContextJson(
     Object.keys(scrubbed).length === 0
     ? Prisma.DbNull
     : scrubbed;
+}
+
+/** Lock and reread current metadata so erasure cannot restore a stale payload
+ * after delivery/purge, nor leave a lease usable by an already-running worker.
+ */
+export async function scrubReferralCustomerContext({
+  storeId,
+  referralId,
+  redactedAt,
+}: {
+  storeId: string;
+  referralId: string;
+  redactedAt: Date;
+}) {
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM WeleticLoyaltyReferral WHERE id = ${referralId} AND storeId = ${storeId} FOR UPDATE`;
+      const referral = await tx.weleticLoyaltyReferral.findFirst({
+        where: { id: referralId, storeId },
+        select: { metadata: true },
+      });
+      if (!referral) return;
+      await tx.weleticLoyaltyReferral.updateMany({
+        where: { id: referralId, storeId },
+        data: {
+          dubLinkId: null,
+          ipHash: null,
+          userAgentHash: null,
+          fraudReason: null,
+          fraudSignals: Prisma.DbNull,
+          metadata: scrubCustomerContextJson(referral.metadata),
+          friendEmailLeaseToken: null,
+          friendEmailLeaseReservedAt: null,
+          friendEmailLeaseExpiresAt: redactedAt,
+          friendEmailLastError: null,
+        },
+      });
+    },
+    { timeout: 15_000 },
+  );
 }
 
 export function readShopifyCustomerRedactionTombstone(
@@ -651,16 +694,10 @@ async function scrubLoyaltyAccountCustomerContext({
   }
 
   for (const referral of referrals) {
-    await prisma.weleticLoyaltyReferral.updateMany({
-      where: { id: referral.id, storeId },
-      data: {
-        dubLinkId: null,
-        ipHash: null,
-        userAgentHash: null,
-        fraudReason: null,
-        fraudSignals: Prisma.DbNull,
-        metadata: scrubCustomerContextJson(referral.metadata),
-      },
+    await scrubReferralCustomerContext({
+      storeId,
+      referralId: referral.id,
+      redactedAt,
     });
   }
 
@@ -1038,16 +1075,10 @@ export async function processWeleticLoyaltyAccountPrivacyScrubStep({
       nextPhase: "scrub_referral_link",
     });
     for (const referral of bounded) {
-      await prisma.weleticLoyaltyReferral.updateMany({
-        where: { id: referral.id, storeId },
-        data: {
-          dubLinkId: null,
-          ipHash: null,
-          userAgentHash: null,
-          fraudReason: null,
-          fraudSignals: Prisma.DbNull,
-          metadata: scrubCustomerContextJson(referral.metadata),
-        },
+      await scrubReferralCustomerContext({
+        storeId,
+        referralId: referral.id,
+        redactedAt,
       });
     }
     return result;
