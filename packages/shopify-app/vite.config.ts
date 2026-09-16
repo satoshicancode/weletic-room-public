@@ -2,6 +2,7 @@ import { vitePlugin as remix } from "@remix-run/dev";
 import { vercelPreset } from "@vercel/remix/vite";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { useNodeShopifyBuild } from "./node-build-policy.mjs";
 import { shopifyExtensionDevCorsPlugin } from "./shopify-extension-dev-cors";
 
 export default defineConfig({
@@ -11,11 +12,9 @@ export default defineConfig({
   plugins: [
     shopifyExtensionDevCorsPlugin(),
     remix({
-      // Local container compatibility is opt-in; retain the deployed default.
-      presets:
-        process.env.WELETIC_LOCAL_CONTAINER_BUILD === "1"
-          ? []
-          : [vercelPreset()],
+      // Explicit Node release builds and legacy local probes share the adapter;
+      // ordinary builds retain the Vercel preset.
+      presets: useNodeShopifyBuild(process.env) ? [] : [vercelPreset()],
       future: {
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,
