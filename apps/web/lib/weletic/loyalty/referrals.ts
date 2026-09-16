@@ -1106,6 +1106,23 @@ export async function evaluateReferralQualification(
           "Referral order currency does not match the verified Shopify store currency.",
         );
       }
+      // The optimistic account read can predate a paid-order update or privacy
+      // closure while this transaction waits for the store/program locks.
+      // Re-read identity, activity and first-order evidence inside the same
+      // serializable transaction that claims the referral and its rewards.
+      const refereeAccount = await tx.weleticLoyaltyAccount.findUnique({
+        where: { shopperId: input.refereeShopperId },
+        include: { shopper: { select: { ordersCount: true } } },
+      });
+      if (
+        !refereeAccount ||
+        refereeAccount.storeId !== input.storeId ||
+        refereeAccount.programId !== lockedProgram.id ||
+        refereeAccount.status !== "active" ||
+        hasShopifyCustomerRedactionTombstone(refereeAccount.metadata)
+      ) {
+        throw new ReferralAccountInactiveError();
+      }
       const referral = await tx.weleticLoyaltyReferral.findFirst({
         where: {
           storeId: input.storeId,

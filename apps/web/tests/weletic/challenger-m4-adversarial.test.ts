@@ -524,9 +524,7 @@ describe("Challenger 2 Adversarial Stress Test Suite — Milestone 4", () => {
 
     describe("1.3 Referral Fulfillment & Refund Clawback Verification", () => {
       it("enforces minimum qualifying order threshold for zero-decimal and decimal currencies", async () => {
-        vi.mocked(
-          prisma.weleticLoyaltyAccount.findUnique,
-        ).mockResolvedValueOnce({
+        vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
           id: "acc_ref_thresh",
           programId: "prog_1",
           storeId,
@@ -576,10 +574,9 @@ describe("Challenger 2 Adversarial Stress Test Suite — Milestone 4", () => {
       });
 
       it("prevents double qualification of the same order (idempotency)", async () => {
-        vi.mocked(
-          prisma.weleticLoyaltyAccount.findUnique,
-        ).mockResolvedValueOnce({
+        vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
           id: "acc_ref_double",
+          programId: "prog_1",
           storeId,
           shopperId: "shopper_double",
           status: "active",

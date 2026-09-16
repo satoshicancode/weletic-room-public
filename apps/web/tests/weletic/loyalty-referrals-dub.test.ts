@@ -1123,11 +1123,85 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
   });
 
   describe("4. Double-Sided Points Fulfillment on Qualifying Order", () => {
+    it.each(["second_order", "closed", "redacted", "different_program"])(
+      "uses transactional referee evidence after optimistic read: %s",
+      async (change) => {
+        const account = {
+          id: "fresh_referee",
+          storeId: "store_test_1",
+          programId: "prog_1",
+          shopperId: "fresh_shopper",
+          status: "active",
+          metadata: null,
+          shopper: { ordersCount: 1 },
+        };
+        const current = {
+          ...account,
+          ...(change === "second_order" ? { shopper: { ordersCount: 2 } } : {}),
+          ...(change === "closed" ? { status: "closed" } : {}),
+          ...(change === "different_program"
+            ? { programId: "other_program" }
+            : {}),
+          ...(change === "redacted"
+            ? {
+                metadata: {
+                  shopifyCustomerRedaction: {
+                    status: "redacted",
+                    source: "shopify_customers_redact",
+                    redactedAt: new Date().toISOString(),
+                  },
+                },
+              }
+            : {}),
+        };
+        vi.mocked(prisma.weleticLoyaltyAccount.findUnique)
+          .mockReset()
+          .mockResolvedValueOnce(account as any)
+          .mockResolvedValue(current as any);
+        vi.mocked(prisma.weleticLoyaltyReferral.findFirst)
+          .mockReset()
+          .mockResolvedValue({
+            id: "fresh_referral",
+            storeId: "store_test_1",
+            refereeAccountId: account.id,
+            advocateAccountId: "fresh_advocate",
+            status: "pending",
+            metadata: null,
+            advocateAccount: {
+              id: "fresh_advocate",
+              storeId: "store_test_1",
+              programId: "prog_1",
+              status: "active",
+              metadata: null,
+            },
+          } as any);
+        const result = await evaluateReferralQualification({
+          storeId: "store_test_1",
+          orderId: "fresh_order",
+          refereeShopperId: account.shopperId,
+          orderSubtotal: BigInt(1000),
+          currency: "USD",
+        });
+        expect(result.qualified).toBe(false);
+        expect(prisma.weleticLoyaltyAccount.findUnique).toHaveBeenCalledTimes(
+          2,
+        );
+        expect(appendPointsLedgerEntry).not.toHaveBeenCalled();
+        expect(enqueueOutboxJob).not.toHaveBeenCalled();
+        if (change === "second_order")
+          expect(prisma.weleticLoyaltyReferral.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+              data: expect.objectContaining({ status: "fraud_blocked" }),
+            }),
+          );
+      },
+    );
+
     it("awards advocate points and referee welcome bonus on referee's first paid order", async () => {
       const storeId = "store_test_1";
       const orderId = "order_qual_101";
 
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_referee_101",
         programId: "prog_1",
         storeId,
@@ -1305,7 +1379,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
     });
 
     it("creates a serialized default rule for an imported pending referral with no rule", async () => {
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_referee_legacy",
         programId: "program_legacy",
         storeId: "store_legacy",
@@ -1369,7 +1443,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
 
     it("rejects an unprovisionable coupon before claiming the referral or cap slot", async () => {
       const storeId = "store_invalid_reward";
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_referee_invalid_reward",
         programId: "program_invalid_reward",
         storeId,
@@ -1447,7 +1521,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
     it("queues a coupon for one side while awarding points to the other", async () => {
       const storeId = "store_test_1";
 
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_referee_coupon",
         programId: "prog_1",
         storeId,
@@ -1537,7 +1611,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
     it("does not double-award when another webhook already claimed the referral", async () => {
       const storeId = "store_test_1";
 
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_referee_race",
         programId: "prog_1",
         storeId,
@@ -1591,7 +1665,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
 
     it("rolls back qualification when redaction closes either account before the transactional claim", async () => {
       const storeId = "store_redaction_race";
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_referee_redaction_race",
         programId: "program_redaction_race",
         storeId,
@@ -1650,7 +1724,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
     it("does not inflate counters when this order already has a persisted award", async () => {
       const storeId = "store_test_1";
 
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_referee_existing_award",
         programId: "prog_1",
         storeId,
@@ -1708,7 +1782,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
     it("rejects replay of a refunded qualifying order without incrementing counters", async () => {
       const storeId = "store_test_1";
 
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_referee_replay",
         programId: "prog_1",
         storeId,
@@ -1759,8 +1833,9 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
     it("does not requalify a terminal referral after the first order was fully refunded", async () => {
       const storeId = "store_test_1";
 
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_referee_new_order",
+        programId: "prog_1",
         storeId,
         status: "active",
         shopperId: "shopper_ref_new_order",
@@ -2271,7 +2346,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
     it("blocks qualification when the purchase is not the friend's first order", async () => {
       complianceMocks.programByStore.set("store_test_1", "program_repeat");
       vi.mocked(prisma.weleticLoyaltyReferral.findFirst).mockReset();
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
         id: "acc_repeat_friend",
         programId: "program_repeat",
         storeId: "store_test_1",

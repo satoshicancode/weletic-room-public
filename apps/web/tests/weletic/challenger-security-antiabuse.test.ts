@@ -751,9 +751,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
 
     describe("2.3 Qualification Thresholds & Currency Precision", () => {
       it("rejects qualification when order subtotal is below minimum threshold in 2-decimal currencies ($29.99 < $30.00)", async () => {
-        vi.mocked(
-          prisma.weleticLoyaltyAccount.findUnique,
-        ).mockResolvedValueOnce({
+        vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
           id: "acc_ref_1",
           programId: "prog_1",
           storeId: "store_1",
@@ -808,16 +806,23 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
           currencyVerifiedAt: new Date("2026-08-30T00:00:00.000Z"),
           installationGeneration: null,
         } as any);
-        vi.mocked(
-          prisma.weleticLoyaltyAccount.findUnique,
-        ).mockResolvedValueOnce({
-          id: "acc_ref_jpy",
-          programId: "prog_1",
-          storeId: "store_1",
-          shopperId: "shopper_ref_jpy",
-          status: "active",
-          metadata: null,
-        } as any);
+        vi.mocked(prisma.weleticLoyaltyAccount.findUnique)
+          .mockResolvedValueOnce({
+            id: "acc_ref_jpy",
+            programId: "prog_1",
+            storeId: "store_1",
+            shopperId: "shopper_ref_jpy",
+            status: "active",
+            metadata: null,
+          } as any)
+          .mockResolvedValueOnce({
+            id: "acc_ref_jpy",
+            programId: "prog_1",
+            storeId: "store_1",
+            shopperId: "shopper_ref_jpy",
+            status: "active",
+            metadata: null,
+          } as any);
 
         vi.mocked(
           prisma.weleticLoyaltyReferral.findFirst,
