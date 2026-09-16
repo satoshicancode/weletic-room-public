@@ -11,6 +11,10 @@ level, not substitutes for named journeys on yamaxdev.
 
 September 17 account-referral qualification and clawback checkpoint (L06):
 [fresh transactional eligibility and isolated lifecycle evidence](referral-lifecycle-2026-09-17.md).
+The subsequent checkpoint adds six real-MySQL refund-ingestion cases (27 total):
+partial/full boundaries, replay, missing merchandise allocation, stale generation
+and post-commit recovery. Redis locking is synthetic; signed ingress, purchase
+points allocation and named live acceptance remain open.
 The stale first-order snapshot is fixed; local SQL reconciliation and synthetic
 coupon reversal evidence do not close ingestion, issuance or named live gates.
 

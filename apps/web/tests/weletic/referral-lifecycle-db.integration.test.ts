@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { recordWeleticRefund } from "@/lib/weletic/commerce/record-refund";
 import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
 import { getReferralCouponIdempotencyKey } from "@/lib/weletic/loyalty/referral-coupon-idempotency";
 import {
@@ -16,8 +17,12 @@ import {
   vi,
 } from "vitest";
 
-// Only the scheduling hook is synthetic. All domain operations, locks, ledger
-// writes and outbox persistence below use the real isolated MySQL database.
+// Database locks, domain operations, ledger and outbox persistence are real.
+// Refund ingestion runs sequentially with a synthetic Redis lock boundary;
+// this suite does not establish distributed-lock or signed-webhook acceptance.
+vi.mock("@/lib/weletic/redis-lock", () => ({
+  withDistributedLock: async ({ fn }: { fn: () => Promise<unknown> }) => fn(),
+}));
 const hooks = vi.hoisted(() => ({
   beforeTransaction: vi.fn(),
   beforeCommit: vi.fn(),
@@ -212,6 +217,7 @@ async function fixture() {
       expectedInstallationGeneration: generation,
     });
   return {
+    workspaceId,
     storeId,
     loyaltyId,
     generation,
@@ -251,6 +257,10 @@ describe("referral lifecycle on real isolated MySQL, synthetic orders", () => {
     hooks.beforeTransaction.mockReset();
     hooks.beforeCommit.mockReset();
     for (const f of fixtures.splice(0)) {
+      const orders = await prisma.weleticCommerceOrder.findMany({
+        where: { storeId: f.storeId },
+        select: { id: true },
+      });
       await prisma.weleticLoyaltyOutboxJob.deleteMany({
         where: { storeId: f.storeId },
       });
@@ -268,6 +278,11 @@ describe("referral lifecycle on real isolated MySQL, synthetic orders", () => {
       });
       await prisma.weleticCommerceOrder.deleteMany({
         where: { storeId: f.storeId },
+      });
+      await prisma.weleticFxRateSnapshot.deleteMany({
+        where: {
+          provider: { in: orders.map((o) => `order-snapshot:${o.id}`) },
+        },
       });
       await prisma.weleticLoyaltyAccount.updateMany({
         where: { storeId: f.storeId },
@@ -288,6 +303,172 @@ describe("referral lifecycle on real isolated MySQL, synthetic orders", () => {
   afterAll(async () => {
     vi.unstubAllEnvs();
     await prisma.$disconnect();
+  });
+
+  async function ingestedRefundFixture() {
+    const f = await fixture();
+    await f.bind();
+    const orderId = await f.order();
+    await f.qualify(orderId);
+    await prisma.weleticCommerceOrder.update({
+      where: { id: orderId },
+      data: { externalId: "9001" },
+    });
+    await prisma.weleticCommerceOrderLine.update({
+      where: { id: `line_${orderId}` },
+      data: { externalId: "9101", quantity: 2 },
+    });
+    const refund = (
+      id: number,
+      amount: string | null,
+      generation = f.generation,
+    ) =>
+      recordWeleticRefund(
+        {
+          workspaceId: f.workspaceId,
+          event: {
+            id,
+            order_id: 9001,
+            created_at: "2026-09-17T00:00:00Z",
+            refund_line_items:
+              amount === null
+                ? []
+                : [
+                    {
+                      id: id + 100,
+                      line_item_id: 9101,
+                      quantity: 1,
+                      subtotal_set: {
+                        shop_money: { amount, currency_code: "USD" },
+                        presentment_money: { amount, currency_code: "USD" },
+                      },
+                    },
+                  ],
+          },
+        },
+        { expectedInstallationGeneration: generation },
+      );
+    const state = () =>
+      prisma.weleticLoyaltyReferral.findFirstOrThrow({
+        where: { storeId: f.storeId, qualifyingOrderId: orderId },
+      });
+    return { ...f, orderId, refund, state };
+  }
+
+  it("ingests partial then cumulative full refunds, including replay of the earlier partial", async () => {
+    const f = await ingestedRefundFixture();
+    await f.refund(9201, "4.00");
+    await f.refund(9201, "4.00");
+    expect((await f.state()).status).toBe("rewarded");
+    await reconcile(f.storeId, [BigInt(100), BigInt(50)]);
+    expect(
+      (
+        await prisma.weleticCommerceOrder.findUniqueOrThrow({
+          where: { id: f.orderId },
+        })
+      ).status,
+    ).toBe("partially_refunded");
+    await f.refund(9202, "6.00");
+    await f.refund(9202, "6.00");
+    await f.refund(9201, "4.00");
+    expect((await f.state()).status).toBe("cancelled");
+    await reconcile(f.storeId, [BigInt(0), BigInt(0)]);
+    expect(
+      await prisma.weleticCommerceRefund.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(2);
+    expect(
+      await prisma.weleticPointsLedgerEntry.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(4);
+    const sums = await prisma.$queryRaw<
+      Array<{ amount: string }>
+    >`SELECT CAST(SUM(shopAmount) AS CHAR) AS amount FROM WeleticCommerceRefund WHERE storeId = ${f.storeId}`;
+    expect(sums[0].amount).toBe("1000");
+  });
+
+  it("contains refunds with no merchandise lines and their replay without speculative clawback", async () => {
+    const f = await ingestedRefundFixture();
+    await f.refund(9301, null);
+    await f.refund(9301, null);
+    expect((await f.state()).status).toBe("rewarded");
+    await reconcile(f.storeId, [BigInt(100), BigInt(50)]);
+    expect(
+      await prisma.weleticReconciliationIssue.count({
+        where: { storeId: f.storeId, status: "open" },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.weleticCommerceRefund.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(1);
+  });
+
+  it.each(["9.99", "10.00"])(
+    "uses the persisted full-refund boundary at %s USD",
+    async (amount) => {
+      const f = await ingestedRefundFixture();
+      await f.refund(9351, amount);
+      const full = amount === "10.00";
+      expect((await f.state()).status).toBe(full ? "cancelled" : "rewarded");
+      await reconcile(
+        f.storeId,
+        full ? [BigInt(0), BigInt(0)] : [BigInt(100), BigInt(50)],
+      );
+    },
+  );
+
+  it("recovers a committed full refund after failure before loyalty reversal", async () => {
+    const f = await ingestedRefundFixture();
+    hooks.beforeTransaction.mockImplementation(async () => {
+      if (
+        await prisma.weleticCommerceRefund.count({
+          where: { storeId: f.storeId },
+        })
+      ) {
+        throw new Error("synthetic crash after commerce commit");
+      }
+    });
+    await expect(f.refund(9361, "10.00")).rejects.toThrow(
+      "synthetic crash after commerce commit",
+    );
+    hooks.beforeTransaction.mockReset();
+    expect(
+      await prisma.weleticCommerceRefund.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(1);
+    expect((await f.state()).status).toBe("rewarded");
+    await reconcile(f.storeId, [BigInt(100), BigInt(50)]);
+    await f.refund(9361, "10.00");
+    await f.refund(9361, "10.00");
+    expect((await f.state()).status).toBe("cancelled");
+    await reconcile(f.storeId, [BigInt(0), BigInt(0)]);
+    expect(
+      await prisma.weleticPointsLedgerEntry.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(4);
+    expect(
+      await prisma.weleticCommerceRefund.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(1);
+  });
+
+  it("rejects stale-generation refund ingestion before persisting effects", async () => {
+    const f = await ingestedRefundFixture();
+    await expect(f.refund(9401, "10.00", "stale-generation")).rejects.toThrow();
+    expect(
+      await prisma.weleticCommerceRefund.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(0);
+    expect((await f.state()).status).toBe("rewarded");
+    await reconcile(f.storeId, [BigInt(100), BigInt(50)]);
   });
 
   it("binds, qualifies once under replay, reverses once and prevents requalification", async () => {

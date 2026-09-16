@@ -72,7 +72,8 @@ shared database. Unit runs use CI's dummy Shopify app identity.
 ## Explicit remaining work
 
 - These direct reversal tests do not prove the webhook's partial-versus-full
-  refund decision. Complete named paid-order → partial/full refund journeys and
+  refund decision. The subsequent ingestion checkpoint below adds isolated
+  service coverage, not signed-webhook acceptance. Complete named paid-order → partial/full refund journeys and
   independently reconcile their ingested facts on yamaxdev.
 - Populating subscription sequence fields is policy-filter evidence, not proof
   that Shopify renewal classification supplies those fields correctly.
@@ -84,3 +85,37 @@ shared database. Unit runs use CI's dummy Shopify app identity.
 - The broader analytics/funnel, appearance and deployment backlog remains open.
   No new appearance defaults, artwork ownership or external execution decision
   is inferred from this work.
+
+## Subsequent refund ingestion checkpoint
+
+PR #62's post-merge quality run
+[35130108376](https://github.com/satoshicancode/weletic-room-public/actions/runs/35130108376)
+passed. The same isolated suite now passes 27 cases: the original 21 plus six
+refund-ingestion cases using `recordWeleticRefund`, real commerce/referral
+services and real MySQL. Production code and schemas are unchanged.
+
+- A $4 partial refund and its replay preserve both referral rewards. A later
+  $6 refund completes the $10 order refund and reverses both rewards once.
+  Replaying either refund afterward leaves two commerce refunds, four ledger
+  entries and zero balances. Independent SQL sums the refunds to 1,000 cents
+  and reconciles each cached balance to its tenant-bound ledger.
+- Exact $9.99 versus $10 boundaries preserve versus cancel the referral.
+- A refund with no merchandise lines and its replay preserve rewards and create
+  one open reconciliation issue, not a speculative clawback.
+- A synthetic failure after commerce commits but before loyalty reversal leaves
+  one persisted full refund and the original rewards. Replaying that event
+  completes the reversal; a second replay creates no extra ledger entries.
+- A stale installation generation cannot persist a refund or change rewards.
+
+The Redis distributed-lock wrapper is replaced with a direct callback for these
+sequential ingestion tests. Database transactions/locks, account qualification,
+clawback, refund persistence and outbox writes are real. This does not establish
+Redis contention, signed HTTP ingress, real paid-order ingestion, purchase-point
+refund allocation or named yamaxdev acceptance. Orders are synthetic and the
+fixture has referral points only. No Shopify API or email is called.
+
+Cleanup now removes FX snapshots by the exact fixture order's snapshot-provider
+key after cascading its refunds. An initial test import failed before any test
+executed due to a misplaced fixture return field; it was corrected. The 24-case
+intermediate run and final 27-case run passed. The implementing PR records final
+SQL cleanup, review, type-check and CI results. All live gates above remain open.
