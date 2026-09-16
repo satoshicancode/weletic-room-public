@@ -14,6 +14,11 @@ September 16 staged rewards evidence:
 Exact remote amount checks and conservative duplicate Gift Card handling are
 local safety improvements, not live reward or subscription acceptance.
 
+September 16 staged VIP evidence:
+[tier-aware grace and isolated lifecycle checks](vip-grace-acceptance-2026-09-16.md).
+The per-tier default/zero-day contract is verified locally and on disposable
+MySQL; named live VIP and communication delivery gates remain open.
+
 For current merged-code status and every L00–L17 workstream disposition, use the
 [September 12 launch reconciliation](launch-status-2026-09-12.md). In particular,
 PRs #13, #15 and #18 are merged; the September 9–10 draft statements below are

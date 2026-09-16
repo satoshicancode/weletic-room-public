@@ -31,6 +31,10 @@ entry-bonus rules, history rewrite or generation-fence changes are introduced.
 - Independent SQL postflight checked all 157 schema tables and found no rows.
 - Independent adversarial review found no blockers in precedence, scheduling,
   persisted deadlines, legacy payload compatibility or accounting fences.
+- Web and Shopify typechecks/builds, web lint, Prisma validation and formatting
+  passed. The web build generated 367 static pages with existing CSS/configuration
+  and missing-local-service warnings. Temporary database access was revoked;
+  the isolated MySQL container and Docker Desktop were stopped afterward.
 
 The disposable database is separate from the retained development database.
 Orders and fixtures are synthetic; notification delivery and the customer Redis
