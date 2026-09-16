@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
-test("Cloudflare release ingress policy and private-input CLI", () => {
+test("Cloudflare release ingress policy, guarded startup and private-input CLI", () => {
   const output = execFileSync(
     process.execPath,
     [
@@ -11,6 +11,12 @@ test("Cloudflare release ingress policy and private-input CLI", () => {
       fileURLToPath(
         new URL(
           "../../../../infra/cloudflare-release/ingress-policy.test.mjs",
+          import.meta.url,
+        ),
+      ),
+      fileURLToPath(
+        new URL(
+          "../../../../infra/cloudflare-release/start.test.mjs",
           import.meta.url,
         ),
       ),

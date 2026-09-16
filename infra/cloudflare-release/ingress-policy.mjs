@@ -4,6 +4,7 @@ import {
   PUBLIC_LOYALTY_APP_ORIGIN,
   PUBLIC_LOYALTY_CLIENT_ID,
 } from "../../packages/shopify-app/app/public-runtime-policy.mjs";
+import { assertCloudflareRuntime } from "./runtime-policy.mjs";
 
 // Static admission only. Never contacts providers, starts a process or logs input.
 const fail = () => {
@@ -38,6 +39,12 @@ export function assertCloudflareIngressPair(input) {
     fail();
   const web = environment(input.web);
   const shopify = environment(input.shopify);
+  try {
+    assertCloudflareRuntime("web", web);
+    assertCloudflareRuntime("shopify", shopify);
+  } catch {
+    fail();
+  }
   for (const env of [web, shopify]) {
     if (
       env.NODE_ENV !== "production" ||
@@ -71,6 +78,7 @@ export function assertCloudflareIngressPair(input) {
   // a web mismatch that would be rejected by the actual signed gateway.
   if (web.WELETIC_SHOPIFY_SERVICE_SECRET !== service) fail();
   if (service !== secret(shopify.WELETIC_SHOPIFY_SERVICE_SECRET)) fail();
+  if (web.SHOPIFY_WEBHOOK_SECRET !== secret(shopify.SHOPIFY_API_SECRET)) fail();
   const independentSecrets = [
     service,
     secret(shopify.SHOPIFY_API_SECRET),
