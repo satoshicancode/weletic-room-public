@@ -235,6 +235,11 @@ covers C01–C06 isolated schedule, targeting, historical VIP/policy, capped all
 refund/replay and merchant transaction checks. The named live campaign and gateway
 gates remain open; synthetic authority is not real authentication.
 
+September 16 [referral email lease evidence](referral-delivery-eligibility-2026-09-16.md)
+adds atomic status/expiry eligibility and tenant-scoped delivery-status lookup,
+with real-MySQL regression cases. Supplied-time checks do not prove send-time
+privacy/expiry safety or real delivery; those gates remain open.
+
 - [ ] C1: Purchase, signup, birthday and authorized manual points; pending
       maturity, expiry, warning/last-chance timing and replay-safe awards.
 - [ ] C2: Immutable line-level BigInt allocations, specificity/tie-breaking,

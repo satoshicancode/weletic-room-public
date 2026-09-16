@@ -568,6 +568,11 @@ export async function deliverReferralEmailUnderLease({
         storeId,
         friendRewardEmailedAt: null,
         friendEmailLeaseExpiresAt: { lte: now },
+        status: { in: ["pending", "qualified", "rewarded"] },
+        OR: [
+          { friendRewardExpiresAt: null },
+          { friendRewardExpiresAt: { gt: now } },
+        ],
       },
       data: {
         friendEmailLeaseToken: leaseToken,
@@ -593,6 +598,8 @@ export async function deliverReferralEmailUnderLease({
         AND \`storeId\` = ${storeId}
         AND \`friendRewardEmailedAt\` IS NULL
         AND \`friendEmailLeaseExpiresAt\` <= ${now}
+        AND \`status\` IN ('pending', 'qualified', 'rewarded')
+        AND (\`friendRewardExpiresAt\` IS NULL OR \`friendRewardExpiresAt\` > ${now})
         AND NOT EXISTS (
           SELECT 1 FROM \`WeleticMerchantSettings\`
           WHERE \`storeId\` = ${storeId} AND \`shopperEmailPaused\` = TRUE
@@ -600,8 +607,8 @@ export async function deliverReferralEmailUnderLease({
     `;
   }
   if (claimed === 0) {
-    const current = await prisma.weleticLoyaltyReferral.findUnique({
-      where: { id: referralId },
+    const current = await prisma.weleticLoyaltyReferral.findFirst({
+      where: { id: referralId, storeId },
       select: { friendRewardEmailedAt: true },
     });
     return {

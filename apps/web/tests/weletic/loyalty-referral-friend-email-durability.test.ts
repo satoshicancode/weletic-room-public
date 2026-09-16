@@ -284,6 +284,19 @@ describe("Referral Friend Email Delivery Durability & Lease State Machine", () =
     });
 
     expect(sendBatchEmail).toHaveBeenCalledTimes(1);
+    expect(prismaMocks.referralUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: "wreferral_test_1",
+          storeId: STORE_ID,
+          status: { in: ["pending", "qualified", "rewarded"] },
+          OR: [
+            { friendRewardExpiresAt: null },
+            { friendRewardExpiresAt: { gt: NOW } },
+          ],
+        }),
+      }),
+    );
     expect(referralRecord.friendRewardEmailedAt).toBeInstanceOf(Date);
     expect(referralRecord.friendEmailDeliveryAttempts).toBe(1);
     expect(referralRecord.friendEmailLeaseToken).toBeNull();
