@@ -71,7 +71,6 @@ export async function enqueueTierReviewSweepJobs({
     select: {
       storeId: true,
       vipTimeframe: true,
-      vipDowngradeGraceDays: true,
     },
     orderBy: { storeId: "asc" },
   });
@@ -133,7 +132,6 @@ export async function enqueueTierReviewSweepJobs({
                   payload: {
                     accountId: account.id,
                     reviewPeriod: program.vipTimeframe,
-                    gracePeriodDays: program.vipDowngradeGraceDays,
                     reason: "sweep_tier_expiry",
                   },
                   idempotencyKey,

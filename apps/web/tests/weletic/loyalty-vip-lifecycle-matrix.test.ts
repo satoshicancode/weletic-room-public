@@ -848,7 +848,6 @@ describe("VIP Lifecycle Matrix & Parity Test Suite (Requirement R3 / Nhóm 1.5)"
           payload: {
             accountId: "wacc_expired_1",
             reviewPeriod: WeleticVipTimeframe.rolling_12m,
-            gracePeriodDays: 30,
             reason: "sweep_tier_expiry",
           },
           idempotencyKey: `tier_review_sweep:wacc_expired_1:${expiredDate.getTime()}`,

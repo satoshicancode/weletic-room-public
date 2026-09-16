@@ -950,6 +950,79 @@ const vipEvaluation = (id: string) => ({
   expectedInstallationGeneration: "g1",
   now: new Date("2026-09-10T00:00:00Z"),
 });
+it.each([
+  ["tier setting", 3, 30, 3],
+  ["program fallback", null, 5, 5],
+  ["zero tier grace", 0, 30, 0],
+] as const)(
+  "uses configured VIP %s and preserves the committed grace deadline",
+  async (_label, tierGrace, programGrace, expectedDays) => {
+    const id = await seedVip();
+    await evaluateTierMaintenanceCycle(vipEvaluation(id));
+    await prisma.weleticLoyaltyTier.update({
+      where: { id: `${id}-gold` },
+      data: { gracePeriodDays: tierGrace },
+    });
+    await prisma.weleticLoyaltyProgram.update({
+      where: { id },
+      data: {
+        vipTimeframe: "rolling_12m",
+        vipDowngradeGraceDays: programGrace,
+      },
+    });
+    const now = new Date("2027-09-15T00:00:00Z");
+    const deadline = new Date(now.getTime() + expectedDays * 86_400_000);
+    const evaluation = { ...vipEvaluation(id), now };
+    expect(await evaluateTierMaintenanceCycle(evaluation)).toMatchObject({
+      status: "IN_GRACE_PERIOD",
+      gracePeriodExpiresAt: deadline,
+    });
+    const scheduled = await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+      where: {
+        storeId: id,
+        idempotencyKey: `tier_review_grace:${id}:${deadline.getTime()}`,
+      },
+    });
+    expect(scheduled.scheduledFor).toEqual(deadline);
+    expect(scheduled.payload).toMatchObject({ gracePeriodDays: expectedDays });
+
+    // Later editor changes cannot shorten or extend an already committed grace.
+    await prisma.weleticLoyaltyTier.update({
+      where: { id: `${id}-gold` },
+      data: { gracePeriodDays: 60 },
+    });
+    if (expectedDays > 0) {
+      expect(
+        await evaluateTierMaintenanceCycle({
+          ...evaluation,
+          now: new Date(deadline.getTime() - 1),
+        }),
+      ).toMatchObject({
+        status: "IN_GRACE_PERIOD",
+        gracePeriodExpiresAt: deadline,
+      });
+    }
+    expect(
+      (await evaluateTierMaintenanceCycle({ ...evaluation, now: deadline }))
+        .status,
+    ).toBe("DEMOTED");
+    expect(
+      (await prisma.weleticLoyaltyAccount.findUniqueOrThrow({ where: { id } }))
+        .currentTierId,
+    ).toBe(`${id}-bronze`);
+    expect(
+      await prisma.weleticLoyaltyTierHistory.count({
+        where: { accountId: id },
+      }),
+    ).toBe(2);
+    expect(
+      await prisma.weleticPointsLedgerEntry.count({
+        where: { storeId: id, entryType: "TIER_BONUS" },
+      }),
+    ).toBe(1);
+  },
+);
+
 it("commits one VIP promotion, entry bonus and notice under concurrent evaluation", async () => {
   const id = await seedVip();
   const results = await Promise.all([

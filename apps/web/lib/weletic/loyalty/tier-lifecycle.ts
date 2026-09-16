@@ -273,7 +273,10 @@ export async function evaluateTierMaintenanceCycle(
   const effectiveMilestoneMode =
     params.milestoneMode || program?.vipMilestoneMode || "amount_spent";
   const effectiveGraceDays =
-    params.gracePeriodDays ?? program?.vipDowngradeGraceDays ?? 30;
+    params.gracePeriodDays ??
+    account.currentTier?.gracePeriodDays ??
+    program?.vipDowngradeGraceDays ??
+    30;
   const autoDowngradeEnabled =
     String(effectiveReviewPeriod).toUpperCase() !== "LIFETIME" &&
     program?.vipAutoDowngradeEnabled !== false;
