@@ -26,9 +26,20 @@ production data. SMTP/Resend transports are mocked: no real email was sent.
 
 ## Remaining delivery gates
 
-The existing caller passes claim-start `now` after remote provisioning. This
-patch evaluates expiry at that supplied timestamp, not strictly at wall-clock
-dispatch time. Cancellation/privacy changes after lease acquisition, installation
+The initial lease-eligibility patch evaluated expiry at the supplied claim-start
+timestamp. A follow-up now samples the production acquisition clock after the
+awaited communication settings read, and the claim caller no longer forwards its
+old timestamp. Explicit internal timestamps remain supported for deterministic
+tests; invalid timestamps cannot reserve a lease. Regression tests cover a slow
+settings read, reward expiry during that read, and an already-provisioned reward
+with an old claim timestamp. These are mocked transport/database tests, not a
+real delayed Shopify provisioning request.
+
+Follow-up verification: 64 focused tests and all 15 real-MySQL operations tests
+passed; the independent audit again found all 157 disposable tables empty.
+
+This closes stale claim/configuration time reuse, not every wall-clock dispatch
+race. Cancellation/privacy changes after lease acquisition, installation
 generation fencing across remote work, consent/retention rules, provider-level
 idempotency and live delivery remain separate acceptance work. It does not close
 the referrals, communications, privacy or live `yamaxdev` matrix gates.

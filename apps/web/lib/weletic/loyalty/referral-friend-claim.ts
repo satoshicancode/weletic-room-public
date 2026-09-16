@@ -541,7 +541,7 @@ async function deliverFriendRewardEmail({
 export async function deliverReferralEmailUnderLease({
   referralId,
   storeId,
-  now = new Date(),
+  now,
   deliver,
 }: {
   referralId: string;
@@ -552,6 +552,11 @@ export async function deliverReferralEmailUnderLease({
   const leaseToken = randomUUID();
   const communications = await readShopperCommunicationSettings({ storeId });
   if (communications.paused) return { acquired: false, emailSent: false };
+  // Production callers must use acquisition time, after potentially slow reads.
+  // Explicit timestamps remain available for deterministic internal tests.
+  now ??= new Date();
+  if (!Number.isFinite(now.getTime()))
+    throw new Error("Invalid referral email lease timestamp.");
   const leaseExpiresAt = new Date(now.getTime() + FRIEND_EMAIL_LEASE_TTL_MS);
   const updatedAt = new Date();
   // Prisma's MySQL updateMany implementation selects matching IDs before it
@@ -1240,7 +1245,6 @@ export async function claimReferralFriendReward({
     const delivery = await deliverReferralEmailUnderLease({
       referralId: referral.id,
       storeId,
-      now,
       deliver: () =>
         deliverFriendRewardEmail({
           referralId: referral.id,

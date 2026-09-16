@@ -237,8 +237,9 @@ gates remain open; synthetic authority is not real authentication.
 
 September 16 [referral email lease evidence](referral-delivery-eligibility-2026-09-16.md)
 adds atomic status/expiry eligibility and tenant-scoped delivery-status lookup,
-with real-MySQL regression cases. Supplied-time checks do not prove send-time
-privacy/expiry safety or real delivery; those gates remain open.
+with real-MySQL regression cases. The follow-up refreshes acquisition time after
+settings reads instead of reusing claim-start time. Acquisition-to-send
+privacy/expiry races and real delivery remain open.
 
 - [ ] C1: Purchase, signup, birthday and authorized manual points; pending
       maturity, expiry, warning/last-chance timing and replay-safe awards.

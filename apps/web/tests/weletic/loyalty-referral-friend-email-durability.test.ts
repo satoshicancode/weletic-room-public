@@ -1,4 +1,7 @@
-import { claimReferralFriendReward } from "@/lib/weletic/loyalty/referral-friend-claim";
+import {
+  claimReferralFriendReward,
+  deliverReferralEmailUnderLease,
+} from "@/lib/weletic/loyalty/referral-friend-claim";
 import { sendBatchEmail } from "@dub/email";
 import { WeleticLoyaltyReferralStatus } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +13,7 @@ const FRIEND_EMAIL = "friend@example.com";
 const NOW = new Date("2026-06-15T12:00:00.000Z");
 
 const prismaMocks = vi.hoisted(() => ({
+  settingsFindUnique: vi.fn(),
   storeFindUniqueOrThrow: vi.fn(),
   accountFindFirst: vi.fn(),
   referralFindFirst: vi.fn(),
@@ -24,7 +28,7 @@ const prismaMocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/prisma", () => {
   const client: any = {
-    weleticMerchantSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+    weleticMerchantSettings: { findUnique: prismaMocks.settingsFindUnique },
     weleticShopifyStore: {
       findUnique: prismaMocks.storeFindUniqueOrThrow,
       findUniqueOrThrow: prismaMocks.storeFindUniqueOrThrow,
@@ -127,6 +131,9 @@ describe("Referral Friend Email Delivery Durability & Lease State Machine", () =
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    prismaMocks.settingsFindUnique.mockReset().mockResolvedValue(null);
 
     referralRecord = {
       id: "wreferral_test_1",
@@ -227,6 +234,20 @@ describe("Referral Friend Email Delivery Durability & Lease State Machine", () =
     prismaMocks.referralUpdateMany.mockImplementation(async (args: any) => {
       if (!referralRecord) return { count: 0 };
       if (
+        args.where.status?.in &&
+        !args.where.status.in.includes(referralRecord.status)
+      )
+        return { count: 0 };
+      const expiryBoundary = args.where.OR?.find(
+        (condition: any) => condition.friendRewardExpiresAt?.gt,
+      )?.friendRewardExpiresAt.gt;
+      if (
+        expiryBoundary &&
+        referralRecord.friendRewardExpiresAt &&
+        referralRecord.friendRewardExpiresAt <= expiryBoundary
+      )
+        return { count: 0 };
+      if (
         args.where.friendRewardEmailedAt === null &&
         referralRecord.friendRewardEmailedAt
       ) {
@@ -261,7 +282,77 @@ describe("Referral Friend Email Delivery Durability & Lease State Machine", () =
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("uses a fresh acquisition clock after a slow settings read", async () => {
+    const later = new Date(NOW.getTime() + 60_000);
+    prismaMocks.settingsFindUnique.mockImplementationOnce(async () => {
+      vi.setSystemTime(later);
+      return null;
+    });
+    const deliver = vi.fn().mockResolvedValue({ success: true });
+    await expect(
+      deliverReferralEmailUnderLease({
+        referralId: referralRecord.id,
+        storeId: STORE_ID,
+        deliver,
+      }),
+    ).resolves.toEqual({ acquired: true, emailSent: true });
+    expect(
+      prismaMocks.referralUpdateMany.mock.calls[0][0].data
+        .friendEmailLeaseReservedAt,
+    ).toEqual(later);
+    expect(
+      prismaMocks.referralUpdateMany.mock.calls[0][0].data.friendEmailLeaseExpiresAt.getTime(),
+    ).toBeGreaterThan(later.getTime());
+    expect(deliver).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not deliver a reward that expires during the settings read", async () => {
+    referralRecord.friendRewardExpiresAt = new Date(NOW.getTime() + 1000);
+    prismaMocks.settingsFindUnique.mockImplementationOnce(async () => {
+      vi.setSystemTime(referralRecord.friendRewardExpiresAt);
+      return null;
+    });
+    const deliver = vi.fn();
+    await expect(
+      deliverReferralEmailUnderLease({
+        referralId: referralRecord.id,
+        storeId: STORE_ID,
+        deliver,
+      }),
+    ).resolves.toEqual({ acquired: false, emailSent: false });
+    expect(deliver).not.toHaveBeenCalled();
+    expect(referralRecord.friendEmailDeliveryAttempts).toBe(0);
+  });
+
+  it("does not reuse an old claim timestamp for an already-provisioned reward", async () => {
+    vi.setSystemTime(referralRecord.friendRewardExpiresAt);
+    const result = await claimReferralFriendReward({
+      storeId: STORE_ID,
+      referralCode: ADVOCATE_CODE,
+      friendEmail: FRIEND_EMAIL,
+      now: NOW,
+    });
+    expect(result.emailSent).toBe(false);
+    expect(sendBatchEmail).not.toHaveBeenCalled();
+    expect(referralRecord.friendEmailDeliveryAttempts).toBe(0);
+  });
+
+  it("rejects an invalid explicit timestamp before reserving a lease", async () => {
+    const deliver = vi.fn();
+    await expect(
+      deliverReferralEmailUnderLease({
+        referralId: referralRecord.id,
+        storeId: STORE_ID,
+        now: new Date(NaN),
+        deliver,
+      }),
+    ).rejects.toThrow(/Invalid referral email lease timestamp/);
+    expect(prismaMocks.referralUpdateMany).not.toHaveBeenCalled();
+    expect(deliver).not.toHaveBeenCalled();
   });
 
   it("1. Successfully delivers friend reward email and finalizes its dedicated lease", async () => {
