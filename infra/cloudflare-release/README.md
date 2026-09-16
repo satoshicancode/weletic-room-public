@@ -52,6 +52,7 @@ privacy, webhook-secret rotation correctness or real authentication.
 
 ```sh
 node --test infra/cloudflare-release/ingress-policy.test.mjs infra/cloudflare-release/start.test.mjs infra/cloudflare-release/shopify-image.test.mjs
+node --test infra/cloudflare-release/shopify-smoke.test.mjs
 ```
 
 All fixtures are synthetic. No database, order, email or Shopify installation is
@@ -149,3 +150,62 @@ September 16 evidence:
 
 Reference: [Remix Vite build output](https://v2.remix.run/docs/guides/vite/#new-build-output-paths)
 and [Cloudflare container image requirements](https://developers.cloudflare.com/containers/get-started/#the-container-image).
+
+## September 17: local Shopify candidate verified
+
+The unchanged candidate recipe was built from public runtime revision
+`91450cd57579d85edba3eedd18c9716a572959a4` using the documented
+`linux/amd64`, two-CPU, 2 GiB/no-swap build command. The current branch adds
+only the smoke runner, its CI wrapper/tests and these notes, not application or
+image-recipe changes. No image was uploaded.
+
+- Local image identity:
+  `sha256:047f36d66a14b2b70cc789746ebb12fe39a93bf934a75d0bbc931f89c5b9bc14`.
+- Docker reports Linux/amd64 and 794,240,578 bytes. The image retains the full
+  installed dependency store; neither vulnerability scanning nor dependency
+  minimization is complete. Size is not a Cloudflare cost or capacity estimate.
+- Fresh final stage has the expected non-root user, SIGTERM and guarded
+  entrypoint, with no baked smoke credentials or build-mode flags.
+- Actual missing-config startup exits 1 with the fixed admission error.
+- Actual configured startup, using synthetic secrets, returns the expected 404
+  plus `nosniff` and `frame-ancestors 'none'` for an unknown document route.
+  This is server/SSR wiring evidence, not an authenticated merchant journey.
+- The runtime used no external network or published host port, a read-only
+  filesystem, dropped capabilities, no-new-privileges, two CPUs and 2 GiB with
+  no swap. SIGTERM shutdown passed without OOM or forced kill. Both smoke
+  containers were removed by their exact invocation identity.
+- A separate read-only image scan inspected 69 first-party files for private
+  filename patterns and verified web source was absent. Dependency contents,
+  image history and all possible secret patterns were not comprehensively
+  scanned; do not treat this as a complete supply-chain or secret audit.
+- All 77 release-policy/runner unit tests, the existing Vitest CI wrapper and web
+  type-check passed. Reviewer-requested local Docker endpoint enforcement and
+  interrupted/uncertain-create cleanup were added and retested before the actual
+  smoke run. Generic CI runs the pure tests, not Docker integration.
+
+To repeat against the same locally present image:
+
+```sh
+node infra/cloudflare-release/shopify-smoke.mjs sha256:047f36d66a14b2b70cc789746ebb12fe39a93bf934a75d0bbc931f89c5b9bc14
+```
+
+The runner requires an immutable local image identity. It resolves a local Unix
+Docker socket without inherited connection overrides, uses an empty isolated
+Docker configuration, and never pulls an image or forwards host application
+credentials. Random exact names/labels track cleanup even if creation does not
+return an ID. SIGINT/SIGTERM request cleanup; SIGKILL or a failed Docker daemon
+still require an operator to reconcile the exact `weletic.release-smoke` label.
+
+Read-only provider discovery found no databases in the accessible PlanetScale
+organization. The installed Wrangler CLI reported unauthenticated. No Cloudflare
+or Upstash connector was available. No resource inventory beyond those checks,
+login, temporary-account deployment, provisioning, spending, DNS or provider
+mutation occurred. Cloudflare documentation confirms that `wrangler deploy`
+uploads the Worker/image, so it was deliberately not used as a local check.
+[Cloudflare deployment behavior](https://developers.cloudflare.com/containers/get-started/)
+
+**Still outstanding:** web and outbox release images, comprehensive image audit,
+provider selection/credentials/budget, provider-specific validation, actual
+release manifests/routing, scheduler/watchdog/supervision, target schema rollout,
+and live public-app acceptance. This checkpoint closes only local Shopify
+candidate packaging/boot/shutdown verification, not cloud deployment readiness.

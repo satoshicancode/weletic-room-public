@@ -26,6 +26,12 @@ test("Cloudflare release ingress policy, guarded startup and private-input CLI",
           import.meta.url,
         ),
       ),
+      fileURLToPath(
+        new URL(
+          "../../../../infra/cloudflare-release/shopify-smoke.test.mjs",
+          import.meta.url,
+        ),
+      ),
     ],
     { encoding: "utf8", timeout: 15_000 },
   );
