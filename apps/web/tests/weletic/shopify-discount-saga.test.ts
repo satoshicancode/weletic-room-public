@@ -1624,6 +1624,134 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
   });
 
   describe("3. 4-Phase Distributed Discount Provisioning Saga (provisionDiscountSaga)", () => {
+    it("retains reserved points after an unresolved duplicate gift card and replays without another reservation", async () => {
+      // Real saga and financial adapter; database/ledger and Shopify transport
+      // are mocked. This is not remote issuance or MySQL acceptance evidence.
+      const storeId = "store_duplicate_gift_card";
+      const accountId = "account_duplicate_gift_card";
+      const rewardDefinitionId = "reward_duplicate_gift_card";
+      let persisted: Awaited<
+        ReturnType<typeof prisma.weleticRewardRedemption.findUnique>
+      > = null;
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
+        id: accountId,
+        storeId,
+        cachedPointsBalance: BigInt(500),
+        status: "active",
+        program: { id: "prog_1", status: "active", killSwitchActive: false },
+        shopper: { shopifyCustomerId: "gid://shopify/Customer/100" },
+      } as any);
+      vi.mocked(prisma.weleticRewardDefinition.findUnique).mockResolvedValue({
+        id: rewardDefinitionId,
+        storeId,
+        name: "Gift Card",
+        rewardType: WeleticRewardType.gift_card,
+        pointsCost: BigInt(100),
+        discountValue: 2500,
+        status: WeleticRewardStatus.active,
+      } as any);
+      // These delegates are vi.fn boundaries, not Prisma relation clients.
+      // Keep their argument/result types while modeling plain async promises.
+      const findRedemption = prisma.weleticRewardRedemption
+        .findUnique as unknown as Mock<
+        (
+          ...args: Parameters<typeof prisma.weleticRewardRedemption.findUnique>
+        ) => Promise<
+          Awaited<ReturnType<typeof prisma.weleticRewardRedemption.findUnique>>
+        >
+      >;
+      const createRedemption = prisma.weleticRewardRedemption
+        .create as unknown as Mock<
+        (
+          ...args: Parameters<typeof prisma.weleticRewardRedemption.create>
+        ) => Promise<
+          Awaited<ReturnType<typeof prisma.weleticRewardRedemption.create>>
+        >
+      >;
+      const updateRedemptions = prisma.weleticRewardRedemption
+        .updateMany as unknown as Mock<
+        (
+          ...args: Parameters<typeof prisma.weleticRewardRedemption.updateMany>
+        ) => Promise<
+          Awaited<ReturnType<typeof prisma.weleticRewardRedemption.updateMany>>
+        >
+      >;
+      findRedemption.mockImplementation(async () => persisted);
+      createRedemption.mockImplementation(async ({ data }) => {
+        persisted = data as NonNullable<typeof persisted>;
+        return persisted;
+      });
+      updateRedemptions.mockImplementation(async ({ data }) => {
+        if (persisted && data.metadata)
+          persisted.metadata = data.metadata as typeof persisted.metadata;
+        return { count: 1 };
+      });
+      const remoteFetch = vi.fn(async (_url, init) => {
+        const { query } = JSON.parse(String(init?.body));
+        return Response.json({
+          data: query.includes("mutation")
+            ? {
+                giftCardCreate: {
+                  giftCard: null,
+                  giftCardCode: null,
+                  userErrors: [
+                    { code: "TAKEN", message: "Code already exists" },
+                  ],
+                },
+              }
+            : { giftCards: { nodes: [] } },
+        });
+      });
+      const request = {
+        storeId,
+        accountId,
+        rewardDefinitionId,
+        discountCode: "WLGCABCD1234CD12",
+        idempotencyKey: "duplicate-gift-card-reservation",
+        customFetch: remoteFetch,
+      };
+
+      const first = await provisionDiscountSaga(request);
+      expect(first).toMatchObject({
+        success: false,
+        status: WeleticRedemptionStatus.provisioning,
+        pointsSpent: BigInt(100),
+        compensated: false,
+        error: expect.stringContaining("duplicate Gift Card"),
+      });
+      const replay = await provisionDiscountSaga(request);
+      expect(replay).toMatchObject({
+        success: false,
+        redemptionId: first.redemptionId,
+        status: WeleticRedemptionStatus.provisioning,
+        pointsSpent: BigInt(100),
+        compensated: false,
+      });
+      expect(prisma.weleticRewardRedemption.create).toHaveBeenCalledTimes(1);
+      expect(appendPointsLedgerEntry).toHaveBeenCalledTimes(1);
+      expect(appendPointsLedgerEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entryType: "REDEEM_REWARD",
+          pointsDelta: BigInt(-100),
+          idempotencyKey: `redeem_debit:${first.redemptionId}`,
+        }),
+      );
+      expect(
+        prisma.weleticRewardRedemption.updateMany,
+      ).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ status: "failed" }),
+        }),
+      );
+      expect(
+        remoteFetch.mock.calls.map(([, init]) =>
+          JSON.parse(String(init?.body)).query.includes("mutation")
+            ? "create"
+            : "lookup",
+        ),
+      ).toEqual(["create", "lookup", "lookup", "create", "lookup"]);
+    });
+
     it("provisions free-product rewards through the full reservation saga", async () => {
       vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
         id: "account_free_product",

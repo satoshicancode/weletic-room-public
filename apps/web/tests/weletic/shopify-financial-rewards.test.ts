@@ -41,6 +41,314 @@ function giftCardNode(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Shopify financial loyalty rewards", () => {
+  it.each([
+    ["empty lookup", []],
+    [
+      "wrong customer",
+      [giftCardNode({ customer: { id: "gid://shopify/Customer/88" } })],
+    ],
+    [
+      "wrong amount",
+      [
+        giftCardNode({
+          initialValue: { amount: "26.00", currencyCode: "USD" },
+        }),
+      ],
+    ],
+    ["disabled artifact", [giftCardNode({ enabled: false })]],
+  ])(
+    "retains ambiguous issuance after duplicate code and %s",
+    async (_name, nodes) => {
+      const customFetch = vi.fn(async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        return body.query.includes("mutation")
+          ? graphqlResponse({
+              giftCardCreate: {
+                giftCard: null,
+                giftCardCode: null,
+                userErrors: [
+                  { code: "TAKEN", message: "Code has already been taken" },
+                ],
+              },
+            })
+          : graphqlResponse({ giftCards: { nodes } });
+      });
+      await expect(
+        createShopifyGiftCard({
+          credentials,
+          code: "WLGCABCD1234CD12",
+          customerId: "77",
+          amountMinor: BigInt(2500),
+          currencyCode: "USD",
+          expiresAt: null,
+          note: "Weletic loyalty redemption wredemp_1",
+          customFetch,
+        }),
+      ).rejects.toMatchObject({ code: "REMOTE_OUTCOME_UNKNOWN" });
+      expect(customFetch).toHaveBeenCalledTimes(2);
+      expect(
+        customFetch.mock.calls.filter(([, init]) =>
+          JSON.parse(String(init?.body)).query.includes("mutation"),
+        ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("adopts an exact gift card after a duplicate-code response without repeating issuance", async () => {
+    const customFetch = vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      return body.query.includes("mutation")
+        ? graphqlResponse({
+            giftCardCreate: {
+              giftCard: null,
+              giftCardCode: null,
+              userErrors: [
+                { code: "TAKEN", message: "Code has already been taken" },
+              ],
+            },
+          })
+        : graphqlResponse({ giftCards: { nodes: [giftCardNode()] } });
+    });
+    await expect(
+      createShopifyGiftCard({
+        credentials,
+        code: "WLGCABCD1234CD12",
+        customerId: "77",
+        amountMinor: BigInt(2500),
+        currencyCode: "USD",
+        expiresAt: null,
+        note: "Weletic loyalty redemption wredemp_1",
+        customFetch,
+      }),
+    ).resolves.toMatchObject({ id: "gid://shopify/GiftCard/101" });
+    expect(customFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["unauthorized", "UNAUTHORIZED"],
+    ["graphql", "GRAPHQL_USER_ERROR"],
+    ["network", "REMOTE_OUTCOME_UNKNOWN"],
+    ["multiple matches", "REMOTE_CONFIGURATION_MISMATCH"],
+  ])(
+    "does not classify duplicate lookup %s as safe to compensate",
+    async (failure, code) => {
+      const customFetch = vi.fn(async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        if (body.query.includes("mutation"))
+          return graphqlResponse({
+            giftCardCreate: {
+              giftCard: null,
+              giftCardCode: null,
+              userErrors: [
+                { code: "TAKEN", message: "Code has already been taken" },
+              ],
+            },
+          });
+        if (failure === "unauthorized")
+          return new Response(null, { status: 401 });
+        if (failure === "graphql")
+          return new Response(
+            JSON.stringify({
+              errors: [
+                {
+                  message: "Lookup denied",
+                  extensions: { code: "ACCESS_DENIED" },
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        if (failure === "network")
+          throw new Error("Lookup network unavailable");
+        return graphqlResponse({
+          giftCards: {
+            nodes: [
+              giftCardNode(),
+              giftCardNode({ id: "gid://shopify/GiftCard/102" }),
+            ],
+          },
+        });
+      });
+      const error = await createShopifyGiftCard({
+        credentials,
+        code: "WLGCABCD1234CD12",
+        customerId: "77",
+        amountMinor: BigInt(2500),
+        currencyCode: "USD",
+        expiresAt: null,
+        note: "Weletic loyalty redemption wredemp_1",
+        customFetch,
+      }).then(
+        () => {
+          throw new Error("Unexpected successful issuance");
+        },
+        (error: unknown) => error,
+      );
+      expect(error).toMatchObject({ code });
+      // The saga may restore points only for these financial-adapter errors;
+      // a lookup's top-level GraphQL error is not a mutation rejection.
+      expect(
+        error instanceof ShopifyFinancialRewardError &&
+          ["MISSING_SCOPE", "INVALID_REQUEST", "GRAPHQL_USER_ERROR"].includes(
+            error.code,
+          ),
+      ).toBe(false);
+      expect(
+        customFetch.mock.calls.filter(([, init]) =>
+          JSON.parse(String(init?.body)).query.includes("mutation"),
+        ),
+      ).toHaveLength(1);
+      expect(customFetch).toHaveBeenCalledTimes(failure === "network" ? 3 : 2);
+    },
+  );
+
+  it.each(["credit", "debit"] as const)(
+    "rejects wrong-sign %s evidence",
+    async (operation) => {
+      const customFetch = vi.fn(async () =>
+        graphqlResponse({
+          [operation === "credit"
+            ? "storeCreditAccountCredit"
+            : "storeCreditAccountDebit"]: {
+            storeCreditAccountTransaction: {
+              id: `gid://shopify/${operation === "debit" ? "StoreCreditAccountDebitTransaction" : "StoreCreditAccountTransaction"}/501`,
+              amount: {
+                amount: operation === "credit" ? "-25.00" : "25.00",
+                currencyCode: "USD",
+              },
+              account: {
+                id: "gid://shopify/StoreCreditAccount/9",
+                balance: { amount: "0.00", currencyCode: "USD" },
+              },
+            },
+            userErrors: [],
+          },
+        }),
+      );
+      const common = {
+        credentials,
+        amountMinor: BigInt(2500),
+        currencyCode: "USD",
+        customFetch,
+      };
+      const result =
+        operation === "credit"
+          ? createShopifyStoreCredit({
+              ...common,
+              customerId: "77",
+              expiresAt: null,
+              notify: false,
+            })
+          : debitShopifyStoreCredit({ ...common, accountId: "9" });
+      await expect(result).rejects.toMatchObject({
+        code: "REMOTE_CONFIGURATION_MISMATCH",
+      });
+      expect(customFetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  describe.each(["gift_card", "credit", "debit"] as const)(
+    "exact %s amount evidence",
+    (operation) => {
+      it.each([
+        ["USD trailing zeros", "USD", "2500", "25.0000", true],
+        ["JPY trailing zeros", "JPY", "25", "25.00", true],
+        ["KWD trailing zeros", "KWD", "25001", "25.001000", true],
+        [
+          "large exact amount",
+          "USD",
+          "9007199254740993",
+          "90071992547409.9300",
+          true,
+        ],
+        [
+          "large adjacent amount",
+          "USD",
+          "9007199254740993",
+          "90071992547409.94",
+          false,
+        ],
+        [
+          "JPY unsafe adjacent integer",
+          "JPY",
+          "9007199254740992",
+          "9007199254740993",
+          false,
+        ],
+        ["subminor discrepancy", "USD", "2500", "25.0000001", false],
+        ["KWD smallest unit discrepancy", "KWD", "25001", "25.002", false],
+        ["exponent notation", "USD", "2500", "2.5e1", false],
+        ["hex notation", "USD", "2500", "0x19", false],
+        ["leading whitespace", "USD", "2500", " 25.00", false],
+        ["nonfinite", "USD", "2500", "Infinity", false],
+        ["empty", "USD", "2500", "", false],
+      ] as const)(
+        "validates %s without floating-point tolerance",
+        async (_name, currencyCode, minor, remoteAmount, accepted) => {
+          const amount =
+            operation === "debit" ? `-${remoteAmount}` : remoteAmount;
+          const customFetch = vi.fn(async () => {
+            if (operation === "gift_card")
+              return graphqlResponse({
+                giftCardCreate: {
+                  giftCard: giftCardNode({
+                    initialValue: { amount, currencyCode },
+                  }),
+                  giftCardCode: "WLGCABCD1234CD12",
+                  userErrors: [],
+                },
+              });
+            const transaction = {
+              id: `gid://shopify/${operation === "debit" ? "StoreCreditAccountDebitTransaction" : "StoreCreditAccountTransaction"}/501`,
+              amount: { amount, currencyCode },
+              account: {
+                id: "gid://shopify/StoreCreditAccount/9",
+                balance: { amount: "0", currencyCode },
+              },
+            };
+            return graphqlResponse({
+              [operation === "debit"
+                ? "storeCreditAccountDebit"
+                : "storeCreditAccountCredit"]: {
+                storeCreditAccountTransaction: transaction,
+                userErrors: [],
+              },
+            });
+          });
+          const common = {
+            credentials,
+            amountMinor: BigInt(minor),
+            currencyCode,
+            customFetch,
+          };
+          const result =
+            operation === "gift_card"
+              ? createShopifyGiftCard({
+                  ...common,
+                  code: "WLGCABCD1234CD12",
+                  customerId: "77",
+                  expiresAt: null,
+                  note: "Weletic loyalty redemption wredemp_1",
+                })
+              : operation === "debit"
+                ? debitShopifyStoreCredit({ ...common, accountId: "9" })
+                : createShopifyStoreCredit({
+                    ...common,
+                    customerId: "77",
+                    expiresAt: null,
+                    notify: false,
+                  });
+          if (accepted) await expect(result).resolves.toBeDefined();
+          else
+            await expect(result).rejects.toMatchObject({
+              code: "REMOTE_CONFIGURATION_MISMATCH",
+            });
+          expect(customFetch).toHaveBeenCalledTimes(1);
+        },
+      );
+    },
+  );
+
   it.each([undefined, "", " \t\n", ", ,"])(
     "rejects unavailable scope evidence (%s) before issuance or recovery requests",
     async (scope) => {
