@@ -348,6 +348,73 @@ describe("loyalty operational paths real database concurrency", () => {
     ).resolves.toEqual({ status: "failed", lockedAt: null, lockedBy: null });
   });
 
+  it.each([
+    { status: "cancelled" as const, expiry: null, allowed: false },
+    { status: "fraud_blocked" as const, expiry: null, allowed: false },
+    { status: "pending" as const, expiry: -1, allowed: false },
+    { status: "pending" as const, expiry: 0, allowed: false },
+    { status: "pending" as const, expiry: 1, allowed: true },
+    { status: "qualified" as const, expiry: null, allowed: true },
+    { status: "rewarded" as const, expiry: null, allowed: true },
+  ])(
+    "email lease eligibility: $status, expiry offset $expiry",
+    async ({ status, expiry, allowed }) => {
+      const now = new Date("2026-09-16T00:00:00Z");
+      const referralId = `eligibility_${status}_${expiry}_${RUN_ID}`;
+      await prisma.weleticLoyaltyReferral.create({
+        data: {
+          id: referralId,
+          storeId,
+          advocateAccountId: accountId,
+          status,
+          friendRewardProvisionedAt: now,
+          friendRewardExpiresAt:
+            expiry === null ? null : new Date(now.getTime() + expiry),
+        },
+      });
+      const deliver = vi.fn().mockResolvedValue({ success: true });
+      const result = await deliverReferralEmailUnderLease({
+        referralId,
+        storeId,
+        now,
+        deliver,
+      });
+      expect(result).toEqual({ acquired: allowed, emailSent: allowed });
+      expect(deliver).toHaveBeenCalledTimes(allowed ? 1 : 0);
+      const row = await prisma.weleticLoyaltyReferral.findUniqueOrThrow({
+        where: { id: referralId },
+      });
+      expect(row.friendEmailDeliveryAttempts).toBe(allowed ? 1 : 0);
+      expect(row.friendEmailLeaseToken).toBeNull();
+      expect(Boolean(row.friendRewardEmailedAt)).toBe(allowed);
+    },
+  );
+
+  it("does not disclose another store's emailed status after failed acquisition", async () => {
+    const referralId = `foreign_email_${RUN_ID}`;
+    await prisma.weleticLoyaltyReferral.create({
+      data: {
+        id: referralId,
+        storeId,
+        advocateAccountId: accountId,
+        friendRewardEmailedAt: new Date(),
+      },
+    });
+    const deliver = vi.fn().mockResolvedValue({ success: true });
+    await expect(
+      deliverReferralEmailUnderLease({
+        referralId,
+        storeId: `other_${storeId}`,
+        deliver,
+      }),
+    ).resolves.toEqual({ acquired: false, emailSent: false });
+    expect(deliver).not.toHaveBeenCalled();
+    await expect(
+      deliverReferralEmailUnderLease({ referralId, storeId, deliver }),
+    ).resolves.toEqual({ acquired: false, emailSent: true });
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
   it("allows one new owner to acquire an expired stale email lease", async () => {
     const referralId = `referral_stale_${RUN_ID}`;
     await prisma.weleticLoyaltyReferral.create({
