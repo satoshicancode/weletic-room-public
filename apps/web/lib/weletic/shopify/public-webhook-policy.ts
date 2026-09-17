@@ -1,3 +1,4 @@
+import { previewOrigins } from "../../../../../packages/shopify-app/app/preview-origins.mjs";
 import {
   PUBLIC_LOYALTY_API_ORIGIN,
   PUBLIC_LOYALTY_APP_ORIGIN,
@@ -24,6 +25,21 @@ export function resolvePublicShopifyWebhookCallback(
   env: Environment,
   explicitCallback?: string,
 ): string | null {
+  const preview = previewOrigins(env);
+  if (preview) {
+    const previewCallback = `${preview.api}/api/shopify/integration/webhook`;
+    if (
+      env.SHOPIFY_API_KEY !== PUBLIC_LOYALTY_CLIENT_ID ||
+      env.SHOPIFY_APP_URL !== preview.app ||
+      env.NEXT_PUBLIC_APP_DOMAIN !== "http://app.localhost:8890" ||
+      env.NEXTAUTH_URL !== "http://app.localhost:8890" ||
+      env.SHOPIFY_WEBHOOK_URL !== previewCallback ||
+      !!env.DEV_WEBHOOK_URL ||
+      (explicitCallback !== undefined && explicitCallback !== previewCallback)
+    )
+      throw new Error("Unsafe public Shopify webhook configuration");
+    return previewCallback;
+  }
   const publicContext =
     env.SHOPIFY_API_KEY?.trim() === PUBLIC_LOYALTY_CLIENT_ID ||
     [

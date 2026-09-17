@@ -1,8 +1,6 @@
 import { captureWebhookLog } from "@/lib/api-logs/capture-webhook-log";
 import { isLocalDev } from "@/lib/api/environment";
-import { qstash } from "@/lib/cron";
 import { prisma } from "@/lib/prisma";
-import { redis } from "@/lib/upstash";
 import { createWeleticId } from "@/lib/weletic/ids";
 import {
   assertAuthenticatedFixtureCustomerCreateMaintenanceIdentity,
@@ -15,6 +13,7 @@ import {
 } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { shopifyAdminGraphqlRequest } from "@/lib/weletic/loyalty/shopify-discounts";
 import { syncWeleticShopifyCatalog } from "@/lib/weletic/shopify/catalog-sync";
+import { enqueueDebouncedShopifyCatalogSync } from "@/lib/weletic/shopify/catalog-webhook-debounce";
 import { persistAndQueueShopifyComplianceRequest } from "@/lib/weletic/shopify/compliance-ingress";
 import { resolveComplianceShopifyStoreByDomain } from "@/lib/weletic/shopify/compliance-store-resolver";
 import {
@@ -38,7 +37,7 @@ import {
   resolveShopifyStoreByDomain,
 } from "@/lib/weletic/shopify/store-resolver";
 import { verifyShopifyWebhookSignature } from "@/lib/weletic/shopify/webhook-signature";
-import { APP_DOMAIN_WITH_NGROK, log } from "@dub/utils";
+import { log } from "@dub/utils";
 import { Prisma } from "@prisma/client";
 import { waitUntil } from "@vercel/functions";
 import { customerSegmentMembershipChanged } from "./customer-segment-membership";
@@ -88,12 +87,6 @@ const SHOPIFY_TRIGGERED_AT_MAX_FUTURE_SKEW_MS = 5 * 60_000;
 const SHOPIFY_FIXTURE_CUSTOMER_READBACK_TIMEOUT_MS = 1_500;
 const SHOPIFY_NUMERIC_CUSTOMER_ID = /^[1-9]\d{0,19}$/;
 const SHOPIFY_CUSTOMER_GID = /^gid:\/\/shopify\/Customer\/([1-9]\d{0,19})$/;
-const RELEASE_CATALOG_DEBOUNCE_SCRIPT = `
-  if redis.call("get", KEYS[1]) == ARGV[1] then
-    return redis.call("del", KEYS[1])
-  end
-  return 0
-`;
 const SHOPIFY_RFC3339_TIMESTAMP =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
 
@@ -343,40 +336,6 @@ async function assertWebhookStoreAcceptsWrite({
     loyaltyMaintenancePermit,
     tx,
   });
-}
-
-export async function enqueueDebouncedShopifyCatalogSync({
-  workspaceId,
-  webhookId,
-}: {
-  workspaceId: string;
-  webhookId: string;
-}) {
-  const debounceKey = `weletic:shopify:sync-debounced:${workspaceId}`;
-  const reservation = createWeleticId("whook_");
-  const isFirstInBurst = await redis.set(debounceKey, reservation, {
-    nx: true,
-    ex: 20,
-  });
-  if (!isFirstInBurst) return false;
-
-  try {
-    await qstash.publishJSON({
-      url: `${APP_DOMAIN_WITH_NGROK}/api/cron/weletic/shopify/sync`,
-      body: { workspaceId },
-      retries: 3,
-      // A retry after an uncertain publish response is safe: QStash retains
-      // this provider-side idempotency key even if the Redis reservation is
-      // released so the webhook can retry a definite transport failure.
-      deduplicationId: `weletic-shopify-catalog:${workspaceId}:${webhookId}`,
-    });
-    return true;
-  } catch (error) {
-    await redis
-      .eval(RELEASE_CATALOG_DEBOUNCE_SCRIPT, [debounceKey], [reservation])
-      .catch(() => undefined);
-    throw error;
-  }
 }
 
 // POST /api/shopify/integration/webhook – Listen to Shopify webhook events

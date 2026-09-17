@@ -57,3 +57,5 @@ blob-report/
 
 # generated loyalty reconciliation output
 apps/web/reports/loyalty-recon/
+packages/shopify-app/.loyalty-preview/
+packages/shopify-app/shopify.app.loyalty-preview.toml
