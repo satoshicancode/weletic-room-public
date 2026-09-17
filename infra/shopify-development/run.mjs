@@ -23,6 +23,25 @@ const cleanOs = () =>
       .map((key) => [key, process.env[key]]),
   );
 
+// Docker selection belongs only to the local ownership verifier. Never pass
+// Docker configuration or credentials to either application process.
+export function verifierEnvironment(ambient) {
+  return Object.fromEntries(
+    [
+      "PATH",
+      "HOME",
+      "TMPDIR",
+      "LANG",
+      "TZ",
+      "DOCKER_HOST",
+      "DOCKER_CONTEXT",
+      "DOCKER_CONFIG",
+    ]
+      .filter((key) => ambient[key])
+      .map((key) => [key, ambient[key]]),
+  );
+}
+
 export function parseRuntimeFlags(args) {
   const names = ["app", "retained-web", "retained-shopify"];
   if (args.length !== 4 || !args.includes("--confirm-local-runtime"))
@@ -96,7 +115,7 @@ async function main() {
     ],
     {
       cwd: root,
-      env: cleanOs(),
+      env: verifierEnvironment(process.env),
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 120000,
     },
