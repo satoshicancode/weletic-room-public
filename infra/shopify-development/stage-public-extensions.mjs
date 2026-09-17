@@ -201,7 +201,7 @@ export function buildPublicExtensionStage(root = repository) {
   const config = read("shopify.app.loyalty-public.toml");
   files["shopify.app.toml"] = replaceOnce(
     config,
-    "extension_directories = []",
+    'extension_directories = ["public-extensions-disabled/*"]',
     'extension_directories = ["extensions/*"]',
   );
   const pkg = JSON.parse(read("package.json"));

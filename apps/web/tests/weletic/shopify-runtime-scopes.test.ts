@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getShopifyRequestedScopes } from "../../../../packages/shopify-app/app/shopify-scopes";
@@ -46,7 +46,17 @@ describe("Shopify runtime requested scopes", () => {
     expect(publicManifest).toContain(
       'client_id = "c7d49cebb06e445db345bb200f966a03"',
     );
-    expect(publicManifest).toMatch(/^extension_directories = \[\]$/m);
+    expect(publicManifest).toContain(
+      'extension_directories = ["public-extensions-disabled/*"]',
+    );
+    expect(
+      readdirSync(
+        resolve(
+          process.cwd(),
+          "../../packages/shopify-app/public-extensions-disabled",
+        ),
+      ),
+    ).toEqual(["README.md"]);
     expect(publicManifest).toMatch(
       /^automatically_update_urls_on_dev = false$/m,
     );
