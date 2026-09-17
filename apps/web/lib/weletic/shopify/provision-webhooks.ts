@@ -57,6 +57,8 @@ function resolveLegacyWebhookCallbackUrl(customUrl?: string): string {
 }
 
 export interface ProvisionWebhooksResult {
+  /** App configuration ownership is not remote deployment/coverage evidence. */
+  managedBy?: "app_configuration";
   success: boolean;
   callbackUrl: string;
   registered: string[];
@@ -167,6 +169,20 @@ export async function ensureShopifyWebhooksRegistered({
   allowSdkFallback?: boolean;
 }): Promise<ProvisionWebhooksResult> {
   const callbackUrl = resolveShopifyWebhookCallbackUrl(explicitCallbackUrl);
+  if (resolvePublicShopifyWebhookCallback(process.env, callbackUrl) !== null) {
+    // GraphQL lists shop-scoped subscriptions only. Creating missing entries
+    // here would duplicate the public app's TOML subscriptions (ADR 0039).
+    // Do not populate registered/skipped: legacy activation gates require real
+    // shop-scoped evidence and must not accept delegation as verification.
+    return {
+      success: true,
+      managedBy: "app_configuration",
+      callbackUrl,
+      registered: [],
+      skipped: [],
+      failed: [],
+    };
+  }
   const registered: string[] = [];
   const skipped: string[] = [];
   const failed: Array<{ topic: string; error: string }> = [];
