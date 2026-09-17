@@ -172,3 +172,30 @@ authentication.` The bootstrap revokes coordination but retains the pre-mapping
 Authentication into the pending installation is evidenced; active merchant access,
 reinstall/stale-worker rejection and the shopper purchase/redemption/refund journey
 remain unaccepted. No order, reward, email or production mutation occurred.
+
+## Mapped authentication repair — September 17, 21:39 JST
+
+The mapped public snapshot now reports an SDK cache miss when its validated
+store-owned credential is absent. It retains the real persisted session digest,
+installation generation and coordination observation. A fresh Shopify SDK exchange
+must publish through the existing signed, fenced transaction; this does not create
+authority from the old token or relax company approval. No schema changes.
+
+Regression coverage includes pre-mapping session reuse, mapped cache misses with
+non-missing persisted digests, changed-digest rejection, native credential mismatch,
+and actual SDK exchange after a simulated provider failure. The SDK test's HTTP
+transport is synthetic, not live SQL evidence. All 102 focused tests, web typecheck,
+focused lint and formatting passed; independent review found no blockers.
+
+Live evidence is separate: the existing mapped `yamaxdev` installation recovered
+through its actual embedded app, without reinstall or direct credential edits.
+SQL confirmed native credential revision 1 at 12:37:36 UTC under the unchanged
+installation generation. Admission remained mapped revision 2 and store access
+pending revision 1, with zero Users and zero loyalty programs. The previously
+failing audited company-approval **preview** then passed (`applied: false`). No
+approval or loyalty activation was applied. The tunnel now targets the observed
+IPv6 CLI loopback listener directly, requiring no IPv4 bridge.
+
+Remaining gates: apply reviewed company approval, configure the disabled loyalty
+program, reconcile public extension ownership, and run the named shopper lifecycle.
+This repair alone does not accept reinstall, financial or shopper journeys.

@@ -156,7 +156,12 @@ export async function readShopifySessionSnapshot(
         null,
       credentialTokenHash,
     },
-    properties: parsed,
+    // A pending SDK session predates mapped credential ownership. Do not let
+    // the SDK reuse it after bootstrap: native authentication must exchange
+    // and publish under the current mapping before company approval can pass.
+    // Keep the actual persisted digest above, so concurrent publication and
+    // pre-mapping observations remain fenced even though this is a cache miss.
+    properties: store && pending && !hasInstallation ? null : parsed,
   };
 }
 
