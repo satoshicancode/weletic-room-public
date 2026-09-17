@@ -199,3 +199,40 @@ IPv6 CLI loopback listener directly, requiring no IPv4 bridge.
 Remaining gates: apply reviewed company approval, configure the disabled loyalty
 program, reconcile public extension ownership, and run the named shopper lifecycle.
 This repair alone does not accept reinstall, financial or shopper journeys.
+
+## Company admission — September 17, 22:16 JST
+
+After Hiro approved continuing, the existing audited operator command was first
+previewed, then applied to the exact isolated yamaxdev mapping using its current
+installation generation and expected access revision 1. The runtime environment
+builder validated the private local configuration and excluded delivery secrets.
+No direct credential edit, schema change or external Shopify mutation was used.
+
+Independent SQL confirmed `active` access at revision 2 and one matching audit
+entry at 13:16:38.693 UTC. The installation generation was unchanged. There were
+still zero Weletic Users and zero loyalty programs: company admission does not
+activate loyalty or establish shopper acceptance. PR #73's authentication repair
+is merged as `fb5faebe978384f385c57aafd99643dfeae37801`.
+
+### Proposed bounded shopper fixture (not executed)
+
+- Scope: yamaxdev only, public app, isolated local services, no production or
+  retained custom-app configuration changes. Run-specific prefix
+  `loyalty-acceptance-20260917-a`; retain exact created IDs privately for cleanup.
+- Prepare a disabled program and inspect merchant UI. Reconcile public extension
+  identities and the actual App Proxy owner before previewing the launcher.
+  Stop on a custom-app identity or proxy collision; never replace it implicitly.
+- Before enabling purchase earning, verify development test-payment mode and
+  prevent customer notifications and real delivery. Use one designated disposable
+  customer, one disposable product, and one fixed-amount reward. No real charge,
+  existing customer, Gift Card or Store Credit is in this first fixture.
+- Execute one test purchase, webhook/replay checks, points reconciliation,
+  redemption and wallet verification, a second test checkout using that discount,
+  then the relevant refund checks. Capture before/after ledger and Shopify state;
+  do not substitute synthetic events for a real checkout result.
+- Cleanup only recorded fixture IDs, disable the test program and preview, and
+  preserve financial/audit evidence according to existing retention rules.
+  Uninstalling either app and broad deletion remain excluded.
+
+This is a proposed mutation scope, not authorization or completed acceptance.
+ADR 0038 requires explicit disposable-fixture scope before external test writes.
