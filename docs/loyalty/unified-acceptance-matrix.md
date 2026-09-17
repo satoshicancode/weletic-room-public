@@ -240,6 +240,12 @@ No checkbox below is promoted solely by these local checks.
 
 ## C — Shopper loyalty and financial lifecycle
 
+September 18 [bounded live discounted-order retest](yamaxdev-discount-retest-2026-09-18.md)
+records native yamaxdev purchases #1043/#1044, fixed redemption/use, exact
+discounted earning, partial/full refunds and independent SQL reconciliation.
+Duplicate-webhook completion remains separately tracked in that record. This
+does not close the broader C/G gates or other reward/lifecycle requirements.
+
 September 16 isolated evidence: [points/accounting acceptance](points-accounting-acceptance-2026-09-16.md)
 records P01–P09 real-MySQL lifecycle, replay/race, generation-fence and independent
 SQL checks. This does not close the live `yamaxdev`, delivery, campaign or broader
