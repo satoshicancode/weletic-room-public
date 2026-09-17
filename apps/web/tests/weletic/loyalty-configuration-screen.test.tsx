@@ -142,6 +142,49 @@ describe("shared Loyalty configuration editor", () => {
     });
     expect(container.textContent).toContain(loyaltyConfigurationCopy.en.saved);
   });
+  it.each([false, true])(
+    "preserves unsaved input across revalidation (draft: %s)",
+    async (draft) => {
+      if (draft) {
+        data.program = null;
+        data.configurationRevision = null;
+      }
+      await render();
+      const name = field("name");
+      name.value = "Unsaved acceptance program";
+      let finish!: (value: LoyaltyConfigurationResponse) => void;
+      vi.mocked(transport.read).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      let pending!: Promise<unknown>;
+      await act(async () => {
+        pending = revalidate();
+      });
+      expect(field("name")).toBe(name);
+      expect(name.value).toBe("Unsaved acceptance program");
+      expect(name.matches(":disabled")).toBe(true);
+      await submit();
+      expect(transport.save).not.toHaveBeenCalled();
+      await act(async () => {
+        finish(structuredClone(data));
+        await pending;
+      });
+      expect(field("name")).toBe(name);
+      expect(name.value).toBe("Unsaved acceptance program");
+      expect(name.matches(":disabled")).toBe(false);
+      await submit();
+      expect(transport.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          settings: expect.objectContaining({
+            name: "Unsaved acceptance program",
+          }),
+        }),
+      );
+    },
+  );
   it("saves valuation as exact strings in the configured accounting currency", async () => {
     await render();
     field("liabilityMinorUnitsNumerator").value = "9223372036854775807";
@@ -155,6 +198,37 @@ describe("shared Loyalty configuration editor", () => {
         },
       }),
     );
+  });
+  it("replaces stale edits when revalidation observes a new configuration revision", async () => {
+    await render();
+    const old = field("name");
+    old.value = "Stale unsaved name";
+    data = {
+      ...data,
+      configurationRevision: "c".repeat(64),
+      program: {
+        ...data.program!,
+        settings: { ...data.program!.settings, name: "Updated elsewhere" },
+      },
+    };
+    await act(async () => {
+      await revalidate();
+    });
+    expect(field("name")).not.toBe(old);
+    expect(field("name").value).toBe("Updated elsewhere");
+    expect(transport.save).not.toHaveBeenCalled();
+  });
+  it("hides the editor if background authorization revalidation fails", async () => {
+    await render();
+    field("name").value = "Unsaved";
+    vi.mocked(transport.read).mockRejectedValueOnce(
+      new Error("access revoked"),
+    );
+    await act(async () => {
+      await revalidate();
+    });
+    expect(container.querySelector("form")).toBeNull();
+    expect(transport.save).not.toHaveBeenCalled();
   });
   it("requires a complete valuation and supports explicit clearing", async () => {
     await render();
