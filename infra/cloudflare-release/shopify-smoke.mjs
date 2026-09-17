@@ -56,6 +56,7 @@ export function createArguments(imageId, env) {
   assert.match(imageId, /^sha256:[a-f0-9]{64}$/);
   return [
     "create",
+    "--pull=never",
     "--network=none",
     "--memory=2g",
     "--memory-swap=2g",
