@@ -1,10 +1,11 @@
 import { execFileSync, spawn } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasRetainedEnvironment } from "./init.mjs";
+import { buildPreviewEnvironment } from "./preview-runtime.mjs";
 import {
   buildRuntimeEnvironment,
   createRuntimeLogSink,
@@ -44,7 +45,12 @@ export function verifierEnvironment(ambient) {
 
 export function parseRuntimeFlags(args) {
   const names = ["app", "retained-web", "retained-shopify"];
-  if (args.length !== 4 || !args.includes("--confirm-local-runtime"))
+  if (args.some((arg) => arg.startsWith("--preview-config=")))
+    names.push("preview-config");
+  if (
+    args.length !== names.length + 1 ||
+    !args.includes("--confirm-local-runtime")
+  )
     throw new Error("Invalid flags");
   const values = Object.fromEntries(
     names.map((name) => {
@@ -83,7 +89,20 @@ async function main() {
   if (new Set(paths).size !== 4)
     throw new Error("Four distinct files required");
   const [web, shopify] = paths.slice(0, 2).map((path) => parse(path));
-  const env = buildRuntimeEnvironment(flags.app, web, shopify, process.env);
+  let env;
+  if (flags["preview-config"]) {
+    const file = flags["preview-config"];
+    const stat = lstatSync(file);
+    if (!stat.isFile() || (stat.mode & 0o777) !== 0o600 || stat.size > 4096)
+      throw new Error("Unsafe preview configuration file");
+    env = buildPreviewEnvironment(
+      flags.app,
+      web,
+      shopify,
+      process.env,
+      JSON.parse(readFileSync(file, "utf8")),
+    );
+  } else env = buildRuntimeEnvironment(flags.app, web, shopify, process.env);
   const report = JSON.parse(
     execFileSync(
       process.execPath,
@@ -159,7 +178,7 @@ async function main() {
     process.exitCode = signal === "SIGTERM" ? 0 : code ?? 1;
   });
   console.log(
-    `Starting isolated ${flags.app} on loopback port ${port}. No installation or delivery activated; public exposure remains unconfigured.`,
+    `Starting isolated ${flags.app} on loopback port ${port}. Preview routing: ${flags["preview-config"] ? "configured" : "disabled"}. No installation or delivery activated by this launcher.`,
   );
 }
 

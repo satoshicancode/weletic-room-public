@@ -1,3 +1,4 @@
+import { previewOrigins } from "./preview-origins.mjs";
 // Pure configuration checks. No SDK, filesystem, network or secret logging.
 export const PUBLIC_LOYALTY_CLIENT_ID = "c7d49cebb06e445db345bb200f966a03";
 export const PUBLIC_LOYALTY_SCOPES = Object.freeze([
@@ -46,7 +47,9 @@ function isPublicOrigin(value) {
  * @param {Readonly<Record<string, string | undefined>>} env
  */
 export function assertPublicShopifyRuntime(env) {
+  const preview = previewOrigins(env);
   if (
+    !preview &&
     env.SHOPIFY_API_KEY?.trim() !== PUBLIC_LOYALTY_CLIENT_ID &&
     !isPublicOrigin(env.SHOPIFY_APP_URL) &&
     !isPublicOrigin(env.WELETIC_API_URL)
@@ -54,7 +57,9 @@ export function assertPublicShopifyRuntime(env) {
     return;
 
   const isolated = env.WELETIC_ISOLATED_DEVELOPMENT === "1";
-  const appUrl = isolated ? "http://127.0.0.1:3002" : PUBLIC_LOYALTY_APP_ORIGIN;
+  const appUrl =
+    preview?.app ??
+    (isolated ? "http://127.0.0.1:3002" : PUBLIC_LOYALTY_APP_ORIGIN);
   const apiUrl = isolated
     ? "http://app.localhost:8890"
     : PUBLIC_LOYALTY_API_ORIGIN;

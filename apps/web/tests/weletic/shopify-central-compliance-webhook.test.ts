@@ -106,14 +106,12 @@ vi.mock(
   () => ({ refundsCreate: mocks.refundsCreate }),
 );
 
-import {
-  enqueueDebouncedShopifyCatalogSync,
-  POST,
-} from "../../app/(ee)/api/shopify/integration/webhook/route";
+import { POST } from "../../app/(ee)/api/shopify/integration/webhook/route";
 import {
   createLoyaltyMaintenanceLeaseMetadata,
   LOYALTY_MAINTENANCE_DISPOSABLE_CUSTOMER_TAG,
 } from "../../lib/weletic/loyalty/maintenance-write-fence";
+import { enqueueDebouncedShopifyCatalogSync } from "../../lib/weletic/shopify/catalog-webhook-debounce";
 import {
   createAllShopifyWebhookBodyDigests,
   loadShopifyPrivacyHmacKeyring,

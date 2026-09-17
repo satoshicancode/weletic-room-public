@@ -1,5 +1,6 @@
 import { parse } from "dotenv-flow";
 import {
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -11,6 +12,7 @@ import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initializeLocalServices } from "../../../../infra/shopify-development/init.mjs";
+import { buildPreviewEnvironment } from "../../../../infra/shopify-development/preview-runtime.mjs";
 import {
   parseRuntimeFlags,
   verifierEnvironment,
@@ -20,6 +22,9 @@ import {
   createRuntimeLogSink,
   runtimeArguments,
 } from "../../../../infra/shopify-development/runtime-policy.mjs";
+import { stagePreview } from "../../../../infra/shopify-development/stage-preview.mjs";
+import { assertPublicShopifyRuntime } from "../../../../packages/shopify-app/app/public-runtime-policy.mjs";
+import { resolvePublicShopifyWebhookCallback } from "../../lib/weletic/shopify/public-webhook-policy";
 
 const roots: string[] = [];
 function configuration() {
@@ -31,6 +36,7 @@ function configuration() {
   }
   initializeLocalServices(root);
   return {
+    root,
     web: parse(join(root, "apps/web/.env.loyalty.local")),
     shopify: parse(join(root, "packages/shopify-app/.env.loyalty.local")),
   };
@@ -43,6 +49,98 @@ afterEach(() => {
 });
 
 describe("isolated development runtime", () => {
+  it("stages private CLI configuration without changing public or legacy identities", () => {
+    const { root } = configuration();
+    const source = readFileSync(
+      new URL(
+        "../../../../packages/shopify-app/shopify.app.loyalty-public.toml",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const publicPath = join(
+      root,
+      "packages/shopify-app/shopify.app.loyalty-public.toml",
+    );
+    writeFileSync(publicPath, source);
+    const pair = {
+      appOrigin: "https://synthetic-app.trycloudflare.com",
+      apiOrigin: "https://synthetic-api.trycloudflare.com",
+    };
+    const staged = stagePreview(
+      root,
+      pair,
+      "/retained/web",
+      "/retained/shopify",
+    );
+    const manifest = readFileSync(staged.manifest, "utf8");
+    expect(manifest).toContain(`application_url = "${pair.appOrigin}"`);
+    expect(manifest).toContain(
+      `${pair.apiOrigin}/api/shopify/integration/webhook`,
+    );
+    expect(manifest).toContain(
+      'extension_directories = ["public-extensions-disabled/*"]',
+    );
+    expect(manifest).toContain('web_directories = [".loyalty-preview/web"]');
+    expect(manifest).not.toContain("loyalty-api-dev.weletic.com");
+    expect(manifest).not.toContain("loyalty-shopify-dev.weletic.com");
+    expect(lstatSync(staged.manifest).mode & 0o777).toBe(0o600);
+    expect(lstatSync(staged.configPath).mode & 0o777).toBe(0o600);
+    expect(readFileSync(publicPath, "utf8")).toBe(source);
+    expect(() =>
+      stagePreview(root, pair, "/retained/web", "/retained/shopify"),
+    ).toThrow("must not be overwritten");
+  });
+  it("pairs explicit preview origins while preserving local data and service routing", () => {
+    const { web, shopify } = configuration();
+    shopify.SHOPIFY_API_SECRET = "synthetic-app-secret-".repeat(3);
+    const config = {
+      appOrigin: "https://synthetic-app.trycloudflare.com",
+      apiOrigin: "https://synthetic-api.trycloudflare.com",
+    };
+    const app = buildPreviewEnvironment("shopify", web, shopify, {}, config);
+    const backend = buildPreviewEnvironment("web", web, shopify, {}, config);
+    expect(() => assertPublicShopifyRuntime(app)).not.toThrow();
+    expect(app.WELETIC_API_URL).toBe("http://app.localhost:8890");
+    expect(backend.DATABASE_URL).toBe(web.DATABASE_URL);
+    expect(resolvePublicShopifyWebhookCallback(backend)).toBe(
+      `${config.apiOrigin}/api/shopify/integration/webhook`,
+    );
+    expect(shopify.SHOPIFY_APP_URL).toBe("http://127.0.0.1:3002");
+    for (const override of [
+      { NODE_ENV: "production" },
+      { WELETIC_ISOLATED_DEVELOPMENT: "0" },
+      { SHOPIFY_API_KEY: "other-app" },
+      { WELETIC_SHOPIFY_PREVIEW: "0" },
+      { WELETIC_PREVIEW_APP_ORIGIN: "https://foreign.invalid" },
+      { WELETIC_PREVIEW_API_ORIGIN: config.appOrigin },
+    ]) {
+      expect(() =>
+        assertPublicShopifyRuntime({ ...app, ...override }),
+      ).toThrow();
+      expect(() =>
+        resolvePublicShopifyWebhookCallback({ ...backend, ...override }),
+      ).toThrow();
+    }
+    expect(() =>
+      resolvePublicShopifyWebhookCallback(
+        backend,
+        "https://foreign.invalid/webhook",
+      ),
+    ).toThrow();
+    expect(() =>
+      assertPublicShopifyRuntime({ ...app, WELETIC_API_URL: config.apiOrigin }),
+    ).toThrow();
+    expect(() =>
+      buildPreviewEnvironment(
+        "web",
+        web,
+        shopify,
+        {},
+        { ...config, extra: true },
+      ),
+    ).toThrow();
+  });
   it("passes explicit Docker selection only to the ownership verifier", () => {
     const ambient = {
       PATH: "/usr/bin",

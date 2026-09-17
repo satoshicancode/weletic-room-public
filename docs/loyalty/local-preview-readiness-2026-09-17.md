@@ -106,3 +106,38 @@ Before exposure, the paired runtime must explicitly accept the selected preview
 origins and the private Shopify configuration must point callbacks at this boundary.
 Do not point a tunnel directly at the full Next development server or claim this
 standalone proxy completes installation, extension ownership or shopper acceptance.
+
+## Paired preview attempt — September 17, 19:33 JST
+
+The paired launcher now accepts a separate mode-0600 origins JSON file. It first
+validates the unchanged isolated base configuration, then applies two distinct,
+explicit HTTPS development origins. Internal Shopify-to-backend calls remain on
+loopback. Preview markers are rejected outside isolated development, including
+production. The webhook policy requires the same selected pair and callback path.
+
+Private CLI staging preserves the public manifest and custom app, excludes legacy
+extensions, pins the frontend port and refuses to overwrite prior staging. Shopify
+CLI configuration validation passed. The real backend tunnel returned 404 for the
+internal session route and 401 for an unsigned integration webhook. No shopper
+or financial fixture was created.
+
+Actual `app dev` selected Weletic Loyalty Reviews Dev and the canonical development
+store, but Shopify rejected preview creation because the app is not approved for
+webhook topics containing protected customer data. This is a platform access gate,
+not successful authentication or an accepted shopper journey. Do not remove the
+required order/customer subscriptions to disguise it.
+
+[Shopify's protected-data documentation](https://shopify.dev/docs/apps/launch/protected-customer-data)
+states that development-only installations need the data/field selection but do
+not need review submission. That permission setup must be resolved before retrying
+preview creation. Public App Store submission and production data access remain
+separate gates. CLI dependency installation was interrupted before retrying with
+the existing dependencies; no tracked package or lockfile changes were produced.
+
+Verification: 57 isolated-runtime, public-webhook-policy and scope tests and 62
+central webhook tests passed. Web and Shopify typechecks, focused lint and the
+Shopify build passed. Real webhook route compilation exposed a pre-existing
+invalid Next route export; the catalog debounce helper and Lua script were moved
+unchanged into a library module, preserving behavior and test coverage. Independent
+review found no blockers. These checks do not establish live installation,
+authenticated storefront behavior, HMR or financial acceptance.
