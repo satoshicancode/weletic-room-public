@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   batchJSON: vi.fn(),
@@ -64,6 +64,7 @@ const invokeRoute = GET as unknown as () => Promise<Response>;
 describe("minute queue retry compliance recovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("WELETIC_RELEASE_PROFILE", "");
     mocks.redisSet.mockResolvedValue("1");
     mocks.redisDel.mockResolvedValue(1);
     mocks.complianceBatch.mockResolvedValue({
@@ -74,6 +75,41 @@ describe("minute queue retry compliance recovery", () => {
     mocks.jobFindMany.mockResolvedValue([]);
     mocks.jobDeleteMany.mockResolvedValue({ count: 0 });
     mocks.jobUpdateMany.mockResolvedValue({ count: 0 });
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("loyalty release retries only renewal jobs and leaves unrelated rows untouched", async () => {
+    vi.stubEnv("WELETIC_RELEASE_PROFILE", "loyalty-only");
+    const allowed = [
+      "weletic-shopify-session-renewal-job",
+      "weletic-shopify-session-renewal-sweep-job",
+    ];
+    const jobs = [...allowed, "folder-deleted-job"].map((name, index) => ({
+      name,
+      id: `job_${index}`,
+      attempts: 0,
+      createdAt: new Date("2026-09-17T00:00:00Z"),
+    }));
+    mocks.jobFindMany.mockResolvedValue(jobs);
+    mocks.batchJSON.mockResolvedValue([
+      { messageId: "q_1" },
+      { messageId: "q_2" },
+    ]);
+    mocks.isPublishSuccess.mockReturnValue(true);
+    await invokeRoute();
+    expect(mocks.complianceBatch).toHaveBeenCalledOnce();
+    expect(mocks.jobFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { attempts: { lt: 10 }, name: { in: allowed } },
+      }),
+    );
+    expect(
+      mocks.buildReplayRequest.mock.calls.map(([job]) => job.name),
+    ).toEqual(allowed);
+    expect(mocks.jobDeleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ["job_0", "job_1"] } },
+    });
+    expect(mocks.jobUpdateMany).not.toHaveBeenCalled();
   });
 
   it("runs the authoritative bounded compliance sweep even when no generic jobs exist", async () => {
