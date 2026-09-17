@@ -81,3 +81,28 @@ fails app-identity and namespace separation checks. Never weaken these checks.
 No HTTPS tunnel, Shopify preview, installation, order, redemption, refund, real
 email or Cloudflare resource was created during this checkpoint. The tunnel-aware
 launcher and callback policy remain required before store acceptance.
+
+## Development ingress boundary
+
+`infra/shopify-development/preview-ingress.mjs` is a local backend proxy, not a
+complete Shopify preview launcher. It listens only on 127.0.0.1:8891 and forwards
+to the fixed backend at 127.0.0.1:8890. It requires explicit development mode,
+confirmation and the exact selected HTTPS `trycloudflare.com` origin.
+
+Only the existing `/api/shopify/` allowlist subset is admitted. Internal merchant
+gateways, cron, workspace pages and framework assets/RPC stay private. The existing
+production origin policy is unchanged. The proxy preserves signed body bytes and
+query strings; downstream signature, session, approval and generation checks remain
+mandatory. It is not an authentication substitute.
+
+The development proxy intentionally supports JSON/plain-text responses and empty
+204 responses only. Binary compliance-export downloads are not accepted through
+this preview boundary. Redirects, HTML and upstream server errors are suppressed.
+Limits are 10 MiB per body, eight active requests, 32 server connections and a
+30-second upstream absolute deadline. Slow incoming requests also have a server
+request timeout. These bounds are development constraints, not production sizing.
+
+Before exposure, the paired runtime must explicitly accept the selected preview
+origins and the private Shopify configuration must point callbacks at this boundary.
+Do not point a tunnel directly at the full Next development server or claim this
+standalone proxy completes installation, extension ownership or shopper acceptance.
