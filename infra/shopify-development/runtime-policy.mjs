@@ -106,7 +106,7 @@ export function buildRuntimeEnvironment(app, web, shopify, ambient) {
 
 export function runtimeArguments(app) {
   if (app === "web")
-    return ["dev", "--turbopack", "--hostname", "127.0.0.1", "--port", "8890"];
+    return ["dev", "--hostname", "127.0.0.1", "--port", "8890"];
   if (app === "shopify")
     return [
       "vite:dev",

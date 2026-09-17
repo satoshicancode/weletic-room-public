@@ -11,7 +11,10 @@ import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initializeLocalServices } from "../../../../infra/shopify-development/init.mjs";
-import { parseRuntimeFlags } from "../../../../infra/shopify-development/run.mjs";
+import {
+  parseRuntimeFlags,
+  verifierEnvironment,
+} from "../../../../infra/shopify-development/run.mjs";
 import {
   buildRuntimeEnvironment,
   createRuntimeLogSink,
@@ -40,6 +43,33 @@ afterEach(() => {
 });
 
 describe("isolated development runtime", () => {
+  it("passes explicit Docker selection only to the ownership verifier", () => {
+    const ambient = {
+      PATH: "/usr/bin",
+      HOME: "/synthetic-home",
+      DOCKER_HOST: "unix:///synthetic-isolated/docker.sock",
+      DOCKER_CONFIG: "/synthetic-docker-config",
+      DOCKER_CONTEXT: "synthetic-isolated",
+      DOCKER_AUTH_CONFIG: "must-not-pass",
+      NODE_OPTIONS: "--import=/untrusted.mjs",
+      DATABASE_URL: "mysql://retained.invalid/database",
+    };
+    expect(verifierEnvironment(ambient)).toEqual({
+      PATH: ambient.PATH,
+      HOME: ambient.HOME,
+      DOCKER_HOST: ambient.DOCKER_HOST,
+      DOCKER_CONFIG: ambient.DOCKER_CONFIG,
+      DOCKER_CONTEXT: ambient.DOCKER_CONTEXT,
+    });
+    const { web, shopify } = configuration();
+    for (const app of ["web", "shopify"]) {
+      const env = buildRuntimeEnvironment(app, web, shopify, ambient);
+      for (const key of Object.keys(ambient).filter((key) =>
+        key.startsWith("DOCKER_"),
+      ))
+        expect(env).not.toHaveProperty(key);
+    }
+  });
   it("preserves local rewrite URLs only when isolation is explicitly enabled", () => {
     const source = readFileSync(
       new URL("../../next.config.js", import.meta.url),
@@ -223,7 +253,6 @@ describe("isolated development runtime", () => {
       expect(() => parseRuntimeFlags(invalid)).toThrow();
     expect(runtimeArguments("web")).toEqual([
       "dev",
-      "--turbopack",
       "--hostname",
       "127.0.0.1",
       "--port",
