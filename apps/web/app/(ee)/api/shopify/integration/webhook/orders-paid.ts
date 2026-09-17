@@ -307,6 +307,17 @@ async function ordersPaidUnlocked({
 
   // clickId is not found, wait for the pixel event to arrive
   else {
+    // An internal loyalty workspace can have a program without any attribution
+    // links. No pixel can resolve to a link owned by that workspace yet. Preserve
+    // existing-customer, discount and known-click paths above; only avoid the
+    // otherwise pointless queue wait when there are no workspace links at all.
+    const attributionLink = await prisma.link.findFirst({
+      where: { projectId: workspace.id },
+      select: { id: true },
+    });
+    if (!attributionLink) {
+      return "[Shopify] Factual order recorded. No workspace attribution links; pixel wait skipped.";
+    }
     await writeShopifyCheckoutCache({
       checkoutToken,
       fields: { order: event },
