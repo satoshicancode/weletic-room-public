@@ -11,6 +11,10 @@ export const dynamic = "force-dynamic";
 
 const MAX_ATTEMPTS = 10;
 const BATCH_SIZE = 100;
+const LOYALTY_JOB_NAMES = [
+  "weletic-shopify-session-renewal-job",
+  "weletic-shopify-session-renewal-sweep-job",
+];
 
 // Lock for the cron job. TTL must be ≥ cron maxDuration (600s in vercel.json)
 // so the lock cannot expire while a run is still alive and allow a concurrent
@@ -52,8 +56,10 @@ export const GET = withCron(async () => {
       });
     }
 
-    const jobs = await prisma.job.findMany({
+    const loyaltyOnly = process.env.WELETIC_RELEASE_PROFILE === "loyalty-only";
+    const selectedJobs = await prisma.job.findMany({
       where: {
+        ...(loyaltyOnly ? { name: { in: LOYALTY_JOB_NAMES } } : {}),
         attempts: {
           lt: MAX_ATTEMPTS,
         },
@@ -63,6 +69,11 @@ export const GET = withCron(async () => {
       },
       take: BATCH_SIZE,
     });
+    // Defense in depth: never replay or mutate excluded rows even if selection
+    // changes later. Compliance recovery above remains independent of replay.
+    const jobs = loyaltyOnly
+      ? selectedJobs.filter((job) => LOYALTY_JOB_NAMES.includes(job.name))
+      : selectedJobs;
 
     if (jobs.length === 0) {
       return logAndRespond("No background jobs to retry.");

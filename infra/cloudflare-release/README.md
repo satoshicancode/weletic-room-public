@@ -209,3 +209,50 @@ provider selection/credentials/budget, provider-specific validation, actual
 release manifests/routing, scheduler/watchdog/supervision, target schema rollout,
 and live public-app acceptance. This checkpoint closes only local Shopify
 candidate packaging/boot/shutdown verification, not cloud deployment readiness.
+
+## September 17: loyalty-only web boundary
+
+[ADR 0036](../../docs/adr/0036-loyalty-only-cloudflare-release.md) scopes the
+future Cloudflare release to loyalty. `start.mjs web` now invokes
+`loyalty-web.mjs`, a production Next custom server. Ordinary package startup
+and legacy portal deployments are unchanged.
+
+The authoritative exact route inventory is [loyalty-routes.mjs](loyalty-routes.mjs):
+
+- Signed Shopify installation/session, catalog, merchant and shopper gateways.
+- Existing authenticated customer-account/checkout APIs, Shopify commerce/Flow
+  webhooks, mandatory privacy callbacks and bounded compliance-export IDs.
+- Authenticated loyalty outbox, compliance, catalog-sync, renewal, FX and retry
+  callbacks; only the two named Shopify renewal job handlers.
+
+The API origin rejects all other paths, including standalone workspace/admin/
+partner pages, NextAuth, reviews, billing, unrelated jobs and framework assets.
+Only the reserved API Host is admitted. Encoded/ambiguous paths, framework routing
+override headers/query keys, conflicting forwarded origins, Upgrade and CONNECT
+are rejected before application dispatch. Request bodies, signatures and ordinary
+query strings are passed unchanged; route admission never bypasses existing auth.
+The separate embedded Shopify application's OAuth/assets/UI remain its own
+release surface and still need installed-app acceptance.
+
+The custom entrypoint sets the runtime-only `WELETIC_RELEASE_PROFILE=loyalty-only`
+before loading Next. Queue retry then selects and rechecks only the two approved
+renewal job names; it does not publish, delete or increment unrelated job rows.
+Its bounded compliance sweep remains authoritative. Legacy startup does not set
+this selector and keeps generic retry behavior. This restriction is not permission
+to share legacy persistence: isolated public-app resources remain mandatory.
+
+Next's upgrade listener attaches to a separate unbound HTTP server, not the public
+listener. The wrapper retains its 25-second shutdown bound. Future web packaging
+must include the custom entrypoint and its imports: Next standalone tracing does
+not include custom-server files automatically. No standalone output is enabled.
+[Next custom server documentation](https://nextjs.org/docs/pages/guides/custom-server)
+
+Evidence: pure route/inventory tests, real loopback HTTP with a **synthetic**
+downstream handler (including unchanged 401, binary body and signed query), socket
+rejection tests, and mocked queue-retry selection/recovery tests. These do not
+prove actual Next production boot/shutdown, installed authentication, scheduler
+delivery or Cloudflare routing. Those remain fresh web-image integration gates;
+no live services or deployment were started for this boundary verification.
+
+Run `node --test infra/cloudflare-release/*.test.mjs` and the web Vitest tests
+`cloudflare-release-ingress.test.ts` and `queue-retry-compliance-recovery.test.ts`.

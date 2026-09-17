@@ -10,14 +10,7 @@ export function runtimeCommand(role) {
   if (role === "web")
     return {
       cwd: `${root}apps/web`,
-      args: [
-        "node_modules/next/dist/bin/next",
-        "start",
-        "--port",
-        "3000",
-        "--hostname",
-        "0.0.0.0",
-      ],
+      args: [`${root}infra/cloudflare-release/loyalty-web.mjs`],
     };
   if (role === "shopify")
     return {
