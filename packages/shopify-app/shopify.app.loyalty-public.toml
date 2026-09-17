@@ -4,8 +4,9 @@ client_id = "c7d49cebb06e445db345bb200f966a03"
 name = "Weletic Loyalty Reviews Dev"
 application_url = "https://loyalty-shopify-dev.weletic.com"
 embedded = true
-# Fail closed: public-owned extension identities are not reconciled yet.
-extension_directories = []
+# An empty array falls back to legacy extensions in Shopify CLI. Use an explicit
+# empty directory until public-owned extension identities are reconciled.
+extension_directories = ["public-extensions-disabled/*"]
 
 [build]
 automatically_update_urls_on_dev = false
