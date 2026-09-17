@@ -4,6 +4,13 @@ const { withPlausibleProxy } = require("next-plausible");
 // repeating those memory-intensive passes inside each production/E2E build.
 const hasSeparateCiValidation = process.env.CI_SEPARATE_VALIDATION === "true";
 const isLocalContainerBuild = process.env.WELETIC_LOCAL_CONTAINER_BUILD === "1";
+const isLoyaltyReleaseBuild =
+  process.env.WELETIC_WEB_BUILD_PROFILE === "loyalty-only";
+if (
+  process.env.WELETIC_WEB_BUILD_PROFILE !== undefined &&
+  !isLoyaltyReleaseBuild
+)
+  throw new Error("Unsupported web build profile");
 
 // Suppress specific external package warnings
 const originalConsoleWarn = console.warn;
@@ -68,9 +75,9 @@ module.exports = withPlausibleProxy({
     },
   },
   webpack: (config, { webpack, isServer, dev }) => {
-    if (isLocalContainerBuild && !dev) {
+    if ((isLocalContainerBuild || isLoyaltyReleaseBuild) && !dev) {
       // The offline compatibility build has no reusable Webpack cache and a
-      // bounded heap. Keep this experiment out of ordinary builds/dev servers.
+      // bounded heap. Ordinary builds/dev servers retain their cache behavior.
       config.cache = false;
       config.parallelism = 2;
     }

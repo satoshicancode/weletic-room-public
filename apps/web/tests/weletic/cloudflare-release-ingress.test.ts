@@ -10,6 +10,12 @@ test("Cloudflare release ingress policy, guarded startup and private-input CLI",
       "--test-reporter=tap",
       fileURLToPath(
         new URL(
+          "../../../../infra/cloudflare-release/web-image.test.mjs",
+          import.meta.url,
+        ),
+      ),
+      fileURLToPath(
+        new URL(
           "../../../../infra/cloudflare-release/ingress-policy.test.mjs",
           import.meta.url,
         ),

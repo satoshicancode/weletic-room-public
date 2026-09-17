@@ -52,6 +52,18 @@ function loadRoute(path: string, query: ReturnType<typeof vi.fn>) {
 }
 
 for (const route of routes) {
+  test(`${route}: loyalty release skips excluded portal enumeration only during build`, async () => {
+    vi.stubEnv("WELETIC_LOCAL_CONTAINER_BUILD", "0");
+    vi.stubEnv("WELETIC_WEB_BUILD_PROFILE", "loyalty-only");
+    const query = vi.fn().mockResolvedValue([]);
+    const routeModule = loadRoute(resolve(appRoot, route), query);
+    vi.stubEnv("NEXT_PHASE", "phase-production-build");
+    expect(await routeModule.generateStaticParams()).toEqual([]);
+    expect(query).not.toHaveBeenCalled();
+    vi.stubEnv("NEXT_PHASE", "phase-production-server");
+    await routeModule.generateStaticParams();
+    expect(query).toHaveBeenCalledOnce();
+  });
   test(`${route}: only the opt-in production build avoids route enumeration`, async () => {
     const path = resolve(appRoot, route);
     const marketplace = route.includes("marketplace");

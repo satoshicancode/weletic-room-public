@@ -256,3 +256,68 @@ no live services or deployment were started for this boundary verification.
 
 Run `node --test infra/cloudflare-release/*.test.mjs` and the web Vitest tests
 `cloudflare-release-ingress.test.ts` and `queue-retry-compliance-recovery.test.ts`.
+
+## Web/outbox candidate recipes (not image acceptance)
+
+`Web.Dockerfile` now defines separate `web` and `outbox` targets, sharing a frozen
+dependency install and Linux-generated Prisma client. Fresh runtime stages retain
+OpenSSL/CA certificates, full workspace dependencies and package sources. They
+run as `node` and use guarded startup. This deliberately favors compatibility
+over image minimization; dependency pruning, vulnerability review and actual
+image-size evidence are outstanding. Worker source includes UI utilities needed
+by transitive server imports, but starts no HTTP listener or unrelated workflow.
+
+The web builder receives a fixed, non-inherited environment: approved public-dev
+origins, explicit disabled `.invalid` admin/partner origins and loopback-only
+provider placeholders. `WELETIC_WEB_BUILD_PROFILE=loyalty-only` skips enumeration
+of excluded partner portals only during Next's production build phase. It does
+not alter request-time fetchers, auth, loyalty queries or legacy builds. All
+release runtime roles reject this build selector. Application build steps have
+network disabled; dependency and OS-package installation still require network.
+The build guard rejects host execution, runtime dotenv files, more than two CPUs,
+more than 6 GiB memory, enabled swap or unlimited cgroups. Type/lint validation
+remains required separately; skipping their duplicate build passes is not a waiver.
+
+The web target explicitly includes the custom server/config, compiled `.next`,
+public files and workspace modules rather than relying on standalone tracing.
+The outbox target includes the real TSX worker/aliases and no compiled Next output.
+Its fixed command requires `WELETIC_OUTBOX_STORE_DOMAIN`, an exact lowercase
+Shopify domain; absent/invalid scope fails before spawning. There is no global
+fallback and no release CLI passthrough for `--once` or arbitrary Node options.
+The store must exist under that exact domain in the isolated database; alias
+reconciliation and company approval remain installation gates, not automatic
+provisioning. Existing active-store/generation fences remain unchanged.
+
+Outbox currently requires the web-role ingress/auth configuration plus that store
+scope. It receives only its role's configuration, not the paired JSON. This is
+not a provider-isolation check. SQL, Redis, signing/encryption, email/storage and
+all other producer-specific configuration still require reviewed provider setup.
+The existing worker's logging/privacy review, restart/watchdog policy and graceful
+batch/lease recovery are also pending; the wrapper's 25-second bound alone does
+not prove them. Cloudflare wake-up/supervision for a non-HTTP worker is not wired.
+
+Once an isolated local Docker daemon is safely available, build sequentially:
+
+```sh
+docker buildx build --platform linux/amd64 --resource memory=2g --resource memory-swap=2g --resource cpu-quota=200000 --resource cpu-period=100000 -f infra/cloudflare-release/Web.Dockerfile --target outbox -t weletic-cloudflare-release:outbox-candidate .
+docker buildx build --platform linux/amd64 --resource memory=6g --resource memory-swap=6g --resource cpu-quota=200000 --resource cpu-period=100000 -f infra/cloudflare-release/Web.Dockerfile --target web -t weletic-cloudflare-release:web-candidate .
+```
+
+These commands are local builds, not upload/deployment authorization. Check VM
+headroom first and do not silently restart unrelated containers or increase VM
+limits. Record immutable image identity, source revision, size and architecture;
+scan layers for dotenv/private inputs and build placeholders before promotion.
+Then run no-network/read-only synthetic smoke checks with temporary `/tmp`, no
+published ports, two CPUs and 2 GiB/no swap. Prove missing-config rejection, real
+Next auth rejection and excluded-route 404s, worker CLI loading without delivery,
+SIGTERM cleanup and no forced kill/OOM. Do not reuse the Shopify-only smoke runner
+as proof of these targets. Provider-connected batches and live mutations remain
+separately gated.
+
+Current evidence is source-level policy/packaging tests and focused application
+tests only. Docker was stopped and left stopped; neither target was built or
+booted. Build completion, import closure/native libraries, layer contents, image
+size, actual startup/shutdown and real authentication are **not yet verified**.
+
+References: [Docker build-context exclusions](https://docs.docker.com/build/concepts/context/)
+and [Next custom-server packaging](https://nextjs.org/docs/pages/guides/custom-server).

@@ -17,7 +17,7 @@ const secret = (value) => {
 // still require paired ingress preflight; never distribute the paired secrets.
 export function assertCloudflareRuntime(role, env) {
   if (
-    !["web", "shopify"].includes(role) ||
+    !["web", "shopify", "outbox"].includes(role) ||
     !env ||
     typeof env !== "object" ||
     Array.isArray(env) ||
@@ -27,6 +27,14 @@ export function assertCloudflareRuntime(role, env) {
   )
     fail();
   if (env.WELETIC_SHOPIFY_BUILD_TARGET !== undefined) fail();
+  if (env.WELETIC_WEB_BUILD_PROFILE !== undefined) fail();
+  if (
+    role === "outbox" &&
+    !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/.test(
+      env.WELETIC_OUTBOX_STORE_DOMAIN ?? "",
+    )
+  )
+    fail();
   for (const key of [
     "WELETIC_ISOLATED_DEVELOPMENT",
     "NEXT_PUBLIC_WELETIC_ISOLATED_DEVELOPMENT",
