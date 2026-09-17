@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensureShopifyWebhooksRegistered } from "@/lib/weletic/shopify/provision-webhooks";
 import type { Prisma } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -12,6 +13,18 @@ import {
 } from "../../scripts/loyalty/validate-test-store";
 import { legacyCredentialSqlFixture } from "./helpers/legacy-credential-sql-fixture";
 vi.mock("server-only", () => ({}));
+vi.mock("@/lib/weletic/shopify/provision-webhooks", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/lib/weletic/shopify/provision-webhooks")
+    >();
+  return {
+    ...actual,
+    ensureShopifyWebhooksRegistered: vi.fn(
+      actual.ensureShopifyWebhooksRegistered,
+    ),
+  };
+});
 // The validator characterization below uses retained legacy credentials;
 // it is not native authentication or real-store acceptance evidence.
 vi.mock("@/lib/weletic/shopify/credential-source", () => ({
@@ -991,6 +1004,37 @@ describe("Milestone 6: Mocked Test Store Validator Characterization Suite", () =
   // Phase 5: Webhook Auto-Provisioning & Reconciliation
   // =========================================================================
   describe("Phase 5: Webhook Provisioning & Local Body-HMAC Checks", () => {
+    it("does not count delegated TOML ownership as live provisioning acceptance", async () => {
+      vi.mocked(ensureShopifyWebhooksRegistered).mockResolvedValueOnce({
+        success: true,
+        managedBy: "app_configuration",
+        callbackUrl: "https://synthetic.example.test/webhooks",
+        registered: [],
+        skipped: [],
+        failed: [],
+      });
+      const result = await validateWebhookProvisioningPhase(
+        TEST_STORE,
+        "synthetic-token",
+        {
+          webhookSecret: TEST_SECRET,
+          executionMode: "mock",
+        },
+      );
+      expect(result.passed).toBe(false);
+      expect(
+        result.checks.find((check) =>
+          check.name.includes("Webhook Provisioning"),
+        ),
+      ).toMatchObject({
+        passed: false,
+        details: {
+          managedBy: "app_configuration",
+          acceptanceRequired: expect.any(String),
+        },
+      });
+    });
+
     it("skips live provisioning in dry-run and checks the local body-HMAC primitive", async () => {
       const result = await validateWebhookProvisioningPhase(
         TEST_STORE,

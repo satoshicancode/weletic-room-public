@@ -1492,7 +1492,9 @@ export async function validateWebhookProvisioningPhase(
       });
 
       const passed =
-        provResult.success ||
+        provResult.managedBy !== "app_configuration" &&
+        provResult.success &&
+        provResult.failed.length === 0 &&
         provResult.registered.length + provResult.skipped.length ===
           SHOPIFY_CANONICAL_WEBHOOK_TOPICS.length;
 
@@ -1501,6 +1503,13 @@ export async function validateWebhookProvisioningPhase(
         passed,
         durationMs: Date.now() - provStart,
         details: {
+          managedBy: provResult.managedBy ?? "shop_subscription",
+          ...(provResult.managedBy === "app_configuration"
+            ? {
+                acceptanceRequired:
+                  "Verify active TOML coverage and real delivery separately.",
+              }
+            : {}),
           registered: provResult.registered,
           skipped: provResult.skipped,
           failed: provResult.failed,

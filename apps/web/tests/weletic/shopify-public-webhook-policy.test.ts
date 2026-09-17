@@ -214,7 +214,16 @@ describe("public webhook callback routing", () => {
       const mutations = transport.mock.calls.filter(
         ([request]) => request.variables.webhookSubscription,
       );
-      expect(mutations).toHaveLength(segment ? 2 : 16);
+      expect(mutations).toHaveLength(segment ? 2 : 0);
+      if (!segment) {
+        expect(transport).not.toHaveBeenCalled();
+        expect(result).toMatchObject({
+          managedBy: "app_configuration",
+          registered: [],
+          skipped: [],
+          failed: [],
+        });
+      }
       for (const [request] of mutations)
         expect(request.variables.webhookSubscription.uri).toBe(callback);
     },
