@@ -18,7 +18,7 @@ function fixture(role) {
     SHOPIFY_API_KEY: client,
     SHOPIFY_APP_URL: app,
     WELETIC_SHOPIFY_SERVICE_SECRET: "synthetic-service".repeat(4),
-    ...(role === "web"
+    ...(role !== "shopify"
       ? {
           WELETIC_ENFORCE_CRON_AUTH: "1",
           NEXTAUTH_URL: api,
@@ -27,6 +27,9 @@ function fixture(role) {
           NEXTAUTH_SECRET: "synthetic-session".repeat(4),
           CRON_SECRET: "synthetic-cron".repeat(4),
           SHOPIFY_WEBHOOK_SECRET: "synthetic-app".repeat(4),
+          ...(role === "outbox"
+            ? { WELETIC_OUTBOX_STORE_DOMAIN: "yamaxdev.myshopify.com" }
+            : {}),
         }
       : {
           SHOPIFY_APP_DISTRIBUTION: "app_store",
@@ -77,14 +80,14 @@ function harness(role = "web", changes = {}) {
   };
 }
 
-for (const role of ["web", "shopify"]) {
+for (const role of ["web", "shopify", "outbox"]) {
   test(`${role}: fixed command, snapshot and no cross-role secret requirement`, () => {
     const h = harness(role);
     startRuntime(role, h.options);
     assert.equal(h.launches.length, 1);
     const [bin, args, options] = h.launches[0];
     assert.equal(bin, process.execPath);
-    assert.deepEqual(args, runtimeCommand(role).args);
+    assert.deepEqual(args, runtimeCommand(role, h.options.env).args);
     assert.equal(options.shell, false);
     assert.equal(options.env.PORT, "3000");
     assert.equal(options.env.HOST, "0.0.0.0");
@@ -99,6 +102,7 @@ for (const role of ["web", "shopify"]) {
     ["SHOPIFY_APP_URL", "http://localhost"],
     ["WELETIC_LOCAL_CONTAINER_BUILD", "1"],
     ["WELETIC_SHOPIFY_BUILD_TARGET", "node"],
+    ["WELETIC_WEB_BUILD_PROFILE", "loyalty-only"],
     ["WELETIC_ISOLATED_DEVELOPMENT", "1"],
     ["NEXT_PUBLIC_WELETIC_ISOLATED_DEVELOPMENT", "1"],
     ["WELETIC_SHOPIFY_SERVICE_SECRET", "short"],
@@ -123,6 +127,25 @@ for (const role of ["web", "shopify"]) {
     });
   }
 }
+
+test("outbox release cannot fall back to global scope or accept CLI injection", () => {
+  for (const value of [
+    undefined,
+    "",
+    "ALL",
+    "https://yamaxdev.myshopify.com",
+    "yamaxdev.myshopify.com --once",
+    "yamaxdev.myshopify.com\n",
+    "*.myshopify.com",
+  ]) {
+    const h = harness("outbox", { WELETIC_OUTBOX_STORE_DOMAIN: value });
+    assert.throws(() => startRuntime("outbox", h.options));
+    assert.equal(h.launches.length, 0);
+  }
+  const h = harness("outbox");
+  startRuntime("outbox", h.options);
+  assert.equal(h.launches[0][1].at(-1), "--store=yamaxdev.myshopify.com");
+});
 
 test("role-local auth, callback, scope and secret invariants", () => {
   for (const [role, key, value] of [

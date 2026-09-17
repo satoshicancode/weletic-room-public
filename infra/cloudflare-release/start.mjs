@@ -6,7 +6,19 @@ import { assertCloudflareRuntime } from "./runtime-policy.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
-export function runtimeCommand(role) {
+export function runtimeCommand(role, env = process.env) {
+  if (role === "outbox")
+    return {
+      cwd: `${root}apps/web`,
+      args: [
+        "--conditions=react-server",
+        "--import=./scripts/runtime/async-local-storage.cjs",
+        "--import",
+        "tsx",
+        "./scripts/loyalty/run-outbox-worker.ts",
+        `--store=${env.WELETIC_OUTBOX_STORE_DOMAIN}`,
+      ],
+    };
   if (role === "web")
     return {
       cwd: `${root}apps/web`,
@@ -42,7 +54,7 @@ export function startRuntime(
     HOSTNAME: "0.0.0.0",
   };
   assertCloudflareRuntime(role, childEnv);
-  const command = runtimeCommand(role);
+  const command = runtimeCommand(role, childEnv);
   // Next/Remix must not load unvalidated configuration after admission.
   for (const name of [
     ".env",
