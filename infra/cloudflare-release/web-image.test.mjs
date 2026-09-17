@@ -33,6 +33,12 @@ test("build rejects host/dotenv execution and unbounded container resources", ()
   const exists = (path) => path === "/.dockerenv";
   const read = (path) => values[path.split("/").at(-1)];
   assert.doesNotThrow(() => assertWebBuildContext(exists, read));
+  assert.doesNotThrow(() =>
+    assertWebBuildContext(
+      (path) => path === "/opt/weletic-release-build",
+      read,
+    ),
+  );
   assert.throws(() => assertWebBuildContext(() => false, read));
   assert.throws(() => assertWebBuildContext(() => true, read));
   for (const [key, value] of [
@@ -55,7 +61,7 @@ test("fresh web and scoped outbox image recipes preserve guarded startup and dep
   assert.match(docker, /pnpm install --frozen-lockfile/);
   assert.match(
     docker,
-    /RUN --network=none node infra\/cloudflare-release\/web-build.mjs/,
+    /RUN --network=none mkdir -p \/opt\/weletic-release-build && node infra\/cloudflare-release\/web-build.mjs/,
   );
   assert.doesNotMatch(
     docker,

@@ -314,10 +314,11 @@ SIGTERM cleanup and no forced kill/OOM. Do not reuse the Shopify-only smoke runn
 as proof of these targets. Provider-connected batches and live mutations remain
 separately gated.
 
-Current evidence is source-level policy/packaging tests and focused application
-tests only. Docker was stopped and left stopped; neither target was built or
-booted. Build completion, import closure/native libraries, layer contents, image
-size, actual startup/shutdown and real authentication are **not yet verified**.
+The original recipe checkpoint had source-level tests only. Subsequent bounded
+Linux image results, resource limits and cleanup are recorded in
+[isolated verification](ISOLATED-VERIFICATION.md), under [ADR 0037](../../docs/adr/0037-isolated-local-release-verification.md).
+That evidence does not establish real authentication, provider-connected delivery,
+complete layer/secret auditing or Cloudflare deployment readiness.
 
 References: [Docker build-context exclusions](https://docs.docker.com/build/concepts/context/)
 and [Next custom-server packaging](https://nextjs.org/docs/pages/guides/custom-server).

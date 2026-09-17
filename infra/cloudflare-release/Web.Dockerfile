@@ -31,7 +31,7 @@ RUN --network=none pnpm turbo build --filter=web^...
 RUN --network=none pnpm --filter web exec prisma generate --schema=./prisma/schema
 
 FROM source AS web-build
-RUN --network=none node infra/cloudflare-release/web-build.mjs
+RUN --network=none mkdir -p /opt/weletic-release-build && node infra/cloudflare-release/web-build.mjs
 
 # Fresh runtime: no builder ENV and no synthetic provider values.
 FROM node:22-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS runtime

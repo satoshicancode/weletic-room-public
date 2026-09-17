@@ -48,7 +48,7 @@ export function assertWebBuildContext(
 ) {
   const directory = fileURLToPath(new URL("../../apps/web/", import.meta.url));
   if (
-    !exists("/.dockerenv") ||
+    (!exists("/.dockerenv") && !exists("/opt/weletic-release-build")) ||
     [".env", ".env.local", ".env.production", ".env.production.local"].some(
       (name) => exists(directory + name),
     )
