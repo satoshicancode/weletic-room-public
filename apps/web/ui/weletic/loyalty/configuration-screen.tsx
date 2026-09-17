@@ -235,14 +235,14 @@ export function LoyaltyConfigurationScreen({
             {text.reload}
           </button>
         </div>
-      ) : isLoading || isValidating || !data ? (
+      ) : isLoading || !data ? (
         <p role="status">{text.loading}</p>
       ) : (
         <ConfigurationEditor
           key={`${transport.scopeKey}:${data.installationGeneration}:${data.configurationRevision}`}
           data={data}
           locale={locale}
-          busy={busy}
+          busy={busy || isValidating}
           save={save}
         />
       )}
