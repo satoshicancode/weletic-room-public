@@ -56,6 +56,7 @@ import {
   selectCapturedReward,
   selectEffectiveRuleVersions,
 } from "./order-attribution";
+import { readOrderLineDiscount } from "./order-line-discount";
 
 const shopifyGid = (type: "Product" | "ProductVariant", id?: number | null) =>
   id ? `gid://shopify/${type}/${id}` : undefined;
@@ -1089,9 +1090,11 @@ async function recordWeleticOrderUnlocked({
           line.price_set.shop_money.amount,
           line.price_set.shop_money.currency_code,
         ) * BigInt(line.quantity);
-      const lineShopDiscount = line.total_discount_set
-        ? amount(line.total_discount_set, "shop_money")
-        : BigInt(0);
+      const lineShopDiscount = readOrderLineDiscount(
+        line,
+        "shop_money",
+        shopCurrency,
+      );
       const lineShopNet = shopGross - lineShopDiscount;
       const existingLine = existingLineMap.get(String(line.id));
       const lineAccountingNet =
@@ -1250,9 +1253,11 @@ async function recordWeleticOrderUnlocked({
               line.price_set.shop_money.amount,
             line.price_set.presentment_money?.currency_code ?? shopCurrency,
           ) * BigInt(line.quantity),
-        presentmentDiscount: line.total_discount_set
-          ? amount(line.total_discount_set, "presentment_money")
-          : BigInt(0),
+        presentmentDiscount: readOrderLineDiscount(
+          line,
+          "presentment_money",
+          presentmentCurrency,
+        ),
         shopGross,
         shopDiscount: lineShopDiscount,
         shopNet: lineShopNet,

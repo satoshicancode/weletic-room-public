@@ -10,6 +10,11 @@ const moneySetSchema = z.object({
   presentment_money: moneySchema.optional(),
 });
 
+const discountAllocationSchema = z.object({
+  discount_application_index: z.number().int().nonnegative(),
+  amount_set: moneySetSchema,
+});
+
 export const orderSchema = z.object({
   id: z.number().optional(),
   name: z.string().optional(),
@@ -44,9 +49,33 @@ export const orderSchema = z.object({
         quantity: z.number().int().positive(),
         price_set: moneySetSchema,
         total_discount_set: moneySetSchema.optional(),
+        discount_allocations: z
+          .array(discountAllocationSchema)
+          .max(10000)
+          .optional(),
       }),
     )
     .default([]),
+  discount_applications: z
+    .array(
+      z.object({
+        type: z.string(),
+        code: z.string().optional(),
+      }),
+    )
+    .max(10000)
+    .optional(),
+  shipping_lines: z
+    .array(
+      z.object({
+        discount_allocations: z
+          .array(discountAllocationSchema)
+          .max(10000)
+          .optional(),
+      }),
+    )
+    .max(10000)
+    .optional(),
   discount_codes: z.array(
     z.object({
       code: z.string().describe("The code of the discount."),
