@@ -141,3 +141,34 @@ invalid Next route export; the catalog debounce helper and Lua script were moved
 unchanged into a library module, preserving behavior and test coverage. Independent
 review found no blockers. These checks do not establish live installation,
 authenticated storefront behavior, HMR or financial acceptance.
+
+## Public preview and bootstrap — September 17, 21:12 JST
+
+- Protected customer data was saved with only the approved App functionality
+  reason. Optional personal-data fields were left unselected; no review submitted.
+- PR #71 merged as `e12a2fdb7b`. All six public quality checks passed.
+- The CLI accepted the required topics and reported Ready for the public app on
+  canonical `montdev`, resolving in Admin to `yamaxdev`. No legacy extension UIDs
+  were deployed. Existing custom-app previews were not cleaned or uninstalled.
+- The CLI proxy listened on IPv6 loopback while the tunnel targeted IPv4. An
+  ephemeral loopback-only IPv4-to-IPv6 bridge restored connectivity; this is not
+  yet a durable launcher fix.
+- Shared dependency symlinks placed Remix's default browser entry outside Vite's
+  allowed filesystem. An app-owned standard hydration entry fixes the observed
+  failure without widening filesystem access. After restart the real embedded
+  UI successfully fetched signed status and displayed pending company approval.
+- Independent SQL confirmed a fresh offline SDK session and one pending public
+  installation. The audited operator preview verified the real canonical shop
+  and JPY currency. Applying its exact digest created the minimal workspace/store
+  mapping and bootstrap audit. SQL confirmed mapped revision 2, store access still
+  pending at revision 1, zero Users and zero loyalty programs.
+- Opening the mapped app again did not create a store-owned credential. A read-only
+  company-approval preview failed with `Store approval requires fresh Shopify
+authentication.` The bootstrap revokes coordination but retains the pre-mapping
+  SDK session; the snapshot still exposes it, allowing native authentication to
+  reuse it without publishing a mapped credential. This is an unresolved lifecycle
+  transition, not permission to bypass admission or directly edit credentials.
+
+Authentication into the pending installation is evidenced; active merchant access,
+reinstall/stale-worker rejection and the shopper purchase/redemption/refund journey
+remain unaccepted. No order, reward, email or production mutation occurred.
