@@ -640,6 +640,17 @@ describe("Shopify catalog compliance write fence", () => {
     expect(mocks.tx.weleticShopifyStore.update).not.toHaveBeenCalled();
   });
 
+  it("rejects a stale catalog trigger before creating a sync run", async () => {
+    await expect(
+      syncWeleticShopifyCatalog({
+        workspaceId,
+        expectedInstallationGeneration: "sgen_obsolete",
+      }),
+    ).rejects.toThrow("trigger belongs to a stale installation");
+    expect(mocks.tx.weleticShopifySyncRun.create).not.toHaveBeenCalled();
+    expect(mocks.graphql).not.toHaveBeenCalled();
+  });
+
   it("rejects credentials captured before the store installation generation", async () => {
     mocks.getInstallation.mockResolvedValueOnce({
       workspaceId,

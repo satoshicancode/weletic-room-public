@@ -361,12 +361,20 @@ async function withCatalogWriteFence<T>({
 
 async function performWeleticShopifyCatalogSync({
   workspaceId,
+  expectedInstallationGeneration,
 }: {
   workspaceId: string;
+  expectedInstallationGeneration?: string | null;
 }) {
   const installation = await getWeleticShopifyInstallation(workspaceId);
   const credentialInstallationGeneration =
     installation.installationGeneration ?? null;
+  if (
+    expectedInstallationGeneration !== undefined &&
+    expectedInstallationGeneration !== credentialInstallationGeneration
+  ) {
+    throw new Error("Shopify catalog trigger belongs to a stale installation.");
+  }
   const run = await prisma.$transaction(async (tx) => {
     await assertShopifyStoreAcceptsOperationalWrites({
       workspaceId,
@@ -1162,8 +1170,10 @@ async function performWeleticShopifyCatalogSync({
 
 export async function syncWeleticShopifyCatalog({
   workspaceId,
+  expectedInstallationGeneration,
 }: {
   workspaceId: string;
+  expectedInstallationGeneration?: string | null;
 }) {
   const lockKey = `weletic:catalog-sync:${workspaceId}`;
   return await withDistributedLock({
@@ -1178,7 +1188,10 @@ export async function syncWeleticShopifyCatalog({
         action: "catalog_sync",
         allowMissing: true,
       });
-      return await performWeleticShopifyCatalogSync({ workspaceId });
+      return await performWeleticShopifyCatalogSync({
+        workspaceId,
+        expectedInstallationGeneration,
+      });
     },
   });
 }

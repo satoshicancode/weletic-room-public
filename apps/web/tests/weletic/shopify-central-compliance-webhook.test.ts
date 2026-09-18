@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  localDev: true,
   resolveComplianceStore: vi.fn(),
   resolveOperationalStore: vi.fn(),
   persistAndQueue: vi.fn(),
@@ -25,9 +26,15 @@ const mocks = vi.hoisted(() => ({
   segmentMembershipChanged: vi.fn(),
   captureWebhookLog: vi.fn(),
   pendingPrivacy: vi.fn(),
+  catalogSync: vi.fn(),
+  retain: vi.fn(),
 }));
 
-vi.mock("@/lib/api/environment", () => ({ isLocalDev: true }));
+vi.mock("@/lib/api/environment", () => ({
+  get isLocalDev() {
+    return mocks.localDev;
+  },
+}));
 vi.mock("@/lib/api-logs/capture-webhook-log", () => ({
   captureWebhookLog: mocks.captureWebhookLog,
 }));
@@ -38,7 +45,7 @@ vi.mock("@/lib/upstash", () => ({
   redis: { set: mocks.redisSet, eval: mocks.redisEval },
 }));
 vi.mock("@/lib/weletic/shopify/catalog-sync", () => ({
-  syncWeleticShopifyCatalog: vi.fn(),
+  syncWeleticShopifyCatalog: mocks.catalogSync,
 }));
 vi.mock("@/lib/weletic/shopify/compliance-store-resolver", () => ({
   resolveComplianceShopifyStoreByDomain: mocks.resolveComplianceStore,
@@ -82,7 +89,7 @@ vi.mock("@dub/utils", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@dub/utils")>()),
   log: vi.fn(),
 }));
-vi.mock("@vercel/functions", () => ({ waitUntil: vi.fn() }));
+vi.mock("@vercel/functions", () => ({ waitUntil: mocks.retain }));
 vi.mock(
   "../../app/(ee)/api/shopify/integration/webhook/customer-segment-membership",
   () => ({ customerSegmentMembershipChanged: mocks.segmentMembershipChanged }),
@@ -212,9 +219,13 @@ function resolvedStore(domain: string) {
 }
 
 describe("central durable Shopify compliance ingress", () => {
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.localDev = true;
     process.env.SHOPIFY_WEBHOOK_SECRET = secret;
     vi.stubEnv("SHOPIFY_WEBHOOK_SECRET_NEXT", "");
     mocks.resolveComplianceStore.mockImplementation(async (domain: string) =>
@@ -253,9 +264,123 @@ describe("central durable Shopify compliance ingress", () => {
     mocks.discountsUpdate.mockResolvedValue("discount updated");
     mocks.segmentMembershipChanged.mockResolvedValue("segment updated");
     mocks.captureWebhookLog.mockResolvedValue(undefined);
+    mocks.catalogSync.mockReset().mockResolvedValue(undefined);
     mocks.transaction.mockImplementation((callback, client) =>
       callback(client),
     );
+  });
+
+  it("does not acknowledge slow local catalog work before fenced completion", async () => {
+    vi.useFakeTimers();
+    mocks.resolveOperationalStore.mockResolvedValue(
+      resolvedStore("a.myshopify.com"),
+    );
+    let complete!: () => void;
+    mocks.catalogSync.mockReturnValue(
+      new Promise<void>((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const responsePromise = POST(
+      signedRequest({ topic: "products/update", body: { id: 1 } }),
+    );
+    await vi.advanceTimersByTimeAsync(1_001);
+    const response = await responsePromise;
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("60");
+    expect(mocks.captureWebhookLog).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 503 }),
+    );
+    expect(mocks.webhookEventUpdateMany).not.toHaveBeenCalled();
+    expect(mocks.catalogSync).toHaveBeenCalledWith({
+      workspaceId: "workspace_a",
+      expectedInstallationGeneration: "sgen_current",
+    });
+    complete();
+    await Promise.all(mocks.retain.mock.calls.map(([work]) => work));
+    expect(mocks.captureWebhookLog).toHaveBeenCalledTimes(1);
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          attempts: 1,
+          storeInstallationGeneration: "sgen_current",
+          status: "received",
+        }),
+        data: expect.objectContaining({ status: "processed" }),
+      }),
+    );
+  });
+
+  it.each([
+    "A Shopify catalog sync is already running.",
+    "Shopify unavailable",
+  ])("keeps local catalog failure retryable: %s", async (message) => {
+    mocks.resolveOperationalStore.mockResolvedValue(
+      resolvedStore("a.myshopify.com"),
+    );
+    mocks.catalogSync.mockRejectedValue(new Error(message));
+    const response = await POST(
+      signedRequest({ topic: "products/update", body: { id: 1 } }),
+    );
+    expect(response.status).toBe(500);
+    expect(mocks.webhookEventUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "failed", error: message }),
+      }),
+    );
+    expect(
+      mocks.webhookEventUpdateMany.mock.calls.some(
+        ([arg]) => arg.data.status === "processed",
+      ),
+    ).toBe(false);
+  });
+
+  it.each(["received", "processed"])(
+    "handles a local catalog %s replay without duplicate sync",
+    async (status) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-18T00:02:00Z"));
+      mocks.resolveOperationalStore.mockResolvedValue(
+        resolvedStore("a.myshopify.com"),
+      );
+      const request = () =>
+        signedRequest({ topic: "products/update", body: { id: 1 } });
+      await POST(request());
+      const data = mocks.webhookEventCreate.mock.calls[0][0].data;
+      mocks.catalogSync.mockClear();
+      mocks.webhookEventCreate.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError("duplicate", {
+          code: "P2002",
+          clientVersion: "test",
+        }),
+      );
+      mocks.webhookEventFindUnique.mockResolvedValue({
+        ...data,
+        status,
+        attempts: 1,
+      });
+      mocks.webhookEventUpdateMany.mockClear().mockResolvedValue({ count: 0 });
+      const response = await POST(request());
+      expect(response.status).toBe(status === "processed" ? 200 : 503);
+      expect(mocks.catalogSync).not.toHaveBeenCalled();
+      const reclaim = mocks.webhookEventUpdateMany.mock.calls[0][0];
+      expect(reclaim.where.OR[1].updatedAt.lt).toEqual(
+        new Date("2026-09-17T23:32:00Z"),
+      );
+    },
+  );
+
+  it("preserves the production catalog queue handoff", async () => {
+    mocks.localDev = false;
+    mocks.resolveOperationalStore.mockResolvedValue(
+      resolvedStore("a.myshopify.com"),
+    );
+    const response = await POST(
+      signedRequest({ topic: "products/update", body: { id: 1 } }),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.publishJSON).toHaveBeenCalledTimes(1);
+    expect(mocks.catalogSync).not.toHaveBeenCalled();
   });
 
   it("handles an authenticated unmapped privacy request without customer ingestion", async () => {
