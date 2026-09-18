@@ -20,6 +20,11 @@ import {
   isShopifyDurableComplianceTopic,
   parseShopifyComplianceSubject,
 } from "@/lib/weletic/shopify/compliance-types";
+import {
+  catalogWebhookTopics,
+  LOCAL_CATALOG_CLAIM_MS,
+  localCatalogWebhookResponse,
+} from "@/lib/weletic/shopify/local-catalog-webhook";
 import { handlePendingInstallationPrivacy } from "@/lib/weletic/shopify/pending-installation-privacy";
 import { createAllShopifyWebhookBodyDigests } from "@/lib/weletic/shopify/privacy-identity";
 import {
@@ -819,7 +824,14 @@ export const POST = async (req: Request) => {
               { status: "failed" },
               {
                 status: "received",
-                updatedAt: { lt: new Date(Date.now() - 60_000) },
+                updatedAt: {
+                  lt: new Date(
+                    Date.now() -
+                      (isLocalDev && catalogWebhookTopics.has(topic)
+                        ? LOCAL_CATALOG_CLAIM_MS
+                        : 60_000),
+                  ),
+                },
               },
             ],
           },
@@ -867,7 +879,9 @@ export const POST = async (req: Request) => {
               kind: "response",
               response: new Response(
                 "[Shopify] Webhook is already being processed; retry later.",
-                { status: 409 },
+                isLocalDev && catalogWebhookTopics.has(topic)
+                  ? { status: 503, headers: { "Retry-After": "60" } }
+                  : { status: 409 },
               ),
             } as const;
           }
@@ -939,196 +953,133 @@ export const POST = async (req: Request) => {
     userAgent: req.headers.get("user-agent"),
   };
 
-  let response = "OK";
+  const localCatalog = isLocalDev && catalogWebhookTopics.has(topic);
+  const processClaim = async () => {
+    let response = "OK";
 
-  try {
-    await assertWebhookStoreAcceptsWrite({
-      storeId: eventClaim.storeId,
-      action: `webhook_dispatch:${topic}`,
-      financialTopic,
-      expectedInstallationGeneration: financialTopic
-        ? eventClaim.dispatchInstallationGeneration
-        : eventClaim.storeInstallationGeneration,
-      loyaltyMaintenancePermit,
-    });
-    switch (topic) {
-      case "orders/fulfilled":
-      case "orders/cancelled": {
-        const { processReviewOrderEvent } = await import(
-          "@/lib/weletic/reviews/shopify-events"
-        );
-        await processReviewOrderEvent({
-          topic,
-          event,
-          storeId: eventClaim.storeId,
-          workspaceId: workspace.id,
-          expectedInstallationGeneration:
-            eventClaim.storeInstallationGeneration,
-        });
-        response = "[Shopify] Review order lifecycle processed.";
-        break;
-      }
-      case "orders/paid":
-        response = await ordersPaid({
-          event,
-          workspace,
-          storeId: eventClaim.storeId,
-          expectedInstallationGeneration:
-            eventClaim.dispatchInstallationGeneration,
-          privacyMinimizedFinancialSettlement:
-            eventClaim.privacyMinimizedFinancialSettlement,
-          loyaltyMaintenancePermit,
-        });
-        break;
-      case "refunds/create":
-        response = await refundsCreate({
-          event,
-          workspaceId: workspace.id,
-          storeId: eventClaim.storeId,
-          expectedInstallationGeneration:
-            eventClaim.dispatchInstallationGeneration,
-          privacyMinimizedFinancialSettlement:
-            eventClaim.privacyMinimizedFinancialSettlement,
-          loyaltyMaintenancePermit,
-        });
-        break;
-      case "discounts/delete":
-        response = await discountsDelete({
-          event,
-          workspace,
-          storeId: eventClaim.storeId,
-          expectedInstallationGeneration:
-            eventClaim.storeInstallationGeneration,
-        });
-        break;
-      case "discounts/update":
-        response = await discountsUpdate({
-          event,
-          workspace,
-          storeId: eventClaim.storeId,
-          expectedInstallationGeneration:
-            eventClaim.storeInstallationGeneration,
-        });
-        break;
-      case "products/create":
-      case "products/update":
-      case "products/delete":
-      case "markets/create":
-      case "markets/update":
-      case "markets/delete": {
-        if (isLocalDev) {
-          waitUntil(
-            syncWeleticShopifyCatalog({ workspaceId: workspace.id }).catch(
-              (err) => {
-                console.error(
-                  "[Shopify Webhook] Local catalog sync failed:",
-                  err,
-                );
-              },
-            ),
-          );
-          response = `[Shopify] ${topic} catalog sync executed locally.`;
-          break;
-        }
-        const isFirstInBurst = await enqueueDebouncedShopifyCatalogSync({
-          workspaceId: workspace.id,
-          webhookId,
-        });
-        if (isFirstInBurst) {
-          response = `[Shopify] ${topic} catalog reconciliation queued.`;
-        } else {
-          response = `[Shopify] ${topic} catalog sync debounced (already queued in burst).`;
-        }
-        break;
-      }
-      case "customer.joined_segment":
-      case "customer.left_segment":
-        response = await customerSegmentMembershipChanged({
-          event,
-          workspaceId: workspace.id,
-          member: topic === "customer.joined_segment",
-          storeId: eventClaim.storeId,
-          expectedInstallationGeneration:
-            eventClaim.storeInstallationGeneration,
-        });
-        break;
-      case "customers/create":
-      case "customers/update":
-        response = await customersSync({
-          // Shopify customer IDs are unsigned 64-bit values. JSON.parse can
-          // round the numeric REST field, while the signed GID string remains
-          // exact; normalize only this in-memory dispatch projection.
-          event: normalizeShopifyCustomerDispatchEvent(event),
-          workspaceId: workspace.id,
-          storeId: eventClaim.storeId,
-          expectedInstallationGeneration:
-            eventClaim.storeInstallationGeneration,
-          loyaltyMaintenancePermit,
-        });
-        break;
-    }
-  } catch (error) {
-    const failed = await prisma.weleticShopifyWebhookEvent.updateMany({
-      where: {
-        id: eventClaim.id,
-        storeId: eventClaim.storeId,
-        topic,
-        status: "received",
-        attempts: eventClaim.attempt,
-        storeInstallationGeneration: eventClaim.storeInstallationGeneration,
-      },
-      data: {
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error),
-        payload: Prisma.DbNull,
-      },
-    });
-    if (failed.count !== 1) {
-      return new Response(
-        "[Shopify] Webhook lease was reclaimed; stale failure was discarded.",
-        { status: 409 },
-      );
-    }
-    if (isLoyaltyMaintenanceBlockedError(error)) {
-      return loyaltyMaintenanceRetryResponse();
-    }
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    await log({
-      message: `Shopify webhook failed. Error: ${errorMessage}`,
-      type: "errors",
-    });
-
-    const response = new Response(
-      `[Shopify] Webhook handler failed. View logs`,
-      { status: 500 },
-    );
-
-    waitUntil(
-      captureWebhookLog({
-        ...requestLog,
-        statusCode: 500,
-        duration: Date.now() - startTime,
-        responseBody: response,
-      }),
-    );
-
-    return response;
-  }
-
-  let completed: { count: number };
-  try {
-    completed = await prisma.$transaction(async (tx) => {
+    try {
       await assertWebhookStoreAcceptsWrite({
         storeId: eventClaim.storeId,
-        action: `webhook_complete:${topic}`,
+        action: `webhook_dispatch:${topic}`,
         financialTopic,
         expectedInstallationGeneration: financialTopic
           ? eventClaim.dispatchInstallationGeneration
           : eventClaim.storeInstallationGeneration,
         loyaltyMaintenancePermit,
-        tx,
       });
-      return tx.weleticShopifyWebhookEvent.updateMany({
+      switch (topic) {
+        case "orders/fulfilled":
+        case "orders/cancelled": {
+          const { processReviewOrderEvent } = await import(
+            "@/lib/weletic/reviews/shopify-events"
+          );
+          await processReviewOrderEvent({
+            topic,
+            event,
+            storeId: eventClaim.storeId,
+            workspaceId: workspace.id,
+            expectedInstallationGeneration:
+              eventClaim.storeInstallationGeneration,
+          });
+          response = "[Shopify] Review order lifecycle processed.";
+          break;
+        }
+        case "orders/paid":
+          response = await ordersPaid({
+            event,
+            workspace,
+            storeId: eventClaim.storeId,
+            expectedInstallationGeneration:
+              eventClaim.dispatchInstallationGeneration,
+            privacyMinimizedFinancialSettlement:
+              eventClaim.privacyMinimizedFinancialSettlement,
+            loyaltyMaintenancePermit,
+          });
+          break;
+        case "refunds/create":
+          response = await refundsCreate({
+            event,
+            workspaceId: workspace.id,
+            storeId: eventClaim.storeId,
+            expectedInstallationGeneration:
+              eventClaim.dispatchInstallationGeneration,
+            privacyMinimizedFinancialSettlement:
+              eventClaim.privacyMinimizedFinancialSettlement,
+            loyaltyMaintenancePermit,
+          });
+          break;
+        case "discounts/delete":
+          response = await discountsDelete({
+            event,
+            workspace,
+            storeId: eventClaim.storeId,
+            expectedInstallationGeneration:
+              eventClaim.storeInstallationGeneration,
+          });
+          break;
+        case "discounts/update":
+          response = await discountsUpdate({
+            event,
+            workspace,
+            storeId: eventClaim.storeId,
+            expectedInstallationGeneration:
+              eventClaim.storeInstallationGeneration,
+          });
+          break;
+        case "products/create":
+        case "products/update":
+        case "products/delete":
+        case "markets/create":
+        case "markets/update":
+        case "markets/delete": {
+          if (isLocalDev) {
+            await syncWeleticShopifyCatalog({
+              workspaceId: workspace.id,
+              expectedInstallationGeneration:
+                eventClaim.storeInstallationGeneration,
+            });
+            response = `[Shopify] ${topic} catalog sync completed locally.`;
+            break;
+          }
+          const isFirstInBurst = await enqueueDebouncedShopifyCatalogSync({
+            workspaceId: workspace.id,
+            webhookId,
+          });
+          if (isFirstInBurst) {
+            response = `[Shopify] ${topic} catalog reconciliation queued.`;
+          } else {
+            response = `[Shopify] ${topic} catalog sync debounced (already queued in burst).`;
+          }
+          break;
+        }
+        case "customer.joined_segment":
+        case "customer.left_segment":
+          response = await customerSegmentMembershipChanged({
+            event,
+            workspaceId: workspace.id,
+            member: topic === "customer.joined_segment",
+            storeId: eventClaim.storeId,
+            expectedInstallationGeneration:
+              eventClaim.storeInstallationGeneration,
+          });
+          break;
+        case "customers/create":
+        case "customers/update":
+          response = await customersSync({
+            // Shopify customer IDs are unsigned 64-bit values. JSON.parse can
+            // round the numeric REST field, while the signed GID string remains
+            // exact; normalize only this in-memory dispatch projection.
+            event: normalizeShopifyCustomerDispatchEvent(event),
+            workspaceId: workspace.id,
+            storeId: eventClaim.storeId,
+            expectedInstallationGeneration:
+              eventClaim.storeInstallationGeneration,
+            loyaltyMaintenancePermit,
+          });
+          break;
+      }
+    } catch (error) {
+      const failed = await prisma.weleticShopifyWebhookEvent.updateMany({
         where: {
           id: eventClaim.id,
           storeId: eventClaim.storeId,
@@ -1138,33 +1089,112 @@ export const POST = async (req: Request) => {
           storeInstallationGeneration: eventClaim.storeInstallationGeneration,
         },
         data: {
-          status: "processed",
-          processedAt: new Date(),
+          status: "failed",
+          error: error instanceof Error ? error.message : String(error),
           payload: Prisma.DbNull,
         },
       });
-    });
-  } catch (error) {
-    if (isLoyaltyMaintenanceBlockedError(error)) {
-      return loyaltyMaintenanceRetryResponse();
-    }
-    throw error;
-  }
-  if (completed.count !== 1) {
-    return new Response(
-      "[Shopify] Webhook lease was reclaimed; stale completion was discarded.",
-      { status: 409 },
-    );
-  }
+      if (failed.count !== 1) {
+        return new Response(
+          "[Shopify] Webhook lease was reclaimed; stale failure was discarded.",
+          { status: 409 },
+        );
+      }
+      if (isLoyaltyMaintenanceBlockedError(error)) {
+        return loyaltyMaintenanceRetryResponse();
+      }
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await log({
+        message: `Shopify webhook failed. Error: ${errorMessage}`,
+        type: "errors",
+      });
 
+      const response = new Response(
+        `[Shopify] Webhook handler failed. View logs`,
+        { status: 500 },
+      );
+
+      if (!localCatalog)
+        waitUntil(
+          captureWebhookLog({
+            ...requestLog,
+            statusCode: 500,
+            duration: Date.now() - startTime,
+            responseBody: response,
+          }),
+        );
+
+      return response;
+    }
+
+    let completed: { count: number };
+    try {
+      completed = await prisma.$transaction(async (tx) => {
+        await assertWebhookStoreAcceptsWrite({
+          storeId: eventClaim.storeId,
+          action: `webhook_complete:${topic}`,
+          financialTopic,
+          expectedInstallationGeneration: financialTopic
+            ? eventClaim.dispatchInstallationGeneration
+            : eventClaim.storeInstallationGeneration,
+          loyaltyMaintenancePermit,
+          tx,
+        });
+        return tx.weleticShopifyWebhookEvent.updateMany({
+          where: {
+            id: eventClaim.id,
+            storeId: eventClaim.storeId,
+            topic,
+            status: "received",
+            attempts: eventClaim.attempt,
+            storeInstallationGeneration: eventClaim.storeInstallationGeneration,
+          },
+          data: {
+            status: "processed",
+            processedAt: new Date(),
+            payload: Prisma.DbNull,
+          },
+        });
+      });
+    } catch (error) {
+      if (isLoyaltyMaintenanceBlockedError(error)) {
+        return loyaltyMaintenanceRetryResponse();
+      }
+      throw error;
+    }
+    if (completed.count !== 1) {
+      return new Response(
+        "[Shopify] Webhook lease was reclaimed; stale completion was discarded.",
+        { status: 409 },
+      );
+    }
+
+    if (!localCatalog)
+      waitUntil(
+        captureWebhookLog({
+          ...requestLog,
+          statusCode: 200,
+          duration: Date.now() - startTime,
+          responseBody: response,
+        }),
+      );
+
+    return new Response(response);
+  };
+  const processing = processClaim();
+  if (!localCatalog) return processing;
+  const localResponse = await localCatalogWebhookResponse(
+    processing,
+    waitUntil,
+  );
   waitUntil(
     captureWebhookLog({
       ...requestLog,
-      statusCode: 200,
+      statusCode: localResponse.status,
       duration: Date.now() - startTime,
-      responseBody: response,
+      responseBody: localResponse.clone(),
     }),
   );
-
-  return new Response(response);
+  return localResponse;
 };
