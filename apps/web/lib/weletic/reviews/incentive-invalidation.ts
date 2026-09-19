@@ -15,6 +15,7 @@ import {
   selectReviewIncentiveAward,
 } from "./incentive-policy";
 import { reverseReviewPointsClaimInTransaction } from "./incentive-reversal";
+import { reviewPointsRecoveryKey } from "./points-recovery-contract";
 import { withReviewMutation } from "./transaction";
 
 /** Internal confirmed-invalidity boundary. No public adjudication route or
@@ -343,6 +344,15 @@ export function invalidateReviewIncentive({
           },
           completedAt: outcome === "pending" ? null : new Date(),
         },
+      });
+      await tx.weleticLoyaltyOutboxJob.updateMany({
+        where: {
+          storeId,
+          jobType: "REVIEW_POINTS_RECOVERY",
+          idempotencyKey: reviewPointsRecoveryKey(claimId),
+          status: { in: ["pending", "processing", "failed"] },
+        },
+        data: { status: "cancelled", lockedAt: null, lockedBy: null },
       });
       if (outcome !== "points_reversed") {
         await tx.weleticReviewIncentiveClaim.update({

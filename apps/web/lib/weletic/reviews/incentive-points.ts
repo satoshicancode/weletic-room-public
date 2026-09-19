@@ -10,6 +10,7 @@ import {
   reviewIncentivePolicyDigest,
   selectReviewIncentiveAward,
 } from "./incentive-policy";
+import { scheduleReviewPointsRecovery } from "./points-recovery-scheduling";
 import {
   assertReviewPurchaseIdentity,
   assertReviewPurchaseNotSuppressed,
@@ -208,6 +209,13 @@ export async function fulfillReviewPointsClaimInTransaction({
       where: { id: review.id },
       data: { rewardReason: "active_reviews_and_loyalty_account_required" },
     });
+    await scheduleReviewPointsRecovery({
+      tx,
+      storeId,
+      claimId: claim.id,
+      shopperId: claim.shopperId,
+      installationGeneration: generation,
+    });
     return {
       status: "pending" as const,
       reason: "active_reviews_and_loyalty_account_required" as const,
@@ -265,8 +273,8 @@ export async function fulfillReviewPointsClaimInTransaction({
   };
 }
 
-/** Fenced internal retry entry point. Merchant retries share the transaction
- * core above; automatic enrollment recovery is not wired yet.
+/** Fenced internal retry entry point. Merchant and queue retries share the same
+ * financial writer; pending fulfillment preserves one durable recovery job.
  */
 export function fulfillProductReviewPointsIncentive({
   storeId,
