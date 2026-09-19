@@ -468,9 +468,12 @@ function CatalogVisit({
     setView(null);
     setDraft(null);
     setContainment(null);
-    transport
-      .read()
-      .then((data) => {
+    // StrictMode replays mount effects. Do not dispatch an authenticated read
+    // for an already-discarded visit; ignoring its response still holds a lease.
+    Promise.resolve()
+      .then(async () => {
+        if (!current) return;
+        const data = await transport.read();
         if (current) setView(data);
       })
       .catch(() => {

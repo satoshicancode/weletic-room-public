@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, createElement } from "react";
+import { act, createElement, StrictMode } from "react";
+import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RewardCatalogResponse } from "../../lib/weletic/loyalty/reward-catalog-contract";
@@ -86,6 +87,57 @@ async function select(label: string, value: string) {
     field.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
+
+it("dispatches one read per live visit under StrictMode and keeps Reload fresh", async () => {
+  await act(async () =>
+    root.render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(RewardCatalogSession, { transport }),
+      ),
+    ),
+  );
+  expect(transport.read).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain("Controlled reward");
+  await click("Reload");
+  expect(transport.read).toHaveBeenCalledTimes(2);
+  expect(transport.save).not.toHaveBeenCalled();
+  expect(transport.contain).not.toHaveBeenCalled();
+});
+
+it("does not dispatch a read for a visit discarded before its microtask", async () => {
+  await act(async () => {
+    flushSync(() =>
+      root.render(createElement(RewardCatalogSession, { transport })),
+    );
+    flushSync(() => root.render(null));
+  });
+  expect(transport.read).not.toHaveBeenCalled();
+});
+
+it("ignores an already-dispatched read after changing transport", async () => {
+  let finish!: (value: RewardCatalogResponse) => void;
+  transport.read = vi.fn(
+    () =>
+      new Promise<RewardCatalogResponse>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  const original = transport;
+  transport = {
+    ...transport,
+    scopeKey: "b",
+    read: vi.fn().mockResolvedValue({ ...view, rewards: [] }),
+  };
+  await render();
+  await act(async () => finish(view));
+  expect(original.read).toHaveBeenCalledTimes(1);
+  expect(transport.read).toHaveBeenCalledTimes(1);
+  expect(container.textContent).not.toContain("Controlled reward");
+  expect(container.textContent).toContain("No rewards configured.");
+});
 
 it("saves exact values and revision without a numeric round trip", async () => {
   await render();
