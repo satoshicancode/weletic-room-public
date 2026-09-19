@@ -20,7 +20,14 @@ const EXTENSION_CORS_HEADERS = {
 export class WeleticGatewayError extends Error {
   status: number;
 
-  constructor(message: string, status: number) {
+  constructor(
+    message: string,
+    status: number,
+    readonly coordinationCode?:
+      | "lease_busy"
+      | "stale_session"
+      | "installation_blocked",
+  ) {
     super(message);
     this.name = "WeleticGatewayError";
     this.status = status;
@@ -291,22 +298,41 @@ export async function weleticApiRequest(
 
   if (!response.ok) {
     const responseBody = await response.text();
+    let coordinationCode: WeleticGatewayError["coordinationCode"];
     let upstreamMessage = "Weletic request was rejected";
     if (response.status >= 500) {
       upstreamMessage = "Weletic service is temporarily unavailable";
     } else {
       try {
         const parsed = JSON.parse(responseBody) as {
-          error?: { message?: unknown };
+          error?: unknown;
         };
-        if (typeof parsed.error?.message === "string") {
+        if (
+          response.status === 409 &&
+          url.pathname === "/api/internal/shopify/sessions/coordination" &&
+          (parsed.error === "lease_busy" ||
+            parsed.error === "stale_session" ||
+            parsed.error === "installation_blocked")
+        ) {
+          coordinationCode = parsed.error;
+        }
+        if (
+          parsed.error &&
+          typeof parsed.error === "object" &&
+          "message" in parsed.error &&
+          typeof parsed.error.message === "string"
+        ) {
           upstreamMessage = parsed.error.message.slice(0, 300);
         }
       } catch {
         // Keep the bounded generic message for non-JSON upstream responses.
       }
     }
-    throw new WeleticGatewayError(upstreamMessage, response.status);
+    throw new WeleticGatewayError(
+      upstreamMessage,
+      response.status,
+      coordinationCode,
+    );
   }
 
   return response;

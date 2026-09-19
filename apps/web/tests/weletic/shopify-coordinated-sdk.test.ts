@@ -59,6 +59,18 @@ function gateway(preparedReconnect = false, mappedBootstrap = false) {
       : digest("synthetic-old-token")) as string | null,
     reconnectBeforeRenew: false,
     rejectAcquire: false,
+    busyAcquisitions: 0,
+    acquireCalls: 0,
+    changeWhileBusy: null as
+      | "generation"
+      | "revision"
+      | "credential"
+      | "digest"
+      | null,
+    onBusy: null as (() => void) | null,
+    onAcquired: null as (() => void) | null,
+    failSnapshot: false,
+    acquireFailure: null as string | null,
     invalidAcquireAck: false,
     rejectRenew: false,
     uncertainPublish: false,
@@ -105,10 +117,34 @@ function gateway(preparedReconnect = false, mappedBootstrap = false) {
       expect(url.hostname).toBe("session-gateway.invalid");
       const body = init?.body ? String(init.body) : "";
       expect(verifyWeleticShopifyRequest({ request, body })).toBe(true);
-      if (request.method === "GET") return Response.json(snapshot());
+      if (request.method === "GET") {
+        if (controls.failSnapshot) throw new Error("Snapshot unavailable");
+        return Response.json(snapshot());
+      }
       const data = JSON.parse(body);
       if (url.pathname.endsWith("/coordination")) {
         if (data.action === "acquire") {
+          controls.acquireCalls++;
+          if (controls.acquireFailure === "timeout")
+            throw new DOMException("Ambiguous acquisition", "TimeoutError");
+          if (controls.acquireFailure)
+            return Response.json(
+              { error: controls.acquireFailure },
+              { status: 409 },
+            );
+          if (controls.busyAcquisitions-- > 0) {
+            expect(controls.providerCalls).toBe(0);
+            expect(controls.mutationCalls).toBe(0);
+            epoch = String(BigInt(epoch) + BigInt(1));
+            if (controls.changeWhileBusy === "generation")
+              controls.generation = "generation-2";
+            if (controls.changeWhileBusy === "revision") revision = "1";
+            if (controls.changeWhileBusy === "credential")
+              controls.credentialTokenHash = digest("changed");
+            if (controls.changeWhileBusy === "digest") properties = null;
+            controls.onBusy?.();
+            return Response.json({ error: "lease_busy" }, { status: 409 });
+          }
           if (
             controls.rejectAcquire ||
             owner ||
@@ -118,6 +154,7 @@ function gateway(preparedReconnect = false, mappedBootstrap = false) {
             return Response.json({ error: "lease_busy" }, { status: 409 });
           epoch = String(BigInt(epoch) + BigInt(1));
           owner = { token: data.token, epoch, revision };
+          controls.onAcquired?.();
           return Response.json(
             controls.invalidAcquireAck ? {} : { lease: owner },
           );
@@ -187,6 +224,125 @@ describe("coordinated Shopify SDK operations", () => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+  });
+
+  it("waits only before provider exchange and tolerates a released owner's newer epoch", async () => {
+    const fixture = gateway();
+    fixture.controls.busyAcquisitions = 2;
+    vi.stubGlobal("fetch", fixture.fetcher);
+    const sdk = await import(
+      "../../../../packages/shopify-app/app/shopify.server"
+    );
+    await sdk.unauthenticated.admin(shop);
+    expect(fixture.controls.acquireCalls).toBe(3);
+    expect(fixture.controls.providerCalls).toBe(1);
+    expect(fixture.controls.mutationCalls).toBe(1);
+    expect(fixture.owner()).toBeNull();
+  });
+
+  it.each(["generation", "revision", "credential", "digest"] as const)(
+    "stops waiting when %s changes",
+    async (field) => {
+      const fixture = gateway();
+      fixture.controls.busyAcquisitions = 1;
+      fixture.controls.changeWhileBusy = field;
+      vi.stubGlobal("fetch", fixture.fetcher);
+      const storage = new CoordinatedWeleticSessionStorage();
+      await expect(
+        storage.runOperation(() => storage.loadSession(id)),
+      ).rejects.toMatchObject({
+        status: 409,
+        coordinationCode: "stale_session",
+      });
+      expect(fixture.controls.acquireCalls).toBe(1);
+      expect(fixture.controls.providerCalls).toBe(0);
+      expect(fixture.controls.mutationCalls).toBe(0);
+    },
+  );
+
+  it("does not retry after a failed snapshot refresh", async () => {
+    const fixture = gateway();
+    fixture.controls.busyAcquisitions = 1;
+    fixture.controls.onBusy = () => {
+      fixture.controls.failSnapshot = true;
+    };
+    vi.stubGlobal("fetch", fixture.fetcher);
+    const storage = new CoordinatedWeleticSessionStorage();
+    await expect(
+      storage.runOperation(() => storage.loadSession(id)),
+    ).rejects.toThrow("Snapshot unavailable");
+    expect(fixture.controls.acquireCalls).toBe(1);
+    expect(fixture.controls.providerCalls).toBe(0);
+  });
+
+  it("stops at the monotonic deadline without another acquisition", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const fixture = gateway();
+    fixture.controls.busyAcquisitions = 1;
+    fixture.controls.onBusy = () => {
+      now = 8_001;
+    };
+    vi.stubGlobal("fetch", fixture.fetcher);
+    const storage = new CoordinatedWeleticSessionStorage();
+    await expect(
+      storage.runOperation(() => storage.loadSession(id)),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(fixture.controls.acquireCalls).toBe(1);
+    expect(fixture.controls.providerCalls).toBe(0);
+  });
+
+  it("rejects a late successful acknowledgement without provider I/O or reacquisition", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const fixture = gateway();
+    fixture.controls.onAcquired = () => {
+      now = 8_001;
+    };
+    vi.stubGlobal("fetch", fixture.fetcher);
+    const storage = new CoordinatedWeleticSessionStorage();
+    await expect(
+      storage.runOperation(() => storage.loadSession(id)),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(fixture.controls.acquireCalls).toBe(1);
+    expect(fixture.controls.providerCalls).toBe(0);
+    expect(fixture.controls.mutationCalls).toBe(0);
+    // The failed caller does not return ownership. The durable lease must expire.
+    expect(fixture.owner()).not.toBeNull();
+  });
+
+  it.each([
+    "stale_session",
+    "installation_blocked",
+    "unknown_conflict",
+    "timeout",
+  ])("does not retry acquisition after %s", async (failure) => {
+    const fixture = gateway();
+    fixture.controls.acquireFailure = failure;
+    vi.stubGlobal("fetch", fixture.fetcher);
+    const storage = new CoordinatedWeleticSessionStorage();
+    await expect(
+      storage.runOperation(() => storage.loadSession(id)),
+    ).rejects.toThrow();
+    expect(fixture.controls.acquireCalls).toBe(1);
+    expect(fixture.controls.providerCalls).toBe(0);
+    expect(fixture.controls.mutationCalls).toBe(0);
+  });
+
+  it("caps repeated confirmed contention at five acquisitions", async () => {
+    const fixture = gateway();
+    fixture.controls.rejectAcquire = true;
+    vi.stubGlobal("fetch", fixture.fetcher);
+    const storage = new CoordinatedWeleticSessionStorage();
+    await expect(
+      storage.runOperation(() => storage.loadSession(id)),
+    ).rejects.toMatchObject({
+      status: 409,
+      coordinationCode: "lease_busy",
+    });
+    expect(fixture.controls.acquireCalls).toBe(5);
+    expect(fixture.controls.providerCalls).toBe(0);
+    expect(fixture.controls.mutationCalls).toBe(0);
   });
 
   it.each(["prepared reconnect", "retained pre-mapping session"])(

@@ -68,6 +68,52 @@ afterEach(() => {
 });
 
 describe("Weletic Shopify service authentication", () => {
+  test.each([
+    [
+      "lease_busy",
+      409,
+      "/api/internal/shopify/sessions/coordination",
+      "lease_busy",
+    ],
+    [
+      "stale_session",
+      409,
+      "/api/internal/shopify/sessions/coordination",
+      "stale_session",
+    ],
+    [
+      "installation_blocked",
+      409,
+      "/api/internal/shopify/sessions/coordination",
+      "installation_blocked",
+    ],
+    ["unknown", 409, "/api/internal/shopify/sessions/coordination", undefined],
+    [
+      "lease_busy",
+      503,
+      "/api/internal/shopify/sessions/coordination",
+      undefined,
+    ],
+    [
+      "lease_busy",
+      409,
+      "/api/internal/shopify/merchant/loyalty-configuration",
+      undefined,
+    ],
+  ])(
+    "classifies only known coordination conflicts: %s %s %s",
+    async (error, status, requestPath, code) => {
+      vi.stubEnv("WELETIC_API_URL", "https://app.weletic.com");
+      vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Response.json({ error }, { status: Number(status) })),
+      );
+      await expect(
+        weleticApiRequest(String(requestPath), { method: "POST", body: "{}" }),
+      ).rejects.toMatchObject({ status, coordinationCode: code });
+    },
+  );
   test("uses the documented canonical request format", () => {
     expect(
       createWeleticShopifyCanonicalRequest({
