@@ -3,6 +3,11 @@ import {
   shopifyAdminGraphqlRequest,
   ShopifyDiscountError,
 } from "@/lib/weletic/loyalty/shopify-discounts";
+import {
+  REVIEW_FLOW_HANDLES,
+  reviewFlowEventId,
+  ReviewFlowJobSchema,
+} from "@/lib/weletic/reviews/flow-contract";
 import { z } from "zod";
 
 export const SHOPIFY_FLOW_TRIGGER_HANDLES = {
@@ -11,6 +16,8 @@ export const SHOPIFY_FLOW_TRIGGER_HANDLES = {
   REWARD_REDEEMED: "weletic-reward-redeemed",
   POINTS_EXPIRING_SOON: "weletic-points-expiring-soon",
   REFERRAL_COMPLETED: "weletic-referral-completed",
+  REVIEW_SUBMITTED: REVIEW_FLOW_HANDLES.SUBMITTED,
+  REVIEW_PUBLISHED: REVIEW_FLOW_HANDLES.PUBLISHED,
 } as const;
 
 export type ShopifyFlowTriggerHandle =
@@ -123,6 +130,19 @@ export type PointsExpiringSoonFlowPayload = z.infer<
 const FlowCustomValueSchema = z.string().max(5_000);
 const PreparedCustomerReferenceSchema = z.number().int().positive().safe();
 
+export const PreparedReviewFlowPayloadSchema = z
+  .object({
+    customer_id: PreparedCustomerReferenceSchema,
+    "Event id": FlowCustomValueSchema,
+    "Review id": FlowCustomValueSchema,
+    "Review version": FlowCustomValueSchema,
+    "Review type": z.literal("product"),
+    Rating: FlowCustomValueSchema,
+    "Verified purchase": z.enum(["true", "false"]),
+    "Occurred at": FlowCustomValueSchema,
+  })
+  .strict();
+
 export const PreparedReferralCompletedFlowPayloadSchema = z
   .object({
     customer_id: PreparedCustomerReferenceSchema,
@@ -168,6 +188,7 @@ export const PreparedPointsExpiringSoonFlowPayloadSchema = z
   .strict();
 
 export type PreparedShopifyFlowPayload =
+  | z.infer<typeof PreparedReviewFlowPayloadSchema>
   | z.infer<typeof PreparedReferralCompletedFlowPayloadSchema>
   | z.infer<typeof PreparedPointsEarnedFlowPayloadSchema>
   | z.infer<typeof PreparedVipTierChangedFlowPayloadSchema>
@@ -207,6 +228,11 @@ export function validatePreparedShopifyFlowPayload(
   handle: ShopifyFlowTriggerHandle,
   payload: unknown,
 ): PreparedShopifyFlowPayload {
+  if (
+    handle === REVIEW_FLOW_HANDLES.SUBMITTED ||
+    handle === REVIEW_FLOW_HANDLES.PUBLISHED
+  )
+    return assertPayloadSize(PreparedReviewFlowPayloadSchema.parse(payload));
   if (handle === SHOPIFY_FLOW_TRIGGER_HANDLES.REFERRAL_COMPLETED)
     return assertPayloadSize(
       PreparedReferralCompletedFlowPayloadSchema.parse(payload),
@@ -227,6 +253,27 @@ export function validateAndNormalizeFlowPayload(
   handle: ShopifyFlowTriggerHandle,
   rawPayload: unknown,
 ): PreparedShopifyFlowPayload {
+  if (
+    handle === REVIEW_FLOW_HANDLES.SUBMITTED ||
+    handle === REVIEW_FLOW_HANDLES.PUBLISHED
+  ) {
+    const raw = z
+      .object({ event: ReviewFlowJobSchema, customerGid: CustomerGidSchema })
+      .strict()
+      .parse(rawPayload);
+    if (raw.event.handle !== handle)
+      throw new Error("Review Flow handle mismatch");
+    return assertPayloadSize({
+      customer_id: shopifyCustomerLegacyId(raw.customerGid),
+      "Event id": reviewFlowEventId(raw.event),
+      "Review id": raw.event.reviewId,
+      "Review version": String(raw.event.version),
+      "Review type": "product",
+      Rating: String(raw.event.rating),
+      "Verified purchase": raw.event.verifiedPurchase ? "true" : "false",
+      "Occurred at": new Date(raw.event.occurredAt).toISOString(),
+    });
+  }
   if (handle === SHOPIFY_FLOW_TRIGGER_HANDLES.REFERRAL_COMPLETED) {
     const payload = ReferralCompletedFlowPayloadSchema.parse(rawPayload);
     return assertPayloadSize({

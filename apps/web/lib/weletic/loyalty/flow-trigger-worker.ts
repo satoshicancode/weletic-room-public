@@ -16,6 +16,7 @@ import {
   resolveShopifyOfflineCredentials,
   ShopifyDiscountError,
 } from "@/lib/weletic/loyalty/shopify-discounts";
+import { handleReviewFlowTrigger } from "@/lib/weletic/reviews/flow-worker";
 import {
   assertShopifyStoreAcceptsOperationalWrites,
   isShopifyStoreOperationalWritesBlocked,
@@ -36,6 +37,9 @@ export async function handleFlowTrigger(
     );
   }
   if (!(await shouldDispatchShopifyFlowForStore(storeId))) return;
+
+  if ("reviewId" in payload)
+    return handleReviewFlowTrigger(storeId, payload, loyaltyMaintenancePermit);
 
   const account = await prisma.weleticLoyaltyAccount.findFirst({
     where: { id: payload.accountId, storeId, status: "active" },

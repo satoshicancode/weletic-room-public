@@ -7,6 +7,7 @@ import {
 } from "@/lib/weletic/reviews/contracts";
 import { clearExpiredReviewDeliveryEvidence } from "@/lib/weletic/reviews/delivery-retention";
 import { deliverReviewRequest } from "@/lib/weletic/reviews/email";
+import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
 import { createReviewIncentivePolicyRevision } from "@/lib/weletic/reviews/incentive-policy";
 import { uploadReviewPhoto } from "@/lib/weletic/reviews/media";
 import { redactNativeReviewsBatch } from "@/lib/weletic/reviews/privacy";
@@ -43,34 +44,24 @@ const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
   beforeMediaLock: null as null | (() => Promise<void>),
 }));
-vi.mock("../../../../packages/email/src/resend", () => ({
+vi.mock("@dub/email/resend", () => ({
   resendCredentialIdentity: "e".repeat(64),
   isResendCredentialCurrent: () => true,
   get resend() {
     return mocks.resend;
   },
 }));
-vi.mock(
-  "../../../../packages/email/src/send-via-resend",
-  async (importOriginal) => ({
-    ...(await importOriginal<
-      typeof import("../../../../packages/email/src/send-via-resend")
-    >()),
-    sendPreparedResendEmail: (request: unknown, key: string) =>
-      mocks.viaResend([request], { idempotencyKey: key }),
-    sendBatchEmailViaResend: mocks.viaResend,
-    sendEmailViaResend: vi.fn(),
-  }),
-);
-vi.mock(
-  "../../../../packages/email/src/send-via-nodemailer",
-  async (importOriginal) => ({
-    ...(await importOriginal<
-      typeof import("../../../../packages/email/src/send-via-nodemailer")
-    >()),
-    sendViaNodeMailer: mocks.viaSmtp,
-  }),
-);
+vi.mock("@dub/email", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@dub/email")>()),
+  sendPreparedResendEmail: (request: unknown, key: string) =>
+    mocks.viaResend([request], { idempotencyKey: key }),
+  sendBatchEmailViaResend: mocks.viaResend,
+  sendEmailViaResend: vi.fn(),
+}));
+vi.mock("@dub/email/send-via-nodemailer", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@dub/email/send-via-nodemailer")>()),
+  sendViaNodeMailer: mocks.viaSmtp,
+}));
 vi.mock("@/lib/storage", () => ({
   storage: { upload: mocks.upload, delete: mocks.delete },
 }));
@@ -308,6 +299,163 @@ describe("native reviews real MySQL production-service boundaries", () => {
     if (safeDatabase) await prisma.$disconnect();
     vi.unstubAllEnvs();
   });
+
+  it.each([
+    "enabled",
+    "disabled",
+    "missing",
+    "suspended",
+    "frozen",
+    "redacted",
+  ])(
+    "keeps malformed Flow JSON selectable with %s review authority",
+    async (state) => {
+      const prefix = `flow-json-${run}-${state}`;
+      const payloads = [
+        {},
+        Prisma.JsonNull,
+        "scalar",
+        { handle: null },
+        { handle: 42 },
+        { handle: {} },
+        { handle: ["weletic-review-submitted"] },
+        { handle: "weletic-points-earned" },
+        { handle: "weletic-review-submitted" },
+        { handle: "weletic-review-published" },
+      ];
+      try {
+        if (state === "missing")
+          await prisma.weleticReviewSettings.delete({ where: { storeId } });
+        if (state === "disabled")
+          await prisma.weleticReviewSettings.update({
+            where: { storeId },
+            data: { enabled: false },
+          });
+        if (state === "suspended")
+          await prisma.weleticShopifyStore.update({
+            where: { id: storeId },
+            data: { storeAccessState: "suspended" },
+          });
+        if (state === "frozen" || state === "redacted")
+          await prisma.weleticShopifyStore.update({
+            where: { id: storeId },
+            data: { complianceState: state },
+          });
+        await prisma.weleticLoyaltyOutboxJob.createMany({
+          data: payloads.map((payload, index) => ({
+            id: `${prefix}-${index}`,
+            storeId,
+            jobType: "FLOW_TRIGGER",
+            payload,
+            idempotencyKey: `${prefix}-${index}`,
+            scheduledFor: new Date(0),
+          })),
+        });
+        const found = await prisma.weleticLoyaltyOutboxJob.findMany({
+          where: {
+            storeId,
+            id: { startsWith: prefix },
+            AND: reviewFlowCandidateWhere(),
+          },
+          select: { id: true },
+          orderBy: { id: "asc" },
+        });
+        const count = state === "enabled" || state === "redacted" ? 10 : 8;
+        expect(found.map(({ id }) => id).sort()).toEqual(
+          Array.from(
+            { length: count },
+            (_, index) => `${prefix}-${index}`,
+          ).sort(),
+        );
+      } finally {
+        await prisma.weleticLoyaltyOutboxJob.deleteMany({
+          where: { storeId, id: { startsWith: prefix } },
+        });
+        await prisma.weleticShopifyStore.update({
+          where: { id: storeId },
+          data: { storeAccessState: "active", complianceState: "active" },
+        });
+        await prisma.weleticReviewSettings.upsert({
+          where: { storeId },
+          update: { enabled: true },
+          create: {
+            storeId,
+            enabled: true,
+            requestEmailEnabled: true,
+            sendAfterDays: 0,
+            activatedAt: new Date("2020-01-01"),
+          },
+        });
+      }
+    },
+  );
+
+  it.each(["disabled", "suspended", "frozen"])(
+    "selects active work behind a full older %s Reviews Flow page",
+    async (state) => {
+      const prefix = `flow-fair-${run}-${state}`;
+      try {
+        if (state === "disabled")
+          await prisma.weleticReviewSettings.update({
+            where: { storeId },
+            data: { enabled: false },
+          });
+        if (state === "suspended")
+          await prisma.weleticShopifyStore.update({
+            where: { id: storeId },
+            data: { storeAccessState: "suspended" },
+          });
+        if (state === "frozen")
+          await prisma.weleticShopifyStore.update({
+            where: { id: storeId },
+            data: { complianceState: "frozen" },
+          });
+        await prisma.weleticLoyaltyOutboxJob.createMany({
+          data: Array.from({ length: 101 }, (_, index) => ({
+            id: `${prefix}-${index}`,
+            storeId,
+            jobType: "FLOW_TRIGGER",
+            payload: {
+              handle:
+                index < 100
+                  ? index % 2
+                    ? "weletic-review-submitted"
+                    : "weletic-review-published"
+                  : "weletic-points-earned",
+            },
+            idempotencyKey: `${prefix}-${index}`,
+            scheduledFor: new Date(index < 100 ? 0 : 1),
+          })),
+        });
+        const found = await prisma.weleticLoyaltyOutboxJob.findMany({
+          where: {
+            storeId,
+            id: { startsWith: prefix },
+            status: { in: ["pending", "failed"] },
+            scheduledFor: { lte: new Date() },
+            OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: new Date() } }],
+            AND: reviewFlowCandidateWhere(),
+          },
+          orderBy: [{ priority: "desc" }, { scheduledFor: "asc" }],
+          take: 50,
+          select: { id: true },
+        });
+        expect(found).toEqual([{ id: `${prefix}-100` }]);
+      } finally {
+        await prisma.weleticLoyaltyOutboxJob.deleteMany({
+          where: { storeId, id: { startsWith: prefix } },
+        });
+        await prisma.weleticShopifyStore.update({
+          where: { id: storeId },
+          data: { storeAccessState: "active", complianceState: "active" },
+        });
+        await prisma.weleticReviewSettings.update({
+          where: { storeId },
+          data: { enabled: true },
+        });
+      }
+    },
+  );
 
   it("deduplicates overlapping fulfilled-order requests and their outbox job", async () => {
     const order = await purchase();
@@ -773,7 +921,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
       }),
     ).toEqual(before);
   });
-  it("concurrently publishes one review with one generation-bound Flow event and never re-emits after reversal", async () => {
+  it("concurrently publishes once and republishes without repeating the points-award Flow event", async () => {
     const request = await invitation(await purchase());
     const created = await submitNativeReview(storeId, input(request.token));
     const flowCountBefore = await prisma.weleticLoyaltyOutboxJob.count({
@@ -863,7 +1011,31 @@ describe("native reviews real MySQL production-service boundaries", () => {
       await prisma.weleticLoyaltyOutboxJob.count({
         where: { storeId, jobType: "FLOW_TRIGGER" },
       }),
-    ).toBe(flowCountBefore + 1);
+    ).toBe(flowCountBefore + 3);
+    const publicationJobs = await prisma.weleticLoyaltyOutboxJob.findMany({
+      where: {
+        storeId,
+        jobType: "FLOW_TRIGGER",
+        AND: [
+          { payload: { path: "$.handle", equals: "weletic-review-published" } },
+          { payload: { path: "$.reviewId", equals: created.id } },
+        ],
+      },
+    });
+    expect(publicationJobs).toHaveLength(2);
+    expect(
+      publicationJobs
+        .map((job) => (job.payload as { version: number }).version)
+        .sort(),
+    ).toEqual([2, 4]);
+    expect(
+      await prisma.weleticLoyaltyOutboxJob.count({
+        where: {
+          storeId,
+          idempotencyKey: `flow_trigger:weletic-points-earned:${award.id}`,
+        },
+      }),
+    ).toBe(1);
   });
   it("keeps a partial-quantity refund eligible and cancels after the last purchased unit is refunded", async () => {
     const order = await purchase();
