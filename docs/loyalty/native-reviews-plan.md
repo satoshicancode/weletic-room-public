@@ -1,11 +1,12 @@
 # Native reviews implementation
 
-**Historical first-release contract.** The [unified acceptance matrix](unified-acceptance-matrix.md)
+**Historical first-release contract.** The [combined completion checklist](company-store-completion.md)
 supersedes this document's narrower scope and publication-coupled incentive
 policy. Product/store reviews, open submissions, video, imports, Q&A and manual
 translations are now in scope. Participation-based points-or-coupon incentives
 must be revisioned per order; hiding legitimate criticism must not revoke them.
-The current legacy service does not yet satisfy that contract. Preserve this
+Legacy-only paths do not satisfy that contract; participation services have
+subsequent bounded evidence, but activation and full acceptance remain open. Preserve this
 document as implementation history, not an instruction to activate old policy.
 
 Approved in the “Find existing reviews integration” task: verified purchases

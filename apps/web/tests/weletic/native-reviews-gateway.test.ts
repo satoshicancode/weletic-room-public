@@ -111,4 +111,18 @@ describe("native review production proxy gateway", () => {
     expect(await response.text()).not.toContain("token=secret");
     expect(transport).not.toHaveBeenCalled();
   });
+  it.each(["en", "ja", "vi"])(
+    "serves the allowlisted %s form locale without forwarding a request",
+    async (locale) => {
+      const response = await reviewProxyResponse(
+        new Request(
+          `https://shop.example.test/apps/weletic/reviews/write?locale=${locale}`,
+        ),
+        "verified.myshopify.com",
+        "reviews/write",
+      );
+      expect(await response.text()).toContain(`<html lang="${locale}">`);
+      expect(transport).not.toHaveBeenCalled();
+    },
+  );
 });

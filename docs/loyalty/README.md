@@ -1,8 +1,12 @@
 # Weletic Customer Loyalty documentation
 
-**Last updated:** 2026-09-06
+**Last updated:** 2026-09-20
 
-Start with the [unified acceptance matrix](./unified-acceptance-matrix.md) for the approved 12-package loyalty/reviews scope and outstanding gates. This directory also retains qualified historical staging evidence; it does not claim full Smile.io/Judge.me parity or production readiness.
+Start with the [combined completion checklist](./company-store-completion.md)
+for current loyalty/reviews scope, evidence, dependencies, tests and exit criteria.
+The [unified acceptance matrix](./unified-acceptance-matrix.md) retains detailed
+loyalty requirements and historical checkpoints. Neither document claims full
+Smile.io/Judge.me parity or production readiness.
 
 The [shared shopper profile checkpoint](./shopper-profile-foundation.md) covers
 the read-only directory/profile API and Weletic merchant view, its local proofs,
