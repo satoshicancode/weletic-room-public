@@ -1,6 +1,6 @@
 # Authenticated merchant overlap — September 19, 2026
 
-Status: **failed live acceptance; investigation required**. Runtime source:
+Initial checkpoint: **failed live acceptance; investigation required**. Runtime source:
 public main `53553f1cb886e14143b6cc272b1527f439391900` (PR #84). Its PR and
 post-merge quality gates passed. These observations do not establish a regression
 relative to an earlier build: no controlled pre-fix comparison was performed.
@@ -75,3 +75,58 @@ Cleanup verified: both test browser tabs closed; CLI, backend, ingress and task
 tunnels stopped; all five isolated containers stopped and their volumes retained.
 The dedicated Lima instance reported Stopped, and no application/SQL test ports
 remained listening. Neither app was uninstalled and neither theme was published.
+
+## Follow-up: duplicate mount reads reproduced and fixed
+
+Hiro approved tracing and fixing the proven cause with regression tests and the
+same bounded live retest. Temporary local instrumentation recorded operation IDs,
+coordination actions, allowlisted outcomes and elapsed times only. It was removed
+before the final diff; no logging or runtime authentication contract is changed.
+
+The real explicit Reload pair succeeded: one operation received four confirmed
+`lease_busy` rejections, then acquired after its peer released. In contrast, the
+original simultaneous Program → Rewards navigation reproduced excess operations:
+two online operations acquired and released, while two others exhausted attempts.
+One page showed its catalog and the other showed the uncertain-result error.
+
+The app uses development React StrictMode. The reward catalog effect dispatched
+its read immediately; StrictMode's setup/cleanup/setup cycle started a second
+read even though the first result had been discarded. Ignoring a response does
+not prevent its online authentication from consuming the shared shop lease.
+The regression test demonstrated exactly two dispatches against the old code.
+
+The fix defers only the effect's initial read by one microtask and checks its
+closure-local lifetime before dispatch. Discarded effects never start a request;
+explicit Reload still reads afresh. Already-dispatched stale results remain
+ignored. No result cache, lock substitute, mutation retry, lease extension,
+authentication bypass or changed acquisition budget is introduced.
+
+### Retest and verification
+
+- On yamaxdev, repeating simultaneous Program → Rewards navigation with the fix
+  loaded the existing fixed reward in both tabs. After closing the second tab,
+  an explicit isolated Reload also succeeded.
+- Diagnostics showed both acquired operations released; independent SQL then
+  showed coordination revision 11, epoch 186 and `leaseExpiresAt = NULL`.
+- Program remained disabled; reward inactive; ledger count 16 and sum/cache -300;
+  pending zero; lifetime earned 7,800. Webhook totals remained 58 processed and
+  nine failed. No financial mutation or historical repair occurred.
+- 252 focused tests across seven files passed. Coverage adds StrictMode, cancelled
+  pre-dispatch visits and stale read responses. The online-auth fixture now models
+  one exclusive owner, checks release token/epoch, and tests both recovery before
+  contention exhaustion and a fresh operation after exhaustion and release.
+- Independent adversarial review found no blockers. Both browser tabs, test
+  tunnels, CLI/framework processes, backend, ingress, containers and dedicated VM
+  were stopped; volumes and historical evidence retained.
+- Web and Shopify typechecks/builds, focused ESLint, Prisma validation, Prettier
+  and diff whitespace checks passed. The web build used the isolated loyalty-only
+  build environment without live credentials. Generated build/config artifacts
+  are excluded from the change.
+
+This closes the reproduced reward-catalog duplicate-mount issue and this bounded
+two-tab retest, not every historical intermittent merchant failure. In particular,
+the initial checkpoint's persistent Reload failure/expired-owner snapshot has not
+been independently attributed to a lease leak. Other merchant surfaces, cold-start
+load, higher concurrency, financial duplicate recovery and full loyalty acceptance
+remain separate gates. The development StrictMode finding does not assert that
+production React performs duplicate mount effects.

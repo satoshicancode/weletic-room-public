@@ -61,6 +61,10 @@ function gateway(persist = false) {
     merchantStatus: 200,
     stalledMerchant: false,
     releases: 0,
+    epoch: 0,
+    owner: null as string | null,
+    acquired: 0,
+    busy: 0,
     merchantWrites: [] as Array<Record<string, unknown>>,
   };
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
@@ -75,7 +79,7 @@ function gateway(persist = false) {
         return Response.json({
           properties: null,
           observed: {
-            epoch: "0",
+            epoch: String(state.epoch),
             revision: "0",
             sessionDigest: "a".repeat(64),
             credentialTokenHash: "b".repeat(64),
@@ -134,16 +138,33 @@ function gateway(persist = false) {
       );
     }
     if (url.pathname.endsWith("coordination")) {
-      if (data.action === "acquire")
+      if (data.action === "acquire") {
+        if (state.owner || data.observed.epoch !== String(state.epoch)) {
+          state.busy++;
+          return Response.json({ error: "lease_busy" }, { status: 409 });
+        }
+        state.owner = data.token;
+        state.epoch++;
+        state.acquired++;
         return Response.json({
-          lease: { token: data.token, epoch: "1", revision: "0" },
+          lease: {
+            token: data.token,
+            epoch: String(state.epoch),
+            revision: "0",
+          },
         });
+      }
       if (data.action === "release") {
+        expect(data.lease.token).toBe(state.owner);
+        expect(data.lease.epoch).toBe(String(state.epoch));
+        state.owner = null;
         state.releases++;
         return Response.json({ released: true });
       }
       const stale =
         state.rejectRenew ||
+        data.lease.token !== state.owner ||
+        data.lease.epoch !== String(state.epoch) ||
         (data.observed &&
           data.observed.installationGeneration !== state.generation);
       return Response.json(
@@ -215,6 +236,63 @@ describe("online session original-installation client", () => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
+
+  it.each(["release-before-exhaustion", "exhaust-then-recover"])(
+    "pairs exclusive online ownership and later recovery: %s",
+    async (mode) => {
+      const fixture = gateway(true);
+      vi.stubGlobal("fetch", fixture.fetcher);
+      const storage = new CoordinatedWeleticSessionStorage();
+      let unblock!: () => void;
+      const held = new Promise<void>((resolve) => {
+        unblock = resolve;
+      });
+      let entered!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let providers = 0;
+      const visit = (hold = false) =>
+        storage.runOperation(async () => {
+          await exchange(storage, tokenResponse(), () => {
+            providers++;
+          });
+          const online = session();
+          await storage.storeSession(online);
+          await storage.mintMerchantActor(online);
+          if (hold) {
+            entered();
+            await held;
+          }
+          return "read";
+        });
+      const first = visit(true);
+      await ready;
+      const second = visit().then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+      try {
+        await vi.waitFor(() => expect(fixture.state.busy).toBeGreaterThan(0));
+        expect(providers).toBe(1);
+        if (mode === "exhaust-then-recover") {
+          expect(await second).toMatchObject({
+            error: { status: 409, coordinationCode: "lease_busy" },
+          });
+          expect(fixture.state.acquired).toBe(1);
+        }
+      } finally {
+        unblock();
+      }
+      expect(await first).toBe("read");
+      if (mode === "release-before-exhaustion")
+        expect(await second).toEqual({ value: "read" });
+      expect(await visit()).toBe("read");
+      expect(fixture.state.owner).toBeNull();
+      expect(fixture.state.releases).toBe(fixture.state.acquired);
+      expect(providers).toBe(fixture.state.acquired);
+    },
+  );
 
   it.each([
     "valid",
