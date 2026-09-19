@@ -14,6 +14,11 @@ import {
   reviewSettingsSchema,
   reviewSubmissionSchema,
 } from "./contracts";
+import {
+  REVIEW_FLOW_HANDLES,
+  isReviewPublicationTransition,
+} from "./flow-contract";
+import { enqueueReviewFlowEvent } from "./flow-producer";
 import { reserveProductReviewIncentiveInTransaction } from "./incentive-claims";
 import { reviewParticipationContentDigest } from "./incentive-evidence";
 import { fulfillReviewPointsClaimInTransaction } from "./incentive-points";
@@ -382,7 +387,26 @@ export async function submitNativeReview(storeId: string, input: unknown) {
         generation,
       });
     }
+    const reviewEvent = {
+      reviewId: review.id,
+      version: review.version,
+      occurredAt: now.toISOString(),
+      rating: review.rating,
+      verifiedPurchase: review.verifiedPurchase,
+    };
+    await enqueueReviewFlowEvent({
+      tx,
+      storeId,
+      generation,
+      event: { ...reviewEvent, handle: REVIEW_FLOW_HANDLES.SUBMITTED },
+    });
     if (settings.autoPublish) {
+      await enqueueReviewFlowEvent({
+        tx,
+        storeId,
+        generation,
+        event: { ...reviewEvent, handle: REVIEW_FLOW_HANDLES.PUBLISHED },
+      });
       await applyPublishedReviewReward(tx, storeId, review.id, generation);
       await enqueueReviewSummary(
         tx,
@@ -540,6 +564,20 @@ export async function moderateNativeReviewInTransaction({
     });
   }
   if (status === "published" || review.status === "published") {
+    if (isReviewPublicationTransition(review.status, status))
+      await enqueueReviewFlowEvent({
+        tx,
+        storeId,
+        generation,
+        event: {
+          handle: REVIEW_FLOW_HANDLES.PUBLISHED,
+          reviewId: review.id,
+          version: review.version + 1,
+          occurredAt: new Date().toISOString(),
+          rating: review.rating,
+          verifiedPurchase: review.verifiedPurchase,
+        },
+      });
     await enqueueReviewSummary(
       tx,
       storeId,

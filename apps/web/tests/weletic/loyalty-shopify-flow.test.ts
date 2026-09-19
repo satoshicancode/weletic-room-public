@@ -18,6 +18,81 @@ const asFetch = (implementation: ReturnType<typeof vi.fn>) =>
   implementation as unknown as typeof fetch;
 
 describe("native Shopify Flow contracts", () => {
+  it.each(["weletic-review-submitted", "weletic-review-published"] as const)(
+    "normalizes %s without content, email, membership or invitation material",
+    (handle) => {
+      const event = {
+        handle,
+        reviewId: `wreview_${"a".repeat(20)}`,
+        version: 1,
+        installationGeneration: "g1",
+        occurredAt: "2026-09-20T09:00:00+09:00",
+        rating: 1,
+        verifiedPurchase: true,
+      };
+      expect(FlowTriggerPayloadSchema.parse(event)).toEqual(event);
+      const manifest = readFileSync(
+        new URL(
+          `../../../../packages/shopify-app/extensions/${handle}/shopify.extension.toml`,
+          import.meta.url,
+        ),
+        "utf8",
+      );
+      expect(manifest).toContain(`handle = "${handle}"`);
+      expect(manifest).not.toMatch(/^\s*uid\s*=/m);
+      expect(manifest.match(/type = "customer_reference"/g)).toHaveLength(1);
+      const fields = Array.from(
+        manifest.matchAll(/^\s*key = "([^"]+)"$/gm),
+        ([, key]) => key,
+      );
+      const prepared = validateAndNormalizeFlowPayload(handle, {
+        event,
+        customerGid: "42",
+      });
+      expect(fields.sort()).toEqual(
+        Object.keys(prepared)
+          .filter((key) => key !== "customer_id")
+          .sort(),
+      );
+      expect(manifest.match(/type = "single_line_text_field"/g)).toHaveLength(
+        fields.length,
+      );
+      expect(
+        validateAndNormalizeFlowPayload(handle, {
+          event,
+          customerGid: "gid://shopify/Customer/42",
+        }),
+      ).toEqual({
+        customer_id: 42,
+        "Event id": `${event.reviewId}:${handle}:1`,
+        "Review id": event.reviewId,
+        "Review version": "1",
+        "Review type": "product",
+        Rating: "1",
+        "Verified purchase": "true",
+        "Occurred at": "2026-09-20T00:00:00.000Z",
+      });
+      expect(() =>
+        validateAndNormalizeFlowPayload(handle, {
+          event,
+          customerGid: "gid://shopify/Customer/42",
+          email: "private@example.test",
+        }),
+      ).toThrow();
+      expect(() =>
+        validateAndNormalizeFlowPayload(handle, {
+          event: {
+            ...event,
+            handle:
+              handle === "weletic-review-submitted"
+                ? "weletic-review-published"
+                : "weletic-review-submitted",
+          },
+          customerGid: "42",
+        }),
+      ).toThrow("handle mismatch");
+    },
+  );
   it("matches the referral extension fields to the actual GraphQL payload", () => {
     // Shopify CLI validates TOML syntax/schema; this assertion prevents drift
     // between the declared custom field names and the runtime payload keys.
@@ -55,13 +130,15 @@ describe("native Shopify Flow contracts", () => {
     expect(declaredKeys).toHaveLength(4);
   });
 
-  it("preserves existing handles and adds referral completion", () => {
+  it("preserves existing handles and adds review lifecycle events", () => {
     expect(Object.values(SHOPIFY_FLOW_TRIGGER_HANDLES)).toEqual([
       "weletic-points-earned",
       "weletic-vip-tier-changed",
       "weletic-reward-redeemed",
       "weletic-points-expiring-soon",
       "weletic-referral-completed",
+      "weletic-review-submitted",
+      "weletic-review-published",
     ]);
   });
 

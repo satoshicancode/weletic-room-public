@@ -38,6 +38,10 @@ const manifestHashes = {
     "9e17a24bf97a4c6e536968498d61458a49224f210034b55e2e5193864e95b707",
   "weletic-referral-completed":
     "cf97b614074a674886237c2a860e7cd397e6ea2e2aa402c33f36a463e15e82fb",
+  "weletic-review-submitted":
+    "eed7cccf51afcdf3a17cff0e781235d735f69cf17316bfe1cfadace7f9b0dcec",
+  "weletic-review-published":
+    "fbe950454ba391f78912cc68625913e46a32f268c554d2276dd6d5173050b614",
   "weletic-flow-lifecycle":
     "8aff6a7924f683cbcec06b44963e2509a92b2f159353e42fda959ea7dff018dc",
 };
@@ -82,6 +86,8 @@ export const publicExtensionFiles = Object.freeze({
       "weletic-reward-redeemed",
       "weletic-points-expiring-soon",
       "weletic-referral-completed",
+      "weletic-review-submitted",
+      "weletic-review-published",
       "weletic-flow-lifecycle",
     ].map((name) => [name, [manifest]]),
   ),
@@ -102,7 +108,13 @@ export function transformPublicExtension(path, source) {
     )
       throw new Error("Unreviewed extension manifest drift");
     const matches = text.match(/^uid = "[^"\r\n]+"\r?\n/gm) || [];
-    const expected = path.startsWith("weletic-referral-completed/") ? 0 : 1;
+    const expected = [
+      "weletic-referral-completed",
+      "weletic-review-submitted",
+      "weletic-review-published",
+    ].includes(path.split("/")[0])
+      ? 0
+      : 1;
     if (matches.length !== expected)
       throw new Error("Unexpected source extension identity");
     text = text.replace(/^uid = "[^"\r\n]+"\r?\n/gm, "");

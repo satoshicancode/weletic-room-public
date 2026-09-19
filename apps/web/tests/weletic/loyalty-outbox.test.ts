@@ -27,6 +27,7 @@ import { sendPointsEarnedNotification } from "@/lib/weletic/loyalty/points-earne
 import { createLoyaltyDiscountProvisioningIdentity } from "@/lib/weletic/loyalty/redemption-discount-identity";
 import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
 import { ShopperEmailPausedError } from "@/lib/weletic/merchant-settings/communications";
+import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
 import {
   Prisma,
   WeleticLoyaltyOutboxJobStatus,
@@ -698,6 +699,7 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
           },
           scheduledFor: { lte: now },
           OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
+          AND: reviewFlowCandidateWhere(),
           NOT: {
             store: { merchantSettings: { is: { shopperEmailPaused: true } } },
             OR: [
