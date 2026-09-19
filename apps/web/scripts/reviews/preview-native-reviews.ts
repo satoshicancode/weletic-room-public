@@ -19,7 +19,7 @@ const server = createServer(async (request, response) => {
       response.end(JSON.stringify(data));
     };
     if (url.pathname.endsWith("/write")) {
-      const page = reviewFormResponse();
+      const page = reviewFormResponse(url.searchParams.get("locale"));
       response.writeHead(page.status, Object.fromEntries(page.headers));
       response.end(await page.text());
       return;

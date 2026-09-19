@@ -14,7 +14,9 @@ export async function reviewProxyResponse(
   try {
     const action = subpath.slice("reviews/".length);
     if (request.method === "GET" && action === "write")
-      return reviewFormResponse();
+      return reviewFormResponse(
+        new URL(request.url).searchParams.get("locale"),
+      );
     const allowed =
       request.method === "GET"
         ? ["list", "photo"]

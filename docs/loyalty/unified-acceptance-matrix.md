@@ -1,9 +1,15 @@
-# Weletic company-store loyalty — acceptance matrix
+# Weletic company-store loyalty and reviews — acceptance matrix
 
-Status reconciled 2026-09-12 (Asia/Tokyo). This is the execution checklist for Hiro's
-approved **Loyalty Completion Plan for Weletic Stores**. It supersedes the older
-mixed loyalty/reviews checklist for this stream; it does not activate excluded
-review features or waive any external execution gate.
+September 20 scope update: [ADR 0040](../adr/0040-company-store-loyalty-and-reviews-completion.md)
+resumes full staged reviews with independent module releases. The
+[combined completion checklist](company-store-completion.md) is the current
+task/status authority and maps every A–G requirement below. Reviews are no
+longer excluded; older dated scope statements remain historical. Bounded live
+evidence does not close a whole module or authorize activation.
+
+Historical September 12 checkpoint (Asia/Tokyo): this was the loyalty-only
+execution checklist. The September 20 combined checklist now supersedes that
+scope restriction, without activating features or waiving external gates.
 
 **Overall acceptance: incomplete. No live gate below is certified complete.**
 Code, local tests, CI, and competitor observations are evidence at their stated
@@ -34,8 +40,9 @@ September 16 staged VIP evidence:
 The per-tier default/zero-day contract is verified locally and on disposable
 MySQL; named live VIP and communication delivery gates remain open.
 
-For current merged-code status and every L00–L17 workstream disposition, use the
-[September 12 launch reconciliation](launch-status-2026-09-12.md). In particular,
+For the historical L00–L17 dispositions, use the
+[September 12 launch reconciliation](launch-status-2026-09-12.md); current
+task status is in the September 20 combined checklist. In particular,
 PRs #13, #15 and #18 are merged; the September 9–10 draft statements below are
 historical checkpoints, not current merge blockers. Appearance/nudges and several
 communications producers have also merged. No live checkbox is changed by that
@@ -54,9 +61,11 @@ code integration, and all original requirements below remain in scope.
 - Build company-store loyalty, not SaaS: no billing tiers, marketing funnel or
   self-service merchant onboarding. The approved public distribution target is
   a free, limited-visibility listing, installable through its direct URL.
-- Reviews, review incentives, media, Q&A, POS, external ESP/Klaviyo integrations,
-  AI, automatic translation and external merchant support are excluded from
-  this focused stream. Preserve compatible existing review contracts.
+- Reviews, participation incentives, photos/video, Q&A, manual EN/JA/VI
+  translations and CSV/Judge.me imports are now in scope under ADR 0040.
+  Preserve historical contracts without activating legacy publication incentives.
+  POS, external ESP/Klaviyo, AI/automatic translation, external syndication and
+  external merchant commercialization remain excluded.
 - This matrix replaces private-PR execution references with public evidence.
   The prior matrix, including its private commit mapping, was preserved outside
   the public repository. This is not removal from Git history, nor a repository-
@@ -559,8 +568,10 @@ for import outbox enum values and nullable no-tier history, applied only to loca
 weletic_loyalty_dev. This does not authorize shared/production schema changes or
 store-approval schema rollout, and does not prove working import dispatch/rollback.
 
-The points-adjustment Flow action awaits Hiro's choice between an audited,
-revocable bounded automation authorization and approval of every adjustment.
-Do not interpret continued goal execution as a choice. Public HTTPS endpoints,
+ADR 0040 and the September 20 approved plan select an owner-enabled scoped
+automation grant for the points-adjustment Flow action, authenticated Shopify
+requests and unique action-run identity. Implement and prove revocation, bounded
+authority and replay handling; do not impersonate a live staff session.
+Public HTTPS endpoints,
 extension ownership, timezone and stored-value activation decisions must likewise
 be resolved from explicit evidence/approval, not inferred from this checklist.

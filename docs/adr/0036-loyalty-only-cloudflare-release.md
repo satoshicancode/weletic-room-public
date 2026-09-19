@@ -1,7 +1,7 @@
 # ADR 0036: Loyalty-only Cloudflare release
 
 - Date: 2026-09-17
-- Status: Accepted
+- Status: Superseded in product scope by ADR 0040; default-deny release safeguards retained
 - Stakeholders: Hiro (PO), Codex (impl)
 
 ## Context
