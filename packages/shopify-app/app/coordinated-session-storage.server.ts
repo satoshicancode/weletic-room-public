@@ -33,6 +33,8 @@ import {
 const COORDINATION_PATH = "/api/internal/shopify/sessions/coordination";
 const MUTATION_PATH = "/api/internal/shopify/sessions/coordinated";
 const REQUEST_TIMEOUT_MS = 8_000;
+const ACQUISITION_BUDGET_MS = REQUEST_TIMEOUT_MS;
+const CONTENTION_DELAYS_MS = [100, 200, 400, 800];
 const HEARTBEAT_MS = 15_000;
 const LOCAL_OWNERSHIP_MS = 45_000;
 const TOKEN_REQUEST_TIMEOUT_MS = 15_000;
@@ -236,18 +238,18 @@ export class CoordinatedWeleticSessionStorage extends WeleticSessionStorage {
     });
   }
 
-  private coordinate<T>(body: unknown) {
+  private coordinate<T>(body: unknown, timeoutMs = REQUEST_TIMEOUT_MS) {
     return weleticApiJson<T>(COORDINATION_PATH, {
       method: "POST",
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   }
 
-  private snapshot(shop: string) {
+  private snapshot(shop: string, timeoutMs = REQUEST_TIMEOUT_MS) {
     return weleticApiJson<ShopifySessionSnapshot>(
       `${COORDINATION_PATH}?shop=${encodeURIComponent(shop)}`,
-      { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
+      { signal: AbortSignal.timeout(timeoutMs) },
     );
   }
 
@@ -397,17 +399,56 @@ export class CoordinatedWeleticSessionStorage extends WeleticSessionStorage {
   }
 
   private async acquire(shop: string): Promise<Entry> {
-    const snapshot = await this.snapshot(shop);
+    const deadline = performance.now() + ACQUISITION_BUDGET_MS;
+    const remaining = () => {
+      const ms = Math.floor(deadline - performance.now());
+      if (ms <= 0)
+        throw new WeleticGatewayError(
+          "Session acquisition deadline exceeded",
+          503,
+        );
+      return ms;
+    };
+    let snapshot = await this.snapshot(shop, remaining());
+    const original = copyObservation(snapshot.observed);
     const token = randomBytes(32).toString("hex");
-    const started = performance.now();
-    const { lease } = await this.coordinate<{
-      lease: ShopifySessionLeaseProof;
-    }>({
-      action: "acquire",
-      shop,
-      token,
-      observed: snapshot.observed,
-    });
+    let started = performance.now();
+    let lease: ShopifySessionLeaseProof;
+    for (let attempt = 0; ; attempt++) {
+      started = performance.now();
+      try {
+        ({ lease } = await this.coordinate<{ lease: ShopifySessionLeaseProof }>(
+          { action: "acquire", shop, token, observed: snapshot.observed },
+          remaining(),
+        ));
+        // A delayed event loop/transport must not turn an expired acquisition
+        // budget into permission for provider I/O. An unreturned lease expires.
+        remaining();
+        break;
+      } catch (error) {
+        // Only an explicit rejected acquisition is safe to retry. A timeout may
+        // already own a lease; never retry it, exchanges, renewals or writes.
+        const delay = CONTENTION_DELAYS_MS[attempt];
+        if (
+          !(error instanceof WeleticGatewayError) ||
+          error.status !== 409 ||
+          error.coordinationCode !== "lease_busy" ||
+          delay === undefined ||
+          remaining() <= delay
+        )
+          throw error;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        snapshot = await this.snapshot(shop, remaining());
+        // Epoch changes are expected after another owner releases. Credential,
+        // revision and generation changes require a fresh caller operation.
+        if (!sameObservation(original, snapshot.observed))
+          throw new WeleticGatewayError(
+            "Shopify session changed while waiting",
+            409,
+            "stale_session",
+          );
+      }
+    }
     if (
       !lease ||
       lease.token !== token ||
