@@ -159,3 +159,15 @@ This covers delayed **product-review points** recovery locally, not all of R05.
 Store/product claim competition, complete coupon lifecycles, actual delivery,
 authenticated yamaxdev journeys and production rollout remain open. No live or
 whole-module completion gate is closed by this slice.
+
+## PR #88 — full CI correction
+
+The first full public CI run `35467416036` failed one migration-contract test;
+8,307 tests passed and six were skipped. Its expected append-only enum suffix
+omitted REVIEW_POINTS_RECOVERY. Formatting/lint, web types and Shopify checks
+passed. The affected-path run also failed; neither run authorizes merging.
+
+The correction updates the explicit suffix and verifies the complete enum in
+the exact recovery SQL migration against Prisma. Historical migration assertions
+remain intact. This is an additional regression check, not a runtime or migration
+change. A fresh committed-revision CI run remains required before merge.
