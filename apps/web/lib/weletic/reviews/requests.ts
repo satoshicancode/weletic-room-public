@@ -3,7 +3,9 @@ import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance
 import { enqueueOutboxJobFromProgramTransaction } from "@/lib/weletic/loyalty/outbox";
 import { Prisma } from "@prisma/client";
 import { hashReviewToken, ReviewError } from "./contracts";
-import { reviewIncentivePolicyDigest } from "./incentive-policy";
+import { reviewPolicyAtOrderTime } from "./incentive-activation-history";
+import { reviewIncentiveDisclosure } from "./incentive-disclosure";
+import { readReviewIncentivePolicySnapshot } from "./incentive-policy";
 import {
   assertReviewPurchase,
   assertReviewPurchaseNotSuppressed,
@@ -88,20 +90,13 @@ export async function createFulfilledReviewRequests({
         );
       const incentivePolicyId = orderRequests.length
         ? orderRequests[0].incentivePolicyId
-        : settings.activeIncentivePolicyId ?? null;
-      if (incentivePolicyId) {
-        const policy = await tx.weleticReviewIncentivePolicy.findUnique({
-          where: { storeId_id: { storeId, id: incentivePolicyId } },
-        });
-        if (
-          !policy ||
-          policy.contentDigest !== reviewIncentivePolicyDigest(policy.snapshot)
-        )
-          throw new ReviewError(
-            "unavailable",
-            "Review incentive policy is unavailable",
+        : await reviewPolicyAtOrderTime(
+            tx,
+            storeId,
+            order.occurredAt,
+            settings.activeIncentivePolicyId ?? null,
           );
-      }
+      await readReviewIncentivePolicySnapshot(tx, storeId, incentivePolicyId);
       for (const [productId, lines] of groups) {
         const existing = await tx.weleticReviewRequest.findUnique({
           where: {
@@ -210,11 +205,17 @@ export async function getReviewRequestPreview(storeId: string, token: string) {
       token,
       generation,
     );
+    const policy = await readReviewIncentivePolicySnapshot(
+      tx,
+      storeId,
+      request.incentivePolicyId,
+    );
     return {
       productTitle: request.product.title,
       productHandle: request.product.handle,
       expiresAt: request.expiresAt,
       photoUploadsEnabled: settings.photoUploadsEnabled,
+      incentiveDisclosure: reviewIncentiveDisclosure(policy),
     };
   });
 }
@@ -277,6 +278,7 @@ async function cancelReviewRequestsInTransaction(
         cancellationReason: cancelled ? "order_cancelled" : "purchase_refunded",
         tokenHash: null,
         encryptedDeliveryToken: null,
+        encryptedDeliverySnapshot: null,
         deliveryToken: null,
         deliveryLeaseExpiresAt: null,
       },

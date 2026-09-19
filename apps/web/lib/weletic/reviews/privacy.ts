@@ -17,6 +17,8 @@ export async function redactNativeReviewsBatch(
     storeId,
     ...(shopperId ? { shopperId } : {}),
     OR: [
+      { encryptedDeliverySnapshot: { not: null } },
+      { encryptedDeliveryToken: { not: null } },
       { status: { not: "cancelled" } },
       {
         review: {
@@ -119,6 +121,7 @@ export async function redactNativeReviewsBatch(
           cancellationReason: "privacy_redaction",
           tokenHash: null,
           encryptedDeliveryToken: null,
+          encryptedDeliverySnapshot: null,
           deliveryToken: null,
           deliveryLeaseExpiresAt: null,
           lastError: null,
@@ -215,6 +218,22 @@ export async function purgeNativeReviewsBatch(storeId: string) {
     if (audits.length) {
       await tx.weleticReviewModerationAudit.deleteMany({
         where: { storeId, id: { in: audits.map(({ id }) => id) } },
+      });
+      return { hasMore: true };
+    }
+    // Shop erasure removes operational activation history, including staff
+    // identity, before settings/policies. Financial claims and their immutable
+    // policies retain the separate safeguards below. Customer erasure does not
+    // remove this store-wide history.
+    const activations = await tx.weleticReviewIncentiveActivation.findMany({
+      where: { storeId },
+      orderBy: { id: "asc" },
+      take: PAGE_SIZE,
+      select: { id: true },
+    });
+    if (activations.length) {
+      await tx.weleticReviewIncentiveActivation.deleteMany({
+        where: { storeId, id: { in: activations.map(({ id }) => id) } },
       });
       return { hasMore: true };
     }

@@ -5,7 +5,9 @@ import {
   generateReviewToken,
   hashReviewToken,
 } from "@/lib/weletic/reviews/contracts";
+import { clearExpiredReviewDeliveryEvidence } from "@/lib/weletic/reviews/delivery-retention";
 import { deliverReviewRequest } from "@/lib/weletic/reviews/email";
+import { createReviewIncentivePolicyRevision } from "@/lib/weletic/reviews/incentive-policy";
 import { uploadReviewPhoto } from "@/lib/weletic/reviews/media";
 import { redactNativeReviewsBatch } from "@/lib/weletic/reviews/privacy";
 import { getPublicProductReviews } from "@/lib/weletic/reviews/public";
@@ -20,6 +22,7 @@ import {
   submitNativeReview,
 } from "@/lib/weletic/reviews/service";
 import { withReviewMutation } from "@/lib/weletic/reviews/transaction";
+import { upsertShopifyCustomerPrivacyTombstones } from "@/lib/weletic/shopify/privacy-identity";
 import { Prisma } from "@prisma/client";
 import sharp from "sharp";
 import {
@@ -41,17 +44,33 @@ const mocks = vi.hoisted(() => ({
   beforeMediaLock: null as null | (() => Promise<void>),
 }));
 vi.mock("../../../../packages/email/src/resend", () => ({
+  resendCredentialIdentity: "e".repeat(64),
+  isResendCredentialCurrent: () => true,
   get resend() {
     return mocks.resend;
   },
 }));
-vi.mock("../../../../packages/email/src/send-via-resend", () => ({
-  sendBatchEmailViaResend: mocks.viaResend,
-  sendEmailViaResend: vi.fn(),
-}));
-vi.mock("../../../../packages/email/src/send-via-nodemailer", () => ({
-  sendViaNodeMailer: mocks.viaSmtp,
-}));
+vi.mock(
+  "../../../../packages/email/src/send-via-resend",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../../../../packages/email/src/send-via-resend")
+    >()),
+    sendPreparedResendEmail: (request: unknown, key: string) =>
+      mocks.viaResend([request], { idempotencyKey: key }),
+    sendBatchEmailViaResend: mocks.viaResend,
+    sendEmailViaResend: vi.fn(),
+  }),
+);
+vi.mock(
+  "../../../../packages/email/src/send-via-nodemailer",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../../../../packages/email/src/send-via-nodemailer")
+    >()),
+    sendViaNodeMailer: mocks.viaSmtp,
+  }),
+);
 vi.mock("@/lib/storage", () => ({
   storage: { upload: mocks.upload, delete: mocks.delete },
 }));
@@ -333,6 +352,40 @@ describe("native reviews real MySQL production-service boundaries", () => {
       }),
     ).resolves.toEqual([]);
   });
+  it("rejects an unresolved invitation promise before preview or email reservation", async () => {
+    const request = await invitation(await purchase());
+    // relationMode=prisma permits a dangling scalar reference in updateMany;
+    // simulate corruption rather than constructing a valid alternative promise.
+    await prisma.weleticReviewRequest.updateMany({
+      where: { id: request.id, storeId },
+      data: { incentivePolicyId: `missing-${run}`, status: "queued" },
+    });
+    await expect(
+      deliverReviewRequest(storeId, request.id, "g1"),
+    ).rejects.toMatchObject({ code: "unavailable" });
+    expect(mocks.viaResend).not.toHaveBeenCalled();
+    expect(mocks.viaSmtp).not.toHaveBeenCalled();
+    const retained = await prisma.weleticReviewRequest.findUniqueOrThrow({
+      where: { id: request.id },
+    });
+    expect(retained.deliveryAttempts).toBe(0);
+    expect(retained.deliveryToken).toBeNull();
+    expect(retained.status).toBe("queued");
+    await prisma.weleticReviewRequest.updateMany({
+      where: { id: request.id, storeId },
+      data: { status: "sent" },
+    });
+    await expect(
+      getReviewRequestPreview(storeId, request.token),
+    ).rejects.toMatchObject({ code: "unavailable" });
+    await prisma.weleticReviewRequest.updateMany({
+      where: { id: request.id, storeId },
+      data: { incentivePolicyId: null },
+    });
+    await expect(
+      getReviewRequestPreview(storeId, request.token),
+    ).resolves.toMatchObject({ productTitle: "Review fixture product" });
+  });
   it("consumes one bearer token exactly once across concurrent Prisma transactions", async () => {
     const request = await invitation(await purchase());
     const results = await Promise.allSettled(
@@ -393,14 +446,62 @@ describe("native reviews real MySQL production-service boundaries", () => {
           : mocks.viaSmtp.mock.calls[0][0];
       expect(delivered).toMatchObject({
         from: "Reviews <reviews@example.test>",
-        replyTo: "noreply",
       });
+      expect(delivered).not.toHaveProperty("replyTo");
       const sent = await prisma.weleticReviewRequest.findUniqueOrThrow({
         where: { id },
       });
       expect(sent.status).toBe("sent");
       expect(sent.deliveryAttempts).toBe(1);
       expect(sent.encryptedDeliveryToken).toBeNull();
+      expect(sent.encryptedDeliverySnapshot).toBeNull();
+    },
+  );
+  it.each([
+    ["ja-JP", "ja", "レビューを書く", "特典はありません"],
+    ["vi-VN", "vi", "Viết đánh giá", "không có thưởng"],
+  ])(
+    "delivers the saved none promise in %s without a generic reward offer",
+    async (locale, language, action, noReward) => {
+      const policy = await createReviewIncentivePolicyRevision(storeId, {
+        kind: "none",
+      });
+      const order = await purchase();
+      const [id] = await createFulfilledReviewRequests({
+        storeId,
+        orderExternalId: order.externalId,
+        fulfilledAt: new Date(Date.now() - 1000),
+        expectedInstallationGeneration: "g1",
+      });
+      await prisma.weleticReviewRequest.update({
+        where: { id },
+        data: { incentivePolicyId: policy.id },
+      });
+      const shopper = await prisma.weleticShopper.findUniqueOrThrow({
+        where: { id: shopperId },
+      });
+      await prisma.weleticShopper.update({
+        where: { id: shopperId },
+        data: { locale },
+      });
+      try {
+        await deliverReviewRequest(storeId, id, "g1");
+        expect(mocks.viaSmtp).toHaveBeenCalledTimes(1);
+        const message = mocks.viaSmtp.mock.calls[0][0];
+        const html = message.html;
+        expect(message.text).toContain(noReward);
+        expect(message.text).toContain(action);
+        expect(message.text).toContain(`?locale=${language}#token=`);
+        expect(html).toContain(noReward);
+        expect(html).toContain(action);
+        expect(message.text).not.toContain("Any available loyalty reward");
+        expect(html).not.toContain("Any available loyalty reward");
+      } finally {
+        await prisma.weleticShopper.update({
+          where: { id: shopperId },
+          data: { locale: shopper.locale },
+        });
+      }
     },
   );
   it("clears stale worker authority when an invitation expires", async () => {
@@ -455,6 +556,121 @@ describe("native reviews real MySQL production-service boundaries", () => {
       (await prisma.weleticReviewRequest.findUniqueOrThrow({ where: { id } }))
         .status,
     ).toBe("sent");
+  });
+  it("persists before network I/O and retries exactly the original Resend body", async () => {
+    mocks.resend = {};
+    const order = await purchase();
+    const [id] = await createFulfilledReviewRequests({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(Date.now() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    mocks.viaResend.mockImplementationOnce(async () => {
+      const retained = await prisma.weleticReviewRequest.findUniqueOrThrow({
+        where: { id },
+      });
+      expect(retained.status).toBe("sending");
+      expect(retained.encryptedDeliverySnapshot).toBeTruthy();
+      expect(retained.encryptedDeliverySnapshot).not.toContain("@example.test");
+      throw new Error("ambiguous provider response");
+    });
+    await expect(deliverReviewRequest(storeId, id, "g1")).rejects.toThrow(
+      "transport unavailable",
+    );
+    const original = mocks.viaResend.mock.calls[0];
+    const shopper = await prisma.weleticShopper.findUniqueOrThrow({
+      where: { id: shopperId },
+    });
+    await prisma.weleticShopper.update({
+      where: { id: shopperId },
+      data: { locale: "ja-JP" },
+    });
+    try {
+      await deliverReviewRequest(storeId, id, "g1");
+      expect(mocks.viaResend).toHaveBeenCalledTimes(2);
+      expect(mocks.viaResend.mock.calls[1]).toEqual(original);
+      expect(
+        await prisma.weleticReviewRequest.findUniqueOrThrow({ where: { id } }),
+      ).toMatchObject({
+        status: "sent",
+        deliveryAttempts: 2,
+        encryptedDeliverySnapshot: null,
+        encryptedDeliveryToken: null,
+      });
+    } finally {
+      await prisma.weleticShopper.update({
+        where: { id: shopperId },
+        data: { locale: shopper.locale },
+      });
+    }
+  });
+  it("does not resend an ambiguous SMTP attempt or an old attempt without retained evidence", async () => {
+    const order = await purchase();
+    const [id] = await createFulfilledReviewRequests({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(Date.now() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    mocks.viaSmtp.mockRejectedValueOnce(new Error("ambiguous SMTP"));
+    await expect(deliverReviewRequest(storeId, id, "g1")).rejects.toThrow(
+      "transport unavailable",
+    );
+    await expect(deliverReviewRequest(storeId, id, "g1")).rejects.toThrow(
+      "evidence is unavailable",
+    );
+    expect(mocks.viaSmtp).toHaveBeenCalledTimes(1);
+    await prisma.weleticReviewRequest.update({
+      where: { id },
+      data: { encryptedDeliverySnapshot: null },
+    });
+    await expect(deliverReviewRequest(storeId, id, "g1")).rejects.toThrow(
+      "reconciliation required",
+    );
+    expect(mocks.viaSmtp).toHaveBeenCalledTimes(1);
+  });
+  it("refuses changed recipients and clears retained bodies on cancellation", async () => {
+    mocks.resend = {};
+    const order = await purchase();
+    const [id] = await createFulfilledReviewRequests({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(Date.now() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    mocks.viaResend.mockRejectedValueOnce(new Error("ambiguous"));
+    await expect(deliverReviewRequest(storeId, id, "g1")).rejects.toThrow();
+    const shopper = await prisma.weleticShopper.findUniqueOrThrow({
+      where: { id: shopperId },
+    });
+    await prisma.weleticShopper.update({
+      where: { id: shopperId },
+      data: { email: "changed@example.test" },
+    });
+    try {
+      await expect(deliverReviewRequest(storeId, id, "g1")).rejects.toThrow(
+        "evidence is unavailable",
+      );
+      expect(mocks.viaResend).toHaveBeenCalledTimes(1);
+      await prisma.weleticReviewRequest.update({
+        where: { id },
+        data: { expiresAt: new Date(0) },
+      });
+      await deliverReviewRequest(storeId, id, "g1");
+      expect(
+        await prisma.weleticReviewRequest.findUniqueOrThrow({ where: { id } }),
+      ).toMatchObject({
+        status: "expired",
+        encryptedDeliverySnapshot: null,
+        encryptedDeliveryToken: null,
+      });
+    } finally {
+      await prisma.weleticShopper.update({
+        where: { id: shopperId },
+        data: { email: shopper.email },
+      });
+    }
   });
   it("does not let an old email worker finalize another token", async () => {
     const order = await purchase();
@@ -798,7 +1014,299 @@ describe("native reviews real MySQL production-service boundaries", () => {
     ).rejects.toThrow("revoked");
     expect(mocks.upload).not.toHaveBeenCalled();
   });
+  it.each([
+    ["customer", false],
+    ["customer", true],
+    ["email", false],
+    ["email", true],
+  ] as const)(
+    "suppresses unlinked %s tombstones before sending (retry=%s)",
+    async (identity, retry) => {
+      mocks.resend = {};
+      const order = await purchase();
+      const [id] = await createFulfilledReviewRequests({
+        storeId,
+        orderExternalId: order.externalId,
+        fulfilledAt: new Date(Date.now() - 1000),
+        expectedInstallationGeneration: "g1",
+      });
+      if (retry) {
+        mocks.viaResend.mockRejectedValueOnce(new Error("ambiguous"));
+        await expect(deliverReviewRequest(storeId, id, "g1")).rejects.toThrow();
+      }
+      const shopper = await prisma.weleticShopper.findUniqueOrThrow({
+        where: { id: shopperId },
+      });
+      const tombstones = await upsertShopifyCustomerPrivacyTombstones({
+        storeId,
+        ...(identity === "customer"
+          ? { shopifyCustomerId: shopper.shopifyCustomerId }
+          : { email: shopper.email }),
+      });
+      try {
+        expect(tombstones.length).toBeGreaterThan(0);
+        expect(
+          tombstones.every(
+            (row) => row.shopperId === null && row.accountId === null,
+          ),
+        ).toBe(true);
+        mocks.viaResend.mockClear();
+        await deliverReviewRequest(storeId, id, "g1");
+        expect(mocks.viaResend).not.toHaveBeenCalled();
+        expect(mocks.viaSmtp).not.toHaveBeenCalled();
+        expect(
+          await prisma.weleticReviewRequest.findUniqueOrThrow({
+            where: { id },
+          }),
+        ).toMatchObject({
+          status: "cancelled",
+          encryptedDeliverySnapshot: null,
+          encryptedDeliveryToken: null,
+          tokenHash: null,
+        });
+      } finally {
+        await prisma.weleticShopifyCustomerPrivacyTombstone.deleteMany({
+          where: { storeId, id: { in: tombstones.map((row) => row.id) } },
+        });
+      }
+    },
+  );
+  it("independently erases expired dead-letter evidence with bounded racing sweeps and no resend", async () => {
+    const ids: string[] = [];
+    for (let index = 0; index < 3; index++) {
+      const order = await purchase();
+      const [id] = await createFulfilledReviewRequests({
+        storeId,
+        orderExternalId: order.externalId,
+        fulfilledAt: new Date(Date.now() - 1000),
+        expectedInstallationGeneration: "g1",
+      });
+      mocks.viaSmtp.mockRejectedValueOnce(new Error("ambiguous"));
+      await expect(deliverReviewRequest(storeId, id, "g1")).rejects.toThrow();
+      ids.push(id);
+    }
+    const now = new Date();
+    await prisma.weleticReviewRequest.update({
+      where: { id: ids[0] },
+      data: {
+        expiresAt: new Date(now.getTime() - 1000),
+        installationGeneration: "retired-generation",
+      },
+    });
+    await prisma.weleticLoyaltyOutboxJob.updateMany({
+      where: { storeId, idempotencyKey: `review_request_email:${ids[0]}` },
+      data: { status: "dead_letter" },
+    });
+    await prisma.weleticReviewRequest.update({
+      where: { id: ids[1] },
+      data: { expiresAt: new Date(now.getTime() + 60000) },
+    });
+    await prisma.weleticReviewRequest.update({
+      where: { id: ids[2] },
+      data: {
+        expiresAt: new Date(now.getTime() - 500),
+        deliveryLeaseExpiresAt: new Date(now.getTime() + 10000),
+      },
+    });
+    const results = await Promise.all([
+      clearExpiredReviewDeliveryEvidence({ batchSize: 1, now }),
+      clearExpiredReviewDeliveryEvidence({ batchSize: 1, now }),
+    ]);
+    expect(results.reduce((sum, result) => sum + result.cleared, 0)).toBe(1);
+    expect(results.every((result) => result.scanned <= 1)).toBe(true);
+    const erased = await prisma.weleticReviewRequest.findUniqueOrThrow({
+      where: { id: ids[0] },
+    });
+    expect(erased).toMatchObject({
+      status: "expired",
+      encryptedDeliverySnapshot: null,
+      encryptedDeliveryToken: null,
+      tokenHash: null,
+      deliveryAttempts: 1,
+      lastError: "email_delivery_expired_unreconciled",
+    });
+    expect(
+      (
+        await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+          where: { storeId, idempotencyKey: `review_request_email:${ids[0]}` },
+        })
+      ).status,
+    ).toBe("dead_letter");
+    for (const id of ids.slice(1))
+      expect(
+        (await prisma.weleticReviewRequest.findUniqueOrThrow({ where: { id } }))
+          .encryptedDeliverySnapshot,
+      ).toBeTruthy();
+    expect(
+      await clearExpiredReviewDeliveryEvidence({
+        batchSize: 1,
+        now: new Date(now.getTime() + 20000),
+      }),
+    ).toMatchObject({ cleared: 1 });
+    expect(
+      (
+        await prisma.weleticReviewRequest.findUniqueOrThrow({
+          where: { id: ids[2] },
+        })
+      ).encryptedDeliverySnapshot,
+    ).toBeNull();
+    expect(
+      (
+        await prisma.weleticReviewRequest.findUniqueOrThrow({
+          where: { id: ids[1] },
+        })
+      ).encryptedDeliverySnapshot,
+    ).toBeTruthy();
+    await deliverReviewRequest(storeId, ids[0], "g1");
+    expect(mocks.viaSmtp).toHaveBeenCalledTimes(3);
+  });
+  it("binds fulfillment invitations across cutovers without rewriting existing order promises", async () => {
+    const settings = await prisma.weleticReviewSettings.findUniqueOrThrow({
+      where: { storeId },
+    });
+    const fulfill = (order: Awaited<ReturnType<typeof purchase>>) =>
+      createFulfilledReviewRequests({
+        storeId,
+        orderExternalId: order.externalId,
+        fulfilledAt: new Date(),
+        expectedInstallationGeneration: "g1",
+      });
+    const legacy = await purchase();
+    const [legacyRequestId] = await fulfill(legacy);
+    const first = await createReviewIncentivePolicyRevision(storeId, {
+      kind: "points",
+      basePoints: "100",
+      photoBonusPoints: "0",
+      videoBonusPoints: "0",
+      maxPoints: "100",
+    });
+    const second = await createReviewIncentivePolicyRevision(storeId, {
+      kind: "none",
+    });
+    const start = new Date("2025-01-01T00:00:00.000Z");
+    const stop = new Date("2025-02-01T00:00:00.000Z");
+    // Synthetic historical cutovers: the actual authenticated writer is covered
+    // separately in review-policy-db; this suite exercises fulfillment readers.
+    try {
+      for (const [policy, effectiveAt, previousPolicyId] of [
+        [first, start, settings.activeIncentivePolicyId],
+        [second, stop, first.id],
+      ] as const) {
+        await prisma.weleticReviewIncentiveActivation.create({
+          data: {
+            id: `activation-${policy.id}`,
+            storeId,
+            policyId: policy.id,
+            policyRevision: policy.revision,
+            contentDigest: policy.contentDigest,
+            effectiveAt,
+            previousPolicyId,
+            appId: "native-isolated",
+            installationGeneration: "g1",
+            shopifyUserId: "12345",
+            merchantActionId: `action-${policy.id}`,
+          },
+        });
+      }
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { activeIncentivePolicyId: second.id },
+      });
+      for (const [time, expectedPolicy] of [
+        [new Date(start.getTime() - 1), settings.activeIncentivePolicyId],
+        [start, first.id],
+        [new Date(stop.getTime() - 1), first.id],
+        [stop, second.id],
+      ] as const) {
+        const order = await purchase();
+        await prisma.weleticCommerceOrder.update({
+          where: { id: order.id },
+          data: { occurredAt: time },
+        });
+        const [id] = await fulfill(order);
+        expect(id).toBeTruthy();
+        expect(await fulfill(order)).toEqual([id]);
+        expect(
+          await prisma.weleticReviewRequest.findUnique({ where: { id } }),
+        ).toMatchObject({ incentivePolicyId: expectedPolicy });
+        expect(
+          await prisma.weleticLoyaltyOutboxJob.count({
+            where: { storeId, idempotencyKey: `review_request_email:${id}` },
+          }),
+        ).toBe(1);
+      }
+      const additionalProductId = `extra-${run}`;
+      await prisma.weleticShopifyProduct.create({
+        data: {
+          id: additionalProductId,
+          storeId,
+          programId,
+          externalId: "gid://shopify/Product/5678",
+          handle: "extra",
+          title: "Extra product",
+        },
+      });
+      await prisma.weleticCommerceOrderLine.create({
+        data: {
+          id: `extra-${legacy.lineId}`,
+          externalId: `extra-${legacy.externalId}`,
+          orderId: legacy.id,
+          productId: additionalProductId,
+          title: "Extra product",
+          quantity: 1,
+          shopGross: 100,
+          shopNet: 100,
+          presentmentGross: 100,
+          presentmentNet: 100,
+          accountingNet: 100,
+          commissionableAccountingAmount: 100,
+        },
+      });
+      const legacyIds = await fulfill(legacy);
+      expect(legacyIds).toHaveLength(2);
+      expect(legacyIds).toContain(legacyRequestId);
+      const requests = await prisma.weleticReviewRequest.findMany({
+        where: { storeId, orderId: legacy.id },
+      });
+      expect(
+        requests.every(
+          (r) => r.incentivePolicyId === settings.activeIncentivePolicyId,
+        ),
+      ).toBe(true);
+    } finally {
+      await prisma.weleticReviewIncentiveActivation.deleteMany({
+        where: { storeId },
+      });
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { activeIncentivePolicyId: settings.activeIncentivePolicyId },
+      });
+    }
+  });
+
   it("scrubs customer content and tokens while retaining append-only rewards", async () => {
+    const order = await purchase();
+    const [cancelledId] = await createFulfilledReviewRequests({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(Date.now() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    mocks.viaSmtp.mockRejectedValueOnce(new Error("ambiguous"));
+    await expect(
+      deliverReviewRequest(storeId, cancelledId, "g1"),
+    ).rejects.toThrow();
+    await prisma.weleticReviewRequest.update({
+      where: { id: cancelledId },
+      data: { status: "cancelled" },
+    });
+    expect(
+      (
+        await prisma.weleticReviewRequest.findUniqueOrThrow({
+          where: { id: cancelledId },
+        })
+      ).encryptedDeliverySnapshot,
+    ).toBeTruthy();
     const ledgerCount = await prisma.weleticPointsLedgerEntry.count({
       where: { storeId },
     });
@@ -808,6 +1316,11 @@ describe("native reviews real MySQL production-service boundaries", () => {
     expect(
       await prisma.weleticReviewRequest.count({
         where: { storeId, tokenHash: { not: null } },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.weleticReviewRequest.count({
+        where: { storeId, encryptedDeliverySnapshot: { not: null } },
       }),
     ).toBe(0);
     expect(

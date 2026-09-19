@@ -145,6 +145,7 @@ async function writeReviewSettings(
         cancellationReason: "settings_disabled",
         tokenHash: null,
         encryptedDeliveryToken: null,
+        encryptedDeliverySnapshot: null,
         deliveryToken: null,
         deliveryLeaseExpiresAt: null,
       },
@@ -325,6 +326,7 @@ export async function submitNativeReview(storeId: string, input: unknown) {
         submittedAt: now,
         tokenHash: null,
         encryptedDeliveryToken: null,
+        encryptedDeliverySnapshot: null,
       },
     });
     if (consumed.count !== 1)

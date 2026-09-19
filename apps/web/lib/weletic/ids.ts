@@ -39,6 +39,7 @@ export type WeleticIdPrefix =
   | "wrevline_"
   | "wrevmedia_"
   | "wrevpolicy_"
+  | "wrevactivate_"
   | "wrevclaim_"
   | "wrevinv_"
   | "wrevaudit_"

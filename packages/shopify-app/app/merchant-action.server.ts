@@ -1,4 +1,10 @@
 import { json } from "@remix-run/node";
+import {
+  merchantReviewCouponListInputSchema,
+  merchantReviewIncentiveActivationInputSchema,
+  merchantReviewIncentiveDraftInputSchema,
+  merchantReviewIncentiveReadInputSchema,
+} from "../../../apps/web/lib/weletic/reviews/incentive-merchant-contract";
 import { merchantReviewListInputSchema } from "../../../apps/web/lib/weletic/reviews/merchant-contract";
 import { auditedReviewModerationInputSchema } from "../../../apps/web/lib/weletic/reviews/moderation-contract";
 import { readWeleticShopifyRequestBodyBytes } from "../../../apps/web/lib/weletic/shopify/service-auth";
@@ -16,6 +22,22 @@ import type { createMerchantAuthenticator } from "./merchant-authentication.serv
 import { weleticApiJson, WeleticGatewayError } from "./weletic-api.server";
 
 const operations = {
+  "review-incentives-activate": {
+    schema: merchantReviewIncentiveActivationInputSchema,
+    path: "reviews/incentives/activate",
+  },
+  "review-incentives-coupons": {
+    schema: merchantReviewCouponListInputSchema,
+    path: "reviews/incentives/coupons",
+  },
+  "review-incentives-read": {
+    schema: merchantReviewIncentiveReadInputSchema,
+    path: "reviews/incentives/read",
+  },
+  "review-incentives-draft": {
+    schema: merchantReviewIncentiveDraftInputSchema,
+    path: "reviews/incentives/draft",
+  },
   replace: { schema: replaceShopifyStaffGrantSchema, path: "staff/grants" },
   list: { schema: listShopifyStaffGrantsSchema, path: "staff/grants/list" },
   overview: { schema: shopifyMerchantOverviewInputSchema, path: "overview" },
@@ -66,7 +88,9 @@ export function createMerchantAction(
             method: "POST",
             // Bound headers AND body consumption. An uncertain commit is not
             // retried automatically; the caller must reload current state.
-            signal: AbortSignal.timeout(8_000),
+            signal: AbortSignal.timeout(
+              operation === "review-incentives-draft" ? 25_000 : 8_000,
+            ),
             body: JSON.stringify({ actor, input: input.data }),
           },
         );

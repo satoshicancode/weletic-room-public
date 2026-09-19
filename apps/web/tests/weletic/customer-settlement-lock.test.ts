@@ -9,6 +9,7 @@ vi.mock("@/lib/weletic/redis-lock", () => ({
 import {
   assertShopifySettlementLockContext,
   shopifyCustomerSettlementLockKeys,
+  withShopifyCustomerSettlementLocks,
   withShopifySettlementLocks,
 } from "@/lib/weletic/shopify/customer-settlement-lock";
 import {
@@ -32,6 +33,29 @@ describe("Shopify settlement lock context", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
+  it.each([0, 1])(
+    "can defer on busy rotation key %s without executing protected work",
+    async (busyIndex) => {
+      const fn = vi.fn(async () => 1);
+      const onLocked = vi.fn(() => 0);
+      let index = 0;
+      mocks.withDistributedLock.mockImplementation(
+        async ({ fn: next, onLocked: defer }) =>
+          index++ === busyIndex ? defer() : next(),
+      );
+      expect(
+        await withShopifyCustomerSettlementLocks({
+          workspaceId: "workspace_1",
+          storeId: "store_1",
+          shopifyCustomerId: "501",
+          fn,
+          onLocked,
+        }),
+      ).toBe(0);
+      expect(fn).not.toHaveBeenCalled();
+      expect(onLocked).toHaveBeenCalledOnce();
+    },
+  );
 
   it("acquires order then every sorted rotation-aware customer key", async () => {
     const expectedCustomerKeys = shopifyCustomerSettlementLockKeys({

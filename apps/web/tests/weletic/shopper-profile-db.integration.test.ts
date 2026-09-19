@@ -1,7 +1,11 @@
+import { encrypt } from "@/lib/encryption";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { shopperDatabaseTarget } from "../utils/shopper-database-target";
+// Next's build-time server marker has no runtime behavior in this Node-only suite.
+vi.mock("server-only", () => ({}));
 
 const database = new PrismaClient();
 const stores: string[] = [];
@@ -74,20 +78,16 @@ vi.mock("@/lib/api/links/cache", () => ({ linkCache: {} }));
 
 describe("shopper profile production queries on isolated MySQL", () => {
   beforeAll(async () => {
-    const url = new URL(process.env.DATABASE_URL || "invalid:");
-    if (
-      process.env.SHOPPER_PROFILE_DATABASE_INTEGRATION !== "1" ||
-      url.protocol !== "mysql:" ||
-      url.hostname !== "127.0.0.1" ||
-      url.port !== "3307" ||
-      url.username !== "loyalty_dev" ||
-      url.pathname !== "/weletic_loyalty_dev"
-    )
-      throw new Error("Refusing non-isolated shopper profile database");
+    const expectedTarget = shopperDatabaseTarget(
+      process.env.DATABASE_URL,
+      process.env.SHOPPER_PROFILE_DATABASE_INTEGRATION,
+    );
     expect(
       await database.$queryRaw`SELECT DATABASE() AS name, CURRENT_USER() AS principal`,
-    ).toEqual([{ name: "weletic_loyalty_dev", principal: "loyalty_dev@%" }]);
+    ).toEqual([expectedTarget]);
     safeToClean = true;
+    vi.stubEnv("SHOPIFY_API_KEY", "shopper-profile-isolated-app");
+    vi.stubEnv("ENCRYPTION_KEY", "37".repeat(32));
     vi.stubEnv(
       "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS",
       `profile-test:${randomBytes(32).toString("base64")}`,
@@ -123,6 +123,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
         where: { request: where },
       });
       await database.weleticReviewRequest.deleteMany({ where });
+      await database.weleticReviewIncentiveActivation.deleteMany({ where });
       await database.weleticReviewSettings.deleteMany({ where });
       await database.weleticReviewIncentivePolicy.deleteMany({ where });
       await database.weleticReviewOrderCancellation.deleteMany({ where });
@@ -145,6 +146,10 @@ describe("shopper profile production queries on isolated MySQL", () => {
       });
       await database.weleticLoyaltyProgram.deleteMany({ where });
       await database.weleticShopper.deleteMany({ where });
+      await database.weleticShopifyInstallationCredential.deleteMany({ where });
+      await database.weleticShopifyPendingInstallation.deleteMany({
+        where: { mappedStoreId: { in: stores } },
+      });
       await database.weleticShopifyStore.deleteMany({
         where: { id: { in: stores } },
       });
@@ -3611,6 +3616,29 @@ describe("shopper profile production queries on isolated MySQL", () => {
         await database.weleticProductReview.findUniqueOrThrow({
           where: { id: foreign.review.id },
         });
+      const retainedPolicy =
+        await database.weleticReviewIncentivePolicy.findUniqueOrThrow({
+          where: {
+            storeId_id: {
+              storeId: fixture.storeId,
+              id: fixture.claim.policyId,
+            },
+          },
+        });
+      await database.weleticReviewIncentiveActivation.create({
+        data: {
+          id: `activation-${fixture.storeId}`,
+          storeId: fixture.storeId,
+          policyId: retainedPolicy.id,
+          policyRevision: retainedPolicy.revision,
+          contentDigest: retainedPolicy.contentDigest,
+          effectiveAt: new Date(),
+          appId: "isolated-review-privacy",
+          installationGeneration: "isolated-generation",
+          shopifyUserId: "12345",
+          merchantActionId: `activation-${randomUUID()}`,
+        },
+      });
       await database.weleticShopifyStore.update({
         where: { id: fixture.storeId },
         data: { complianceState: "frozen" },
@@ -3618,6 +3646,21 @@ describe("shopper profile production queries on isolated MySQL", () => {
       const { purgeNativeReviewsBatch } = await import(
         "../../lib/weletic/reviews/privacy"
       );
+      expect(await purgeNativeReviewsBatch(fixture.storeId)).toEqual({
+        hasMore: true,
+      });
+      expect(
+        await database.weleticReviewIncentiveActivation.count({
+          where: { storeId: fixture.storeId },
+        }),
+      ).toBe(0);
+      expect(
+        await database.weleticReviewIncentivePolicy.findUnique({
+          where: {
+            storeId_id: { storeId: fixture.storeId, id: retainedPolicy.id },
+          },
+        }),
+      ).toEqual(retainedPolicy);
       expect(await purgeNativeReviewsBatch(fixture.storeId)).toEqual({
         hasMore: false,
       });
@@ -4070,8 +4113,86 @@ describe("shopper profile production queries on isolated MySQL", () => {
       where: { id: fixture.storeId },
       data: { complianceState: "frozen" },
     });
+    const store = await database.weleticShopifyStore.findUniqueOrThrow({
+      where: { id: fixture.storeId },
+    });
+    const { deriveAllShopifyShopPrivacyIdentities } = await import(
+      "../../lib/weletic/shopify/privacy-identity"
+    );
+    const identity = {
+      storeId: store.id,
+      workspaceId: store.projectId,
+      shop: store.shopDomain,
+      appId: "shopper-profile-isolated-app",
+      installationGeneration: "g1",
+    };
+    await database.weleticShopifyPendingInstallation.create({
+      data: {
+        id: randomUUID(),
+        appId: identity.appId,
+        ...deriveAllShopifyShopPrivacyIdentities({
+          shopDomain: store.shopDomain,
+        })[0],
+        mappedStoreId: store.id,
+        installationGeneration: "g1",
+        state: "uninstalled",
+        authenticatedAt: new Date(Date.now() - 60_000),
+        uninstalledAt: new Date(),
+      },
+    });
+    await database.weleticShopifyInstallationCredential.create({
+      data: {
+        id: randomUUID(),
+        storeId: store.id,
+        appId: identity.appId,
+        installationGeneration: "g1",
+        revision: 1,
+        credentialCiphertext: encrypt(
+          JSON.stringify({
+            version: 1,
+            revision: 1,
+            identity,
+            material: {
+              accessToken: "synthetic-frozen-token",
+              scope: "write_discounts",
+            },
+          }),
+        ),
+      },
+    });
+    const request = await database.weleticShopifyComplianceRequest.create({
+      data: {
+        id: randomUUID(),
+        webhookId: randomUUID(),
+        storeId: store.id,
+        shopDomain: store.shopDomain,
+        requestType: "app_uninstalled",
+        status: "pending",
+        phase: "voucher_cleanup",
+        payloadCiphertext: encrypt(
+          JSON.stringify({
+            shopDomain: store.shopDomain,
+            installationGeneration: "g1",
+          }),
+        ),
+      },
+    });
+    await database.weleticShopifyVoucherCleanupRequestLink.create({
+      data: {
+        id: randomUUID(),
+        storeId: store.id,
+        requestId: request.id,
+        cleanupId: cleanup.id,
+      },
+    });
     couponTransport.lookup.mockResolvedValue(fixture.remote);
     await expect(run()).rejects.toThrow("usage reconciliation");
+    expect(couponTransport.credentials).not.toHaveBeenCalled();
+    expect(couponTransport.lookup).toHaveBeenCalledWith(
+      store.shopDomain,
+      "synthetic-frozen-token",
+      fixture.redemption.shopifyDiscountCode,
+    );
     expect(
       await database.weleticShopifyVoucherCleanup.findUnique({
         where: { id: cleanup.id },

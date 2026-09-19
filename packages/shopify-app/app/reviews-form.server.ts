@@ -29,6 +29,7 @@ h1{font-size:28px;line-height:1.2}label{display:block;margin:18px 0 6px;font-wei
 <div id="photos" hidden><label for="photoFiles" data-copy="photos">${text("photos")}</label><input id="photoFiles" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-describedby="photo-help"><small id="photo-help" data-copy="photoHelp">${text("photoHelp")}</small></div>
 <label class="consent"><input type="checkbox" id="consent" required> <span data-copy="consent">${text("consent")}</span></label>
 <p data-copy="rewardNotice">${text("rewardNotice")}</p>
+<div id="incentive-disclosure"></div>
 <button type="submit" data-copy="submit">${text("submit")}</button></fieldset></form></main>
 <script nonce="${nonce}">const REVIEW_FORM_COPY = ${dictionary};${REVIEW_FORM_SCRIPT}</script></body></html>`,
     {
@@ -61,7 +62,17 @@ export const REVIEW_FORM_SCRIPT = String.raw`
   let completed = false;
   let uncertain = false;
   let photosEnabled = false;
+  let disclosure = null;
   const copy = () => REVIEW_FORM_COPY[locale];
+  function renderDisclosure() {
+    const target = document.getElementById('incentive-disclosure');
+    target.replaceChildren();
+    for (const line of disclosure?.[locale] ?? []) {
+      const paragraph = document.createElement('p');
+      paragraph.textContent = line;
+      target.append(paragraph);
+    }
+  }
   function showStatus(key) {
     statusKey = key;
     status.textContent = copy()[key];
@@ -75,6 +86,7 @@ export const REVIEW_FORM_SCRIPT = String.raw`
     });
     if (!ready) document.getElementById('product').textContent = statusKey ? '' : copy().checking;
     if (statusKey) showStatus(statusKey);
+    renderDisclosure();
   });
   async function api(action, data) {
     const response = await fetch(base + '/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data), cache: 'no-store', credentials: 'same-origin' });
@@ -87,6 +99,11 @@ export const REVIEW_FORM_SCRIPT = String.raw`
     if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('invalid');
     const result = await api('request', { token });
     if (!result || typeof result.productTitle !== 'string' || typeof result.photoUploadsEnabled !== 'boolean') throw new Error('unavailable');
+    if (result.incentiveDisclosure != null) {
+      if (typeof result.incentiveDisclosure !== 'object' || !['en','ja','vi'].every(key => Array.isArray(result.incentiveDisclosure[key]) && result.incentiveDisclosure[key].length > 0 && result.incentiveDisclosure[key].length <= 50 && result.incentiveDisclosure[key].every(line => typeof line === 'string' && line.trim().length > 0 && line.length <= 2000))) throw new Error('unavailable');
+      disclosure = result.incentiveDisclosure;
+    }
+    renderDisclosure();
     document.getElementById('product').textContent = result.productTitle;
     photosEnabled = result.photoUploadsEnabled;
     document.getElementById('photos').hidden = !photosEnabled;

@@ -27,7 +27,9 @@ import {
   type MerchantReviewListPage,
 } from "../../../../apps/web/lib/weletic/reviews/merchant-contract";
 import type { AuditedReviewModerationInput } from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
+import { ReviewIncentivesPanel } from "../components/ReviewIncentivesPanel";
 import { ReviewModerationForm } from "../components/ReviewModerationForm";
+import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { createMerchantReviewModerationClient } from "../merchant-review-moderation-client";
 import { createMerchantReviewsClient } from "../merchant-reviews-client";
 import { merchantReviewsCopy } from "../merchant-reviews-copy";
@@ -67,6 +69,10 @@ export default function ReviewsPage() {
     [shopify],
   );
   const [locale, setLocale] = useState<"en" | "ja" | "vi">("en");
+  const incentiveClient = useMemo(
+    () => createMerchantReviewIncentivesClient(() => shopify.idToken()),
+    [shopify],
+  );
   const copy = merchantReviewsCopy[locale];
   const moderationCopy = reviewModerationCopy[locale];
   const write = useMemo(
@@ -185,6 +191,9 @@ export default function ReviewsPage() {
               }}
             />
             <Text as="p">{copy.description}</Text>
+            <Card>
+              <ReviewIncentivesPanel client={incentiveClient} locale={locale} />
+            </Card>
             <Select
               disabled={busy}
               label={copy.view}

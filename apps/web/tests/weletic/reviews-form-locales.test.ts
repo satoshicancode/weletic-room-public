@@ -65,6 +65,48 @@ afterEach(() => {
 });
 
 describe("production review invitation form", () => {
+  it("switches the saved disclosure safely without losing the review", async () => {
+    transport.mockResolvedValue(
+      Response.json({
+        productTitle: "Product",
+        photoUploadsEnabled: true,
+        incentiveDisclosure: {
+          en: ["10 points <img src=x>"],
+          ja: ["10ポイント"],
+          vi: ["10 điểm"],
+        },
+      }),
+    );
+    await mount();
+    await vi.waitFor(() => expect(form().hidden).toBe(false));
+    fill();
+    expect(element("incentive-disclosure").textContent).toBe(
+      "10 points <img src=x>",
+    );
+    expect(element("incentive-disclosure").querySelector("img")).toBeNull();
+    changeLanguage("ja");
+    expect(element("incentive-disclosure").textContent).toBe("10ポイント");
+    changeLanguage("vi");
+    expect(element("incentive-disclosure").textContent).toBe("10 điểm");
+    expect(element<HTMLInputElement>("title").value).toBe("Honest opinion");
+    expect(element<HTMLInputElement>("consent").checked).toBe(true);
+  });
+  it("does not permit submission when a disclosure lacks a supported locale", async () => {
+    transport.mockResolvedValue(
+      Response.json({
+        productTitle: "Product",
+        photoUploadsEnabled: true,
+        incentiveDisclosure: { en: ["10 points"] },
+      }),
+    );
+    await mount();
+    await vi.waitFor(() =>
+      expect(status()).toBe(reviewFormCopy.en.unavailable),
+    );
+    expect(form().hidden).toBe(true);
+    submit();
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
   it.each(["en", "ja", "vi"] as const)(
     "completes a one-star submission in %s without exposing the token",
     async (locale) => {

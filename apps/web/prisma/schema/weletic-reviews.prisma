@@ -76,6 +76,29 @@ model WeleticReviewIncentivePolicy {
   @@unique([storeId, revision])
 }
 
+// Append-only cutover history. Existing invitations retain their own policy;
+// late order events resolve by order time, not webhook processing time.
+model WeleticReviewIncentiveActivation {
+  id                     String   @id
+  storeId                String
+  policyId               String
+  policyRevision         Int
+  previousPolicyId       String?
+  contentDigest          String   @db.VarChar(64)
+  effectiveAt            DateTime @db.DateTime(3)
+  appId                  String
+  installationGeneration String   @db.VarChar(64)
+  shopifyUserId          String   @db.VarChar(20)
+  merchantActionId       String   @unique @db.VarChar(64)
+  createdAt              DateTime @default(now())
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@unique([storeId, policyId])
+  @@unique([storeId, policyRevision])
+  @@index([storeId, effectiveAt, policyRevision], map: "review_incentive_activation_effective")
+}
+
 // One order-wide claim shared by product and future store-experience reviews.
 // Reservation is not issuance; award/reversal services must retain this marker.
 model WeleticReviewIncentiveClaim {
@@ -159,6 +182,8 @@ model WeleticReviewRequest {
   tokenHash              String?                    @unique @db.VarChar(64)
   // Only the delivery worker needs recoverable token material; cleared on send.
   encryptedDeliveryToken String?                    @db.Text
+  // Final provider request, private and immutable across retries; cleared with token material.
+  encryptedDeliverySnapshot String?                 @db.MediumText
   deliveryToken          String?                    @db.VarChar(64)
   deliveryReservedAt     DateTime?
   deliveryLeaseExpiresAt DateTime?
@@ -185,6 +210,7 @@ model WeleticReviewRequest {
   @@index([storeId, status, sendAt, id])
   @@index([storeId, shopperId])
   @@index([status, deliveryLeaseExpiresAt])
+  @@index([expiresAt, id], map: "review_request_retention_expiry")
   @@index(orderId)
   @@index(productId)
   @@index([storeId, incentivePolicyId])

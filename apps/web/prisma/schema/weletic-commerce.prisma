@@ -135,6 +135,7 @@ model WeleticShopifyStore {
   loyaltyReviewIntegrations    WeleticLoyaltyReviewIntegration[]
   reviewSettings               WeleticReviewSettings?
   reviewIncentivePolicies      WeleticReviewIncentivePolicy[]
+  reviewIncentiveActivations   WeleticReviewIncentiveActivation[]
   reviewIncentiveClaims        WeleticReviewIncentiveClaim[]
   reviewIncentiveInvalidations WeleticReviewIncentiveInvalidation[]
   merchantSettings             WeleticMerchantSettings?

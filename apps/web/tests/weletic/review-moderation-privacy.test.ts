@@ -14,10 +14,16 @@ const mocks = vi.hoisted(() => ({
   requestCount: vi.fn(),
   claimList: vi.fn(),
   claimCount: vi.fn(),
+  activationList: vi.fn(),
+  activationDelete: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => {
   const db = {
     $queryRaw: mocks.query,
+    weleticReviewIncentiveActivation: {
+      findMany: mocks.activationList,
+      deleteMany: mocks.activationDelete,
+    },
     weleticReviewModerationAudit: {
       findMany: mocks.auditList,
       updateMany: mocks.auditUpdate,
@@ -53,6 +59,7 @@ describe("review moderation audit privacy", () => {
     mocks.requestCount.mockResolvedValue(0);
     mocks.claimList.mockResolvedValue([]);
     mocks.claimCount.mockResolvedValue(0);
+    mocks.activationList.mockResolvedValue([]);
   });
   it("scrubs only the bounded store/shopper audit page", async () => {
     await expect(
@@ -106,5 +113,29 @@ describe("review moderation audit privacy", () => {
     );
     expect(mocks.auditList).not.toHaveBeenCalled();
     expect(mocks.auditDelete).not.toHaveBeenCalled();
+    expect(mocks.activationList).not.toHaveBeenCalled();
+  });
+  it("erases only a bounded owned activation page before financial parents", async () => {
+    mocks.auditList.mockResolvedValue([]);
+    mocks.activationList.mockResolvedValue([{ id: "activation-1" }]);
+    await expect(purgeNativeReviewsBatch("store-1")).resolves.toEqual({
+      hasMore: true,
+    });
+    expect(mocks.activationList).toHaveBeenCalledWith({
+      where: { storeId: "store-1" },
+      orderBy: { id: "asc" },
+      take: 20,
+      select: { id: true },
+    });
+    expect(mocks.activationDelete).toHaveBeenCalledWith({
+      where: { storeId: "store-1", id: { in: ["activation-1"] } },
+    });
+    expect(mocks.requestList).not.toHaveBeenCalled();
+    expect(mocks.claimList).not.toHaveBeenCalled();
+  });
+  it("does not erase store activation history for individual customer privacy", async () => {
+    await redactNativeReviewsBatch("store-1", "shopper-1");
+    expect(mocks.activationList).not.toHaveBeenCalled();
+    expect(mocks.activationDelete).not.toHaveBeenCalled();
   });
 });
