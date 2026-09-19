@@ -1,8 +1,14 @@
 import { createWeleticId } from "@/lib/weletic/ids";
+import {
+  DEFAULT_REWARD_PURCHASE_POLICY,
+  readLoyaltyPurchasePolicy,
+} from "@/lib/weletic/loyalty/purchase-policy";
 import { LoyaltyRedemptionProvisioningSnapshotSchema } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
+import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { ReviewError } from "./contracts";
+import { reviewCouponDisclosure } from "./coupon-disclosure";
 import { withReviewMutation } from "./transaction";
 
 const points = z
@@ -42,7 +48,28 @@ const couponTerms = LoyaltyRedemptionProvisioningSnapshotSchema.omit({
   .strict();
 
 export const reviewCouponAwardSchema = z
-  .object({ kind: z.literal("coupon"), terms: couponTerms })
+  .object({
+    kind: z.literal("coupon"),
+    terms: couponTerms,
+    // Optional for historical compatibility. New targeted promises need labels
+    // verified against the store catalog before activation; never look them up
+    // from mutable current catalog data when displaying a saved invitation.
+    displayTargets: z
+      .array(
+        z
+          .object({
+            id: z
+              .string()
+              .regex(
+                /^gid:\/\/shopify\/(Product|ProductVariant|Collection)\/\d+$/,
+              ),
+            name: z.string().trim().min(1).max(200),
+          })
+          .strict(),
+      )
+      .max(250)
+      .optional(),
+  })
   .strict();
 
 export const reviewIncentivePolicySnapshotSchema = z
@@ -56,7 +83,7 @@ export const reviewIncentivePolicySnapshotSchema = z
   })
   .strict();
 
-const policyDraftSchema = z.discriminatedUnion("kind", [
+export const reviewIncentivePolicyDraftSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("none") }).strict(),
   pointAward,
   z
@@ -72,14 +99,81 @@ export function reviewIncentivePolicyDigest(input: unknown) {
   return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
 }
 
+/** Resolve the invitation's promise, never the currently active settings.
+ * Only an explicit null denotes the historical policy path.
+ */
+export async function readReviewIncentivePolicySnapshot(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  policyId: unknown,
+) {
+  if (policyId === null) return null;
+  if (typeof policyId !== "string" || !/^[A-Za-z0-9_-]{1,191}$/.test(policyId))
+    throw new ReviewError(
+      "unavailable",
+      "Review incentive policy is unavailable",
+    );
+  const policy = await tx.weleticReviewIncentivePolicy.findUnique({
+    where: { storeId_id: { storeId, id: policyId } },
+  });
+  const parsed = reviewIncentivePolicySnapshotSchema.safeParse(
+    policy?.snapshot,
+  );
+  if (
+    !policy ||
+    policy.storeId !== storeId ||
+    policy.id !== policyId ||
+    !parsed.success ||
+    policy.contentDigest !== reviewIncentivePolicyDigest(parsed.data)
+  )
+    throw new ReviewError(
+      "unavailable",
+      "Review incentive policy is unavailable",
+    );
+  return parsed.data;
+}
+
 /** Internal draft writer only. Allocating a revision never activates it. */
-export function createReviewIncentivePolicyRevision(
+export async function createReviewIncentivePolicyRevision(
   storeId: string,
   input: unknown,
+  merchantFence?: {
+    expectedRevision: number;
+    expectedInstallationGeneration: string;
+    authorize: (
+      tx: Prisma.TransactionClient,
+      phase: "preflight" | "commit",
+    ) => Promise<void>;
+  },
 ) {
-  const draft = policyDraftSchema.parse(input);
-  return withReviewMutation(storeId, async (tx) => {
+  const draft = reviewIncentivePolicyDraftSchema.parse(input);
+  const authorize = async (
+    tx: Prisma.TransactionClient,
+    phase: "preflight" | "commit",
+  ) => {
+    if (!merchantFence) return;
+    await merchantFence.authorize(tx, phase);
+    const settings = await tx.weleticReviewSettings.findUnique({
+      where: { storeId },
+    });
+    if (
+      (settings?.incentivePolicyRevision ?? 0) !==
+      merchantFence.expectedRevision
+    )
+      throw new ReviewError(
+        "conflict",
+        "Review incentive policy changed; reload and retry",
+      );
+  };
+  const readCandidate = async (tx: Prisma.TransactionClient) => {
     let award: z.infer<typeof reviewIncentivePolicySnapshotSchema>["award"];
+    let catalogFence: string | null = null;
+    let identity: {
+      storeId: string;
+      workspaceId: string;
+      shop: string;
+      installationGeneration: string | null;
+    } | null = null;
     if (draft.kind === "coupon") {
       const reward = await tx.weleticRewardDefinition.findFirst({
         where: {
@@ -98,6 +192,17 @@ export function createReviewIncentivePolicyRevision(
           "unavailable",
           "Verified coupon catalog terms are unavailable",
         );
+      identity = {
+        storeId,
+        workspaceId: store.projectId,
+        shop: store.shopDomain,
+        installationGeneration: store.installationGeneration,
+      };
+      catalogFence = JSON.stringify({
+        identity,
+        rewardUpdatedAt: reward.updatedAt,
+        currencyVerifiedAt: store.currencyVerifiedAt,
+      });
       award = {
         kind: "coupon",
         terms: couponTerms.parse({
@@ -106,6 +211,11 @@ export function createReviewIncentivePolicyRevision(
           description: reward.description,
           rewardType: reward.rewardType,
           salesChannel: reward.salesChannel,
+          exchangeType: reward.exchangeType,
+          purchasePolicy: readLoyaltyPurchasePolicy(
+            reward.purchasePolicy,
+            DEFAULT_REWARD_PURCHASE_POLICY,
+          ),
           discountValue: reward.discountValue?.toString() ?? null,
           maxDiscountValue: reward.maxDiscountValue?.toString() ?? null,
           minOrderAmount: reward.minOrderAmount?.toString() ?? null,
@@ -123,6 +233,12 @@ export function createReviewIncentivePolicyRevision(
         }),
       };
     } else award = draft;
+    return { award, catalogFence, identity };
+  };
+  const save = async (
+    tx: Prisma.TransactionClient,
+    award: z.infer<typeof reviewIncentivePolicySnapshotSchema>["award"],
+  ) => {
     const snapshot = reviewIncentivePolicySnapshotSchema.parse({
       version: 1,
       award,
@@ -141,7 +257,76 @@ export function createReviewIncentivePolicyRevision(
         contentDigest: reviewIncentivePolicyDigest(snapshot),
       },
     });
+  };
+  if (draft.kind !== "coupon")
+    return withReviewMutation(
+      storeId,
+      async (tx) => {
+        await authorize(tx, "commit");
+        return save(tx, draft);
+      },
+      merchantFence?.expectedInstallationGeneration,
+    );
+
+  const prepared = await withReviewMutation(
+    storeId,
+    async (tx, generation) => {
+      await authorize(tx, "preflight");
+      const candidate = await readCandidate(tx);
+      const settings = await tx.weleticReviewSettings.findUnique({
+        where: { storeId },
+      });
+      return {
+        ...candidate,
+        generation,
+        settingsFence: JSON.stringify(settings),
+      };
+    },
+    merchantFence?.expectedInstallationGeneration,
+  );
+  if (prepared.award.kind !== "coupon" || !prepared.identity)
+    throw new ReviewError(
+      "unavailable",
+      "Verified coupon catalog terms are unavailable",
+    );
+  const { captureReviewCouponCatalogLabels } = await import(
+    "./coupon-catalog-labels"
+  );
+  const displayTargets = await captureReviewCouponCatalogLabels(
+    prepared.identity,
+    [
+      ...prepared.award.terms.entitledProductIds,
+      ...prepared.award.terms.entitledVariantIds,
+      ...prepared.award.terms.entitledCollectionIds,
+    ],
+  );
+  const award = reviewCouponAwardSchema.parse({
+    ...prepared.award,
+    displayTargets,
   });
+  // The saved promise must be truthfully renderable before revision allocation.
+  reviewCouponDisclosure(award);
+  return withReviewMutation(
+    storeId,
+    async (tx) => {
+      await authorize(tx, "commit");
+      const current = await readCandidate(tx);
+      const settings = await tx.weleticReviewSettings.findUnique({
+        where: { storeId },
+      });
+      if (
+        current.catalogFence !== prepared.catalogFence ||
+        JSON.stringify(current.award) !== JSON.stringify(prepared.award) ||
+        JSON.stringify(settings) !== prepared.settingsFence
+      )
+        throw new ReviewError(
+          "conflict",
+          "Coupon policy changed during catalog verification; reload and retry",
+        );
+      return save(tx, award);
+    },
+    prepared.generation,
+  );
 }
 
 export function selectReviewIncentiveAward(

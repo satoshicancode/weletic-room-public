@@ -14,6 +14,7 @@ vi.mock("app/(ee)/api/cron/utils", () => ({
 const points = vi.fn();
 const tiers = vi.fn();
 const rewards = vi.fn();
+const retention = vi.fn();
 const processJobs = vi.fn();
 vi.mock("@/lib/weletic/loyalty/points-expiry-scheduler", () => ({
   enqueuePointsExpiryLifecycleJobs: points,
@@ -27,6 +28,9 @@ vi.mock("@/lib/weletic/loyalty/reward-expiry-scheduler", () => ({
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({
   processOutboxJobsBatch: processJobs,
 }));
+vi.mock("@/lib/weletic/reviews/delivery-retention", () => ({
+  clearExpiredReviewDeliveryEvidence: retention,
+}));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -35,6 +39,7 @@ beforeEach(() => {
   points.mockResolvedValue({ points: true });
   tiers.mockResolvedValue({ tiers: true });
   rewards.mockResolvedValue({ rewards: true });
+  retention.mockResolvedValue({ scanned: 0, cleared: 0 });
   processJobs.mockResolvedValue({ processed: 0 });
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -63,7 +68,7 @@ test.each(["GET", "POST"])(
     expect((await run("", false, method)).status).toBe(
       method === "GET" ? 401 : 400,
     );
-    for (const work of [points, tiers, rewards, processJobs]) {
+    for (const work of [points, tiers, rewards, retention, processJobs]) {
       expect(work).not.toHaveBeenCalled();
     }
   },
@@ -79,7 +84,7 @@ test.each([
   "runs all sweeps before dispatch with bounded input %s",
   async (query, size) => {
     processJobs.mockImplementation(async () => {
-      for (const sweep of [points, tiers, rewards]) {
+      for (const sweep of [points, tiers, rewards, retention]) {
         expect(sweep).toHaveBeenCalledWith({ batchSize: size });
       }
       return { processed: 0 };
@@ -90,6 +95,7 @@ test.each([
       expirySweep: { points: true },
       tierSweep: { tiers: true },
       rewardExpirySweep: { rewards: true },
+      reviewRetention: { scanned: 0, cleared: 0 },
       outbox: { processed: 0 },
     });
     expect(processJobs).toHaveBeenCalledWith({
@@ -103,4 +109,15 @@ test("keeps a failed sweep retryable instead of claiming successful dispatch", a
   rewards.mockRejectedValue(new Error("synthetic sweep failure"));
   expect((await run()).status).toBe(500);
   expect(processJobs).not.toHaveBeenCalled();
+});
+test("continues unrelated dispatch when review retention defers busy customers", async () => {
+  retention.mockResolvedValue({ scanned: 2, cleared: 1, deferred: 1 });
+  const response = await run();
+  expect(response.status).toBe(200);
+  expect(processJobs).toHaveBeenCalledOnce();
+  expect((await response.json()).reviewRetention).toEqual({
+    scanned: 2,
+    cleared: 1,
+    deferred: 1,
+  });
 });

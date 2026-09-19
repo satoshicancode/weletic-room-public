@@ -121,11 +121,14 @@ export async function withShopifyCustomerSettlementLocks<T>({
   storeId,
   shopifyCustomerId,
   fn,
+  onLocked,
 }: {
   workspaceId: string;
   storeId?: string;
   shopifyCustomerId: string | number;
   fn: () => Promise<T>;
+  /** Optional deferral result only; never executes fn without all locks. */
+  onLocked?: () => T | Promise<T>;
 }): Promise<T> {
   const lockKeys = shopifyCustomerSettlementLockKeys({
     workspaceId,
@@ -138,6 +141,7 @@ export async function withShopifyCustomerSettlementLocks<T>({
       : withDistributedLock({
           key: lockKeys[index],
           ttlSeconds: SHOPIFY_CUSTOMER_SETTLEMENT_LOCK_TTL_SECONDS,
+          ...(onLocked ? { onLocked } : {}),
           fn: () => runWithLock(index + 1),
         });
   return runWithLock(0);

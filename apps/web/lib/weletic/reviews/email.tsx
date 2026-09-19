@@ -5,12 +5,30 @@ import {
   ShopperEmailPausedError,
 } from "@/lib/weletic/merchant-settings/communications";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
-import { getWeleticTransactionalEmailOptions } from "@/lib/weletic/transactional-email";
+import { resend } from "@dub/email/resend";
 import { randomUUID } from "node:crypto";
-import { createElement } from "react";
-import { sendBatchEmail } from "../../../../../packages/email/src";
 import { generateReviewToken, hashReviewToken, ReviewError } from "./contracts";
-import { assertReviewPurchase, reviewRequestInclude } from "./purchase";
+import {
+  openReviewDeliverySnapshot,
+  reviewDeliveryProviderKey,
+  sealReviewDeliverySnapshot,
+} from "./delivery-snapshot";
+import { reviewIncentiveDisclosure } from "./incentive-disclosure";
+import {
+  readReviewIncentivePolicySnapshot,
+  reviewIncentivePolicyDigest,
+} from "./incentive-policy";
+import { reviewInvitationLocale } from "./invitation-email-content";
+import {
+  dispatchPreparedReviewEmail,
+  prepareReviewEmail,
+  reviewTransportIdentity,
+} from "./prepared-email";
+import {
+  assertReviewPurchase,
+  assertReviewPurchaseNotSuppressed,
+  reviewRequestInclude,
+} from "./purchase";
 import { withReviewMutation } from "./transaction";
 
 const LEASE_MS = 120_000;
@@ -76,6 +94,7 @@ async function deliverReviewRequestLocked(
             status: "expired",
             tokenHash: null,
             encryptedDeliveryToken: null,
+            encryptedDeliverySnapshot: null,
             deliveryToken: null,
             deliveryLeaseExpiresAt: null,
           },
@@ -84,6 +103,7 @@ async function deliverReviewRequestLocked(
       }
       try {
         assertReviewPurchase(request, generation);
+        await assertReviewPurchaseNotSuppressed(tx, request);
       } catch (error) {
         if (!(error instanceof ReviewError)) throw error;
         await tx.weleticReviewRequest.update({
@@ -92,6 +112,7 @@ async function deliverReviewRequestLocked(
             status: "cancelled",
             tokenHash: null,
             encryptedDeliveryToken: null,
+            encryptedDeliverySnapshot: null,
             deliveryToken: null,
             deliveryLeaseExpiresAt: null,
             cancellationReason: "purchase_ineligible",
@@ -102,9 +123,85 @@ async function deliverReviewRequestLocked(
       }
       if (!request.shopper.email)
         throw new ReviewError("unavailable", "Review recipient unavailable");
+      const policy = await readReviewIncentivePolicySnapshot(
+        tx,
+        storeId,
+        request.incentivePolicyId,
+      );
+      // Old attempts have no immutable provider evidence. Their outcome cannot
+      // safely be inferred from a token alone; never regenerate and resend them.
+      if (request.deliveryAttempts > 0 && !request.encryptedDeliverySnapshot)
+        throw new ReviewError(
+          "unavailable",
+          "Review delivery reconciliation required",
+        );
       const token = request.encryptedDeliveryToken
         ? decrypt(request.encryptedDeliveryToken)
         : generateReviewToken();
+      const provider = resend ? "resend" : "smtp";
+      const context = {
+        storeId,
+        requestId,
+        installationGeneration: generation,
+        tokenHash: hashReviewToken(token),
+        policyDigest: policy ? reviewIncentivePolicyDigest(policy) : null,
+        recipient: request.shopper.email,
+        transportIdentity: reviewTransportIdentity(provider),
+      };
+      let ciphertext = request.encryptedDeliverySnapshot;
+      let prepared;
+      if (ciphertext) {
+        const reopened = openReviewDeliverySnapshot({
+          ciphertext,
+          context,
+          provider,
+          now,
+          retry: true,
+        });
+        prepared = {
+          provider,
+          content: reopened.content,
+          transportIdentity: context.transportIdentity,
+        };
+      } else {
+        const disclosure = reviewIncentiveDisclosure(policy);
+        const language = reviewInvitationLocale(request.shopper.locale);
+        const store = await tx.weleticShopifyStore.findUniqueOrThrow({
+          where: { id: storeId },
+          select: { shopDomain: true },
+        });
+        if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(store.shopDomain))
+          throw new ReviewError("unavailable", "Invalid storefront domain");
+        const branding = await tx.weleticLoyaltyProgram.findUnique({
+          where: { storeId },
+          select: { name: true },
+        });
+        prepared = await prepareReviewEmail({
+          email: request.shopper.email,
+          language,
+          productTitle: request.product.title,
+          brandName:
+            communications.configuredBrandName ?? branding?.name ?? "Weletic",
+          logoUrl: communications.logoUrl,
+          accentColor: communications.accentColor,
+          disclosure: disclosure?.[language] ?? [],
+          url: `https://${store.shopDomain}/apps/weletic/reviews/write?locale=${language}#token=${token}`,
+        });
+        if (
+          prepared.provider !== provider ||
+          prepared.transportIdentity !== context.transportIdentity
+        )
+          throw new ReviewError(
+            "unavailable",
+            "Review delivery configuration changed",
+          );
+        ciphertext = sealReviewDeliverySnapshot({
+          context,
+          provider,
+          content: prepared.content,
+          now,
+        });
+      }
       const reserved = await tx.weleticReviewRequest.updateMany({
         where: {
           id: requestId,
@@ -123,30 +220,13 @@ async function deliverReviewRequestLocked(
           deliveryAttempts: { increment: 1 },
           tokenHash: hashReviewToken(token),
           encryptedDeliveryToken: encrypt(token),
+          encryptedDeliverySnapshot: ciphertext,
           lastError: null,
         },
       });
       if (reserved.count !== 1)
         throw new ReviewError("conflict", "Review request already reserved");
-      const store = await tx.weleticShopifyStore.findUniqueOrThrow({
-        where: { id: storeId },
-        select: { shopDomain: true },
-      });
-      if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(store.shopDomain))
-        throw new ReviewError("unavailable", "Invalid storefront domain");
-      const branding = await tx.weleticLoyaltyProgram.findUnique({
-        where: { storeId },
-        select: { name: true },
-      });
-      return {
-        email: request.shopper.email,
-        productTitle: request.product.title,
-        brandName:
-          communications.configuredBrandName ?? branding?.name ?? "Weletic",
-        logoUrl: communications.logoUrl,
-        accentColor: communications.accentColor,
-        url: `https://${store.shopDomain}/apps/weletic/reviews/write#token=${token}`,
-      };
+      return { ...prepared, providerKey: reviewDeliveryProviderKey(requestId) };
     },
     expectedGeneration,
   );
@@ -188,44 +268,7 @@ async function deliverReviewRequestLocked(
     });
     if (authorized !== 1)
       throw new ReviewError("conflict", "Review delivery lease lost");
-    const result = await sendBatchEmail(
-      [
-        {
-          ...getWeleticTransactionalEmailOptions(),
-          to: claimed.email,
-          subject: `How was ${claimed.productTitle}?`,
-          text: `${claimed.brandName}\nShare your honest review of ${claimed.productTitle}: ${claimed.url}\nAny available loyalty reward is independent of your rating.`,
-          react: createElement(
-            "div",
-            {
-              style: {
-                borderTop: claimed.accentColor
-                  ? `4px solid ${claimed.accentColor}`
-                  : undefined,
-              },
-            },
-            claimed.logoUrl
-              ? createElement("img", {
-                  src: claimed.logoUrl,
-                  alt: claimed.brandName,
-                  width: 160,
-                })
-              : null,
-            createElement("h1", null, claimed.brandName),
-            createElement("p", null, `How was ${claimed.productTitle}?`),
-            createElement(
-              "p",
-              null,
-              "Share an honest review to help other shoppers. Any available loyalty reward is independent of your rating.",
-            ),
-            createElement("a", { href: claimed.url }, "Write a review"),
-          ),
-        },
-      ],
-      { idempotencyKey: `native-review-request:${requestId}` },
-    );
-    if (result.error || !result.data)
-      throw new ReviewError("unavailable", "Review email transport failed");
+    await dispatchPreparedReviewEmail(claimed);
     const finalized = await prisma.weleticReviewRequest.updateMany({
       where: {
         id: requestId,
@@ -239,6 +282,7 @@ async function deliverReviewRequestLocked(
         deliveryToken: null,
         deliveryLeaseExpiresAt: null,
         encryptedDeliveryToken: null,
+        encryptedDeliverySnapshot: null,
         lastError: null,
       },
     });

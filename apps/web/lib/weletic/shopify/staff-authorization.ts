@@ -67,10 +67,14 @@ export async function authorizeShopifyMerchantInTransaction({
   tx,
   envelope,
   permission,
+  recordAction = true,
 }: {
   tx: Prisma.TransactionClient;
   envelope: unknown;
   permission: ShopifyMerchantPermission;
+  // Internal network preflight only. A writer MUST reauthorize with the default
+  // true on the same transaction as its effects. Replay checks still apply.
+  recordAction?: boolean;
 }): Promise<AuthorizedShopifyMerchant> {
   const parsed = shopifyMerchantActorEnvelopeSchema.safeParse(envelope);
   if (
@@ -184,19 +188,20 @@ export async function authorizeShopifyMerchantInTransaction({
   `);
   if (prior.length)
     throw new ShopifyStaffAuthorizationError("request_replayed");
-  await tx.weleticShopifyMerchantAction.create({
-    data: {
-      id: actionId,
-      storeId: actor.storeId,
-      appId: actor.appId,
-      installationGeneration: actor.installationGeneration,
-      requestId: actor.requestId,
-      shopifyUserId: actor.userId,
-      owner,
-      permission,
-      grantRevision,
-    },
-  });
+  if (recordAction)
+    await tx.weleticShopifyMerchantAction.create({
+      data: {
+        id: actionId,
+        storeId: actor.storeId,
+        appId: actor.appId,
+        installationGeneration: actor.installationGeneration,
+        requestId: actor.requestId,
+        shopifyUserId: actor.userId,
+        owner,
+        permission,
+        grantRevision,
+      },
+    });
   return {
     storeId: store.id,
     projectId: store.projectId,

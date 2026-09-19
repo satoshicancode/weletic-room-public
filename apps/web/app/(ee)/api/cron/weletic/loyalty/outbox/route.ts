@@ -3,6 +3,7 @@ import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox";
 import { enqueuePointsExpiryLifecycleJobs } from "@/lib/weletic/loyalty/points-expiry-scheduler";
 import { enqueueRewardExpiryReminderJobs } from "@/lib/weletic/loyalty/reward-expiry-scheduler";
 import { enqueueTierReviewSweepJobs } from "@/lib/weletic/loyalty/tier-review-scheduling";
+import { clearExpiredReviewDeliveryEvidence } from "@/lib/weletic/reviews/delivery-retention";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,21 +14,29 @@ const runOutboxBatch = withCron(async ({ searchParams }) => {
     ? Math.min(100, Math.max(1, requestedBatchSize))
     : 50;
 
-  const [expirySweep, tierSweep, rewardExpirySweep] = await Promise.all([
-    enqueuePointsExpiryLifecycleJobs({
-      batchSize,
-    }),
-    enqueueTierReviewSweepJobs({
-      batchSize,
-    }),
-    enqueueRewardExpiryReminderJobs({ batchSize }),
-  ]);
+  const [expirySweep, tierSweep, rewardExpirySweep, reviewRetention] =
+    await Promise.all([
+      enqueuePointsExpiryLifecycleJobs({
+        batchSize,
+      }),
+      enqueueTierReviewSweepJobs({
+        batchSize,
+      }),
+      enqueueRewardExpiryReminderJobs({ batchSize }),
+      clearExpiredReviewDeliveryEvidence({ batchSize }),
+    ]);
   const outbox = await processOutboxJobsBatch({
     batchSize,
     workerId: `cron_${crypto.randomUUID()}`,
   });
 
-  return Response.json({ expirySweep, tierSweep, rewardExpirySweep, outbox });
+  return Response.json({
+    expirySweep,
+    tierSweep,
+    rewardExpirySweep,
+    reviewRetention,
+    outbox,
+  });
 });
 
 export const GET = runOutboxBatch;
