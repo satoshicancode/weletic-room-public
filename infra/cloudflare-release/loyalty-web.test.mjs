@@ -4,7 +4,11 @@ import { request } from "node:http";
 import { connect } from "node:net";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { admitsLoyaltyRequest, loyaltyRoutes } from "./loyalty-routes.mjs";
+import {
+  admitsLoyaltyRequest,
+  loyaltyRoutes,
+  reviewRoutes,
+} from "./loyalty-routes.mjs";
 import { loyaltyHttpServer } from "./loyalty-web.mjs";
 const host = "loyalty-api-dev.weletic.com";
 const path = "/api/internal/shopify/merchant/reward-catalog";
@@ -87,6 +91,58 @@ test("denies alternate hosts, duplicate Host and framework routing controls", ()
     assert.equal(admitsLoyaltyRequest(input(path + "?" + query)), false);
 });
 
+test("review admission requires explicit opt-in and the exact supported method", () => {
+  assert.equal(new Set(reviewRoutes).size, reviewRoutes.length);
+  for (const url of reviewRoutes) {
+    const method = /\/shopify\/reviews\/(list|photo|health)$/.test(url)
+      ? "GET"
+      : "POST";
+    const req = { ...input(url), method };
+    assert.equal(admitsLoyaltyRequest(req), false);
+    assert.equal(admitsLoyaltyRequest(req, { reviewsEnabled: "1" }), false);
+    assert.equal(admitsLoyaltyRequest(req, { reviewsEnabled: true }), true);
+    for (const other of [
+      "GET",
+      "POST",
+      "HEAD",
+      "PUT",
+      "DELETE",
+      "OPTIONS",
+    ].filter((value) => value !== method))
+      assert.equal(
+        admitsLoyaltyRequest(
+          { ...req, method: other },
+          { reviewsEnabled: true },
+        ),
+        false,
+      );
+    for (const suffix of ["/", "/../list", "%2f", "#ignored"])
+      assert.equal(
+        admitsLoyaltyRequest(
+          { ...req, url: url + suffix },
+          { reviewsEnabled: true },
+        ),
+        false,
+      );
+    assert.equal(
+      admitsLoyaltyRequest(
+        { ...req, headers: { host, "x-invoke-path": "/admin" } },
+        { reviewsEnabled: true },
+      ),
+      false,
+    );
+  }
+  for (const url of [
+    "/api/internal/shopify/reviews/new-action",
+    "/api/internal/shopify/merchant/reviews/collection/write",
+    "/api/auth/signin",
+  ])
+    assert.equal(
+      admitsLoyaltyRequest(input(url), { reviewsEnabled: true }),
+      false,
+    );
+});
+
 test("inventory paths resolve to existing route files, including bounded dynamic routes", () => {
   const root = fileURLToPath(new URL("../../apps/web/app/", import.meta.url));
   const routes = readdirSync(root, { recursive: true })
@@ -100,7 +156,7 @@ test("inventory paths resolve to existing route files, including bounded dynamic
           .slice(0, -1)
           .join("/"),
     );
-  for (const path of loyaltyRoutes) {
+  for (const path of [...loyaltyRoutes, ...reviewRoutes]) {
     assert.ok(
       routes.some((r) =>
         new RegExp("^" + r.replace(/\[[^\]]+\]/g, "[^/]+") + "$").test(path),
@@ -183,6 +239,49 @@ test("upgrade and CONNECT sockets close without application dispatch", async () 
       });
     }
     assert.equal(dispatched, 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("opted-in review HTTP preserves signature/body and never overrides application denial", async () => {
+  let seen;
+  const server = loyaltyHttpServer(
+    async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      seen = {
+        url: req.url,
+        body: Buffer.concat(chunks).toString("hex"),
+        signature: req.headers["x-weletic-signature"],
+      };
+      res.writeHead(401);
+      res.end("Unauthorized");
+    },
+    { reviewsEnabled: true },
+  );
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = "/api/internal/shopify/reviews/submit?opaque=a%2Fb&opaque=second";
+  try {
+    const status = await new Promise((resolve, reject) => {
+      const req = request(
+        {
+          hostname: "127.0.0.1",
+          port: server.address().port,
+          path: url,
+          method: "POST",
+          headers: { host, "x-weletic-signature": "synthetic" },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode));
+        },
+      );
+      req.on("error", reject);
+      req.end(Buffer.from([0, 255, 10, 13]));
+    });
+    assert.equal(status, 401);
+    assert.deepEqual(seen, { url, body: "00ff0a0d", signature: "synthetic" });
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

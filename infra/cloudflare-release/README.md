@@ -210,6 +210,34 @@ release manifests/routing, scheduler/watchdog/supervision, target schema rollout
 and live public-app acceptance. This checkpoint closes only local Shopify
 candidate packaging/boot/shutdown verification, not cloud deployment readiness.
 
+## September 20: opt-in review ingress preparation
+
+The default remains the loyalty-only route inventory. After separate release
+approval, `WELETIC_RELEASE_REVIEW_ROUTES=1` admits the exact existing signed
+review service and merchant endpoints from `reviewRoutes` in `loyalty-routes.mjs`.
+Missing or `0` keeps them denied; other values fail runtime admission. Read-only
+shopper service actions use GET; invitation/submission/upload and all merchant
+operations use POST. New actions are not admitted through prefix matching.
+
+This switch changes **ingress admission only**. It does not enable a store's
+Reviews module, approve an installation, grant staff permissions, authorize an
+invitation, change worker eligibility, or send an email. Existing per-store
+switches and signed gateways remain authoritative. Setting it back to `0` is
+not a writer/queue kill switch; operational rollback must also disable the
+affected module writers and contain queued jobs without deleting history.
+
+No new public mutation endpoint is introduced. Host/header/path defenses and
+raw signed body/query handling are unchanged. The internal queue-retry profile
+remains `loyalty-only` to retain its narrow Shopify maintenance scope; it is not
+the module enablement selector. Review jobs already use the store-scoped outbox,
+which requires separate worker/provider acceptance.
+
+Preparation boundary: this inventory is based on public main at PR #87. Draft
+collection routes, future store-review/Q&A/video/import routes, processing workers
+and their resource/media policies must be integrated explicitly when implemented;
+none is silently exposed by this flag. This is not complete Reviews release
+packaging, a container-image acceptance result, or deployment authorization.
+
 ## September 17: loyalty-only web boundary
 
 [ADR 0036](../../docs/adr/0036-loyalty-only-cloudflare-release.md) scopes the

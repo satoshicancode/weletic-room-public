@@ -59,9 +59,28 @@ export const loyaltyRoutes = Object.freeze([
   "/api/jobs/process/weletic-shopify-session-renewal-sweep-job",
 ]);
 const paths = new Set(loyaltyRoutes);
+// Explicit route admission only; application signatures, tenant/staff identity,
+// invitation authorization and per-store module switches remain authoritative.
+export const reviewRoutes = Object.freeze([
+  ...["list", "photo", "health", "request", "submit", "upload"].map(
+    (action) => internal + "reviews/" + action,
+  ),
+  ...[
+    "list",
+    "moderate",
+    "incentives/read",
+    "incentives/draft",
+    "incentives/activate",
+    "incentives/coupons",
+  ].map((action) => internal + "merchant/reviews/" + action),
+]);
+const reviewPaths = new Set(reviewRoutes);
+const reviewReadPaths = new Set(
+  ["list", "photo", "health"].map((action) => internal + "reviews/" + action),
+);
 const host = new URL(PUBLIC_LOYALTY_API_ORIGIN).host;
 
-export function admitsLoyaltyRequest(request) {
+export function admitsLoyaltyRequest(request, { reviewsEnabled = false } = {}) {
   if (!request || request.headers?.host !== host) return false;
   if (!/^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$/.test(request.method ?? ""))
     return false;
@@ -120,6 +139,9 @@ export function admitsLoyaltyRequest(request) {
   }
   return (
     paths.has(path) ||
+    (reviewsEnabled === true &&
+      reviewPaths.has(path) &&
+      request.method === (reviewReadPaths.has(path) ? "GET" : "POST")) ||
     /^\/api\/shopify\/compliance\/exports\/[A-Za-z0-9_-]{1,128}$/.test(path)
   );
 }
