@@ -240,6 +240,12 @@ No checkbox below is promoted solely by these local checks.
 
 ## C — Shopper loyalty and financial lifecycle
 
+September 19 [bounded financial acceptance](yamaxdev-financial-acceptance-2026-09-19.md)
+records #1045/#1046 purchase, fixed redemption/use, partial/full refunds and exact
+SQL/wallet reconciliation. All five new financial events completed on attempt 1.
+No concurrent financial duplicate occurred; duplicate/recovery acceptance and
+historical failed-event repair remain open. This is not full C/G gate completion.
+
 September 18 [bounded live discounted-order retest](yamaxdev-discount-retest-2026-09-18.md)
 records native yamaxdev purchases #1043/#1044, fixed redemption/use, exact
 discounted earning, partial/full refunds and independent SQL reconciliation.
