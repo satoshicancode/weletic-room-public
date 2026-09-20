@@ -140,6 +140,13 @@ it does not assert that a parent task or requirement is accepted.
 
 ## Execution order and approval packets
 
+S04/S06 preparation now includes a [resource and cost draft](release-resource-inventory-2026-09-20.md)
+and an [App Store reviewer packet](app-store-reviewer-packet.md), based on public
+main `a6965d65079cd57fc15f558d977bace14790f4c0`. These do not close a release gate:
+account inventory, provider security/compatibility, final quotes, real reviewer
+journeys and execution approvals remain open. The cost draft separates priced
+scenarios from unpriced reserves and does not authorize provisioning.
+
 1. Reconcile this checklist and ADR; then implement complete merchant/shopper/
    worker slices with tests, not hidden activation of existing incomplete paths.
 2. Resume R01/R02 and prerequisite R04 disclosure alongside outstanding loyalty
