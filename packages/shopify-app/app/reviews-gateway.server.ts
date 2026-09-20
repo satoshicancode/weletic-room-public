@@ -1,3 +1,4 @@
+import { openReviewSubmissionSchema } from "../../../apps/web/lib/weletic/reviews/open-submission-contract";
 import { reviewFormResponse } from "./reviews-form.server";
 import {
   privateCustomerJson,
@@ -10,9 +11,61 @@ export async function reviewProxyResponse(
   request: Request,
   shop: string,
   subpath: string,
+  authenticatedCustomerId?: string,
 ) {
+  return reviewGatewayResponse(
+    request,
+    shop,
+    subpath,
+    authenticatedCustomerId,
+    "app_proxy",
+  );
+}
+
+/** Only called after customer-account SDK verification. The source is fixed by
+ * this server entrypoint, not caller JSON/query. No invitation routes here. */
+export async function reviewCustomerAccountResponse(
+  request: Request,
+  shop: string,
+  subpath: string,
+  authenticatedCustomerId: string,
+) {
+  if (
+    request.method !== "POST" ||
+    ![
+      "reviews/open-prepare",
+      "reviews/open-submit",
+      "reviews/open-upload",
+    ].includes(subpath)
+  )
+    return privateCustomerJson(
+      { error: { code: "not_found" } },
+      { status: 404 },
+    );
+  return reviewGatewayResponse(
+    request,
+    shop,
+    subpath,
+    authenticatedCustomerId,
+    "customer_account",
+  );
+}
+
+async function reviewGatewayResponse(
+  request: Request,
+  shop: string,
+  subpath: string,
+  authenticatedCustomerId: string | undefined,
+  source: "app_proxy" | "customer_account",
+) {
+  const vary = source === "customer_account" ? "Authorization" : "Cookie";
   try {
     const action = subpath.slice("reviews/".length);
+    if (request.method === "GET" && action === "open-write")
+      return reviewFormResponse(
+        new URL(request.url).searchParams.get("locale"),
+        "open",
+      );
     if (request.method === "GET" && action === "write")
       return reviewFormResponse(
         new URL(request.url).searchParams.get("locale"),
@@ -21,11 +74,27 @@ export async function reviewProxyResponse(
       request.method === "GET"
         ? ["list", "photo"]
         : request.method === "POST"
-          ? ["request", "submit", "upload"]
+          ? [
+              "request",
+              "submit",
+              "upload",
+              "open-submit",
+              "open-prepare",
+              "open-upload",
+            ]
           : [];
     if (!allowed.includes(action))
       throw new WeleticGatewayError("Review route unavailable", 404);
     const query = new URLSearchParams({ shop });
+    if (["open-submit", "open-prepare", "open-upload"].includes(action)) {
+      if (
+        !authenticatedCustomerId ||
+        !/^[1-9][0-9]{0,19}$/.test(authenticatedCustomerId)
+      )
+        throw new WeleticGatewayError("Customer authentication required", 401);
+      query.set("customerId", authenticatedCustomerId);
+      query.set("source", source);
+    }
     if (request.method === "GET") {
       const url = new URL(request.url);
       for (const key of [
@@ -46,7 +115,9 @@ export async function reviewProxyResponse(
     if (request.method === "POST") {
       if (!request.headers.get("content-type")?.startsWith("application/json"))
         throw new WeleticGatewayError("Use JSON", 415);
-      const max = action === "upload" ? 3 * 1024 * 1024 : 64 * 1024;
+      const max = ["upload", "open-upload"].includes(action)
+        ? 3 * 1024 * 1024
+        : 64 * 1024;
       const reader = request.body?.getReader();
       if (!reader) throw new WeleticGatewayError("Missing body", 400);
       const chunks: Uint8Array[] = [];
@@ -67,12 +138,40 @@ export async function reviewProxyResponse(
       }
       body = Buffer.concat(chunks).toString("utf8");
     }
+    if (action === "open-submit") {
+      let valid = false;
+      try {
+        const { authorBinding, ...content } = JSON.parse(body || "");
+        valid =
+          typeof authorBinding === "string" &&
+          /^[a-f0-9]{64}$/.test(authorBinding) &&
+          openReviewSubmissionSchema.safeParse(content).success;
+      } catch {
+        /* Definite pre-dispatch rejection, not a provider outcome. */
+      }
+      if (!valid)
+        return privateCustomerJson(
+          { error: { code: "invalid_review_input" } },
+          { status: 400 },
+          vary,
+        );
+    }
     const result = await weleticApiJson<unknown>(
       `/api/internal/shopify/reviews/${action}?${query}`,
       { method: request.method, ...(body ? { body } : {}) },
     );
-    return privateCustomerJson(result, {}, "Cookie");
+    return privateCustomerJson(result, {}, vary);
   } catch (error) {
+    if (
+      subpath === "reviews/open-upload" &&
+      error instanceof WeleticGatewayError &&
+      error.reviewPhotoValidationRejected
+    )
+      return privateCustomerJson(
+        { error: { code: "invalid_open_photo" } },
+        { status: 400 },
+        vary,
+      );
     return privateCustomerJson(
       {
         error: {
@@ -84,7 +183,7 @@ export async function reviewProxyResponse(
         },
       },
       { status: error instanceof WeleticGatewayError ? error.status : 503 },
-      "Cookie",
+      vary,
     );
   }
 }

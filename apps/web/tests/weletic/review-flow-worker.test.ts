@@ -15,6 +15,21 @@ const m = vi.hoisted(() => ({
   credentials: vi.fn(),
   dispatch: vi.fn(),
   enqueue: vi.fn(),
+  retainedPrivacy: vi.fn(),
+}));
+vi.mock("@/lib/weletic/reviews/transaction", () => ({
+  withReviewMutation: async (
+    _store: string,
+    operation: (tx: unknown) => unknown,
+  ) =>
+    operation({
+      weleticReviewSettings: { findUnique: m.settings },
+      weleticProductReview: { findFirst: m.review },
+    }),
+}));
+vi.mock("@/lib/weletic/reviews/privacy-owner-write", () => ({
+  lockReviewOwnerPrivacySource: m.retainedPrivacy,
+  ReviewOwnerPrivacySuppressedError: class extends Error {},
 }));
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: m.enqueue,
@@ -95,6 +110,90 @@ beforeEach(() => {
     shopDomain: "test.myshopify.com",
     accessToken: "synthetic-token",
   });
+});
+function openRow() {
+  return {
+    ...row(),
+    id: event.reviewId,
+    requestId: null,
+    request: null,
+    verifiedPurchase: false,
+    incentivized: false,
+    openSubmission: {
+      storeId: "store",
+      reviewId: event.reviewId,
+      shopperId: "shopper",
+      installationGeneration: "g1",
+      source: "customer_account",
+      contentDigest: "a".repeat(64),
+      settingsRevision: 2,
+      disclosureRevision: "open_unverified_unrewarded_v1",
+      redactedAt: null,
+    },
+  };
+}
+it("dispatches an owned unverified submission without an invitation or loyalty account", async () => {
+  m.review.mockResolvedValue(openRow());
+  const unverified = { ...event, verifiedPurchase: false };
+  await handleReviewFlowTrigger("store", unverified);
+  expect(m.dispatch).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      payload: { event: unverified, customerGid: "gid://shopify/Customer/1" },
+    }),
+  );
+  expect(JSON.stringify(m.dispatch.mock.calls)).not.toContain("contentDigest");
+});
+it.each([
+  { storeId: "foreign" },
+  { shopperId: "foreign" },
+  { reviewId: "foreign" },
+  { contentDigest: null },
+  { redactedAt: new Date() },
+  { installationGeneration: "stale" },
+])("rejects changed open provenance before credentials %j", async (change) => {
+  const review = openRow();
+  m.review.mockResolvedValue({
+    ...review,
+    openSubmission: { ...review.openSubmission, ...change },
+  });
+  await expect(
+    handleReviewFlowTrigger("store", { ...event, verifiedPurchase: false }),
+  ).rejects.toThrow();
+  expect(m.credentials).not.toHaveBeenCalled();
+  expect(m.dispatch).not.toHaveBeenCalled();
+});
+it("rechecks open provenance after credential refresh", async () => {
+  m.review.mockResolvedValue(openRow());
+  m.credentials.mockImplementation(async () => {
+    m.review.mockResolvedValue({ ...openRow(), openSubmission: null });
+    return { shopDomain: "test.myshopify.com", accessToken: "synthetic-token" };
+  });
+  await expect(
+    handleReviewFlowTrigger("store", { ...event, verifiedPurchase: false }),
+  ).rejects.toThrow();
+  expect(m.dispatch).not.toHaveBeenCalled();
+});
+it("permits current-generation publication of owned historical open content", async () => {
+  m.review.mockResolvedValue({ ...openRow(), status: "published", version: 2 });
+  await handleReviewFlowTrigger("store", {
+    ...event,
+    handle: REVIEW_FLOW_HANDLES.PUBLISHED,
+    installationGeneration: "g2",
+    version: 2,
+    verifiedPurchase: false,
+  });
+  expect(m.dispatch).toHaveBeenCalledTimes(1);
+  expect(m.assert).toHaveBeenCalledWith(
+    expect.objectContaining({ expectedInstallationGeneration: "g2" }),
+  );
+});
+it("rejects mixed invitation and open provenance", async () => {
+  m.review.mockResolvedValue({
+    ...row(),
+    openSubmission: openRow().openSubmission,
+  });
+  await expect(handleReviewFlowTrigger("store", event)).rejects.toThrow();
+  expect(m.dispatch).not.toHaveBeenCalled();
 });
 it("dispatches a low-rating review with no loyalty account or content projection", async () => {
   await handleReviewFlowTrigger("store", event);

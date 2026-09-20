@@ -51,7 +51,33 @@ function getForwardedClientIp(request: Request) {
   return candidate?.trim().slice(0, 128) || undefined;
 }
 
+function rejectAmbiguousOpenReviewContext(
+  request: Request,
+  splat: string | undefined,
+) {
+  if (
+    ![
+      "reviews/open-submit",
+      "reviews/open-prepare",
+      "reviews/open-upload",
+    ].includes(normalizeSubpath(splat))
+  )
+    return null;
+  const query = new URL(request.url).searchParams;
+  // SDK canonicalization and URLSearchParams.get differ on repeated keys.
+  // Reject ambiguity before authenticating or selecting any authority value.
+  if ([...query.keys()].some((key) => query.getAll(key).length !== 1))
+    return privateCustomerJson(
+      { error: { code: "bad_request", message: "Ambiguous review context" } },
+      { status: 400 },
+      "Cookie",
+    );
+  return null;
+}
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
+  const ambiguous = rejectAmbiguousOpenReviewContext(request, params["*"]);
+  if (ambiguous) return ambiguous;
   // 1. Terminate Shopify App Proxy traffic and verify Shopify HMAC signature
   const { session } = await authenticate.public.appProxy(request);
 
@@ -68,7 +94,12 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const subpath = normalizeSubpath(params["*"]);
 
   if (subpath.startsWith("reviews/"))
-    return reviewProxyResponse(request, shop, subpath);
+    return reviewProxyResponse(
+      request,
+      shop,
+      subpath,
+      session?.shop && session.shop !== shop ? undefined : customerId,
+    );
 
   if (!APP_PROXY_GET_PATHS.has(subpath)) {
     return json(
@@ -187,6 +218,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
+  const ambiguous = rejectAmbiguousOpenReviewContext(request, params["*"]);
+  if (ambiguous) return ambiguous;
   // 1. Terminate Shopify App Proxy traffic and verify Shopify HMAC signature
   const { session } = await authenticate.public.appProxy(request);
 
@@ -204,7 +237,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const subpath = normalizeSubpath(params["*"]);
 
   if (subpath.startsWith("reviews/"))
-    return reviewProxyResponse(request, shop, subpath);
+    return reviewProxyResponse(
+      request,
+      shop,
+      subpath,
+      session?.shop && session.shop !== shop ? undefined : customerId,
+    );
 
   if (!APP_PROXY_ACTION_PATHS.has(subpath)) {
     return json(

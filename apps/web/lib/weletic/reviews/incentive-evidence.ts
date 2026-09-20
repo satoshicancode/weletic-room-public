@@ -5,11 +5,13 @@ import { createHash } from "node:crypto";
  */
 export function reviewParticipationContentDigest(review: {
   id: string;
-  requestId: string;
+  requestId: string | null;
   body: string;
   title: string;
   mediaIds: string[];
 }) {
+  if (!review.requestId)
+    throw new Error("Invitation evidence is required for review incentives");
   return createHash("sha256")
     .update(
       JSON.stringify([

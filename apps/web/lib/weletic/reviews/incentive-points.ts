@@ -88,6 +88,7 @@ export async function fulfillReviewPointsClaimInTransaction({
   });
   if (
     !review ||
+    !review.request ||
     review.shopperId !== claim.shopperId ||
     review.redactedAt ||
     review.status === "redacted" ||

@@ -108,7 +108,22 @@ vi.mock("@/lib/prisma", () => ({
       count: vi.fn(),
     },
     // The legacy financial fixture contains no native review rows.
-    weleticProductReview: { findMany: vi.fn().mockResolvedValue([]) },
+    weleticProductReview: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
+    weleticOpenReviewSubmission: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
+    weleticOpenReviewMediaOwnership: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
+    weleticReviewMedia: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
     weleticProductReviewTranslation: {
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),

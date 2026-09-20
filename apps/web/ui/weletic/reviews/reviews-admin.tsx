@@ -22,7 +22,7 @@ type Review = {
   incentivized: boolean;
   rewardStatus: string;
   rewardReason: string | null;
-  rewardPolicy?: "legacy" | "participation";
+  rewardPolicy?: "legacy" | "participation" | "none";
   canRetryReward?: boolean;
   product: { title: string };
   media: { id: string }[];
@@ -384,9 +384,11 @@ function ReviewCard({
           <small className="text-neutral-500">
             {review.rewardPolicy === "participation"
               ? "Participation rewards do not depend on publication. Hiding or rejecting feedback does not revoke its reward; confirmed invalidity uses the separate recovery process."
-              : review.rewardPolicy === "legacy"
-                ? "This historical review uses its original publication-based reward policy. Hiding or rejecting reverses awarded points once; republishing does not issue another reward."
-                : "Reload to view this review's reward policy and available retry actions."}
+              : review.rewardPolicy === "none"
+                ? "This review is not purchase-verified and has no loyalty incentive. Moderation does not grant a reward."
+                : review.rewardPolicy === "legacy"
+                  ? "This historical review uses its original publication-based reward policy. Hiding or rejecting reverses awarded points once; republishing does not issue another reward."
+                  : "Reload to view this review's reward policy and available retry actions."}
           </small>
         </fieldset>
       )}

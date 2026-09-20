@@ -4,18 +4,26 @@ import { createWeleticId } from "@/lib/weletic/ids";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
-import { Prisma } from "@prisma/client";
+import { Prisma, type WeleticReviewMedia } from "@prisma/client";
 import sharp from "sharp";
 import {
   REVIEW_MAX_PHOTO_BYTES,
   REVIEW_MAX_PHOTOS,
   ReviewError,
 } from "./contracts";
+import {
+  hasPublicReviewPhotoOwnership,
+  publicPhotoMediaSelection,
+  publicPhotoReviewSelection,
+} from "./media-public-ownership";
+import { OpenPhotoCleanupReconciliationRequired } from "./open-media-errors";
+import { reconcileOpenReviewPhotoStorage } from "./open-media-reconciliation";
+import { assertReviewPhotoStorageSettled } from "./open-media-write-state";
 import { buildReviewPublicPrivacySql } from "./privacy-public-sql";
 import { readUsableReviewRequest } from "./requests";
 import { withReviewMutation } from "./transaction";
 
-function requireReviewStorage() {
+export function requireReviewStorage() {
   if (
     ![
       process.env.STORAGE_ENDPOINT,
@@ -229,32 +237,62 @@ export async function cleanupReviewPhoto(storeId: string, mediaId: string) {
   return withDistributedLock({
     key: `weletic:reviews:media:${storeId}:${mediaId}`,
     ttlSeconds: 300,
-    fn: () => cleanupReviewPhotoLocked(storeId, mediaId),
+    fn: async () => {
+      try {
+        return await cleanupReviewPhotoLocked(storeId, mediaId);
+      } catch (error) {
+        if (!(error instanceof OpenPhotoCleanupReconciliationRequired))
+          throw error;
+        let confirmed = false;
+        try {
+          confirmed =
+            (await reconcileOpenReviewPhotoStorage(storeId, mediaId)).status ===
+            "confirmed";
+        } catch {
+          // Keep unknown attempts quarantined; never log provider/token details.
+        }
+        if (!confirmed) throw error;
+        // Same distributed lock, new SQL transaction. Original due/ownership/
+        // attachment/deletion-pending checks still decide whether deletion is due.
+        return cleanupReviewPhotoLocked(storeId, mediaId);
+      }
+    },
   });
 }
 
 async function cleanupReviewPhotoLocked(storeId: string, mediaId: string) {
-  const media = await prisma.weleticReviewMedia.findFirst({
-    where: { id: mediaId, storeId },
-  });
-  if (!media || media.status === "deleted") return;
-  if (media.status !== "deletion_pending") {
-    if (media.reviewId) return;
-    if (media.uploadExpiresAt > new Date())
-      throw new ReviewError("unavailable", "Photo cleanup is not due");
-  }
-  const claimed = await prisma.weleticReviewMedia.updateMany({
-    where: {
-      id: mediaId,
+  const media = await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<WeleticReviewMedia[]>(Prisma.sql`
+      SELECT * FROM WeleticReviewMedia WHERE id = ${mediaId} AND storeId = ${storeId} FOR UPDATE
+    `);
+    const current = rows[0];
+    if (!current) return null;
+    await assertReviewPhotoStorageSettled(
+      tx,
       storeId,
-      status: media.status,
-      ...(media.status === "deletion_pending"
-        ? {}
-        : { reviewId: null, uploadExpiresAt: { lte: new Date() } }),
-    },
-    data: { status: "deletion_pending" },
+      mediaId,
+      current.requestId,
+    );
+    if (current.status === "deleted") return null;
+    if (current.status !== "deletion_pending") {
+      if (current.reviewId) return null;
+      if (current.uploadExpiresAt > new Date())
+        throw new ReviewError("unavailable", "Photo cleanup is not due");
+    }
+    const claimed = await tx.weleticReviewMedia.updateMany({
+      where: {
+        id: mediaId,
+        storeId,
+        status: current.status,
+        ...(current.status === "deletion_pending"
+          ? {}
+          : { reviewId: null, uploadExpiresAt: { lte: new Date() } }),
+      },
+      data: { status: "deletion_pending" },
+    });
+    return claimed.count === 1 ? current : null;
   });
-  if (!claimed.count) return;
+  if (!media) return;
   if (!media.objectKey.startsWith(`weletic/reviews/${storeId}/${media.id}.`))
     throw new ReviewError("unavailable", "Invalid photo object ownership");
   requireReviewStorage();
@@ -284,11 +322,10 @@ export async function getPublicReviewPhoto(storeId: string, mediaId: string) {
           },
         },
         select: {
-          objectKey: true,
+          ...publicPhotoMediaSelection,
           review: {
             select: {
-              id: true,
-              productId: true,
+              ...publicPhotoReviewSelection,
               store: { select: { installationGeneration: true } },
             },
           },
@@ -296,6 +333,8 @@ export async function getPublicReviewPhoto(storeId: string, mediaId: string) {
       });
       const generation = media?.review?.store.installationGeneration;
       if (!media?.review || !generation)
+        throw new ReviewError("not_found", "Photo unavailable");
+      if (!hasPublicReviewPhotoOwnership(storeId, media.review, media))
         throw new ReviewError("not_found", "Photo unavailable");
       const privacy = buildReviewPublicPrivacySql({
         storeId,

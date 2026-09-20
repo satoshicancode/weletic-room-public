@@ -355,6 +355,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
           requestId: request.id,
           shopperId: fixture.shopperId,
           productId,
+          verifiedPurchase: true,
           rating,
           title: "Honest feedback",
           body: "The product did not meet my expectations.",
@@ -377,7 +378,9 @@ describe("shopper profile production queries on isolated MySQL", () => {
           }),
         },
       });
-      return review;
+      if (review.requestId !== request.id)
+        throw new Error("Synthetic invitation review lost its request binding");
+      return { ...review, requestId: request.id };
     };
     const reserve = async (
       reviewId: string,

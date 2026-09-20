@@ -27,9 +27,11 @@ import {
   type MerchantReviewListPage,
 } from "../../../../apps/web/lib/weletic/reviews/merchant-contract";
 import type { AuditedReviewModerationInput } from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
+import { OpenReviewPolicyPanel } from "../components/OpenReviewPolicyPanel";
 import { ReviewIncentivesPanel } from "../components/ReviewIncentivesPanel";
 import { ReviewModerationForm } from "../components/ReviewModerationForm";
 import { ReviewTranslationsPanel } from "../components/ReviewTranslationsPanel";
+import { createMerchantOpenReviewPolicyClient } from "../merchant-open-review-policy-client";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { createMerchantReviewModerationClient } from "../merchant-review-moderation-client";
 import { createMerchantReviewTranslationsClient } from "../merchant-review-translations-client";
@@ -72,6 +74,10 @@ export default function ReviewsPage() {
     [shopify],
   );
   const [locale, setLocale] = useState<"en" | "ja" | "vi">("en");
+  const openPolicyClient = useMemo(
+    () => createMerchantOpenReviewPolicyClient(() => shopify.idToken()),
+    [shopify],
+  );
   const incentiveClient = useMemo(
     () => createMerchantReviewIncentivesClient(() => shopify.idToken()),
     [shopify],
@@ -103,6 +109,10 @@ export default function ReviewsPage() {
   const inFlight = useRef(false);
   const notice = useRef<HTMLDivElement>(null);
   const dirtyTranslations = useRef(new Set<string>());
+  const policyDirtyChanged = useCallback((dirty: boolean) => {
+    if (dirty) dirtyTranslations.current.add("open-policy");
+    else dirtyTranslations.current.delete("open-policy");
+  }, []);
   const discardCopy = useRef(reviewTranslationCopy[locale].discardPage);
   discardCopy.current = reviewTranslationCopy[locale].discardPage;
   const confirmDiscard = useCallback(
@@ -245,6 +255,14 @@ export default function ReviewsPage() {
             <Text as="p">{copy.description}</Text>
             <Card>
               <ReviewIncentivesPanel client={incentiveClient} locale={locale} />
+            </Card>
+            <Card>
+              <OpenReviewPolicyPanel
+                client={openPolicyClient}
+                locale={locale}
+                acquireOperation={acquireTranslationOperation}
+                onDirtyChange={policyDirtyChanged}
+              />
             </Card>
             <Select
               disabled={busy}

@@ -1,3 +1,4 @@
+import { cleanupReviewPhoto } from "@/lib/weletic/reviews/media";
 import {
   purgeNativeReviewsBatch,
   redactNativeReviewsBatch,
@@ -5,7 +6,24 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  openMediaList: vi.fn(),
+  openMediaUpdate: vi.fn(),
+  openMediaCount: vi.fn(),
+  openMediaDelete: vi.fn(),
+  mediaList: vi.fn(),
+  mediaUpdate: vi.fn(),
   query: vi.fn(),
+  openPolicyList: vi.fn(),
+  openPolicyDelete: vi.fn(),
+  contentList: vi.fn(),
+  contentCount: vi.fn(),
+  sourceList: vi.fn(),
+  sourceCount: vi.fn(),
+  sourceUpdate: vi.fn(),
+  sourceDelete: vi.fn(),
+  contentDelete: vi.fn(),
+  mediaCount: vi.fn(),
+  mediaDelete: vi.fn(),
   auditList: vi.fn(),
   auditUpdate: vi.fn(),
   auditDelete: vi.fn(),
@@ -26,6 +44,33 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/prisma", () => {
   const db = {
     $queryRaw: mocks.query,
+    weleticOpenReviewMediaOwnership: {
+      findMany: mocks.openMediaList,
+      updateMany: mocks.openMediaUpdate,
+      count: mocks.openMediaCount,
+      deleteMany: mocks.openMediaDelete,
+    },
+    weleticOpenReviewPolicy: {
+      findMany: mocks.openPolicyList,
+      deleteMany: mocks.openPolicyDelete,
+    },
+    weleticOpenReviewSubmission: {
+      findMany: mocks.sourceList,
+      count: mocks.sourceCount,
+      updateMany: mocks.sourceUpdate,
+      deleteMany: mocks.sourceDelete,
+    },
+    weleticProductReview: {
+      findMany: mocks.contentList,
+      count: mocks.contentCount,
+      deleteMany: mocks.contentDelete,
+    },
+    weleticReviewMedia: {
+      findMany: mocks.mediaList,
+      updateMany: mocks.mediaUpdate,
+      count: mocks.mediaCount,
+      deleteMany: mocks.mediaDelete,
+    },
     weleticProductReviewTranslation: {
       findMany: mocks.translationList,
       updateMany: mocks.translationUpdate,
@@ -66,9 +111,72 @@ vi.mock("@/lib/weletic/reviews/media", () => ({ cleanupReviewPhoto: vi.fn() }));
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({ enqueueOutboxJob: vi.fn() }));
 
 describe("review moderation audit privacy", () => {
+  it("refuses frozen purge of abandoned media until actual deletion", async () => {
+    mocks.mediaList.mockResolvedValue([
+      { id: "abandoned", status: "deletion_pending" },
+    ]);
+    await expect(purgeNativeReviewsBatch("store-1")).rejects.toThrow(
+      "must be erased",
+    );
+    expect(mocks.mediaDelete).not.toHaveBeenCalled();
+  });
+  it("purges exact-store deleted media even with dangling parents after ownership is drained", async () => {
+    mocks.mediaList.mockResolvedValue([{ id: "abandoned", status: "deleted" }]);
+    expect(await purgeNativeReviewsBatch("store-1")).toEqual({ hasMore: true });
+    expect(mocks.mediaDelete).toHaveBeenCalledWith({
+      where: {
+        storeId: "store-1",
+        status: "deleted",
+        id: { in: ["abandoned"] },
+      },
+    });
+    expect(mocks.contentDelete).not.toHaveBeenCalled();
+  });
+  it("cleans review-owned photos without invitation work and waits for storage deletion", async () => {
+    mocks.mediaList.mockResolvedValue([
+      { id: "owned-photo", status: "uploaded" },
+    ]);
+    mocks.mediaCount.mockResolvedValue(1);
+    expect(await redactNativeReviewsBatch("store-1", "shopper-1")).toEqual({
+      hasMore: true,
+    });
+    expect(cleanupReviewPhoto).toHaveBeenCalledWith("store-1", "owned-photo");
+    expect(mocks.mediaCount).toHaveBeenCalledWith({
+      where: {
+        storeId: "store-1",
+        status: { not: "deleted" },
+        OR: [
+          { review: { storeId: "store-1", shopperId: "shopper-1" } },
+          { openOwnership: { storeId: "store-1", shopperId: "shopper-1" } },
+        ],
+      },
+    });
+  });
+  it("does not acknowledge erasure when private object cleanup fails", async () => {
+    mocks.mediaList.mockResolvedValue([
+      { id: "owned-photo", status: "deletion_pending" },
+    ]);
+    vi.mocked(cleanupReviewPhoto).mockRejectedValue(
+      new Error("storage unavailable"),
+    );
+    await expect(
+      redactNativeReviewsBatch("store-1", "shopper-1"),
+    ).rejects.toThrow("storage unavailable");
+  });
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.openMediaList.mockResolvedValue([]);
+    mocks.openMediaCount.mockResolvedValue(0);
+    mocks.openMediaUpdate.mockResolvedValue({ count: 1 });
     mocks.query.mockResolvedValue([{ complianceState: "frozen" }]);
+    mocks.openPolicyList.mockResolvedValue([]);
+    mocks.contentList.mockResolvedValue([]);
+    mocks.contentCount.mockResolvedValue(0);
+    mocks.sourceList.mockResolvedValue([]);
+    mocks.sourceCount.mockResolvedValue(0);
+    mocks.mediaCount.mockResolvedValue(0);
+    mocks.mediaList.mockResolvedValue([]);
+    mocks.mediaUpdate.mockResolvedValue({ count: 1 });
     mocks.auditList.mockResolvedValue([{ id: "audit-1" }]);
     mocks.auditCount.mockResolvedValue(0);
     mocks.requestList.mockResolvedValue([]);
@@ -79,6 +187,43 @@ describe("review moderation audit privacy", () => {
     mocks.translationList.mockResolvedValue([]);
     mocks.translationCount.mockResolvedValue(0);
     mocks.translationAuditList.mockResolvedValue([]);
+  });
+  it("purges only a bounded owned policy page after freezing the store", async () => {
+    mocks.openPolicyList.mockResolvedValue([{ id: "policy-1" }]);
+    await expect(purgeNativeReviewsBatch("store-1")).resolves.toEqual({
+      hasMore: true,
+    });
+    expect(mocks.openPolicyList).toHaveBeenCalledWith({
+      where: { storeId: "store-1" },
+      orderBy: { revision: "asc" },
+      take: 20,
+      select: { id: true },
+    });
+    expect(mocks.openPolicyDelete).toHaveBeenCalledWith({
+      where: { storeId: "store-1", id: { in: ["policy-1"] } },
+    });
+    expect(mocks.auditList).not.toHaveBeenCalled();
+  });
+  it("never deletes policy attribution from an operational store", async () => {
+    mocks.query.mockResolvedValue([{ complianceState: "active" }]);
+    await expect(purgeNativeReviewsBatch("store-1")).rejects.toThrow(
+      "frozen store",
+    );
+    expect(mocks.openPolicyList).not.toHaveBeenCalled();
+    expect(mocks.openPolicyDelete).not.toHaveBeenCalled();
+  });
+  it("keeps policy history on individual customer redaction", async () => {
+    await redactNativeReviewsBatch("store-1", "shopper-1");
+    expect(mocks.openPolicyList).not.toHaveBeenCalled();
+    expect(mocks.openPolicyDelete).not.toHaveBeenCalled();
+  });
+  it("does not report progress when policy deletion fails", async () => {
+    mocks.openPolicyList.mockResolvedValue([{ id: "policy-1" }]);
+    mocks.openPolicyDelete.mockRejectedValue(new Error("database failure"));
+    await expect(purgeNativeReviewsBatch("store-1")).rejects.toThrow(
+      "database failure",
+    );
+    expect(mocks.auditList).not.toHaveBeenCalled();
   });
   it("scrubs only the bounded store/shopper audit page", async () => {
     await expect(
@@ -114,6 +259,62 @@ describe("review moderation audit privacy", () => {
     await expect(
       redactNativeReviewsBatch("store-1", "shopper-1"),
     ).resolves.toEqual({ hasMore: true });
+  });
+  it("keeps privacy pending for review-owned content without invitation work", async () => {
+    mocks.contentCount.mockResolvedValue(1);
+    await expect(
+      redactNativeReviewsBatch("store-1", "shopper-1"),
+    ).resolves.toEqual({ hasMore: true });
+    expect(mocks.contentList.mock.calls[0][0].where).toMatchObject({
+      storeId: "store-1",
+      shopperId: "shopper-1",
+    });
+    expect(mocks.contentList.mock.calls[0][0].where).not.toHaveProperty(
+      "request",
+    );
+  });
+  it("clears private provenance evidence but retains the scoped retry marker", async () => {
+    const firstErasure = new Date("2026-09-01T00:00:00Z");
+    mocks.sourceList.mockResolvedValue([
+      { id: "source", redactedAt: firstErasure },
+    ]);
+    await redactNativeReviewsBatch("store-1", "shopper-1");
+    expect(mocks.sourceUpdate).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        storeId: "store-1",
+        id: "source",
+        AND: [
+          {
+            OR: [
+              { shopperId: "shopper-1" },
+              { review: { storeId: "store-1", shopperId: "shopper-1" } },
+            ],
+          },
+        ],
+      }),
+      data: { contentDigest: null, redactedAt: firstErasure },
+    });
+    expect(mocks.sourceDelete).not.toHaveBeenCalled();
+  });
+  it("keeps completion pending while provenance evidence remains", async () => {
+    mocks.sourceCount.mockResolvedValue(1);
+    await expect(
+      redactNativeReviewsBatch("store-1", "shopper-1"),
+    ).resolves.toEqual({ hasMore: true });
+    expect(mocks.sourceCount.mock.calls[0][0].where).toEqual(
+      mocks.sourceList.mock.calls[0][0].where,
+    );
+  });
+  it("purges source children before deleting original reviews", async () => {
+    mocks.sourceList.mockResolvedValue([{ id: "source" }]);
+    await expect(purgeNativeReviewsBatch("store-1")).resolves.toEqual({
+      hasMore: true,
+    });
+    expect(mocks.sourceDelete).toHaveBeenCalledWith({
+      where: { storeId: "store-1", id: { in: ["source"] } },
+    });
+    expect(mocks.contentDelete).not.toHaveBeenCalled();
+    expect(mocks.requestList).not.toHaveBeenCalled();
   });
   it("purges audit pages before touching review parents", async () => {
     await expect(purgeNativeReviewsBatch("store-1")).resolves.toEqual({
@@ -151,6 +352,37 @@ describe("review moderation audit privacy", () => {
     });
     expect(mocks.requestList).not.toHaveBeenCalled();
     expect(mocks.claimList).not.toHaveBeenCalled();
+  });
+  it("purges requestless originals only after their media is deleted", async () => {
+    mocks.auditList.mockResolvedValue([]);
+    mocks.contentList.mockResolvedValue([{ id: "requestless" }]);
+    await expect(purgeNativeReviewsBatch("store-1")).resolves.toEqual({
+      hasMore: true,
+    });
+    expect(mocks.contentList).toHaveBeenCalledWith({
+      where: { storeId: "store-1", requestId: null },
+      orderBy: { id: "asc" },
+      take: 20,
+      select: { id: true },
+    });
+    expect(mocks.contentDelete).toHaveBeenCalledWith({
+      where: {
+        storeId: "store-1",
+        requestId: null,
+        id: { in: ["requestless"] },
+      },
+    });
+    expect(mocks.requestList).not.toHaveBeenCalled();
+  });
+  it("refuses requestless purge when private media cleanup is pending", async () => {
+    mocks.auditList.mockResolvedValue([]);
+    mocks.contentList.mockResolvedValue([{ id: "requestless" }]);
+    mocks.mediaCount.mockResolvedValue(1);
+    await expect(purgeNativeReviewsBatch("store-1")).rejects.toThrow(
+      "photos must be erased",
+    );
+    expect(mocks.mediaDelete).not.toHaveBeenCalled();
+    expect(mocks.contentDelete).not.toHaveBeenCalled();
   });
   it("does not erase store activation history for individual customer privacy", async () => {
     await redactNativeReviewsBatch("store-1", "shopper-1");

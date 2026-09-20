@@ -27,6 +27,7 @@ export class WeleticGatewayError extends Error {
       | "lease_busy"
       | "stale_session"
       | "installation_blocked",
+    readonly reviewPhotoValidationRejected = false,
   ) {
     super(message);
     this.name = "WeleticGatewayError";
@@ -299,6 +300,7 @@ export async function weleticApiRequest(
   if (!response.ok) {
     const responseBody = await response.text();
     let coordinationCode: WeleticGatewayError["coordinationCode"];
+    let reviewPhotoValidationRejected = false;
     let upstreamMessage = "Weletic request was rejected";
     if (response.status >= 500) {
       upstreamMessage = "Weletic service is temporarily unavailable";
@@ -307,6 +309,13 @@ export async function weleticApiRequest(
         const parsed = JSON.parse(responseBody) as {
           error?: unknown;
         };
+        reviewPhotoValidationRejected =
+          response.status === 400 &&
+          url.pathname === "/api/internal/shopify/reviews/open-upload" &&
+          !!parsed.error &&
+          typeof parsed.error === "object" &&
+          "code" in parsed.error &&
+          parsed.error.code === "invalid_open_photo";
         if (
           response.status === 409 &&
           url.pathname === "/api/internal/shopify/sessions/coordination" &&
@@ -332,6 +341,7 @@ export async function weleticApiRequest(
       upstreamMessage,
       response.status,
       coordinationCode,
+      reviewPhotoValidationRejected,
     );
   }
 

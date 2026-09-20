@@ -5,6 +5,8 @@ import { isIP } from "net";
 
 interface imageOptions {
   signal?: AbortSignal;
+  /** The caller owns durable write/reconciliation state; never retry the PUT. */
+  singleAttempt?: boolean;
   contentType?: string;
   width?: number;
   height?: number;
@@ -96,10 +98,13 @@ class StorageClient {
     }
 
     try {
-      const response = await this.client.fetch(
+      const client = this.client;
+      if (opts?.singleAttempt) client.retries = 0;
+      const response = await client.fetch(
         `${process.env.STORAGE_ENDPOINT}/${this._getBucketName(bucket)}/${key}`,
         {
           method: "PUT",
+          ...(opts?.singleAttempt ? { redirect: "error" as const } : {}),
           signal: opts?.signal,
           headers,
           body: uploadBody,
@@ -124,6 +129,64 @@ class StorageClient {
       console.error("storage.upload failed", error);
       throw new Error("Failed to upload file. Please try again later.");
     }
+  }
+
+  /** Positive-evidence recovery only. Default R2 S3 endpoint, never CDN/custom
+   * domains. A null result is not proof that an earlier PUT cannot still finish.
+   */
+  async headPrivateR2Object(key: string) {
+    const endpoint = new URL(
+      process.env.STORAGE_ENDPOINT || "https://invalid.invalid",
+    );
+    const bucket = process.env.STORAGE_PRIVATE_BUCKET;
+    if (
+      endpoint.protocol !== "https:" ||
+      !/^[0-9a-f]{32}\.r2\.cloudflarestorage\.com$/.test(endpoint.hostname) ||
+      endpoint.port ||
+      endpoint.username ||
+      endpoint.password ||
+      endpoint.pathname !== "/" ||
+      endpoint.search ||
+      endpoint.hash ||
+      !bucket ||
+      !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket) ||
+      !process.env.STORAGE_ACCESS_KEY_ID ||
+      !process.env.STORAGE_SECRET_ACCESS_KEY ||
+      !key ||
+      key.split("/").some((part) => !part || part === "." || part === "..")
+    )
+      throw new Error(
+        "Direct private R2 storage is not configured for reconciliation",
+      );
+    const client = this.client;
+    client.retries = 0;
+    const response = await client.fetch(
+      `${endpoint.origin}/${bucket}/${key.split("/").map(encodeURIComponent).join("/")}`,
+      {
+        method: "HEAD",
+        redirect: "error",
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (response.status === 404) return null;
+    if (response.status !== 200)
+      throw new Error("Private R2 metadata is unavailable");
+    const length = response.headers.get("content-length");
+    const type = response.headers.get("content-type");
+    const proof = response.headers.get("x-amz-meta-weletic-upload-proof");
+    if (
+      !length ||
+      !/^(?:0|[1-9][0-9]{0,9})$/.test(length) ||
+      !type ||
+      type.length > 128
+    )
+      throw new Error("Private R2 metadata is invalid");
+    return {
+      sizeBytes: Number(length),
+      contentType: type,
+      uploadProof: proof && /^[0-9a-f]{64}$/.test(proof) ? proof : null,
+    };
   }
 
   async delete({

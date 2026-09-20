@@ -156,7 +156,9 @@ export async function listAdminReviews(
         });
   const pageItems = rows.slice(0, query.limit);
   const versionedOrderIds = pageItems.flatMap((row) =>
-    "rewardStatus" in row && row.request.incentivePolicyId !== null
+    "rewardStatus" in row &&
+    row.request &&
+    row.request.incentivePolicyId !== null
       ? [row.request.orderId]
       : [],
   );
@@ -176,6 +178,14 @@ export async function listAdminReviews(
   const items = pageItems.map((row) => {
     if (!("rewardStatus" in row)) return row;
     const { request, shopperId, participationStatus, ...item } = row;
+    if (!request)
+      return {
+        ...item,
+        verifiedPurchase: false,
+        incentivized: false,
+        rewardPolicy: "none" as const,
+        canRetryReward: false,
+      };
     const legacy = request.incentivePolicyId === null;
     const claim = claims.find(
       (claim) =>

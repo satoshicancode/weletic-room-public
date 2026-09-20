@@ -18,6 +18,110 @@ afterEach(() => {
 });
 
 describe("native review production proxy gateway", () => {
+  it.each([
+    ["open-upload", 400, "invalid_open_photo", "invalid_open_photo"],
+    ["open-upload", 400, "bad_request", "review_error"],
+    ["open-upload", 503, "invalid_open_photo", "review_error"],
+    ["open-prepare", 400, "invalid_open_photo", "review_error"],
+  ])(
+    "only forwards the exact photo validation signal for %s/%s/%s",
+    async (action, status, upstreamCode, expectedCode) => {
+      transport.mockResolvedValue(
+        Response.json(
+          { error: { code: upstreamCode } },
+          { status: Number(status) },
+        ),
+      );
+      const result = await reviewProxyResponse(
+        new Request("https://shop.example.test/reviews/" + action, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        }),
+        "verified.myshopify.com",
+        "reviews/" + action,
+        "123",
+      );
+      expect(await result.json()).toMatchObject({
+        error: { code: expectedCode },
+      });
+    },
+  );
+  it("marks only its own pre-dispatch validation rejection as safe to correct", async () => {
+    const result = await reviewProxyResponse(
+      new Request(
+        "https://shop.example.test/apps/weletic/reviews/open-submit",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
+      ),
+      "verified.myshopify.com",
+      "reviews/open-submit",
+      "123",
+    );
+    expect(result.status).toBe(400);
+    expect(await result.json()).toEqual({
+      error: { code: "invalid_review_input" },
+    });
+    expect(transport).not.toHaveBeenCalled();
+  });
+  it("signs open-submit identity only from verified gateway context", async () => {
+    const body = JSON.stringify({
+      rating: 1,
+      title: "Honest review",
+      body: "This product did not meet expectations.",
+      displayName: "Reviewer",
+      mediaIds: [],
+      publishConsent: true,
+      submissionId: "12345678-1234-4123-8123-123456789012",
+      productId: "gid://shopify/Product/456",
+      expectedInstallationGeneration: "g1",
+      expectedSettingsRevision: 1,
+      disclosureRevision: "open_unverified_unrewarded_v1",
+      locale: "en",
+      authorBinding: "a".repeat(64),
+    });
+    await reviewProxyResponse(
+      new Request(
+        "https://shop.example.test/apps/weletic/reviews/open-submit?customerId=999&source=customer_account",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+        },
+      ),
+      "verified.myshopify.com",
+      "reviews/open-submit",
+      "123",
+    );
+    const [url, init] = transport.mock.calls[0];
+    const signed = new Request(String(url), init);
+    expect(new URL(signed.url).searchParams.get("customerId")).toBe("123");
+    expect(new URL(signed.url).searchParams.get("source")).toBe("app_proxy");
+    expect(verifyWeleticInternalRequest({ request: signed, body })).toBe(true);
+  });
+  it.each([undefined, "", "0", "01", "gid://shopify/Customer/123"])(
+    "rejects open-submit without canonical authenticated customer: %s",
+    async (customerId) => {
+      const result = await reviewProxyResponse(
+        new Request(
+          "https://shop.example.test/apps/weletic/reviews/open-submit?logged_in_customer_id=123",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: "{}",
+          },
+        ),
+        "verified.myshopify.com",
+        "reviews/open-submit",
+        customerId,
+      );
+      expect(result.status).toBe(401);
+      expect(transport).not.toHaveBeenCalled();
+    },
+  );
   it.each(["en", "ja", "vi"])(
     "signs and forwards the %s storefront locale",
     async (locale) => {

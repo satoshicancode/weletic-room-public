@@ -68,6 +68,7 @@ export async function reserveProductReviewIncentiveInTransaction({
   });
   if (
     !review ||
+    !review.request ||
     review.status === "redacted" ||
     review.redactedAt ||
     review.request.storeId !== storeId ||

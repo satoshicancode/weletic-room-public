@@ -35,6 +35,11 @@ import {
   reviewParticipationExportSelect,
 } from "@/lib/weletic/reviews/incentive-export";
 import {
+  openReviewMediaExportSelect,
+  openReviewMediaExportWhere,
+} from "@/lib/weletic/reviews/open-media-export";
+import { openReviewProvenanceExportSelection } from "@/lib/weletic/reviews/open-submission-privacy";
+import {
   purgeNativeReviewsBatch,
   redactNativeReviewsBatch,
 } from "@/lib/weletic/reviews/privacy";
@@ -424,6 +429,7 @@ const EXPORT_PHASES = [
   "export_native_reviews",
   "export_review_requests",
   "export_review_media",
+  "export_open_review_uploads",
   "export_review_incentive_claims",
   "export_coupon_uses",
   "export_review_incentive_invalidations",
@@ -588,6 +594,7 @@ async function fetchExportPage({
           select: {
             ...reviewParticipationExportSelect,
             translations: reviewTranslationExportSelection(storeId),
+            openSubmission: openReviewProvenanceExportSelection(storeId),
             id: true,
             requestId: true,
             productId: true,
@@ -653,6 +660,15 @@ async function fetchExportPage({
           ...page,
           where: { storeId, shopperId },
           select: reviewIncentiveInvalidationExportSelect,
+        })
+      : [];
+  }
+  if (phase === "export_open_review_uploads") {
+    return shopperId
+      ? prisma.weleticOpenReviewMediaOwnership.findMany({
+          ...page,
+          where: openReviewMediaExportWhere(storeId, shopperId),
+          select: openReviewMediaExportSelect,
         })
       : [];
   }

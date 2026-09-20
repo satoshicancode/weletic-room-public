@@ -7,6 +7,11 @@ import {
   reviewIncentivePolicyExportSelect,
   reviewParticipationExportSelect,
 } from "@/lib/weletic/reviews/incentive-export";
+import {
+  openReviewMediaExportSelect,
+  openReviewMediaExportWhere,
+} from "@/lib/weletic/reviews/open-media-export";
+import { openReviewProvenanceExportSelection } from "@/lib/weletic/reviews/open-submission-privacy";
 import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
 import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
 import {
@@ -1704,6 +1709,17 @@ export async function getShopperDataExport({
     loyaltyAccount?.metadata,
   );
 
+  const openReviewUploads = shopper
+    ? await collectAllExportPages((cursor) =>
+        prisma.weleticOpenReviewMediaOwnership.findMany({
+          where: openReviewMediaExportWhere(storeId, shopper.id),
+          orderBy: { id: "asc" },
+          take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+          ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+          select: openReviewMediaExportSelect,
+        }),
+      )
+    : [];
   const nativeReviews = shopper
     ? await collectAllExportPages((cursor) =>
         prisma.weleticProductReview.findMany({
@@ -1714,6 +1730,7 @@ export async function getShopperDataExport({
           select: {
             ...reviewParticipationExportSelect,
             translations: reviewTranslationExportSelection(storeId),
+            openSubmission: openReviewProvenanceExportSelection(storeId),
             id: true,
             status: true,
             rating: true,
@@ -1819,6 +1836,7 @@ export async function getShopperDataExport({
   return {
     shopperId: shopper?.id ?? null,
     nativeReviews,
+    openReviewUploads,
     reviewModerationAudits,
     reviewRequests,
     reviewIncentiveClaims,
