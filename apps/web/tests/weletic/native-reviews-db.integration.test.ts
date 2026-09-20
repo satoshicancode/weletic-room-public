@@ -10,6 +10,7 @@ import { deliverReviewRequest } from "@/lib/weletic/reviews/email";
 import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
 import { createReviewIncentivePolicyRevision } from "@/lib/weletic/reviews/incentive-policy";
 import { uploadReviewPhoto } from "@/lib/weletic/reviews/media";
+import { moderateReviewWithAuditInTransaction } from "@/lib/weletic/reviews/moderation-audit";
 import { redactNativeReviewsBatch } from "@/lib/weletic/reviews/privacy";
 import { getPublicProductReviews } from "@/lib/weletic/reviews/public";
 import {
@@ -25,6 +26,9 @@ import {
 import { withReviewMutation } from "@/lib/weletic/reviews/transaction";
 import { upsertShopifyCustomerPrivacyTombstones } from "@/lib/weletic/shopify/privacy-identity";
 import { Prisma } from "@prisma/client";
+import { fork } from "node:child_process";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import {
   afterAll,
@@ -101,6 +105,69 @@ const accountId = `account-${run}`;
 const productId = `product-${run}`;
 let sequence = 100;
 let safeDatabase = false;
+
+async function crashReviewWriter(
+  reviewId: string,
+  phase: "before_commit" | "after_commit",
+) {
+  const resolve = createRequire(import.meta.url).resolve;
+  const child = fork(
+    fileURLToPath(new URL("./fixtures/review-crash-child.ts", import.meta.url)),
+    [],
+    {
+      cwd: process.cwd(),
+      execArgv: [
+        "--conditions=react-server",
+        "--import",
+        resolve("tsx"),
+        "--import",
+        fileURLToPath(
+          new URL(
+            "../../scripts/runtime/async-local-storage.cjs",
+            import.meta.url,
+          ),
+        ),
+      ],
+      env: {
+        PATH: process.env.PATH,
+        NODE_ENV: "test",
+        DATABASE_URL: process.env.DATABASE_URL,
+        LOYALTY_DATABASE_INTEGRATION: "1",
+        ENCRYPTION_KEY: Buffer.alloc(32, 0x37).toString("base64"),
+      },
+      stdio: ["ignore", "ignore", "ignore", "ipc"],
+    },
+  );
+  const exited = new Promise<NodeJS.Signals | null>((resolve) => {
+    child.once("close", (_code, signal) => resolve(signal));
+  });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      timer = setTimeout(
+        () => reject(new Error("Crash barrier timed out")),
+        15000,
+      );
+      child.once("error", () =>
+        reject(new Error("Crash worker failed to start")),
+      );
+      child.once("exit", () => reject(new Error("Crash worker exited early")));
+      child.once("message", (message) => {
+        if ((message as { phase?: string })?.phase === phase) resolve();
+        else
+          reject(new Error("Crash worker did not reach the requested phase"));
+      });
+      child.send({ phase, storeId, reviewId });
+    });
+    expect(child.kill("SIGKILL")).toBe(true);
+    expect(await exited).toBe("SIGKILL");
+  } finally {
+    clearTimeout(timer);
+    if (child.exitCode === null && child.signalCode === null)
+      child.kill("SIGKILL");
+    await exited;
+  }
+}
 
 async function purchase() {
   const externalId = String(++sequence);
@@ -299,6 +366,61 @@ describe("native reviews real MySQL production-service boundaries", () => {
     if (safeDatabase) await prisma.$disconnect();
     vi.unstubAllEnvs();
   });
+
+  it.each(["before_commit", "after_commit"] as const)(
+    "recovers moderation after a real process crash %s without a duplicate audit",
+    async (phase) => {
+      const request = await invitation(await purchase());
+      const review = await submitNativeReview(storeId, input(request.token));
+      await crashReviewWriter(review.id, phase);
+      const read = () =>
+        prisma.weleticProductReview.findFirst({
+          where: { id: review.id, storeId },
+          select: { version: true, merchantReply: true },
+        });
+      const audits = () =>
+        prisma.weleticReviewModerationAudit.count({
+          where: { reviewId: review.id, storeId },
+        });
+      const retry = () =>
+        withReviewMutation(
+          storeId,
+          (tx, generation) =>
+            moderateReviewWithAuditInTransaction({
+              tx,
+              storeId,
+              generation,
+              actor: { kind: "workspace", userId: "synthetic-crash-operator" },
+              input: {
+                reviewId: review.id,
+                version: 1,
+                merchantReply: "One durable reply",
+                reason: "merchant_reply",
+              },
+            }),
+          "g1",
+        );
+      if (phase === "before_commit") {
+        expect(await read()).toEqual({ version: 1, merchantReply: null });
+        expect(await audits()).toBe(0);
+        expect(await retry()).toMatchObject({ version: 2 });
+      } else {
+        expect(await read()).toEqual({
+          version: 2,
+          merchantReply: "One durable reply",
+        });
+        expect(await audits()).toBe(1);
+        // A lost response is not proof of rollback. The existing revision fence
+        // rejects a blind replay; an authenticated read reconciles the result.
+        await expect(retry()).rejects.toMatchObject({ code: "conflict" });
+      }
+      expect(await read()).toEqual({
+        version: 2,
+        merchantReply: "One durable reply",
+      });
+      expect(await audits()).toBe(1);
+    },
+  );
 
   it.each([
     "enabled",
