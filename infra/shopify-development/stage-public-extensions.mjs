@@ -52,6 +52,11 @@ export const publicExtensionFiles = Object.freeze({
     manifest,
     "manifest.json",
     "src/CustomerAccountLoyalty.tsx",
+    "src/CustomerAccountReviews.tsx",
+    "src/ReviewProductPicker.tsx",
+    "src/reviews-products.ts",
+    "src/reviews-client.ts",
+    "src/reviews-copy.ts",
     "src/localization.ts",
     ...locales.map((name) => `locales/${name}`),
   ],
@@ -145,7 +150,13 @@ export function transformPublicExtension(path, source) {
     delete targets["purchase.checkout.reductions.render-after"];
     text = JSON.stringify(targets, null, 2) + "\n";
   }
-  if (path.endsWith(".tsx")) {
+  if (
+    [
+      "weletic-customer-account/src/CustomerAccountLoyalty.tsx",
+      "weletic-customer-account-blocks/src/CustomerAccountLoyaltyBlocks.tsx",
+      "loyalty-checkout-slider/src/ThankYou.tsx",
+    ].includes(path)
+  ) {
     text = replaceOnce(
       text,
       "https://shopify.weletic.com/api/",

@@ -134,6 +134,7 @@ export async function openReviewSubmissionRoute(
       store.id,
       async (tx) => {
         let photoUploadsAvailable = false;
+        let productTitle: string | null = null;
         const policy = await readCurrentOpenReviewPolicy(tx, store.id);
         if (
           !policy.policy.enabled ||
@@ -156,10 +157,11 @@ export async function openReviewSubmissionRoute(
           if (settings.length !== 1 || ![true, 1].includes(settings[0].enabled))
             throw new ReviewError("disabled", "Reviews are unavailable");
           const products = await tx.$queryRaw<
-            Array<{ id: string }>
-          >`SELECT id FROM WeleticShopifyProduct WHERE storeId = ${store.id} AND externalId = ${prepared.productId} AND status = 'active' LIMIT 1 FOR UPDATE`;
+            Array<{ id: string; title: string }>
+          >`SELECT id, title FROM WeleticShopifyProduct WHERE storeId = ${store.id} AND externalId = ${prepared.productId} AND status = 'active' LIMIT 1 FOR UPDATE`;
           if (!products.length)
             throw new ReviewError("not_found", "Product unavailable");
+          productTitle = products[0].title;
           if (
             policy.policy.photoUploadsEnabled &&
             [true, 1].includes(settings[0].photoUploadsEnabled)
@@ -172,7 +174,7 @@ export async function openReviewSubmissionRoute(
             }
           }
         }
-        return { ...policy, photoUploadsAvailable };
+        return { ...policy, photoUploadsAvailable, productTitle };
       },
       generation,
     );
@@ -194,6 +196,7 @@ export async function openReviewSubmissionRoute(
     if (prepared)
       return reviewJson({
         productId: prepared.productId,
+        productTitle: currentPolicy.productTitle,
         expectedInstallationGeneration: generation,
         expectedSettingsRevision: currentPolicy.revision,
         authorBinding: binding,

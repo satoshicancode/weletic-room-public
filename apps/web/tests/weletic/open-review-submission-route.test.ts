@@ -125,7 +125,7 @@ describe("signed open-review submission route", () => {
     mocks.query.mockImplementation(async (query: TemplateStringsArray) =>
       query.join("").includes("WeleticReviewSettings")
         ? [{ enabled: true }]
-        : [{ id: "product" }],
+        : [{ id: "product", title: "Product fixture" }],
     );
     mocks.limit.mockResolvedValue({ success: true });
     mocks.customer.mockResolvedValue({
@@ -162,7 +162,7 @@ describe("signed open-review submission route", () => {
     mocks.query.mockImplementation(async (query: TemplateStringsArray) =>
       query.join("").includes("WeleticReviewSettings")
         ? [{ enabled: true, photoUploadsEnabled: true }]
-        : [{ id: "product" }],
+        : [{ id: "product", title: "Product fixture" }],
     );
     const prepare = () =>
       openReviewSubmissionRoute(
@@ -304,6 +304,7 @@ describe("signed open-review submission route", () => {
     expect(result.status).toBe(200);
     expect(await result.json()).toEqual({
       productId: input.productId,
+      productTitle: "Product fixture",
       expectedInstallationGeneration: "g1",
       expectedSettingsRevision: 7,
       authorBinding: input.authorBinding,
