@@ -81,6 +81,24 @@ function harness(role = "web", changes = {}) {
 }
 
 for (const role of ["web", "shopify", "outbox"]) {
+  test(`${role}: accepts only explicit review route configuration without changing other admission`, () => {
+    for (const value of [undefined, "0", "1"])
+      assert.doesNotThrow(() =>
+        assertCloudflareRuntime(role, {
+          ...fixture(role),
+          WELETIC_RELEASE_REVIEW_ROUTES: value,
+        }),
+      );
+    for (const value of ["", "true", "false", " 1", "2", 1, true])
+      assert.throws(
+        () =>
+          assertCloudflareRuntime(role, {
+            ...fixture(role),
+            WELETIC_RELEASE_REVIEW_ROUTES: value,
+          }),
+        /admission rejected/,
+      );
+  });
   test(`${role}: fixed command, snapshot and no cross-role secret requirement`, () => {
     const h = harness(role);
     startRuntime(role, h.options);
@@ -103,6 +121,7 @@ for (const role of ["web", "shopify", "outbox"]) {
     ["WELETIC_LOCAL_CONTAINER_BUILD", "1"],
     ["WELETIC_SHOPIFY_BUILD_TARGET", "node"],
     ["WELETIC_WEB_BUILD_PROFILE", "loyalty-only"],
+    ["WELETIC_RELEASE_REVIEW_ROUTES", "true"],
     ["WELETIC_ISOLATED_DEVELOPMENT", "1"],
     ["NEXT_PUBLIC_WELETIC_ISOLATED_DEVELOPMENT", "1"],
     ["WELETIC_SHOPIFY_SERVICE_SECRET", "short"],

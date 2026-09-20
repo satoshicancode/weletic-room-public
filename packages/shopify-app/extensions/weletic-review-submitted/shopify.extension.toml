@@ -1,0 +1,41 @@
+# Public-app registration/deployment is a separate approved execution gate.
+# Generate a new public-app UID; never inherit a custom-app identity.
+[[extensions]]
+name = "Weletic review submitted"
+type = "flow_trigger"
+handle = "weletic-review-submitted"
+description = "Starts a workflow when a verified invitation product review is submitted. Delivery may repeat; use Event id for idempotent actions."
+
+[settings]
+
+  [[settings.fields]]
+  type = "customer_reference"
+  description = "The currently authorized customer associated with this review."
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Event id"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Review id"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Review version"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Review type"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Rating"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Verified purchase"
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "Occurred at"

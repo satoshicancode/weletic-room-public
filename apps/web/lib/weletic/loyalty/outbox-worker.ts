@@ -23,6 +23,7 @@ import {
 import {
   BirthdayRewardPayload,
   enqueueOutboxJob,
+  FlowTriggerPayloadSchema,
   HoldingPeriodReleasePayload,
   InactivityExpiryPayload,
   isMaintenanceGatedOutboxJob,
@@ -68,6 +69,9 @@ import {
   VoucherCleanupRetryableError,
 } from "@/lib/weletic/loyalty/voucher-privacy-cleanup";
 import { ShopperEmailPausedError } from "@/lib/weletic/merchant-settings/communications";
+import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
+import { REVIEW_FLOW_HANDLES } from "@/lib/weletic/reviews/flow-contract";
+import { ReviewFlowDeferredError } from "@/lib/weletic/reviews/flow-errors";
 import {
   ReviewPointsRecoveryPendingError,
   ReviewPointsRecoveryReconciliationError,
@@ -1185,6 +1189,7 @@ export async function processOutboxJobsBatch(
       // Disabled review/loyalty modules must not occupy the bounded poll page.
       // The financial writer rechecks eligibility after a pause races polling.
       AND: [
+        reviewFlowCandidateWhere(),
         {
           OR: [
             { jobType: { not: "REVIEW_POINTS_RECOVERY" } },
@@ -1350,6 +1355,20 @@ export async function processOutboxJobsBatch(
           claim,
           restoredAt: deferredAt,
           retryAt: new Date(deferredAt.getTime() + 5 * 60_000),
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
+      if (
+        candidate.jobType === "FLOW_TRIGGER" &&
+        error instanceof ReviewFlowDeferredError
+      ) {
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: new Date(),
+          retryAt: error.retryAt,
         });
         summary.processed--;
         summary.skipped++;
@@ -1568,6 +1587,14 @@ export async function executeOutboxJob(
     );
     return executeHistoricalImportRollbackJob({ job, queueClaim: importClaim });
   }
+  if (
+    job.jobType === "FLOW_TRIGGER" &&
+    !FlowTriggerPayloadSchema.safeParse(job.payload).success
+  ) {
+    // Validate before legacy blocked-store no-ops can record false completion.
+    // Never persist parser details, which may contain untrusted payload data.
+    throw new ShopifyFlowDispatchError("Invalid Shopify Flow payload.", false);
+  }
   const payload =
     job.payload &&
     typeof job.payload === "object" &&
@@ -1576,6 +1603,16 @@ export async function executeOutboxJob(
       : null;
   const accountId =
     typeof payload?.accountId === "string" ? payload.accountId : null;
+  // Reviews use current store authority too, but temporary blocks must defer,
+  // not pass through the legacy success/no-op path and lose a durable event.
+  if (
+    job.jobType === "FLOW_TRIGGER" &&
+    (payload?.handle === REVIEW_FLOW_HANDLES.SUBMITTED ||
+      payload?.handle === REVIEW_FLOW_HANDLES.PUBLISHED)
+  ) {
+    await handleFlowTrigger(job.storeId, job.payload, loyaltyMaintenancePermit);
+    return;
+  }
   const operationalJob =
     [
       "LOYALTY_COMMUNICATION",

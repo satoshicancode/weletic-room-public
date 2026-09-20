@@ -229,6 +229,78 @@ describe("native review production services (mocked database boundary)", () => {
     });
     expect(mocks.award).not.toHaveBeenCalled();
   });
+  it("queues a submitted event in the same transaction without enrolling or awarding", async () => {
+    const result = await submitNativeReview("store-1", submission());
+    expect(mocks.enqueue).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        tx: mocks.tx,
+        storeId: "store-1",
+        jobType: "FLOW_TRIGGER",
+        idempotencyKey: `flow_trigger:weletic-review-submitted:${result.id}:weletic-review-submitted:1`,
+        payload: expect.objectContaining({
+          handle: "weletic-review-submitted",
+          reviewId: result.id,
+          version: 1,
+          rating: 1,
+          verifiedPurchase: true,
+          installationGeneration: "g1",
+        }),
+      }),
+    );
+    expect(mocks.enqueue.mock.calls[0][0].payload).not.toHaveProperty(
+      "accountId",
+    );
+    expect(mocks.award).not.toHaveBeenCalled();
+  });
+  it("propagates failed Flow persistence through the submission transaction", async () => {
+    mocks.enqueue.mockRejectedValue(new Error("synthetic outbox failure"));
+    await expect(submitNativeReview("store-1", submission())).rejects.toThrow(
+      "synthetic outbox failure",
+    );
+    expect(mocks.boundary).toHaveBeenCalledTimes(1);
+  });
+  it("emits a new versioned publication event only on a publication transition", async () => {
+    const fixture = {
+      ...reviewFixture(),
+      id: `wreview_${"b".repeat(20)}`,
+      status: "hidden",
+      verifiedPurchase: true,
+      request: { ...requestFixture(), incentivePolicyId: "policy-1" },
+    };
+    mocks.tx.weleticProductReview.findFirst.mockResolvedValue(fixture);
+    mocks.tx.weleticProductReview.findFirstOrThrow.mockResolvedValue(fixture);
+    await moderateNativeReview("store-1", fixture.id, "owner-1", {
+      version: 1,
+      status: "published",
+    });
+    expect(mocks.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tx: mocks.tx,
+        jobType: "FLOW_TRIGGER",
+        payload: expect.objectContaining({
+          handle: "weletic-review-published",
+          reviewId: fixture.id,
+          version: 2,
+          rating: 1,
+        }),
+      }),
+    );
+    mocks.enqueue.mockClear();
+    mocks.tx.weleticProductReview.findFirst.mockResolvedValue({
+      ...fixture,
+      status: "published",
+    });
+    await moderateNativeReview("store-1", fixture.id, "owner-1", {
+      version: 1,
+      merchantReply: "Thank you for the feedback.",
+    });
+    expect(
+      mocks.enqueue.mock.calls.some(
+        ([call]) => call.jobType === "FLOW_TRIGGER",
+      ),
+    ).toBe(false);
+    expect(mocks.award).not.toHaveBeenCalled();
+  });
   it("does not claw back a new-policy participation reward merely for hiding the review", async () => {
     mocks.tx.weleticProductReview.findFirst.mockResolvedValue({
       ...reviewFixture(),

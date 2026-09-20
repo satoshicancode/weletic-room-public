@@ -29,6 +29,11 @@ export function assertCloudflareRuntime(role, env) {
   if (env.WELETIC_SHOPIFY_BUILD_TARGET !== undefined) fail();
   if (env.WELETIC_WEB_BUILD_PROFILE !== undefined) fail();
   if (
+    env.WELETIC_RELEASE_REVIEW_ROUTES !== undefined &&
+    !["0", "1"].includes(env.WELETIC_RELEASE_REVIEW_ROUTES)
+  )
+    fail();
+  if (
     role === "outbox" &&
     !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.myshopify\.com$/.test(
       env.WELETIC_OUTBOX_STORE_DOMAIN ?? "",

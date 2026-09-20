@@ -171,3 +171,45 @@ The correction updates the explicit suffix and verifies the complete enum in
 the exact recovery SQL migration against Prisma. Historical migration assertions
 remain intact. This is an additional regression check, not a runtime or migration
 change. A fresh committed-revision CI run remains required before merge.
+
+## September 20 — integration with public main after PR #93
+
+Merged public main `01a9ab591b245f43d88fd7e40de9d127d723b421` into the
+existing PR #88 branch without rewriting its history. Resolved queue conflicts by
+composing the review Flow and recovery candidate predicates, preserving both
+early dispatch paths, distinct retry-free deferrals, strict payload validation
+and installation-generation checks. Retained both recovery and process-crash
+evidence in the completion matrix. Independent review found no production
+regression in these resolutions.
+
+The combined ten-file unit selection passed **220/220**. A fresh-worktree attempt
+first failed because shared package build outputs were absent; building workspace
+dependencies resolved collection. The next run exposed one incoming assertion
+that expected the Flow predicate alone. It now verifies that predicate within
+the conjunction; the outbox suite still asserts the entire combined predicate.
+
+Added a real worker/MySQL regression: older paused review Flow and recovery jobs
+must not occupy a one-row batch ahead of an eligible recovery. The test verifies
+the active job completes with one ledger entry while both paused jobs retain
+zero attempts and no lease, and the paused store has no ledger write. The first
+run passed 153 existing cases but failed the new fixture because its synthetic
+outbox ID was missing; independent review also identified that fixture error.
+After adding the explicit unique ID, **154/154** SQL tests passed in disposable
+database `weletic_loyalty_it_shopper_fd706ce622d1`. Exact activation and recovery
+DDL were rehearsed there. Both this fixture and the earlier failed fixture
+`weletic_loyalty_it_shopper_54971a377974` and their restricted accounts were
+removed; retained development ledger counts stayed **16 → 16** on both runs.
+
+An initial harness invocation occurred before MySQL was ready and failed before
+creating any database. The subsequent run started only after container health
+was verified. Redis locking and provider transport remain mocked: these results
+do not prove real Flow delivery, authentication or deployed supervision.
+
+Web type-check passed after the fixture correction; Shopify type-check/build,
+Prisma validation, formatting and focused lint passed. The first type-check
+captured the same missing fixture ID before its correction. MySQL, its loopback
+forward and Lima were stopped after fixture cleanup. Full web build and fresh
+committed-head CI are still pending at this checkpoint. A local build wrapper
+first failed to locate pnpm under the sanitized temporary HOME; the restarted
+build invokes the installed Next binary directly with the same non-secret,
+loopback-only provider placeholders. No runtime authentication was bypassed.

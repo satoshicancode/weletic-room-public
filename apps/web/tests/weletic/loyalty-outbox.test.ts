@@ -27,6 +27,7 @@ import { sendPointsEarnedNotification } from "@/lib/weletic/loyalty/points-earne
 import { createLoyaltyDiscountProvisioningIdentity } from "@/lib/weletic/loyalty/redemption-discount-identity";
 import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
 import { ShopperEmailPausedError } from "@/lib/weletic/merchant-settings/communications";
+import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
 import { recoverReviewPoints } from "@/lib/weletic/reviews/points-recovery";
 import { ReviewPointsRecoveryPendingError } from "@/lib/weletic/reviews/points-recovery-contract";
 import {
@@ -778,6 +779,7 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
           scheduledFor: { lte: now },
           OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
           AND: [
+            reviewFlowCandidateWhere(),
             {
               OR: [
                 { jobType: { not: "REVIEW_POINTS_RECOVERY" } },

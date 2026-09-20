@@ -17,13 +17,13 @@ afterEach(() => {
 });
 
 describe("offline public extension staging", () => {
-  it("stages the exact ten-extension inventory with no inherited UIDs", () => {
+  it("stages the exact twelve-extension inventory with no inherited UIDs", () => {
     const files = buildPublicExtensionStage(root);
-    expect(Object.keys(publicExtensionFiles)).toHaveLength(10);
+    expect(Object.keys(publicExtensionFiles)).toHaveLength(12);
     const manifests = Object.entries(files).filter(([path]) =>
       path.endsWith("shopify.extension.toml"),
     );
-    expect(manifests).toHaveLength(10);
+    expect(manifests).toHaveLength(12);
     for (const [, text] of manifests) expect(text).not.toMatch(/^uid\s*=/m);
     expect(Object.keys(files).join()).not.toMatch(
       /Checkout\.tsx|weletic-reviews|product-review|weletic-tracker|weletic-pos|weletic-free-product|\.env|node_modules/,
@@ -33,7 +33,7 @@ describe("offline public extension staging", () => {
     );
     const report = JSON.parse(files["STAGING.json"]);
     expect(report.status).toBe("unowned_not_deployable");
-    expect(report.extensionCount).toBe(10);
+    expect(report.extensionCount).toBe(12);
     expect(
       files["extensions/weletic-customer-account/src/localization.ts"],
     ).toContain("shopify.i18n.translate");

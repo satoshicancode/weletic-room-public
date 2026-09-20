@@ -8,6 +8,7 @@ import {
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
 import { lockLoyaltyProgramRowIfPresent } from "@/lib/weletic/loyalty/program-write-fence";
 import { ReferralCouponRewardSnapshotSchema } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
+import { ReviewFlowJobSchema } from "@/lib/weletic/reviews/flow-contract";
 import { ReviewPointsRecoveryPayloadSchema } from "@/lib/weletic/reviews/points-recovery-contract";
 import {
   assertShopifyStoreAcceptsOperationalWrites,
@@ -211,6 +212,7 @@ const FlowPositiveDecimalStringSchema = z
 
 /** 9. FLOW_TRIGGER: durable native Shopify Flow event delivery. */
 export const FlowTriggerPayloadSchema = z.discriminatedUnion("handle", [
+  ...ReviewFlowJobSchema.options,
   z
     .object({
       accountId: z.string().min(1),
@@ -534,6 +536,12 @@ async function bindOperationalJobToInstallationGeneration({
         : "Review points recovery installation changed",
     );
   }
+  if (
+    jobType === "FLOW_TRIGGER" &&
+    "reviewId" in payload &&
+    store.installationGeneration !== payload.installationGeneration
+  )
+    throw new Error("Review Flow installation changed");
   return {
     ...payload,
     installationGeneration: store.installationGeneration ?? null,

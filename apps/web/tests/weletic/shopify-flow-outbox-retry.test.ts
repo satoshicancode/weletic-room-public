@@ -1,5 +1,7 @@
 import { dispatchShopifyFlowTrigger } from "@/lib/weletic/loyalty/flow-triggers";
 import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox-worker";
+import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
+import { ReviewFlowDeferredError } from "@/lib/weletic/reviews/flow-errors";
 import { Prisma, type WeleticLoyaltyOutboxJob } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -50,7 +52,7 @@ describe("Shopify Flow durable retry transitions", () => {
   };
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mocks.findStore.mockResolvedValue(store);
     mocks.queryRaw.mockImplementation(async (query: Prisma.Sql) => {
       if (query.sql.includes("WeleticShopifyStore")) return [store];
@@ -76,6 +78,148 @@ describe("Shopify Flow durable retry transitions", () => {
       .mockResolvedValueOnce({ count: 1 })
       .mockResolvedValueOnce({ count: 1 });
   });
+  it("excludes only disabled or missing-settings review Flow before the page limit", async () => {
+    mocks.findMany.mockResolvedValueOnce([]);
+    await processOutboxJobsBatch({ batchSize: 50 });
+    expect(mocks.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        take: 50,
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([reviewFlowCandidateWhere()]),
+        }),
+      }),
+    );
+  });
+
+  it.each(
+    [{}, null, "scalar", { handle: null }, { handle: 42 }].flatMap((payload) =>
+      ["active", "suspended", "frozen"].map((state) => ({ payload, state })),
+    ),
+  )(
+    "dead-letters malformed $payload before $state authority no-ops",
+    async ({ payload, state }) => {
+      const now = new Date();
+      const job: WeleticLoyaltyOutboxJob = {
+        id: "woutbox_invalid_flow",
+        storeId: store.id,
+        jobType: "FLOW_TRIGGER",
+        status: "pending",
+        payload,
+        idempotencyKey: "invalid-flow-fixture",
+        attempts: 0,
+        maxAttempts: 5,
+        scheduledFor: now,
+        nextRetryAt: null,
+        lockedAt: null,
+        lockedBy: null,
+        lastError: null,
+        errorLog: [],
+        priority: 0,
+        processedAt: null,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      mocks.findMany.mockResolvedValueOnce([job]);
+      mocks.findStore.mockResolvedValue({
+        ...store,
+        storeAccessState: state === "suspended" ? "suspended" : "active",
+        complianceState: state === "frozen" ? "frozen" : "active",
+      });
+      const result = await processOutboxJobsBatch({ batchSize: 1 });
+      expect(result).toMatchObject({ succeeded: 0, deadLettered: 1 });
+      expect(mocks.handleFlowTrigger).not.toHaveBeenCalled();
+      expect(mocks.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: job.id }),
+          data: expect.objectContaining({
+            status: "dead_letter",
+            lastError: "Invalid Shopify Flow payload.",
+          }),
+        }),
+      );
+      expect(
+        mocks.updateMany.mock.calls.some(
+          ([call]) => call.data.status === "completed",
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each(["weletic-review-submitted", "weletic-review-published"])(
+    "restores the exact %s queue claim on pre-transport deferral, even during suspension",
+    async (handle) => {
+      const now = new Date();
+      const job: WeleticLoyaltyOutboxJob = {
+        id: "woutbox_review_deferral",
+        storeId: store.id,
+        jobType: "FLOW_TRIGGER",
+        status: "pending",
+        payload: {
+          handle,
+          reviewId: `wreview_${"a".repeat(20)}`,
+          version: 1,
+          installationGeneration: store.installationGeneration,
+          occurredAt: now.toISOString(),
+          rating: 1,
+          verifiedPurchase: true,
+        },
+        idempotencyKey: `flow_trigger:${handle}:fixture`,
+        attempts: 2,
+        maxAttempts: 5,
+        scheduledFor: now,
+        nextRetryAt: null,
+        lockedAt: null,
+        lockedBy: null,
+        lastError: null,
+        errorLog: [],
+        priority: 0,
+        processedAt: null,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      mocks.findMany.mockResolvedValueOnce([job]);
+      mocks.findStore.mockResolvedValue({
+        ...store,
+        storeAccessState: "suspended",
+      });
+      const deferred = new ReviewFlowDeferredError();
+      mocks.handleFlowTrigger.mockRejectedValueOnce(deferred);
+      const summary = await processOutboxJobsBatch({ batchSize: 1 });
+      expect(mocks.handleFlowTrigger).toHaveBeenCalledTimes(1);
+      expect(mocks.findAccount).not.toHaveBeenCalled();
+      expect(summary).toMatchObject({
+        processed: 0,
+        succeeded: 0,
+        failed: 0,
+        deadLettered: 0,
+        skipped: 1,
+      });
+      expect(mocks.updateMany).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          id: job.id,
+          storeId: job.storeId,
+          status: "processing",
+          attempts: 3,
+          lockedAt: expect.any(Date),
+          lockedBy: expect.any(String),
+        }),
+        data: {
+          status: "pending",
+          lockedAt: null,
+          lockedBy: null,
+          attempts: 2,
+          nextRetryAt: deferred.retryAt,
+        },
+      });
+      expect(
+        mocks.updateMany.mock.calls.some(
+          ([call]) => call.data.status === "completed",
+        ),
+      ).toBe(false);
+    },
+  );
 
   it.each([
     { code: "INTERNAL_SERVER_ERROR", expectedStatus: "failed" },

@@ -1137,6 +1137,81 @@ describe("shopper profile production queries on isolated MySQL", () => {
     ).toBe(1);
   });
 
+  it("keeps paused review Flow and recovery jobs out of a mixed one-row worker page", async () => {
+    const paused = await pointsFixture();
+    const active = await pointsFixture();
+    for (const fixture of [paused, active]) await enrollPointsAccount(fixture);
+    const pausedRecovery =
+      await database.weleticLoyaltyOutboxJob.findFirstOrThrow({
+        where: { storeId: paused.storeId, jobType: "REVIEW_POINTS_RECOVERY" },
+      });
+    const activeRecovery =
+      await database.weleticLoyaltyOutboxJob.findFirstOrThrow({
+        where: { storeId: active.storeId, jobType: "REVIEW_POINTS_RECOVERY" },
+      });
+    const earlier = new Date(Date.now() - 60_000);
+    await database.weleticLoyaltyOutboxJob.update({
+      where: { id: pausedRecovery.id },
+      data: { scheduledFor: earlier },
+    });
+    const pausedFlow = await database.weleticLoyaltyOutboxJob.create({
+      data: {
+        id: randomUUID(),
+        storeId: paused.storeId,
+        jobType: "FLOW_TRIGGER",
+        idempotencyKey: "mixed-page-paused-review-flow",
+        scheduledFor: earlier,
+        payload: {
+          handle: "weletic-review-submitted",
+          reviewId: paused.review.id,
+          version: 1,
+          installationGeneration: "g1",
+          occurredAt: earlier.toISOString(),
+          rating: 1,
+          verifiedPurchase: true,
+        },
+      },
+    });
+    await database.weleticReviewSettings.update({
+      where: { storeId: paused.storeId },
+      data: { enabled: false },
+    });
+    const { processOutboxJobsBatch } = await import(
+      "../../lib/weletic/loyalty/outbox"
+    );
+    expect(
+      await processOutboxJobsBatch({
+        batchSize: 1,
+        jobIds: [pausedFlow.id, pausedRecovery.id, activeRecovery.id],
+      }),
+    ).toMatchObject({ processed: 1, succeeded: 1, failed: 0 });
+    for (const id of [pausedFlow.id, pausedRecovery.id]) {
+      expect(
+        await database.weleticLoyaltyOutboxJob.findUnique({ where: { id } }),
+      ).toMatchObject({
+        status: "pending",
+        attempts: 0,
+        lockedAt: null,
+        lockedBy: null,
+      });
+    }
+    expect(
+      await database.weleticLoyaltyOutboxJob.findUnique({
+        where: { id: activeRecovery.id },
+      }),
+    ).toMatchObject({ status: "completed" });
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: paused.storeId },
+      }),
+    ).toBe(0);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: active.storeId },
+      }),
+    ).toBe(1);
+  });
+
   it("contains exhausted evidence conflicts without minting points or resetting the job", async () => {
     const fixture = await pointsFixture();
     await enrollPointsAccount(fixture);
