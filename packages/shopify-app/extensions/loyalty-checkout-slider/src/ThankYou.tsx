@@ -16,7 +16,8 @@ function exactPoints(value: unknown): bigint | null {
   if (typeof value !== "string" || !/^-?(?:0|[1-9]\d{0,18})$/.test(value))
     return null;
   const points = BigInt(value);
-  return points >= -9223372036854775808n && points <= 9223372036854775807n
+  return points >= BigInt("-9223372036854775808") &&
+    points <= BigInt("9223372036854775807")
     ? points
     : null;
 }
@@ -77,7 +78,7 @@ function ThankYouPoints() {
   return (
     <s-section heading={shopify.i18n.translate("balanceTitle")}>
       <s-text>{shopify.i18n.translate("balanceAvailable", { points })}</s-text>
-      {summary.pending !== null && summary.pending !== 0n ? (
+      {summary.pending !== null && summary.pending !== BigInt(0) ? (
         <s-text>
           {shopify.i18n.translate("balancePending", { points: pending! })}
         </s-text>
