@@ -55,6 +55,7 @@ export type WeleticIdPrefix =
   | "wlease_"
   | "woutbox_"
   | "wflow_"
+  | "wflowgrant_"
   | "wcomp_"
   | "wartifact_"
   | "wtomb_"

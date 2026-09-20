@@ -21,6 +21,18 @@ export async function purgeShopifyStaffPrivacyBatch(
     select: { id: true },
     take,
   });
+  const automationGrants = await tx.weleticShopifyFlowPointsGrant.findMany({
+    where: {
+      storeId,
+      OR: [
+        { approvedByShopifyUserId: { not: null } },
+        { revokedByShopifyUserId: { not: null } },
+      ],
+    },
+    orderBy: { id: "asc" },
+    select: { id: true },
+    take,
+  });
   if (grants.length)
     await tx.weleticShopifyStaffGrant.deleteMany({
       where: { storeId, id: { in: grants.map(({ id }) => id) } },
@@ -29,7 +41,21 @@ export async function purgeShopifyStaffPrivacyBatch(
     await tx.weleticShopifyMerchantAction.deleteMany({
       where: { storeId, id: { in: actions.map(({ id }) => id) } },
     });
+  // Keep immutable authority, consumed budgets and durable replay receipts.
+  // Only frozen-shop erasure reaches this function, never customer erasure.
+  if (automationGrants.length)
+    await tx.weleticShopifyFlowPointsGrant.updateMany({
+      where: { storeId, id: { in: automationGrants.map(({ id }) => id) } },
+      data: {
+        approvedByShopifyUserId: null,
+        revokedByShopifyUserId: null,
+        staffRedactedAt: new Date(),
+      },
+    });
   // Require a subsequent empty read before finalization, including when exactly
   // one page remained. Retries restart at the first remaining ID without skips.
-  return { pending: grants.length > 0 || actions.length > 0 };
+  return {
+    pending:
+      grants.length > 0 || actions.length > 0 || automationGrants.length > 0,
+  };
 }
