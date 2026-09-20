@@ -75,15 +75,13 @@ it("recovers the committed file cursor after crash even when the live page chang
 });
 it("uses the actual immutable publication winner rather than the selected row", async () => {
   mocks.rows.mockResolvedValue([{ id: "B" }]);
-  mocks.read
-    .mockResolvedValueOnce(null)
-    .mockResolvedValueOnce({
-      format: "review_media_files_v1",
-      sequence: 0,
-      afterId: null,
-      hasMore: true,
-      files: [{ id: "A" }],
-    });
+  mocks.read.mockResolvedValueOnce(null).mockResolvedValueOnce({
+    format: "review_media_files_v1",
+    sequence: 0,
+    afterId: null,
+    hasMore: true,
+    files: [{ id: "A" }],
+  });
   expect(await exportReviewMediaPage(input)).toEqual({
     fileId: "A",
     hasMore: true,
