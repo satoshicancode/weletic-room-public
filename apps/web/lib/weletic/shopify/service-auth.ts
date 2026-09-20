@@ -46,7 +46,7 @@ function getServiceSecret() {
 }
 
 export async function readWeleticShopifyRequestBodyBytes(
-  request: Request,
+  request: Pick<Request, "headers" | "body">,
   { maxBytes = WELETIC_SHOPIFY_MAX_BODY_BYTES }: { maxBytes?: number } = {},
 ) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {

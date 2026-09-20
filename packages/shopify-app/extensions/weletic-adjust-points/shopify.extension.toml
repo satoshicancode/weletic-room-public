@@ -1,0 +1,29 @@
+# Public registration/publication requires its own execution approval.
+# No custom-app UID may be reused for this new extension.
+[[extensions]]
+name = "Weletic adjust points"
+type = "flow_action"
+handle = "weletic-adjust-points"
+description = "Apply a bounded manual points adjustment using an owner-approved grant. Do not duplicate built-in purchase or review rewards."
+runtime_url = "https://loyalty-api-dev.weletic.com/api/shopify/flow/points-adjustment"
+
+[settings]
+
+  [[settings.fields]]
+  type = "customer_reference"
+  required = true
+  description = "An existing enrolled loyalty customer in this store."
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "grant_id"
+  name = "Owner-approved grant ID"
+  description = "Copy an active grant ID from Weletic Flow permissions. The grant limits direction, amount, budget and expiry."
+  required = true
+
+  [[settings.fields]]
+  type = "single_line_text_field"
+  key = "points_delta"
+  name = "Signed points adjustment"
+  description = "Exact non-zero integer text, for example 100 or -100. No commas or decimals. Debits can make a balance negative."
+  required = true

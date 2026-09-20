@@ -17,13 +17,13 @@ afterEach(() => {
 });
 
 describe("offline public extension staging", () => {
-  it("stages the exact twelve-extension inventory with no inherited UIDs", () => {
+  it("stages the exact thirteen-extension inventory with no inherited UIDs", () => {
     const files = buildPublicExtensionStage(root);
-    expect(Object.keys(publicExtensionFiles)).toHaveLength(12);
+    expect(Object.keys(publicExtensionFiles)).toHaveLength(13);
     const manifests = Object.entries(files).filter(([path]) =>
       path.endsWith("shopify.extension.toml"),
     );
-    expect(manifests).toHaveLength(12);
+    expect(manifests).toHaveLength(13);
     for (const [, text] of manifests) expect(text).not.toMatch(/^uid\s*=/m);
     expect(Object.keys(files).join()).not.toMatch(
       /Checkout\.tsx|weletic-reviews|product-review|weletic-tracker|weletic-pos|weletic-free-product|\.env|node_modules/,
@@ -33,7 +33,7 @@ describe("offline public extension staging", () => {
     );
     const report = JSON.parse(files["STAGING.json"]);
     expect(report.status).toBe("unowned_not_deployable");
-    expect(report.extensionCount).toBe(12);
+    expect(report.extensionCount).toBe(13);
     expect(
       files["extensions/weletic-customer-account/src/localization.ts"],
     ).toContain("shopify.i18n.translate");
@@ -63,6 +63,18 @@ describe("offline public extension staging", () => {
 
   it("uses only the public UI/lifecycle endpoints and thank-you target", () => {
     const files = buildPublicExtensionStage(root);
+    const action =
+      files["extensions/weletic-adjust-points/shopify.extension.toml"];
+    expect(action).toContain('type = "flow_action"');
+    expect(action).toContain('handle = "weletic-adjust-points"');
+    expect(action).toContain(
+      'runtime_url = "https://loyalty-api-dev.weletic.com/api/shopify/flow/points-adjustment"',
+    );
+    expect(action).toContain('type = "customer_reference"');
+    expect(action).toContain('key = "grant_id"');
+    expect(action).toContain('key = "points_delta"');
+    expect(action.match(/type = "single_line_text_field"/g)).toHaveLength(2);
+    expect(action).not.toMatch(/number_integer|number_decimal|uid\s*=/);
     for (const [path, text] of Object.entries(files)) {
       if (path.endsWith(".tsx")) {
         expect(text).toContain("https://loyalty-shopify-dev.weletic.com/api/");

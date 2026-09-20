@@ -28,6 +28,24 @@ test("all explicit routes admit requests without granting authentication", () =>
   );
 });
 
+test("admits only exact Flow action and owner gateway paths, not sibling APIs", () => {
+  for (const url of [
+    "/api/shopify/flow/points-adjustment",
+    "/api/internal/shopify/merchant/flow-grants",
+  ]) {
+    assert.equal(admitsLoyaltyRequest(input(url)), true);
+    assert.equal(admitsLoyaltyRequest(input(url + "/extra")), false);
+    assert.equal(
+      admitsLoyaltyRequest(input(url, { host: "app.weletic.com" })),
+      false,
+    );
+  }
+  assert.equal(
+    admitsLoyaltyRequest(input("/api/shopify/flow/new-action")),
+    false,
+  );
+});
+
 for (const url of [
   "/",
   "/login",
