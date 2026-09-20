@@ -8,6 +8,10 @@ import {
 import { merchantReviewListInputSchema } from "../../../apps/web/lib/weletic/reviews/merchant-contract";
 import { auditedReviewModerationInputSchema } from "../../../apps/web/lib/weletic/reviews/moderation-contract";
 import {
+  openReviewPolicyReadSchema,
+  openReviewPolicyWriteSchema,
+} from "../../../apps/web/lib/weletic/reviews/open-policy-contract";
+import {
   manualReviewTranslationInputSchema,
   manualReviewTranslationReadInputSchema,
 } from "../../../apps/web/lib/weletic/reviews/translation-contract";
@@ -26,6 +30,14 @@ import type { createMerchantAuthenticator } from "./merchant-authentication.serv
 import { weleticApiJson, WeleticGatewayError } from "./weletic-api.server";
 
 const operations = {
+  "open-review-policy-read": {
+    schema: openReviewPolicyReadSchema,
+    path: "reviews/open-policy/read",
+  },
+  "open-review-policy-write": {
+    schema: openReviewPolicyWriteSchema,
+    path: "reviews/open-policy/write",
+  },
   "review-translations-read": {
     schema: manualReviewTranslationReadInputSchema,
     path: "reviews/translations/read",

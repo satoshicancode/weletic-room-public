@@ -312,6 +312,39 @@ describe("native review production services (mocked database boundary)", () => {
     });
     expect(mocks.reverse).not.toHaveBeenCalled();
   });
+  it("does not award or reverse incentives when a review has no invitation", async () => {
+    const fixture = {
+      ...reviewFixture(),
+      request: null,
+      requestId: null,
+      verifiedPurchase: false,
+    };
+    mocks.tx.weleticProductReview.findFirst.mockResolvedValue(fixture);
+    mocks.tx.weleticProductReview.findFirstOrThrow.mockResolvedValue(fixture);
+    await moderateNativeReview("store-1", fixture.id, "owner-1", {
+      version: 1,
+      status: "published",
+    });
+    await moderateNativeReview("store-1", fixture.id, "owner-1", {
+      version: 1,
+      status: "hidden",
+    });
+    expect(mocks.award).not.toHaveBeenCalled();
+    expect(mocks.reverse).not.toHaveBeenCalled();
+  });
+  it("rejects requestless reward retries before writing moderation", async () => {
+    const fixture = { ...reviewFixture(), request: null, requestId: null };
+    mocks.tx.weleticProductReview.findFirst.mockResolvedValue(fixture);
+    await expect(
+      moderateNativeReview("store-1", fixture.id, "owner-1", {
+        version: 1,
+        retryReward: true,
+      }),
+    ).rejects.toMatchObject({ code: "bad_request" });
+    expect(mocks.tx.weleticProductReview.updateMany).not.toHaveBeenCalled();
+    expect(mocks.award).not.toHaveBeenCalled();
+    expect(mocks.reverse).not.toHaveBeenCalled();
+  });
   it("consumes a valid partially-refunded purchase token conditionally and creates a pending one-star review", async () => {
     const result = await submitNativeReview("store-1", submission());
     expect(result.status).toBe("pending");

@@ -2,7 +2,23 @@ import { prisma } from "@/lib/prisma";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { DIRECT_REVIEW_REWARD_SOURCE } from "@/lib/weletic/loyalty/reward-ownership";
 import { Prisma } from "@prisma/client";
+import {
+  redactReviewContentBatch,
+  reviewContentRedactionWhere,
+} from "./content-privacy";
 import { cleanupReviewPhoto } from "./media";
+import {
+  openReviewMediaIncompleteWhere,
+  purgeOpenReviewMediaOwnershipBatch,
+  redactOpenReviewMediaOwnershipBatch,
+  redactReviewOwnedMediaBatch,
+  reviewOwnedMediaRedactionWhere,
+} from "./media-privacy";
+import {
+  openReviewProvenanceRedactionWhere,
+  purgeOpenReviewProvenanceBatch,
+  redactOpenReviewProvenanceBatch,
+} from "./open-submission-privacy";
 import { reviewPointsRecoveryKey } from "./points-recovery-contract";
 import {
   purgeReviewTranslationsBatch,
@@ -51,6 +67,8 @@ export async function redactNativeReviewsBatch(
   const mediaIds = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM WeleticShopifyStore WHERE id = ${storeId} FOR UPDATE`;
     await redactReviewTranslationsBatch(tx, storeId, shopperId);
+    await redactOpenReviewProvenanceBatch(tx, storeId, shopperId);
+    await redactOpenReviewMediaOwnershipBatch(tx, storeId, shopperId);
     const audits = await tx.weleticReviewModerationAudit.findMany({
       where: auditWhere,
       orderBy: { id: "asc" },
@@ -152,37 +170,6 @@ export async function redactNativeReviewsBatch(
         },
         data: { status: "cancelled", lockedAt: null, lockedBy: null },
       });
-      if (
-        request.review &&
-        (request.review.status !== "redacted" ||
-          request.review.participationContentDigest ||
-          request.review.participationValidatedAt)
-      ) {
-        await tx.weleticProductReview.update({
-          where: { id: request.review.id },
-          data: {
-            status: "redacted",
-            version: { increment: 1 },
-            title: "",
-            body: "",
-            displayName: "Redacted customer",
-            merchantReply: null,
-            moderatedByUserId: null,
-            participationStatus: "privacy_redacted",
-            participationValidatedAt: null,
-            participationValidationRevision: null,
-            participationContentDigest: null,
-            redactedAt: new Date(),
-          },
-        });
-        await enqueueOutboxJob({
-          tx,
-          storeId,
-          jobType: "REVIEW_SUMMARY_SYNC",
-          payload: { productId: request.productId },
-          idempotencyKey: `review_privacy_summary:${request.review.id}`,
-        });
-      }
       for (const media of request.media) {
         await tx.weleticReviewMedia.update({
           where: { id: media.id },
@@ -198,11 +185,25 @@ export async function redactNativeReviewsBatch(
         ids.push(media.id);
       }
     }
-    return ids;
+    await redactReviewContentBatch(tx, storeId, shopperId);
+    ids.push(...(await redactReviewOwnedMediaBatch(tx, storeId, shopperId)));
+    return [...new Set(ids)];
   });
   for (const id of mediaIds) await cleanupReviewPhoto(storeId, id);
   return {
     hasMore:
+      (await prisma.weleticOpenReviewMediaOwnership.count({
+        where: openReviewMediaIncompleteWhere(storeId, shopperId),
+      })) > 0 ||
+      (await prisma.weleticReviewMedia.count({
+        where: reviewOwnedMediaRedactionWhere(storeId, shopperId),
+      })) > 0 ||
+      (await prisma.weleticOpenReviewSubmission.count({
+        where: openReviewProvenanceRedactionWhere(storeId, shopperId),
+      })) > 0 ||
+      (await prisma.weleticProductReview.count({
+        where: reviewContentRedactionWhere(storeId, shopperId),
+      })) > 0 ||
       (await prisma.weleticProductReviewTranslation.count({
         where: reviewTranslationRedactionWhere(storeId, shopperId),
       })) > 0 ||
@@ -228,6 +229,45 @@ export async function purgeNativeReviewsBatch(storeId: string) {
       throw new Error("Review purge requires a frozen store");
     if (await purgeReviewTranslationsBatch(tx, storeId))
       return { hasMore: true };
+    if (await purgeOpenReviewProvenanceBatch(tx, storeId))
+      return { hasMore: true };
+    if (await purgeOpenReviewMediaOwnershipBatch(tx, storeId))
+      return { hasMore: true };
+    // Drain media independently of parent pointers, including orphaned or
+    // malformed legacy rows. Never remove cleanup evidence before object deletion.
+    const mediaPage = await tx.weleticReviewMedia.findMany({
+      where: { storeId },
+      orderBy: { id: "asc" },
+      take: PAGE_SIZE,
+      select: { id: true, status: true },
+    });
+    if (mediaPage.length) {
+      if (mediaPage.some(({ status }) => status !== "deleted"))
+        throw new Error("Review photos must be erased before purge");
+      await tx.weleticReviewMedia.deleteMany({
+        where: {
+          storeId,
+          status: "deleted",
+          id: { in: mediaPage.map(({ id }) => id) },
+        },
+      });
+      return { hasMore: true };
+    }
+    // Policy history contains staff attribution. It is append-only during
+    // operation, but must not outlive whole-store erasure. Never run this for
+    // individual customer redaction; the frozen store lock above is required.
+    const openPolicies = await tx.weleticOpenReviewPolicy.findMany({
+      where: { storeId },
+      orderBy: { revision: "asc" },
+      take: PAGE_SIZE,
+      select: { id: true },
+    });
+    if (openPolicies.length) {
+      await tx.weleticOpenReviewPolicy.deleteMany({
+        where: { storeId, id: { in: openPolicies.map(({ id }) => id) } },
+      });
+      return { hasMore: true };
+    }
     // Drain bounded content-audit pages before removing their review parents.
     // Financial ledger and incentive-invalidity records are not deleted here.
     const audits = await tx.weleticReviewModerationAudit.findMany({
@@ -239,6 +279,37 @@ export async function purgeNativeReviewsBatch(storeId: string) {
     if (audits.length) {
       await tx.weleticReviewModerationAudit.deleteMany({
         where: { storeId, id: { in: audits.map(({ id }) => id) } },
+      });
+      return { hasMore: true };
+    }
+    // Requestless originals have no invitation parent to discover them below.
+    // Translation/audit children have already been drained. Never purge an
+    // original while any attached private object is awaiting actual deletion.
+    const requestless = await tx.weleticProductReview.findMany({
+      where: { storeId, requestId: null },
+      orderBy: { id: "asc" },
+      take: PAGE_SIZE,
+      select: { id: true },
+    });
+    if (requestless.length) {
+      const reviewIds = requestless.map(({ id }) => id);
+      if (
+        await tx.weleticReviewMedia.count({
+          where: {
+            storeId,
+            reviewId: { in: reviewIds },
+            status: { not: "deleted" },
+          },
+        })
+      )
+        throw new Error(
+          "Review photos must be erased before purging originals",
+        );
+      await tx.weleticReviewMedia.deleteMany({
+        where: { storeId, reviewId: { in: reviewIds } },
+      });
+      await tx.weleticProductReview.deleteMany({
+        where: { storeId, requestId: null, id: { in: reviewIds } },
       });
       return { hasMore: true };
     }

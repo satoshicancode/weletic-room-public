@@ -1,18 +1,26 @@
 import { randomBytes } from "node:crypto";
+import {
+  OPEN_REVIEW_FORM_SCRIPT,
+  openReviewFormCopy,
+} from "./open-reviews-form";
 import { reviewFormCopy, reviewFormLocale } from "./reviews-form-copy";
 
 // Static markup only: untrusted review/product text is assigned with textContent.
 // The bearer token lives in the fragment, never the query string or storage.
-export function reviewFormResponse(localeInput?: unknown) {
+export function reviewFormResponse(
+  localeInput?: unknown,
+  mode: "invitation" | "open" = "invitation",
+) {
   const nonce = randomBytes(24).toString("base64");
   const locale = reviewFormLocale(localeInput);
-  const copy = reviewFormCopy[locale];
+  const copies = mode === "open" ? openReviewFormCopy : reviewFormCopy;
+  const copy = copies[locale];
   const text = (key: keyof typeof copy) =>
     copy[key]
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
-  const dictionary = JSON.stringify(reviewFormCopy).replaceAll("<", "\\u003c");
+  const dictionary = JSON.stringify(copies).replaceAll("<", "\\u003c");
   return new Response(
     `<!doctype html><html lang="${locale}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">
@@ -30,8 +38,8 @@ h1{font-size:28px;line-height:1.2}label{display:block;margin:18px 0 6px;font-wei
 <label class="consent"><input type="checkbox" id="consent" required> <span data-copy="consent">${text("consent")}</span></label>
 <p data-copy="rewardNotice">${text("rewardNotice")}</p>
 <div id="incentive-disclosure"></div>
-<button type="submit" data-copy="submit">${text("submit")}</button></fieldset></form></main>
-<script nonce="${nonce}">const REVIEW_FORM_COPY = ${dictionary};${REVIEW_FORM_SCRIPT}</script></body></html>`,
+<button type="submit" data-copy="submit">${text("submit")}</button></fieldset></form>${mode === "open" ? `<button id="retry" type="button" data-copy="retry" hidden>${openReviewFormCopy[locale].retry}</button>` : ""}</main>
+<script nonce="${nonce}">const REVIEW_FORM_COPY = ${dictionary};${mode === "open" ? OPEN_REVIEW_FORM_SCRIPT : REVIEW_FORM_SCRIPT}</script></body></html>`,
     {
       headers: {
         "Content-Type": "text/html; charset=utf-8",

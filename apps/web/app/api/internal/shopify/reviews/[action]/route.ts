@@ -10,6 +10,7 @@ import {
   getPublicReviewPhoto,
   uploadReviewPhoto,
 } from "@/lib/weletic/reviews/media";
+import { openReviewSubmissionRoute } from "@/lib/weletic/reviews/open-submission-route";
 import { getPublicProductReviews } from "@/lib/weletic/reviews/public";
 import { getReviewRequestPreview } from "@/lib/weletic/reviews/requests";
 import { submitNativeReview } from "@/lib/weletic/reviews/service";
@@ -36,6 +37,11 @@ const photoSchema = tokenSchema.extend({
 async function handle(request: Request, context: Context) {
   try {
     const { action } = await context.params;
+    if (action === "open-submit") return openReviewSubmissionRoute(request);
+    if (action === "open-prepare")
+      return openReviewSubmissionRoute(request, "prepare");
+    if (action === "open-upload")
+      return openReviewSubmissionRoute(request, "upload");
     const allowed =
       request.method === "GET"
         ? ["list", "photo", "health"]

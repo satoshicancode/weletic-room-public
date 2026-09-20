@@ -5,6 +5,7 @@ import {
 } from "@remix-run/node";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { randomUUID } from "node:crypto";
+import { reviewCustomerAccountResponse } from "../reviews-gateway.server";
 import { authenticate } from "../shopify.server";
 import {
   extensionCorsPreflight,
@@ -215,6 +216,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const subpath = normalizeSubpath(params["*"]);
 
   if (!CUSTOMER_ACCOUNT_ACTION_PATHS.has(subpath)) {
+    if (
+      [
+        "reviews/open-prepare",
+        "reviews/open-submit",
+        "reviews/open-upload",
+      ].includes(subpath)
+    )
+      return cors(
+        await reviewCustomerAccountResponse(request, shop, subpath, customerId),
+      );
     return cors(
       privateCustomerJson(
         { error: { code: "not_found", message: "Unsupported loyalty route" } },

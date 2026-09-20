@@ -3,6 +3,11 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { hasShopifyCustomerPrivacyTombstone } from "../shopify/privacy-identity";
 import { ReviewError } from "./contracts";
+import {
+  hasPublicReviewPhotoOwnership,
+  publicPhotoMediaSelection,
+  publicPhotoReviewSelection,
+} from "./media-public-ownership";
 import { buildReviewPublicPrivacySql } from "./privacy-public-sql";
 import { projectManualReviewTranslation } from "./translation-projection";
 
@@ -189,6 +194,7 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
         ],
         take: query.limit + 1,
         select: {
+          ...publicPhotoReviewSelection,
           id: true,
           storeId: true,
           version: true,
@@ -200,6 +206,7 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
           displayName: true,
           merchantReply: true,
           verifiedPurchase: true,
+          requestId: true,
           incentivized: true,
           createdAt: true,
           shopper: { select: { shopifyCustomerId: true, email: true } },
@@ -226,7 +233,7 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
           },
           media: {
             where: { status: "uploaded" },
-            select: { id: true },
+            select: publicPhotoMediaSelection,
             orderBy: { id: "asc" },
           },
         },
@@ -246,8 +253,8 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
           | "verifiedPurchase"
           | "incentivized"
           | "createdAt"
-          | "media"
         > & {
+          media: Array<{ id: string }>;
           translation?: {
             locale: "en" | "ja" | "vi";
             original: { title: string; body: string };
@@ -278,10 +285,14 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
           body: projection.body,
           displayName: row.displayName,
           merchantReply: row.merchantReply,
-          verifiedPurchase: row.verifiedPurchase,
-          incentivized: row.incentivized,
+          verifiedPurchase: Boolean(row.requestId) && row.verifiedPurchase,
+          incentivized: Boolean(row.requestId) && row.incentivized,
           createdAt: row.createdAt,
-          media: row.media,
+          media: row.media
+            .filter((media) =>
+              hasPublicReviewPhotoOwnership(storeId, row, media),
+            )
+            .map(({ id }) => ({ id })),
           ...(projection.translated && query.locale
             ? {
                 translation: {

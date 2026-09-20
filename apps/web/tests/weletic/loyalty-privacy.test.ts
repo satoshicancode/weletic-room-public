@@ -24,6 +24,9 @@ vi.mock("@/lib/weletic/reviews/privacy-owner-redact", () => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    weleticOpenReviewMediaOwnership: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     weleticProductReview: { findMany: vi.fn().mockResolvedValue([]) },
     weleticReviewModerationAudit: { findMany: vi.fn().mockResolvedValue([]) },
     weleticReviewRequest: { findMany: vi.fn().mockResolvedValue([]) },

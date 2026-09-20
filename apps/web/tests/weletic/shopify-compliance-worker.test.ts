@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   nativeReviewFindMany: vi.fn(),
   nativeRequestFindMany: vi.fn(),
   nativeMediaFindMany: vi.fn(),
+  openMediaFindMany: vi.fn(),
   incentiveClaimFindMany: vi.fn(),
   incentivePolicyFindMany: vi.fn(),
   couponUseFindMany: vi.fn().mockResolvedValue([]),
@@ -170,6 +171,7 @@ vi.mock("@/lib/prisma", () => ({
       findMany: mocks.invalidationFindMany,
     },
     weleticReviewMedia: { findMany: mocks.nativeMediaFindMany },
+    weleticOpenReviewMediaOwnership: { findMany: mocks.openMediaFindMany },
     weleticLoyaltyEarnGrant: {
       findMany: mocks.earnGrantFindMany,
       updateMany: mocks.earnGrantUpdateMany,
@@ -410,6 +412,7 @@ describe("durable compliance worker boundaries", () => {
     mocks.nativeReviewFindMany.mockResolvedValue([]);
     mocks.nativeRequestFindMany.mockResolvedValue([]);
     mocks.nativeMediaFindMany.mockResolvedValue([]);
+    mocks.openMediaFindMany.mockResolvedValue([]);
     mocks.nativeMediaDownload.mockResolvedValue(
       "https://private.example.test/signed",
     );
@@ -856,7 +859,8 @@ describe("durable compliance worker boundaries", () => {
       ["export_orders", "export_native_reviews"],
       ["export_native_reviews", "export_review_requests"],
       ["export_review_requests", "export_review_media"],
-      ["export_review_media", "export_review_incentive_claims"],
+      ["export_review_media", "export_open_review_uploads"],
+      ["export_open_review_uploads", "export_review_incentive_claims"],
       ["export_review_incentive_claims", "export_coupon_uses"],
       ["export_coupon_uses", "export_review_incentive_invalidations"],
       ["export_review_incentive_invalidations", "export_import_snapshots"],
@@ -878,10 +882,45 @@ describe("durable compliance worker boundaries", () => {
       });
       expect(result.phase).toBe(next);
     }
+    expect(mocks.openMediaFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          storeId: "store_1",
+          shopperId: "shopper_1",
+          media: { storeId: "store_1", requestId: null },
+        },
+        select: {
+          id: true,
+          source: true,
+          settingsRevision: true,
+          createdAt: true,
+          redactedAt: true,
+          media: {
+            select: {
+              contentType: true,
+              sizeBytes: true,
+              status: true,
+              uploadExpiresAt: true,
+            },
+          },
+        },
+      }),
+    );
     expect(mocks.nativeReviewFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { storeId: "store_1", shopperId: "shopper_1" },
         select: expect.objectContaining({
+          openSubmission: {
+            where: { storeId: "store_1" },
+            select: {
+              source: true,
+              settingsRevision: true,
+              disclosureRevision: true,
+              locale: true,
+              createdAt: true,
+              redactedAt: true,
+            },
+          },
           translations: {
             where: { storeId: "store_1", locale: { in: ["en", "ja", "vi"] } },
             orderBy: { locale: "asc" },

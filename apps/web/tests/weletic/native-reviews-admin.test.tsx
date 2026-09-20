@@ -52,7 +52,7 @@ describe("review participation merchant actions", () => {
     vi.unstubAllGlobals();
   });
   async function render(
-    rewardPolicy?: "participation" | "legacy",
+    rewardPolicy?: "participation" | "legacy" | "none",
     canRetryReward?: boolean,
   ) {
     read.mockReturnValue({
@@ -106,6 +106,13 @@ describe("review participation merchant actions", () => {
     );
     expect(container.textContent).not.toContain("do not depend on publication");
     expect(retryButton()).toBeUndefined();
+  });
+  it("explains requestless reviews without offering an incentive retry", async () => {
+    await render("none", false);
+    expect(container.textContent).toContain("has no loyalty incentive");
+    expect(container.textContent).not.toContain("original publication-based");
+    expect(retryButton()).toBeUndefined();
+    expect(transport).not.toHaveBeenCalled();
   });
   it("fails closed when a compatibility response has no reward policy", async () => {
     await render();

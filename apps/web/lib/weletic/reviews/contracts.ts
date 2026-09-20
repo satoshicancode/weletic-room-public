@@ -13,7 +13,7 @@ export const reviewSettingsSchema = z
     requestEmailEnabled: z.boolean(),
   })
   .strict();
-export const reviewSubmissionSchema = z
+export const reviewSubmissionBaseSchema = z
   .object({
     token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
     rating: z.number().int().min(1).max(5),
@@ -31,11 +31,11 @@ export const reviewSubmissionSchema = z
       .default([]),
     publishConsent: z.literal(true),
   })
-  .strict()
-  .refine(
-    (v) => new Set(v.mediaIds).size === v.mediaIds.length,
-    "Duplicate photos",
-  );
+  .strict();
+export const reviewSubmissionSchema = reviewSubmissionBaseSchema.refine(
+  (v) => new Set(v.mediaIds).size === v.mediaIds.length,
+  "Duplicate photos",
+);
 
 export const reviewModerationSchema = z
   .object({

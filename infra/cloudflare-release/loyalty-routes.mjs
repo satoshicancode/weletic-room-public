@@ -64,9 +64,17 @@ const paths = new Set(loyaltyRoutes);
 // Explicit route admission only; application signatures, tenant/staff identity,
 // invitation authorization and per-store module switches remain authoritative.
 export const reviewRoutes = Object.freeze([
-  ...["list", "photo", "health", "request", "submit", "upload"].map(
-    (action) => internal + "reviews/" + action,
-  ),
+  ...[
+    "list",
+    "photo",
+    "health",
+    "request",
+    "submit",
+    "upload",
+    "open-submit",
+    "open-prepare",
+    "open-upload",
+  ].map((action) => internal + "reviews/" + action),
   ...[
     "list",
     "moderate",
@@ -76,6 +84,8 @@ export const reviewRoutes = Object.freeze([
     "incentives/coupons",
     "translations/read",
     "translations/write",
+    "open-policy/read",
+    "open-policy/write",
   ].map((action) => internal + "merchant/reviews/" + action),
 ]);
 const reviewPaths = new Set(reviewRoutes);

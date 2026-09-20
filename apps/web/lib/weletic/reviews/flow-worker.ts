@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/prisma";
 import {
   classifyShopifyFlowDispatchError,
   dispatchShopifyFlowTrigger,
@@ -21,6 +20,15 @@ import {
   type ReviewFlowJob,
 } from "./flow-contract";
 import { ReviewFlowDeferredError } from "./flow-errors";
+import {
+  hasOpenReviewFlowOwnership,
+  openReviewFlowSourceSelection,
+} from "./flow-open-ownership";
+import {
+  lockReviewOwnerPrivacySource,
+  ReviewOwnerPrivacySuppressedError,
+} from "./privacy-owner-write";
+import { withReviewMutation } from "./transaction";
 
 /** Reviews-only shoppers do not need a loyalty account. No enrollment or award
  * happens here. Queue/Shopify delivery remains at-least-once on ambiguous I/O.
@@ -31,81 +39,116 @@ export async function handleReviewFlowTrigger(
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
 ) {
   const event = ReviewFlowJobSchema.parse(raw);
-  const eligible = async () => {
-    const settings = await prisma.weleticReviewSettings.findUnique({
-      where: { storeId },
-      select: { enabled: true },
-    });
-    if (!settings?.enabled) throw new ReviewFlowDeferredError();
-    const review = await prisma.weleticProductReview.findFirst({
-      where: {
-        id: event.reviewId,
-        storeId,
-        status: { not: "redacted" },
-        redactedAt: null,
-      },
-      select: {
-        status: true,
-        version: true,
-        rating: true,
-        verifiedPurchase: true,
-        shopperId: true,
-        productId: true,
-        product: { select: { storeId: true } },
-        store: { select: { projectId: true } },
-        request: {
+  const eligible = () =>
+    withReviewMutation(
+      storeId,
+      async (tx) => {
+        const settings = await tx.weleticReviewSettings.findUnique({
+          where: { storeId },
+          select: { enabled: true },
+        });
+        if (!settings?.enabled) throw new ReviewFlowDeferredError();
+        const review = await tx.weleticProductReview.findFirst({
+          where: {
+            id: event.reviewId,
+            storeId,
+            status: { not: "redacted" },
+            redactedAt: null,
+          },
           select: {
-            storeId: true,
+            id: true,
+            requestId: true,
+            incentivized: true,
+            openSubmission: { select: openReviewFlowSourceSelection },
+            status: true,
+            version: true,
+            rating: true,
+            verifiedPurchase: true,
             shopperId: true,
             productId: true,
-            installationGeneration: true,
-            order: { select: { storeId: true, shopperId: true } },
+            product: { select: { storeId: true } },
+            store: { select: { projectId: true } },
+            request: {
+              select: {
+                storeId: true,
+                shopperId: true,
+                productId: true,
+                installationGeneration: true,
+                order: { select: { storeId: true, shopperId: true } },
+              },
+            },
+            shopper: {
+              select: {
+                storeId: true,
+                shopifyCustomerId: true,
+                email: true,
+                privacyTombstones: { select: { id: true } },
+              },
+            },
           },
-        },
-        shopper: {
-          select: {
-            storeId: true,
-            shopifyCustomerId: true,
-            email: true,
-            privacyTombstones: { select: { id: true } },
-          },
-        },
+        });
+        const ownsSource =
+          review &&
+          (review.request
+            ? !review.openSubmission &&
+              review.request.storeId === storeId &&
+              review.request.order.storeId === storeId &&
+              review.request.order.shopperId === review.shopperId &&
+              review.request.shopperId === review.shopperId &&
+              review.request.productId === review.productId &&
+              (event.handle !== REVIEW_FLOW_HANDLES.SUBMITTED ||
+                review.request.installationGeneration ===
+                  event.installationGeneration)
+            : hasOpenReviewFlowOwnership(
+                storeId,
+                review,
+                event.handle === REVIEW_FLOW_HANDLES.SUBMITTED
+                  ? event.installationGeneration
+                  : undefined,
+              ));
+        if (
+          !review ||
+          !ownsSource ||
+          review.version < event.version ||
+          review.rating !== event.rating ||
+          review.verifiedPurchase !== event.verifiedPurchase ||
+          review.shopper.storeId !== storeId ||
+          review.product.storeId !== storeId ||
+          review.shopper.privacyTombstones.length ||
+          !review.shopper.shopifyCustomerId ||
+          (event.handle === REVIEW_FLOW_HANDLES.PUBLISHED &&
+            review.status !== "published")
+        )
+          return null;
+        try {
+          await lockReviewOwnerPrivacySource({
+            tx,
+            storeId,
+            shopperId: review.shopperId,
+            installationGeneration: event.installationGeneration,
+            loyaltyMaintenancePermit,
+          });
+        } catch (error) {
+          if (error instanceof ReviewOwnerPrivacySuppressedError) return null;
+          throw error;
+        }
+        if (
+          await hasShopifyCustomerPrivacyTombstone({
+            tx,
+            storeId,
+            shopifyCustomerId: review.shopper.shopifyCustomerId,
+            email: review.shopper.email,
+          })
+        )
+          return null;
+        return {
+          workspaceId: review.store.projectId,
+          customerGid: review.shopper.shopifyCustomerId,
+        };
       },
-    });
-    if (
-      !review ||
-      review.version < event.version ||
-      review.rating !== event.rating ||
-      review.verifiedPurchase !== event.verifiedPurchase ||
-      review.request.storeId !== storeId ||
-      review.shopper.storeId !== storeId ||
-      review.product.storeId !== storeId ||
-      review.request.order.storeId !== storeId ||
-      review.request.order.shopperId !== review.shopperId ||
-      review.request.shopperId !== review.shopperId ||
-      review.request.productId !== review.productId ||
-      (event.handle === REVIEW_FLOW_HANDLES.SUBMITTED &&
-        review.request.installationGeneration !==
-          event.installationGeneration) ||
-      review.shopper.privacyTombstones.length ||
-      !review.shopper.shopifyCustomerId ||
-      (event.handle === REVIEW_FLOW_HANDLES.PUBLISHED &&
-        review.status !== "published")
-    )
-      return null;
-    if (
-      await hasShopifyCustomerPrivacyTombstone({
-        storeId,
-        shopifyCustomerId: review.shopper.shopifyCustomerId,
-        email: review.shopper.email,
-      })
-    )
-      return null;
-    return {
-      workspaceId: review.store.projectId,
-      customerGid: review.shopper.shopifyCustomerId,
-    };
-  };
+      event.installationGeneration,
+      loyaltyMaintenancePermit,
+    );
   const assertCurrent = () =>
     assertShopifyStoreAcceptsOperationalWrites({
       storeId,

@@ -1,6 +1,6 @@
 export const reviewTranslationCopy = {
   en: {
-    discardPage: "Leave these reviews and discard unsaved translation drafts?",
+    discardPage: "Leave these reviews and discard unsaved changes?",
     load: "Load translations",
     loading: "Loading translations…",
     accessChanged: "Access changed. Reopen the app and load the review again.",
@@ -31,7 +31,7 @@ export const reviewTranslationCopy = {
     help: "Use your own manual translation. This does not change publication, rating, verification or rewards.",
   },
   ja: {
-    discardPage: "このレビュー画面を離れ、未保存の翻訳の下書きを破棄しますか？",
+    discardPage: "このレビュー画面を離れ、未保存の変更を破棄しますか？",
     load: "翻訳を読み込む",
     loading: "翻訳を読み込み中…",
     accessChanged:
@@ -63,7 +63,7 @@ export const reviewTranslationCopy = {
     help: "手動で作成した翻訳を入力してください。公開状態、評価、購入確認、特典は変更されません。",
   },
   vi: {
-    discardPage: "Rời các đánh giá này và bỏ những bản dịch chưa lưu?",
+    discardPage: "Rời các đánh giá này và bỏ những thay đổi chưa lưu?",
     load: "Tải bản dịch",
     loading: "Đang tải bản dịch…",
     accessChanged:

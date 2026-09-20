@@ -1,5 +1,6 @@
-// Native verified-purchase reviews. Private identity remains on the shopper;
-// public projections explicitly select only published review content.
+// Native product reviews. Verified invitations retain their purchase bindings.
+// Private identity remains on the shopper; public projections explicitly select
+// only published review content and never infer purchase proof from open input.
 enum WeleticReviewRequestStatus {
   queued
   sending
@@ -33,6 +34,24 @@ enum WeleticReviewMediaStatus {
   uploaded
   deletion_pending
   deleted
+}
+
+// Append-only open-collection configuration. Latest revision is authoritative;
+// disabling appends a disabled policy and never deletes accepted provenance.
+model WeleticOpenReviewPolicy {
+  id                     String   @id
+  storeId                String
+  revision               Int
+  snapshot               Json     @db.Json
+  contentDigest          String   @db.VarChar(64)
+  installationGeneration String   @db.VarChar(64)
+  appId                  String   @db.VarChar(191)
+  shopifyUserId          String   @db.VarChar(20)
+  createdAt              DateTime @default(now())
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  @@unique([storeId, revision])
 }
 
 model WeleticReviewSettings {
@@ -235,7 +254,9 @@ model WeleticReviewRequestLine {
 model WeleticProductReview {
   id                              String                     @id
   storeId                         String
-  requestId                       String                     @unique
+  // Invitation-backed reviews retain their original binding. Requestless
+  // writers remain disabled until explicit provenance and all readers ship.
+  requestId                       String?                    @unique
   productId                       String
   shopperId                       String
   status                          WeleticProductReviewStatus @default(pending)
@@ -245,7 +266,7 @@ model WeleticProductReview {
   body                            String                     @db.Text
   displayName                     String                     @db.VarChar(80)
   merchantReply                   String?                    @db.Text
-  verifiedPurchase                Boolean                    @default(true)
+  verifiedPurchase                Boolean                    @default(false)
   // Set only by the future trusted participation validator, never moderation.
   participationStatus             String                     @default("pending") @db.VarChar(32)
   participationValidatedAt        DateTime?
@@ -263,12 +284,13 @@ model WeleticProductReview {
   updatedAt                       DateTime                   @updatedAt
 
   store            WeleticShopifyStore            @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  request          WeleticReviewRequest           @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
+  request          WeleticReviewRequest?          @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
   product          WeleticShopifyProduct          @relation(fields: [productId], references: [id], onDelete: Restrict)
   shopper          WeleticShopper                 @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
   media            WeleticReviewMedia[]
   moderationAudits WeleticReviewModerationAudit[]
   translations     WeleticProductReviewTranslation[]
+  openSubmission   WeleticOpenReviewSubmission?
 
   @@unique([storeId, id])
   @@unique([storeId, requestId])
@@ -276,6 +298,32 @@ model WeleticProductReview {
   @@index([storeId, status, createdAt, id])
   @@index([storeId, shopperId])
   @@index(productId)
+}
+
+// Immutable accepted open-submission provenance. No order, invitation, raw
+// customer identity, client UUID or duplicate review text. Content hash alone
+// is private and cleared by customer erasure; the retry marker stays terminal.
+model WeleticOpenReviewSubmission {
+  id                     String   @id
+  storeId                String
+  reviewId               String   @unique(map: "open_review_source_review")
+  shopperId              String
+  installationGeneration String   @db.VarChar(64)
+  source                 String   @db.VarChar(32)
+  idempotencyKey         String   @db.VarChar(64)
+  contentDigest          String?  @db.VarChar(64)
+  settingsRevision       Int
+  disclosureRevision     String   @db.VarChar(64)
+  locale                 String   @db.VarChar(8)
+  createdAt              DateTime @default(now()) @db.DateTime(3)
+  redactedAt             DateTime? @db.DateTime(3)
+
+  review WeleticProductReview @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, idempotencyKey], map: "open_review_operation")
+  @@unique([storeId, reviewId], map: "open_review_owned_source")
+  @@index([storeId, shopperId, createdAt], map: "open_review_author_rate")
+  @@index([storeId, redactedAt, id], map: "open_review_source_privacy")
 }
 
 // Manual content only. No rating, verification, publication or reward authority.
@@ -358,7 +406,7 @@ model WeleticReviewModerationAudit {
 model WeleticReviewMedia {
   id              String                   @id
   storeId         String
-  requestId       String
+  requestId       String?
   reviewId        String?
   objectKey       String                   @unique @db.VarChar(191)
   contentType     String                   @db.VarChar(32)
@@ -368,10 +416,41 @@ model WeleticReviewMedia {
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
 
-  request WeleticReviewRequest  @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
+  request WeleticReviewRequest? @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
   review  WeleticProductReview? @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
+  openOwnership WeleticOpenReviewMediaOwnership?
 
+  @@unique([storeId, id], map: "review_media_owned_id")
   @@index([storeId, requestId, status])
   @@index([storeId, reviewId])
   @@index([status, uploadExpiresAt])
+}
+
+// Created atomically with an open reservation, before private storage I/O.
+// Exactly one source (invitation OR open ownership) is required by writers.
+// Erasure clears contentDigest but retains the terminal retry identity.
+model WeleticOpenReviewMediaOwnership {
+  id                     String   @id
+  storeId                String
+  mediaId                String   @unique(map: "open_review_media_id")
+  shopperId              String
+  productId              String
+  installationGeneration String   @db.VarChar(64)
+  source                 String   @db.VarChar(32)
+  submissionKey          String   @db.VarChar(64)
+  idempotencyKey         String   @db.VarChar(64)
+  contentDigest          String?  @db.VarChar(64)
+  settingsRevision       Int
+  storageWriteState      String   @default("not_started") @db.VarChar(16)
+  storageWriteToken      String?  @db.VarChar(64)
+  createdAt              DateTime @default(now()) @db.DateTime(3)
+  redactedAt             DateTime? @db.DateTime(3)
+
+  media WeleticReviewMedia @relation(fields: [storeId, mediaId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, mediaId], map: "open_review_media_owner")
+  @@unique([storeId, idempotencyKey], map: "open_review_media_operation")
+  @@index([storeId, shopperId, createdAt], map: "open_review_media_author_rate")
+  @@index([storeId, submissionKey], map: "open_review_media_submission")
+  @@index([storeId, redactedAt, id], map: "open_review_media_privacy")
 }

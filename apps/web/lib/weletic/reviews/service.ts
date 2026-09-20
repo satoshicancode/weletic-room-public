@@ -18,6 +18,10 @@ import {
   REVIEW_FLOW_HANDLES,
   isReviewPublicationTransition,
 } from "./flow-contract";
+import {
+  hasOpenReviewFlowOwnership,
+  openReviewFlowSourceSelection,
+} from "./flow-open-ownership";
 import { enqueueReviewFlowEvent } from "./flow-producer";
 import { reserveProductReviewIncentiveInTransaction } from "./incentive-claims";
 import { reviewParticipationContentDigest } from "./incentive-evidence";
@@ -186,6 +190,7 @@ async function applyPublishedReviewReward(
   });
   if (
     // New promises never fall back to the publication-based legacy writer.
+    !review.request ||
     review.request.incentivePolicyId !== null ||
     review.status !== "published" ||
     review.rewardStatus === "awarded" ||
@@ -463,11 +468,18 @@ export async function moderateNativeReviewInTransaction({
     where: { id: reviewId, storeId },
     include: {
       request: { select: { incentivePolicyId: true, orderId: true } },
+      openSubmission: { select: openReviewFlowSourceSelection },
     },
   });
   if (!review || review.status === "redacted")
     throw new ReviewError("not_found", "Review unavailable");
-  assertReviewPolicyReference(review.request.incentivePolicyId);
+  if (review.request)
+    assertReviewPolicyReference(review.request.incentivePolicyId);
+  if (patch.retryReward && !review.request)
+    throw new ReviewError(
+      "bad_request",
+      "Open reviews have no incentive to retry",
+    );
   if (review.version !== patch.version)
     throw new ReviewError(
       "conflict",
@@ -476,6 +488,7 @@ export async function moderateNativeReviewInTransaction({
   const status = patch.status ?? review.status;
   if (
     patch.retryReward &&
+    review.request &&
     review.request.incentivePolicyId === null &&
     status !== "published"
   )
@@ -503,7 +516,11 @@ export async function moderateNativeReviewInTransaction({
       "conflict",
       "Review changed; reload before moderating",
     );
-  if (patch.retryReward && review.request.incentivePolicyId !== null) {
+  if (
+    patch.retryReward &&
+    review.request &&
+    review.request.incentivePolicyId !== null
+  ) {
     if (!generation)
       throw new ReviewError(
         "unavailable",
@@ -547,6 +564,7 @@ export async function moderateNativeReviewInTransaction({
     await applyPublishedReviewReward(tx, storeId, review.id, generation);
   } else if (
     review.rewardStatus === "awarded" &&
+    review.request &&
     review.request.incentivePolicyId === null
   ) {
     const result = await reverseReviewPoints({
@@ -564,7 +582,12 @@ export async function moderateNativeReviewInTransaction({
     });
   }
   if (status === "published" || review.status === "published") {
-    if (isReviewPublicationTransition(review.status, status))
+    if (
+      (review.request
+        ? !review.openSubmission
+        : hasOpenReviewFlowOwnership(storeId, review)) &&
+      isReviewPublicationTransition(review.status, status)
+    )
       await enqueueReviewFlowEvent({
         tx,
         storeId,
