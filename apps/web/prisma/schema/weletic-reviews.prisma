@@ -268,6 +268,7 @@ model WeleticProductReview {
   shopper          WeleticShopper                 @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
   media            WeleticReviewMedia[]
   moderationAudits WeleticReviewModerationAudit[]
+  translations     WeleticProductReviewTranslation[]
 
   @@unique([storeId, id])
   @@unique([storeId, requestId])
@@ -275,6 +276,55 @@ model WeleticProductReview {
   @@index([storeId, status, createdAt, id])
   @@index([storeId, shopperId])
   @@index(productId)
+}
+
+// Manual content only. No rating, verification, publication or reward authority.
+// Removal retains revision identity; privacy erasure clears text and source hash.
+model WeleticProductReviewTranslation {
+  id                     String   @id
+  storeId                String
+  reviewId               String
+  locale                 String   @db.VarChar(8)
+  revision               Int      @default(1)
+  status                 String   @default("active") @db.VarChar(16)
+  sourceReviewVersion    Int
+  sourceDigest           String?  @db.VarChar(64)
+  sourceLocale           String?  @db.VarChar(8)
+  title                  String?  @db.VarChar(120)
+  body                   String?  @db.Text
+  redactedAt             DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  review WeleticProductReview @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
+  audits WeleticReviewTranslationAudit[]
+
+  @@unique([storeId, reviewId, locale], map: "review_translation_locale")
+  @@unique([storeId, id])
+  @@index([storeId, redactedAt, id], map: "review_translation_privacy")
+}
+
+// Audit metadata never duplicates source or translated text. Actor identity can
+// be erased independently while keeping revision/tombstone evidence.
+model WeleticReviewTranslationAudit {
+  id                     String   @id
+  storeId                String
+  translationId          String
+  fromRevision           Int
+  toRevision             Int
+  action                 String   @db.VarChar(16)
+  sourceReviewVersion    Int
+  appId                  String   @db.VarChar(191)
+  installationGeneration String   @db.VarChar(64)
+  actorShopifyUserId     String?  @db.VarChar(20)
+  merchantActionId       String   @unique(map: "review_translation_action") @db.VarChar(64)
+  staffRedactedAt        DateTime?
+  createdAt             DateTime @default(now())
+
+  translation WeleticProductReviewTranslation @relation(fields: [storeId, translationId], references: [storeId, id], onDelete: Restrict)
+
+  @@unique([storeId, translationId, toRevision], map: "review_translation_audit_revision")
+  @@index([storeId, staffRedactedAt, id], map: "review_translation_actor_privacy")
 }
 
 // Prospective content-moderation history; never a replacement for financial

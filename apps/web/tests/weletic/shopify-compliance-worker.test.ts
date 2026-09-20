@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   staffActionFindMany: vi.fn().mockResolvedValue([]),
   flowGrantFindMany: vi.fn().mockResolvedValue([]),
   flowGrantUpdateMany: vi.fn(),
+  translationAuditFindMany: vi.fn().mockResolvedValue([]),
+  translationAuditUpdateMany: vi.fn(),
   staffGrantDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   staffActionDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   shopperFindMany: vi.fn(),
@@ -127,6 +129,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/encryption", () => ({
   decrypt: (value: string) => value,
   encrypt: (value: string) => value,
+}));
+vi.mock("@/lib/weletic/reviews/privacy-owner-redact", () => ({
+  redactReviewOwnerPrivacyProjection: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/storage", () => ({
   storage: { getSignedDownloadUrl: mocks.nativeMediaDownload },
@@ -370,6 +375,7 @@ vi.mock(
   }),
 );
 
+import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
 import { ShopifyComplianceDispatchUnavailableError } from "../../lib/weletic/shopify/compliance-dispatch";
 import {
   boundedComplianceRecoveryBatchSize,
@@ -392,7 +398,7 @@ describe("durable compliance worker boundaries", () => {
     mocks.customerFindUnique.mockResolvedValue(null);
     mocks.shopperFindUnique.mockResolvedValue(null);
     mocks.customerUpdateMany.mockResolvedValue({ count: 0 });
-    mocks.shopperUpdate.mockResolvedValue({});
+    mocks.shopperUpdate.mockResolvedValue({ count: 1 });
     mocks.ledgerFindMany.mockResolvedValue([]);
     mocks.importSnapshotFindMany.mockResolvedValue([]);
     mocks.importExecutionFindMany.mockResolvedValue([]);
@@ -574,6 +580,7 @@ describe("durable compliance worker boundaries", () => {
     mocks.transaction.mockImplementation(async (input: any) => {
       if (typeof input !== "function") return Promise.all(input);
       return input({
+        weleticShopper: { updateMany: mocks.shopperUpdate },
         weleticShopifyStaffGrant: {
           findMany: mocks.staffGrantFindMany,
           deleteMany: mocks.staffGrantDeleteMany,
@@ -585,6 +592,10 @@ describe("durable compliance worker boundaries", () => {
         weleticShopifyFlowPointsGrant: {
           findMany: mocks.flowGrantFindMany,
           updateMany: mocks.flowGrantUpdateMany,
+        },
+        weleticReviewTranslationAudit: {
+          findMany: mocks.translationAuditFindMany,
+          updateMany: mocks.translationAuditUpdateMany,
         },
         weleticMerchantSettings: {
           deleteMany: mocks.merchantSettingsDeleteMany,
@@ -867,6 +878,30 @@ describe("durable compliance worker boundaries", () => {
       });
       expect(result.phase).toBe(next);
     }
+    expect(mocks.nativeReviewFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { storeId: "store_1", shopperId: "shopper_1" },
+        select: expect.objectContaining({
+          translations: {
+            where: { storeId: "store_1", locale: { in: ["en", "ja", "vi"] } },
+            orderBy: { locale: "asc" },
+            take: 3,
+            select: {
+              locale: true,
+              revision: true,
+              status: true,
+              sourceLocale: true,
+              sourceReviewVersion: true,
+              title: true,
+              body: true,
+              createdAt: true,
+              updatedAt: true,
+              redactedAt: true,
+            },
+          },
+        }),
+      }),
+    );
     expect(mocks.nativeRequestFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { storeId: "store_1", shopperId: "shopper_1" },
@@ -2037,6 +2072,11 @@ describe("durable compliance worker boundaries", () => {
     expect(mocks.pseudonym).not.toHaveBeenCalled();
     expect(mocks.customerUpdateMany).not.toHaveBeenCalled();
     expect(mocks.shopperUpdate).not.toHaveBeenCalled();
+    expect(redactReviewOwnerPrivacyProjection).toHaveBeenCalledWith({
+      tx: expect.any(Object),
+      storeId: "store_1",
+      shopperId: "shopper_already_redacted",
+    });
     expect(retainedPseudonym).toBe(`redacted:v1:kid_1:${"A".repeat(64)}`);
   });
 

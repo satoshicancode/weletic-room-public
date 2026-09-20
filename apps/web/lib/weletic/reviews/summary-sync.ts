@@ -6,7 +6,9 @@ import {
 } from "@/lib/weletic/loyalty/shopify-discounts";
 import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import { assertShopifyStoreMatchesInstallationGeneration } from "@/lib/weletic/shopify/store-compliance-state";
+import { Prisma } from "@prisma/client";
 import { ReviewError } from "./contracts";
+import { buildReviewPublicPrivacySql } from "./privacy-public-sql";
 
 export async function enqueueReviewSummaryPage({
   storeId,
@@ -73,24 +75,96 @@ export async function syncProductReviewSummary(
         expectedInstallationGeneration,
         action: "native_review_summary_sync",
       });
-      if (store.complianceState !== "active") return;
+      if (
+        store.complianceState !== "active" ||
+        store.storeAccessState !== "active"
+      )
+        return;
+      if (!store.installationGeneration)
+        throw new ReviewError(
+          "unavailable",
+          "Review summary generation unavailable",
+        );
       const product = await prisma.weleticShopifyProduct.findFirst({
         where: { id: productId, storeId },
         select: { externalId: true },
       });
       if (!product) return;
-      const credentials = await resolveShopifyOfflineCredentials({ storeId });
-      const summary = await prisma.weleticProductReview.aggregate({
-        where: {
-          storeId,
-          productId,
-          status: "published",
-          shopper: { privacyTombstones: { none: {} } },
-          store: { reviewSettings: { enabled: true } },
+      const summary = await prisma.$transaction(
+        async (tx) => {
+          const current = await assertShopifyStoreMatchesInstallationGeneration(
+            {
+              storeId,
+              expectedInstallationGeneration,
+              action: "native_review_summary_read",
+              tx,
+            },
+          );
+          if (
+            current.complianceState !== "active" ||
+            current.storeAccessState !== "active"
+          )
+            throw new ReviewError(
+              "unavailable",
+              "Review summary store unavailable",
+            );
+          const privacy = buildReviewPublicPrivacySql({
+            storeId,
+            productId,
+            installationGeneration: store.installationGeneration!,
+          });
+          const unknown = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+          SELECT r.id FROM ${privacy.from} WHERE ${privacy.unknown} LIMIT 1`);
+          if (unknown.length)
+            throw new ReviewError(
+              "unavailable",
+              "Review summary privacy coverage unavailable",
+            );
+          const groups = await tx.$queryRaw<
+            Array<{ rating: number; count: bigint }>
+          >(Prisma.sql`
+          SELECT r.rating, COUNT(*) AS count FROM ${privacy.from}
+          WHERE ${privacy.eligible} GROUP BY r.rating`);
+          let count = 0;
+          let sum = 0;
+          for (const group of groups) {
+            const quantity = Number(group.count);
+            if (
+              !Number.isSafeInteger(quantity) ||
+              quantity < 0 ||
+              !Number.isInteger(group.rating) ||
+              group.rating < 1 ||
+              group.rating > 5
+            )
+              throw new ReviewError(
+                "unavailable",
+                "Review summary totals unavailable",
+              );
+            count += quantity;
+            sum += quantity * group.rating;
+          }
+          if (!Number.isSafeInteger(count) || !Number.isSafeInteger(sum))
+            throw new ReviewError(
+              "unavailable",
+              "Review summary totals unavailable",
+            );
+          return { _count: { rating: count }, _sum: { rating: sum } };
         },
-        _sum: { rating: true },
-        _count: { rating: true },
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
+      const credentials = await resolveShopifyOfflineCredentials({ storeId });
+      // Recheck after credential resolution; never hold a SQL transaction across
+      // the provider request. Remote projection remains eventually consistent.
+      const latest = await assertShopifyStoreMatchesInstallationGeneration({
+        storeId,
+        expectedInstallationGeneration,
+        action: "native_review_summary_publish",
       });
+      if (
+        latest.complianceState !== "active" ||
+        latest.storeAccessState !== "active"
+      )
+        return;
       const count = summary._count.rating;
       const query = count
         ? `mutation ReviewRating($metafields: [MetafieldsSetInput!]!) {

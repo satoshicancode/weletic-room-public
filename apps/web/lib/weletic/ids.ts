@@ -43,6 +43,8 @@ export type WeleticIdPrefix =
   | "wrevclaim_"
   | "wrevinv_"
   | "wrevaudit_"
+  | "wrevtr_"
+  | "wrevtraudit_"
   | "wtier_"
   | "wcamp_"
   | "wpolicy_"

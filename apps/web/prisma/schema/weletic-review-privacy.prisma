@@ -1,0 +1,58 @@
+enum WeleticReviewOwnerPrivacyState {
+  active
+  redacted
+}
+
+// Private append-only operational evidence, without shopper identifiers or
+// identity proofs. Each row commits with exactly one projection outcome.
+model WeleticReviewPrivacyBackfillAudit {
+  id                     String   @id @db.VarChar(36)
+  runId                  String   @db.VarChar(36)
+  storeId                String
+  installationGeneration String   @db.VarChar(64)
+  operatorReference      String   @db.VarChar(64)
+  outcome                String   @db.VarChar(16)
+  createdAt              DateTime @default(now())
+
+  @@index([storeId, runId])
+}
+
+// Private owner-level coverage, never public review metadata. Writers replace
+// identity rows and coverage atomically from the persisted shopper. Readers
+// require the current generation/key set and exact identity row count.
+model WeleticReviewOwnerPrivacyCoverage {
+  storeId                String
+  shopperId              String
+  // Null is permitted only for terminal erasure of legacy uninstalled stores.
+  // Active projections require a nonempty generation in their writer contract.
+  installationGeneration String?                        @db.VarChar(64)
+  state                  WeleticReviewOwnerPrivacyState
+  keySetDigest           String?                        @db.Char(64)
+  sourceDigest           String?                        @db.Char(64)
+  identityCount          Int                            @default(0)
+  redactedAt             DateTime?
+  createdAt              DateTime                       @default(now())
+  updatedAt              DateTime                       @updatedAt
+
+  shopper    WeleticShopper                     @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Cascade, onUpdate: NoAction)
+  identities WeleticReviewOwnerPrivacyIdentity[]
+
+  @@id([storeId, shopperId])
+  @@index([storeId, state, keySetDigest])
+}
+
+model WeleticReviewOwnerPrivacyIdentity {
+  storeId        String
+  shopperId      String
+  identityKind   WeleticCustomerPrivacyIdentityKind
+  identityKeyId  String                             @db.VarChar(64)
+  customerDigest String                             @db.Char(64)
+
+  coverage WeleticReviewOwnerPrivacyCoverage @relation(fields: [storeId, shopperId], references: [storeId, shopperId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([storeId, shopperId, identityKind, identityKeyId])
+  // Same scoped tuple as the tombstone unique index: equality anti-join covers
+  // unlinked tombstones without maintaining a new authority or fan-out writer.
+  @@index([storeId, identityKind, identityKeyId, customerDigest], map: "review_owner_privacy_identity_match")
+  @@index([identityKeyId])
+}

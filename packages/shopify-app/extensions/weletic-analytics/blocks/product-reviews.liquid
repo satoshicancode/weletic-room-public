@@ -1,5 +1,5 @@
 {% if product %}
-  <weletic-reviews data-product-id="{{ product.id }}" data-mode="full" data-proxy="/apps/weletic/reviews" {{ block.shopify_attributes }}>
+  <weletic-reviews data-product-id="{{ product.id }}" data-locale="{{ request.locale.iso_code | escape }}" data-mode="full" data-proxy="/apps/weletic/reviews" {{ block.shopify_attributes }}>
     <h2>Customer reviews</h2><p role="status">Loading reviews…</p>
   </weletic-reviews>
 {% endif %}

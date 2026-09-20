@@ -7,6 +7,8 @@ import {
   reviewIncentivePolicyExportSelect,
   reviewParticipationExportSelect,
 } from "@/lib/weletic/reviews/incentive-export";
+import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
+import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
 import {
   getShopifyCustomerPrivacyPseudonym,
   hasShopifyCustomerPrivacyTombstone,
@@ -1226,31 +1228,39 @@ export async function scrubWeleticShopperCustomerContext({
       storeId,
       shopifyCustomerId,
     });
-    const anonymized = await prisma.weleticShopper.updateMany({
-      where: {
-        id: shopperId,
+    await prisma.$transaction(async (tx) => {
+      await redactReviewOwnerPrivacyProjection({
+        tx,
         storeId,
-        shopifyCustomerId: {
-          in: [String(shopifyCustomerId), pseudonymousCustomerId],
+        shopperId,
+        redactedAt,
+      });
+      const anonymized = await tx.weleticShopper.updateMany({
+        where: {
+          id: shopperId,
+          storeId,
+          shopifyCustomerId: {
+            in: [String(shopifyCustomerId), pseudonymousCustomerId],
+          },
         },
-      },
-      data: {
-        shopifyCustomerId: pseudonymousCustomerId,
-        firstName: "Redacted",
-        lastName: "Customer",
-        email: null,
-        phone: null,
-        locale: null,
-        tags: Prisma.DbNull,
-        segmentIds: Prisma.DbNull,
-        acceptsMarketing: false,
-      },
+        data: {
+          shopifyCustomerId: pseudonymousCustomerId,
+          firstName: "Redacted",
+          lastName: "Customer",
+          email: null,
+          phone: null,
+          locale: null,
+          tags: Prisma.DbNull,
+          segmentIds: Prisma.DbNull,
+          acceptsMarketing: false,
+        },
+      });
+      if (anonymized.count !== 1) {
+        throw new Error(
+          `Shopper ${shopperId} changed tenant identity during customer redaction.`,
+        );
+      }
     });
-    if (anonymized.count !== 1) {
-      throw new Error(
-        `Shopper ${shopperId} changed tenant identity during customer redaction.`,
-      );
-    }
   }
 
   const redactedOrders = await scrubRequestedOrderCustomerContext({
@@ -1703,6 +1713,7 @@ export async function getShopperDataExport({
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
           select: {
             ...reviewParticipationExportSelect,
+            translations: reviewTranslationExportSelection(storeId),
             id: true,
             status: true,
             rating: true,
