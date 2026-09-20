@@ -20,6 +20,8 @@ const locales = ["en.default.json", "ja.json", "vi.json"];
 // Reviewed source manifests. Any identity/target/schema drift requires review,
 // including valid TOML spellings that a textual UID remover would not recognize.
 const manifestHashes = {
+  "weletic-adjust-points":
+    "7f9f7d2b9e91805f7943b859c7cc34433c0f0497a5cbf6b414fcea52bbd5da84",
   "weletic-customer-account":
     "52fb9f173524f76a98a41557ce718d3c5953995eefd5dc788b22a68377c639fb",
   "weletic-customer-account-blocks":
@@ -89,6 +91,7 @@ export const publicExtensionFiles = Object.freeze({
       "weletic-review-submitted",
       "weletic-review-published",
       "weletic-flow-lifecycle",
+      "weletic-adjust-points",
     ].map((name) => [name, [manifest]]),
   ),
 });
@@ -112,6 +115,7 @@ export function transformPublicExtension(path, source) {
       "weletic-referral-completed",
       "weletic-review-submitted",
       "weletic-review-published",
+      "weletic-adjust-points",
     ].includes(path.split("/")[0])
       ? 0
       : 1;

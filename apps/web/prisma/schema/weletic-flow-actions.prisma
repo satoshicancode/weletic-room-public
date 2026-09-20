@@ -1,0 +1,52 @@
+// Authority is owner-approved, installation-bound and never enabled by default.
+// Policy fields are immutable: replacement creates a new grant and revokes old.
+model WeleticShopifyFlowPointsGrant {
+  id                         String   @id @db.VarChar(64)
+  storeId                    String
+  appId                      String   @db.VarChar(191)
+  installationGeneration     String   @db.VarChar(64)
+  revision                   Int      @default(1)
+  allowCredit                Boolean  @default(false)
+  allowDebit                 Boolean  @default(false)
+  maxAbsolutePointsPerAction Decimal  @db.Decimal(20, 0)
+  absolutePointsBudget       Decimal  @db.Decimal(20, 0)
+  absolutePointsUsed         Decimal  @default(0) @db.Decimal(20, 0)
+  expiresAt                  DateTime
+  approvedByShopifyUserId     String?  @db.VarChar(20)
+  approvedMerchantActionId    String   @unique(map: "flow_grant_approval_action") @db.VarChar(64)
+  revokedAt                  DateTime?
+  revokedByShopifyUserId      String?  @db.VarChar(20)
+  revokedMerchantActionId     String?  @unique(map: "flow_grant_revocation_action") @db.VarChar(64)
+  staffRedactedAt             DateTime?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  runs  WeleticShopifyFlowActionRun[]
+
+  @@index([storeId, appId, installationGeneration, createdAt], map: "flow_grant_store_generation")
+}
+
+// Completed receipts commit with budget consumption and the append-only ledger.
+// No processing TTL: deleting a receipt must never make a completed run new.
+// Keep receipts through customer privacy erasure and installation replacement.
+model WeleticShopifyFlowActionRun {
+  id                     String   @id @db.VarChar(64)
+  storeId                String
+  appId                  String   @db.VarChar(191)
+  installationGeneration String   @db.VarChar(64)
+  runKey                 String   @db.VarChar(64)
+  payloadDigest          String   @db.VarChar(64)
+  grantId                String   @db.VarChar(64)
+  grantRevision          Int
+  ledgerEntryId          String   @unique(map: "flow_action_ledger_receipt")
+  pointsDelta            BigInt
+  createdAt              DateTime @default(now())
+
+  store WeleticShopifyStore          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  grant WeleticShopifyFlowPointsGrant @relation(fields: [grantId], references: [id], onDelete: Restrict)
+
+  @@unique([storeId, appId, runKey], map: "flow_action_durable_run")
+  @@index([storeId, createdAt, id], map: "flow_action_audit_history")
+  @@index([grantId], map: "flow_action_grant")
+}

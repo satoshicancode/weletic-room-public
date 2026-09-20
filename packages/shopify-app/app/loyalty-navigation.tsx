@@ -11,7 +11,8 @@ export function LoyaltyNavigation() {
       <Link to="/loyalty-analytics">Analytics</Link> ·{" "}
       <Link to="/loyalty-communications">Communications</Link> ·{" "}
       <Link to="/loyalty-imports">Imports</Link> ·{" "}
-      <Link to="/loyalty-nudges">Nudges</Link>
+      <Link to="/loyalty-nudges">Nudges</Link> ·{" "}
+      <Link to="/loyalty-flow">Flow permissions</Link>
     </nav>
   );
 }
