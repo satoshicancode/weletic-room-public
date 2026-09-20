@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   merchantSettingsDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   staffGrantFindMany: vi.fn().mockResolvedValue([]),
   staffActionFindMany: vi.fn().mockResolvedValue([]),
+  flowGrantFindMany: vi.fn().mockResolvedValue([]),
+  flowGrantUpdateMany: vi.fn(),
   staffGrantDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   staffActionDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   shopperFindMany: vi.fn(),
@@ -579,6 +581,10 @@ describe("durable compliance worker boundaries", () => {
         weleticShopifyMerchantAction: {
           findMany: mocks.staffActionFindMany,
           deleteMany: mocks.staffActionDeleteMany,
+        },
+        weleticShopifyFlowPointsGrant: {
+          findMany: mocks.flowGrantFindMany,
+          updateMany: mocks.flowGrantUpdateMany,
         },
         weleticMerchantSettings: {
           deleteMany: mocks.merchantSettingsDeleteMany,
