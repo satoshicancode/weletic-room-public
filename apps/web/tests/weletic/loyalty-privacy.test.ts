@@ -18,6 +18,9 @@ import {
   WeleticRedemptionStatus,
 } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/weletic/reviews/privacy-owner-redact", () => ({
+  redactReviewOwnerPrivacyProjection: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -379,6 +382,21 @@ describe("Shopify GDPR & Privacy Compliance", () => {
 
       expect(exported).not.toBeNull();
       expect(exported?.firstName).toBe("Alice");
+      expect(prisma.weleticProductReview.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ storeId: "store_gdpr_1" }),
+          select: expect.objectContaining({
+            translations: expect.objectContaining({
+              where: {
+                storeId: "store_gdpr_1",
+                locale: { in: ["en", "ja", "vi"] },
+              },
+              take: 3,
+              select: expect.objectContaining({ title: true, body: true }),
+            }),
+          }),
+        }),
+      );
       expect(exported?.email).toBe("alice@example.com");
       expect(exported?.tags).toEqual(["vip"]);
       expect(exported?.segmentIds).toEqual(["gid://shopify/Segment/1"]);

@@ -26,6 +26,7 @@ const AUDIT_SOURCES = [
   "nonterminal_outbox_snapshots",
   "webhook_events",
   "pending_installations",
+  "review_owner_identities",
 ] as const;
 
 type AuditSource = (typeof AUDIT_SOURCES)[number];
@@ -71,6 +72,71 @@ async function loadAuditPage({
   lastId?: string;
 }): Promise<AuditRecord[]> {
   const page = auditPage(batchSize, lastId);
+  if (source === "review_owner_identities") {
+    // Read identity rows directly, including orphaned rows: relationMode=prisma
+    // does not make SQL joins proof that every retained key was audited.
+    let where: Prisma.WeleticReviewOwnerPrivacyIdentityWhereInput = {};
+    if (lastId) {
+      const cursor: unknown = JSON.parse(lastId);
+      if (
+        !Array.isArray(cursor) ||
+        cursor.length !== 4 ||
+        cursor.some((part) => typeof part !== "string" || !part) ||
+        cursor[0].length > 191 ||
+        cursor[1].length > 191 ||
+        !["customer_id", "customer_email"].includes(cursor[2]) ||
+        !KEY_ID_PATTERN.test(cursor[3])
+      )
+        throw new Error("Invalid review privacy key audit cursor");
+      const [storeId, shopperId, identityKind, identityKeyId] = cursor as [
+        string,
+        string,
+        "customer_id" | "customer_email",
+        string,
+      ];
+      where = {
+        OR: [
+          { storeId: { gt: storeId } },
+          { storeId, shopperId: { gt: shopperId } },
+          // MySQL ENUM sorting follows declaration order, not lexical order.
+          ...(identityKind === "customer_id"
+            ? [{ storeId, shopperId, identityKind: "customer_email" as const }]
+            : []),
+          {
+            storeId,
+            shopperId,
+            identityKind,
+            identityKeyId: { gt: identityKeyId },
+          },
+        ],
+      };
+    }
+    const rows = await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+      where,
+      take: batchSize + 1,
+      orderBy: [
+        { storeId: "asc" },
+        { shopperId: "asc" },
+        { identityKind: "asc" },
+        { identityKeyId: "asc" },
+      ],
+      select: {
+        storeId: true,
+        shopperId: true,
+        identityKind: true,
+        identityKeyId: true,
+      },
+    });
+    return rows.map((row) => ({
+      id: JSON.stringify([
+        row.storeId,
+        row.shopperId,
+        row.identityKind,
+        row.identityKeyId,
+      ]),
+      identityKeyId: row.identityKeyId,
+    }));
+  }
   if (source === "pending_installations") {
     return prisma.weleticShopifyPendingInstallation.findMany({
       ...page,

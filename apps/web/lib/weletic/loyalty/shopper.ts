@@ -4,6 +4,10 @@ import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance
 import { awardSignupWelcomeBonus } from "@/lib/weletic/loyalty/non-purchase-earn";
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
 import { wakeReviewPointsAfterEnrollment } from "@/lib/weletic/reviews/points-recovery-wakeup";
+import {
+  lockReviewOwnerPrivacySource,
+  replaceReviewOwnerPrivacyProjection,
+} from "@/lib/weletic/reviews/privacy-owner-write";
 import { hasShopifyCustomerPrivacyTombstone } from "@/lib/weletic/shopify/privacy-identity";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import { Prisma, type WeleticLoyaltyAccount } from "@prisma/client";
@@ -62,7 +66,7 @@ export async function upsertWeleticShopper({
       loyaltyMaintenancePermit,
       tx,
     });
-    const hasIndependentPrivacyTombstone =
+    const hasIncomingPrivacyTombstone =
       await hasShopifyCustomerPrivacyTombstone({
         storeId,
         shopifyCustomerId,
@@ -80,6 +84,20 @@ export async function upsertWeleticShopper({
         loyaltyAccount: { include: { program: true } },
       },
     });
+    // An email change must not bypass an unlinked tombstone against the saved
+    // identity. Check both old and incoming identities before rewriting source.
+    const hasIndependentPrivacyTombstone =
+      hasIncomingPrivacyTombstone ||
+      Boolean(
+        existingShopper?.email &&
+          existingShopper.email !== email &&
+          (await hasShopifyCustomerPrivacyTombstone({
+            storeId,
+            shopifyCustomerId,
+            email: existingShopper.email,
+            tx,
+          })),
+      );
 
     // The independent HMAC tombstone exists even when customers/redact arrived
     // before the first customer/order event. It is checked under the same
@@ -129,6 +147,19 @@ export async function upsertWeleticShopper({
       };
     }
 
+    // Retained tombstones remain authoritative until their privacy retention
+    // workflow removes them. Lock/check the saved source before overwriting it,
+    // including expired-but-retained and unlinked email tombstones.
+    if (existingShopper && operationalStore?.installationGeneration) {
+      await lockReviewOwnerPrivacySource({
+        tx,
+        storeId,
+        shopperId: existingShopper.id,
+        installationGeneration: operationalStore.installationGeneration,
+        loyaltyMaintenancePermit,
+      });
+    }
+
     // 1. Upsert Shopper
     const shopper = await tx.weleticShopper.upsert({
       where: {
@@ -163,6 +194,19 @@ export async function upsertWeleticShopper({
         acceptsMarketing,
       },
     });
+
+    // Derive coverage from the persisted row, not a partial webhook payload.
+    // Legacy commerce stores without an authenticated installation remain
+    // unavailable to active review readers; never invent a generation for them.
+    if (operationalStore?.installationGeneration) {
+      await replaceReviewOwnerPrivacyProjection({
+        tx,
+        storeId,
+        shopperId: shopper.id,
+        installationGeneration: operationalStore.installationGeneration,
+        loyaltyMaintenancePermit,
+      });
+    }
 
     // Identity ingestion is shared by commerce and reviews. It must neither
     // initialize nor activate loyalty just because a customer event arrived.

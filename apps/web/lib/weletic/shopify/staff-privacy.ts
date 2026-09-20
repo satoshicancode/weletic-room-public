@@ -33,6 +33,12 @@ export async function purgeShopifyStaffPrivacyBatch(
     select: { id: true },
     take,
   });
+  const translationAudits = await tx.weleticReviewTranslationAudit.findMany({
+    where: { storeId, actorShopifyUserId: { not: null } },
+    orderBy: { id: "asc" },
+    select: { id: true },
+    take,
+  });
   if (grants.length)
     await tx.weleticShopifyStaffGrant.deleteMany({
       where: { storeId, id: { in: grants.map(({ id }) => id) } },
@@ -52,10 +58,18 @@ export async function purgeShopifyStaffPrivacyBatch(
         staffRedactedAt: new Date(),
       },
     });
+  if (translationAudits.length)
+    await tx.weleticReviewTranslationAudit.updateMany({
+      where: { storeId, id: { in: translationAudits.map(({ id }) => id) } },
+      data: { actorShopifyUserId: null, staffRedactedAt: new Date() },
+    });
   // Require a subsequent empty read before finalization, including when exactly
   // one page remained. Retries restart at the first remaining ID without skips.
   return {
     pending:
-      grants.length > 0 || actions.length > 0 || automationGrants.length > 0,
+      grants.length > 0 ||
+      actions.length > 0 ||
+      automationGrants.length > 0 ||
+      translationAudits.length > 0,
   };
 }

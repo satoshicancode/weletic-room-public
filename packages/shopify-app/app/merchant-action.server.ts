@@ -7,6 +7,10 @@ import {
 } from "../../../apps/web/lib/weletic/reviews/incentive-merchant-contract";
 import { merchantReviewListInputSchema } from "../../../apps/web/lib/weletic/reviews/merchant-contract";
 import { auditedReviewModerationInputSchema } from "../../../apps/web/lib/weletic/reviews/moderation-contract";
+import {
+  manualReviewTranslationInputSchema,
+  manualReviewTranslationReadInputSchema,
+} from "../../../apps/web/lib/weletic/reviews/translation-contract";
 import { readWeleticShopifyRequestBodyBytes } from "../../../apps/web/lib/weletic/shopify/service-auth";
 import {
   listShopifyStaffGrantsSchema,
@@ -22,6 +26,14 @@ import type { createMerchantAuthenticator } from "./merchant-authentication.serv
 import { weleticApiJson, WeleticGatewayError } from "./weletic-api.server";
 
 const operations = {
+  "review-translations-read": {
+    schema: manualReviewTranslationReadInputSchema,
+    path: "reviews/translations/read",
+  },
+  "review-translations-write": {
+    schema: manualReviewTranslationInputSchema,
+    path: "reviews/translations/write",
+  },
   "review-incentives-activate": {
     schema: merchantReviewIncentiveActivationInputSchema,
     path: "reviews/incentives/activate",
@@ -70,7 +82,12 @@ export function createMerchantAction(
       return reply({ error: "method_not_allowed" }, 405);
     try {
       const bytes = await readWeleticShopifyRequestBodyBytes(request, {
-        maxBytes: (operation === "moderate-review" ? 32 : 16) * 1024,
+        maxBytes:
+          (operation === "review-translations-write"
+            ? 64
+            : operation === "moderate-review"
+              ? 32
+              : 16) * 1024,
       });
       if (bytes === null) return reply({ error: "invalid_request" }, 400);
       let value: unknown;
@@ -100,7 +117,10 @@ export function createMerchantAction(
       const status =
         error instanceof WeleticGatewayError &&
         ([400, 401, 403, 409, 413].includes(error.status) ||
-          (operation === "customer-profile" && error.status === 404))
+          ((operation === "customer-profile" ||
+            operation === "review-translations-read" ||
+            operation === "review-translations-write") &&
+            error.status === 404))
           ? error.status
           : 503;
       const code =

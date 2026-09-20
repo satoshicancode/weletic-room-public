@@ -109,6 +109,12 @@ vi.mock("@/lib/prisma", () => ({
     },
     // The legacy financial fixture contains no native review rows.
     weleticProductReview: { findMany: vi.fn().mockResolvedValue([]) },
+    weleticProductReviewTranslation: {
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
+    weleticReviewOwnerPrivacyCoverage: { upsert: vi.fn() },
+    weleticReviewOwnerPrivacyIdentity: { deleteMany: vi.fn() },
     weleticReviewModerationAudit: {
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
@@ -124,10 +130,18 @@ vi.mock("@/lib/prisma", () => ({
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
     },
-    $queryRaw: vi.fn(async (query) => {
-      // Native-review privacy uses the tagged-template form; preserve its
-      // existing synthetic row while routing loyalty's Prisma.sql locks.
-      if (Array.isArray(query)) return [{ id: "store_gdpr" }];
+    $queryRaw: vi.fn(async (query, ...values) => {
+      // Native-review privacy uses tagged-template current reads. Return only
+      // the requested synthetic scope; reject unmodeled query shapes.
+      if (Array.isArray(query)) {
+        const sql = query.join("?");
+        if (sql.includes("FROM WeleticShopifyStore"))
+          return [{ id: values[0], installationGeneration: null }];
+        if (sql.includes("FROM WeleticShopper"))
+          return [{ id: values[1], storeId: values[0] }];
+        if (sql.includes("FROM WeleticReviewOwnerPrivacyCoverage")) return [];
+        throw new Error("Unexpected privacy fixture query");
+      }
       const storeId = String(query.values[0]);
       return query.sql.includes("FROM WeleticLoyaltyProgram")
         ? [
@@ -1119,6 +1133,24 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         expect(updatedShopperData.email).toBeNull();
         expect(updatedShopperData.phone).toBeNull();
         expect(updatedShopperData.acceptsMarketing).toBe(false);
+        expect(
+          prisma.weleticReviewOwnerPrivacyCoverage.upsert,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { storeId_shopperId: { storeId: "store_1", shopperId } },
+            update: expect.objectContaining({
+              state: "redacted",
+              identityCount: 0,
+              sourceDigest: null,
+              keySetDigest: null,
+            }),
+          }),
+        );
+        expect(
+          prisma.weleticReviewOwnerPrivacyIdentity.deleteMany,
+        ).toHaveBeenCalledWith({
+          where: { storeId: "store_1", shopperId },
+        });
 
         // Verify Loyalty Account is closed
         expect(updatedAccountData.status).toBe("closed");

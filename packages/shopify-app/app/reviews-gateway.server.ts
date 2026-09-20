@@ -35,6 +35,7 @@ export async function reviewProxyResponse(
         "cursor",
         "limit",
         "mediaId",
+        "locale",
       ]) {
         const value = url.searchParams.get(key);
         if (value !== null) query.set(key, value);

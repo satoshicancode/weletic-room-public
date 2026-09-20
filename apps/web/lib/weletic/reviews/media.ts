@@ -4,12 +4,14 @@ import { createWeleticId } from "@/lib/weletic/ids";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
+import { Prisma } from "@prisma/client";
 import sharp from "sharp";
 import {
   REVIEW_MAX_PHOTO_BYTES,
   REVIEW_MAX_PHOTOS,
   ReviewError,
 } from "./contracts";
+import { buildReviewPublicPrivacySql } from "./privacy-public-sql";
 import { readUsableReviewRequest } from "./requests";
 import { withReviewMutation } from "./transaction";
 
@@ -264,24 +266,54 @@ async function cleanupReviewPhotoLocked(storeId: string, mediaId: string) {
 }
 
 export async function getPublicReviewPhoto(storeId: string, mediaId: string) {
-  const media = await prisma.weleticReviewMedia.findFirst({
-    where: {
-      id: mediaId,
-      storeId,
-      status: "uploaded",
-      review: {
+  const objectKey = await prisma.$transaction(
+    async (tx) => {
+      const media = await tx.weleticReviewMedia.findFirst({
+        where: {
+          id: mediaId,
+          storeId,
+          status: "uploaded",
+          review: {
+            storeId,
+            status: "published",
+            redactedAt: null,
+            store: {
+              complianceState: "active",
+              reviewSettings: { enabled: true },
+            },
+          },
+        },
+        select: {
+          objectKey: true,
+          review: {
+            select: {
+              id: true,
+              productId: true,
+              store: { select: { installationGeneration: true } },
+            },
+          },
+        },
+      });
+      const generation = media?.review?.store.installationGeneration;
+      if (!media?.review || !generation)
+        throw new ReviewError("not_found", "Photo unavailable");
+      const privacy = buildReviewPublicPrivacySql({
         storeId,
-        status: "published",
-        shopper: { privacyTombstones: { none: {} } },
-        store: { complianceState: "active", reviewSettings: { enabled: true } },
-      },
+        productId: media.review.productId,
+        installationGeneration: generation,
+      });
+      const eligible = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT r.id FROM ${privacy.from} WHERE ${privacy.eligible} AND r.id = ${media.review.id} LIMIT 1`);
+      if (!eligible.length)
+        throw new ReviewError("not_found", "Photo unavailable");
+      return media.objectKey;
     },
-  });
-  if (!media) throw new ReviewError("not_found", "Photo unavailable");
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+  );
   requireReviewStorage();
   return {
     url: await storage.getSignedDownloadUrl({
-      key: media.objectKey,
+      key: objectKey,
       bucket: "private",
       expiresIn: 60,
     }),

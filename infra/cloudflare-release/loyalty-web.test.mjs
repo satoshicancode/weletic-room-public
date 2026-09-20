@@ -110,6 +110,23 @@ test("denies alternate hosts, duplicate Host and framework routing controls", ()
 });
 
 test("review admission requires explicit opt-in and the exact supported method", () => {
+  for (const action of ["read", "write"]) {
+    assert.ok(
+      reviewRoutes.includes(
+        `/api/internal/shopify/merchant/reviews/translations/${action}`,
+      ),
+    );
+  }
+  assert.equal(
+    admitsLoyaltyRequest(
+      {
+        ...input("/api/internal/shopify/merchant/reviews/translations/delete"),
+        method: "POST",
+      },
+      { reviewsEnabled: true },
+    ),
+    false,
+  );
   assert.equal(new Set(reviewRoutes).size, reviewRoutes.length);
   for (const url of reviewRoutes) {
     const method = /\/shopify\/reviews\/(list|photo|health)$/.test(url)

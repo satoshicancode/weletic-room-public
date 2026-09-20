@@ -19,6 +19,10 @@ function fixture(ids: string[]) {
     weleticShopifyStaffGrant: staff,
     weleticShopifyMerchantAction: actions,
     weleticShopifyFlowPointsGrant: automation,
+    weleticReviewTranslationAudit: {
+      findMany: vi.fn().mockResolvedValue([]),
+      updateMany: vi.fn(),
+    },
   } as unknown as Prisma.TransactionClient;
   return { tx, automation };
 }

@@ -93,7 +93,9 @@ async function handle(request: Request, context: Context) {
     if (action === "list") {
       const query = Object.fromEntries(
         [...url.searchParams].filter(([key]) =>
-          ["productId", "sort", "rating", "limit", "cursor"].includes(key),
+          ["productId", "sort", "rating", "limit", "cursor", "locale"].includes(
+            key,
+          ),
         ),
       );
       return reviewJson(await getPublicProductReviews(storeId, query));

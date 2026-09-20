@@ -18,6 +18,30 @@ afterEach(() => {
 });
 
 describe("native review production proxy gateway", () => {
+  it.each(["en", "ja", "vi"])(
+    "signs and forwards the %s storefront locale",
+    async (locale) => {
+      await reviewProxyResponse(
+        new Request(
+          "https://shop.example.test/apps/weletic/reviews/list?productId=123&locale=" +
+            locale,
+        ),
+        "verified.myshopify.com",
+        "reviews/list",
+      );
+      const [url, init] = transport.mock.calls[0];
+      const signed = new Request(String(url), init);
+      expect(new URL(signed.url).searchParams.get("locale")).toBe(locale);
+      expect(verifyWeleticInternalRequest({ request: signed })).toBe(true);
+      const changed = new URL(signed.url);
+      changed.searchParams.set("locale", "other");
+      expect(
+        verifyWeleticInternalRequest({
+          request: new Request(changed, { headers: signed.headers }),
+        }),
+      ).toBe(false);
+    },
+  );
   it("uses the authenticated shop and signs only allowlisted query fields", async () => {
     const response = await reviewProxyResponse(
       new Request(

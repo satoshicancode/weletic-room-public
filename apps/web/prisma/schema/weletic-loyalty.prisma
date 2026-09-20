@@ -183,6 +183,7 @@ model WeleticShopper {
   orders                       WeleticCommerceOrder[]
   earnGrants                   WeleticLoyaltyEarnGrant[]
   privacyTombstones            WeleticShopifyCustomerPrivacyTombstone[]
+  reviewPrivacyCoverage       WeleticReviewOwnerPrivacyCoverage?
   reviewRequests               WeleticReviewRequest[]
   nativeReviews                WeleticProductReview[]
   rewardFulfillments           WeleticRewardRedemption[]

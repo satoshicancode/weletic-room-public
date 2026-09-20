@@ -16,10 +16,26 @@ const mocks = vi.hoisted(() => ({
   claimCount: vi.fn(),
   activationList: vi.fn(),
   activationDelete: vi.fn(),
+  translationList: vi.fn(),
+  translationUpdate: vi.fn(),
+  translationDelete: vi.fn(),
+  translationCount: vi.fn(),
+  translationAuditList: vi.fn(),
+  translationAuditDelete: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => {
   const db = {
     $queryRaw: mocks.query,
+    weleticProductReviewTranslation: {
+      findMany: mocks.translationList,
+      updateMany: mocks.translationUpdate,
+      deleteMany: mocks.translationDelete,
+      count: mocks.translationCount,
+    },
+    weleticReviewTranslationAudit: {
+      findMany: mocks.translationAuditList,
+      deleteMany: mocks.translationAuditDelete,
+    },
     weleticReviewIncentiveActivation: {
       findMany: mocks.activationList,
       deleteMany: mocks.activationDelete,
@@ -60,6 +76,9 @@ describe("review moderation audit privacy", () => {
     mocks.claimList.mockResolvedValue([]);
     mocks.claimCount.mockResolvedValue(0);
     mocks.activationList.mockResolvedValue([]);
+    mocks.translationList.mockResolvedValue([]);
+    mocks.translationCount.mockResolvedValue(0);
+    mocks.translationAuditList.mockResolvedValue([]);
   });
   it("scrubs only the bounded store/shopper audit page", async () => {
     await expect(
@@ -137,5 +156,77 @@ describe("review moderation audit privacy", () => {
     await redactNativeReviewsBatch("store-1", "shopper-1");
     expect(mocks.activationList).not.toHaveBeenCalled();
     expect(mocks.activationDelete).not.toHaveBeenCalled();
+  });
+  it("erases leftover translation content without requiring an unredacted parent", async () => {
+    mocks.translationList.mockResolvedValue([{ id: "translation-1" }]);
+    await redactNativeReviewsBatch("store-1", "shopper-1");
+    const where = mocks.translationList.mock.calls[0][0].where;
+    expect(where.review).toEqual({
+      storeId: "store-1",
+      shopperId: "shopper-1",
+    });
+    expect(where.OR).toContainEqual({ sourceDigest: { not: null } });
+    expect(mocks.translationList).toHaveBeenCalledWith({
+      where,
+      orderBy: { id: "asc" },
+      take: 20,
+      select: { id: true },
+    });
+    expect(mocks.translationUpdate).toHaveBeenCalledWith({
+      where: { ...where, id: { in: ["translation-1"] } },
+      data: {
+        status: "redacted",
+        title: null,
+        body: null,
+        sourceDigest: null,
+        sourceLocale: null,
+        redactedAt: expect.any(Date),
+      },
+    });
+    expect(mocks.translationDelete).not.toHaveBeenCalled();
+    expect(mocks.translationAuditDelete).not.toHaveBeenCalled();
+  });
+  it("keeps privacy pending for translations after all original work is gone", async () => {
+    mocks.translationCount.mockResolvedValue(1);
+    await expect(
+      redactNativeReviewsBatch("store-1", "shopper-1"),
+    ).resolves.toEqual({ hasMore: true });
+    expect(mocks.translationCount.mock.calls[0][0].where.review).toEqual({
+      storeId: "store-1",
+      shopperId: "shopper-1",
+    });
+  });
+  it("drains translation audits before translation or original deletion", async () => {
+    mocks.translationAuditList.mockResolvedValue([
+      { id: "translation-audit-1" },
+    ]);
+    await expect(purgeNativeReviewsBatch("store-1")).resolves.toEqual({
+      hasMore: true,
+    });
+    expect(mocks.translationAuditDelete).toHaveBeenCalledWith({
+      where: { storeId: "store-1", id: { in: ["translation-audit-1"] } },
+    });
+    expect(mocks.translationList).not.toHaveBeenCalled();
+    expect(mocks.auditList).not.toHaveBeenCalled();
+    expect(mocks.requestList).not.toHaveBeenCalled();
+  });
+  it("drains translations before original review deletion", async () => {
+    mocks.translationList.mockResolvedValue([{ id: "translation-1" }]);
+    await expect(purgeNativeReviewsBatch("store-1")).resolves.toEqual({
+      hasMore: true,
+    });
+    expect(mocks.translationDelete).toHaveBeenCalledWith({
+      where: { storeId: "store-1", id: { in: ["translation-1"] } },
+    });
+    expect(mocks.requestList).not.toHaveBeenCalled();
+  });
+  it("does not finish erasure if translation storage is unavailable", async () => {
+    mocks.translationList.mockRejectedValue(
+      new Error("synthetic storage failure"),
+    );
+    await expect(
+      redactNativeReviewsBatch("store-1", "shopper-1"),
+    ).rejects.toThrow("synthetic storage failure");
+    expect(mocks.requestList).not.toHaveBeenCalled();
   });
 });

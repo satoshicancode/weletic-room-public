@@ -4,6 +4,11 @@ import { DIRECT_REVIEW_REWARD_SOURCE } from "@/lib/weletic/loyalty/reward-owners
 import { Prisma } from "@prisma/client";
 import { cleanupReviewPhoto } from "./media";
 import { reviewPointsRecoveryKey } from "./points-recovery-contract";
+import {
+  purgeReviewTranslationsBatch,
+  redactReviewTranslationsBatch,
+  reviewTranslationRedactionWhere,
+} from "./translation-privacy";
 
 const PAGE_SIZE = 20;
 
@@ -45,6 +50,7 @@ export async function redactNativeReviewsBatch(
   } satisfies Prisma.WeleticReviewModerationAuditWhereInput;
   const mediaIds = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM WeleticShopifyStore WHERE id = ${storeId} FOR UPDATE`;
+    await redactReviewTranslationsBatch(tx, storeId, shopperId);
     const audits = await tx.weleticReviewModerationAudit.findMany({
       where: auditWhere,
       orderBy: { id: "asc" },
@@ -197,6 +203,9 @@ export async function redactNativeReviewsBatch(
   for (const id of mediaIds) await cleanupReviewPhoto(storeId, id);
   return {
     hasMore:
+      (await prisma.weleticProductReviewTranslation.count({
+        where: reviewTranslationRedactionWhere(storeId, shopperId),
+      })) > 0 ||
       (await prisma.weleticReviewModerationAudit.count({ where: auditWhere })) >
         0 ||
       (await prisma.weleticReviewRequest.count({ where })) > 0 ||
@@ -217,6 +226,8 @@ export async function purgeNativeReviewsBatch(storeId: string) {
       !["frozen", "redacted"].includes(stores[0].complianceState)
     )
       throw new Error("Review purge requires a frozen store");
+    if (await purgeReviewTranslationsBatch(tx, storeId))
+      return { hasMore: true };
     // Drain bounded content-audit pages before removing their review parents.
     // Financial ledger and incentive-invalidity records are not deleted here.
     const audits = await tx.weleticReviewModerationAudit.findMany({

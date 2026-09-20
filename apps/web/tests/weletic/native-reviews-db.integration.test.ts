@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
 import { awardVerifiedReviewPoints } from "@/lib/weletic/loyalty/review-rewards";
+import { upsertWeleticShopper } from "@/lib/weletic/loyalty/shopper";
+import { scrubWeleticShopperCustomerContext } from "@/lib/weletic/loyalty/shopper-privacy";
 import {
   generateReviewToken,
   hashReviewToken,
@@ -13,9 +15,23 @@ import {
   reviewIncentivePointsKey,
 } from "@/lib/weletic/reviews/incentive-points";
 import { createReviewIncentivePolicyRevision } from "@/lib/weletic/reviews/incentive-policy";
-import { uploadReviewPhoto } from "@/lib/weletic/reviews/media";
+import {
+  cleanupReviewPhoto,
+  getPublicReviewPhoto,
+  uploadReviewPhoto,
+} from "@/lib/weletic/reviews/media";
 import { moderateReviewWithAuditInTransaction } from "@/lib/weletic/reviews/moderation-audit";
 import { redactNativeReviewsBatch } from "@/lib/weletic/reviews/privacy";
+import { backfillReviewOwnerPrivacyPage } from "@/lib/weletic/reviews/privacy-owner-backfill";
+import {
+  buildReviewPrivacyOwnerProjection,
+  reviewPrivacyKeySetDigest,
+} from "@/lib/weletic/reviews/privacy-owner-contract";
+import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
+import { replaceReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-write";
+import { buildReviewPublicPrivacySql } from "@/lib/weletic/reviews/privacy-public-sql";
+import { inspectReviewPrivacyReaderCoverage } from "@/lib/weletic/reviews/privacy-readiness";
+import { reconcileReviewPrivacySourcePage } from "@/lib/weletic/reviews/privacy-source-reconciliation";
 import { getPublicProductReviews } from "@/lib/weletic/reviews/public";
 import {
   cancelIneligibleReviewRequests,
@@ -27,11 +43,32 @@ import {
   moderateNativeReview,
   submitNativeReview,
 } from "@/lib/weletic/reviews/service";
+import { syncProductReviewSummary } from "@/lib/weletic/reviews/summary-sync";
 import { withReviewMutation } from "@/lib/weletic/reviews/transaction";
-import { upsertShopifyCustomerPrivacyTombstones } from "@/lib/weletic/shopify/privacy-identity";
+import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
+import { readReviewTranslationsInTransaction } from "@/lib/weletic/reviews/translation-read";
+import { writeReviewTranslationInTransaction } from "@/lib/weletic/reviews/translation-write";
+import {
+  readShopifyMerchantReviewTranslations,
+  writeShopifyMerchantReviewTranslation,
+} from "@/lib/weletic/shopify/merchant-review-translations";
+import {
+  loadShopifyPrivacyHmacKeyring,
+  upsertShopifyCustomerPrivacyTombstones,
+} from "@/lib/weletic/shopify/privacy-identity";
+import {
+  auditShopifyPrivacyKeyRetirement,
+  auditShopifyPrivacyKeyRetirementBatch,
+  type ShopifyPrivacyKeyRetirementAuditCursor,
+} from "@/lib/weletic/shopify/privacy-key-retirement-audit";
+import type { ShopifyMerchantActorEnvelope } from "@/lib/weletic/shopify/staff-contract";
 import { Prisma } from "@prisma/client";
-import { fork } from "node:child_process";
+import { fork, spawnSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import {
@@ -50,7 +87,17 @@ const mocks = vi.hoisted(() => ({
   viaSmtp: vi.fn(),
   upload: vi.fn(),
   delete: vi.fn(),
+  signedDownload: vi.fn(),
+  summaryGraphql: vi.fn(),
+  summaryCredentials: vi.fn(),
   beforeMediaLock: null as null | (() => Promise<void>),
+}));
+vi.mock("@/lib/weletic/loyalty/shopify-discounts", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/lib/weletic/loyalty/shopify-discounts")
+  >()),
+  resolveShopifyOfflineCredentials: mocks.summaryCredentials,
+  shopifyAdminGraphqlRequest: mocks.summaryGraphql,
 }));
 vi.mock("@dub/email/resend", () => ({
   resendCredentialIdentity: "e".repeat(64),
@@ -71,7 +118,11 @@ vi.mock("@dub/email/send-via-nodemailer", async (importOriginal) => ({
   sendViaNodeMailer: mocks.viaSmtp,
 }));
 vi.mock("@/lib/storage", () => ({
-  storage: { upload: mocks.upload, delete: mocks.delete },
+  storage: {
+    upload: mocks.upload,
+    delete: mocks.delete,
+    getSignedDownloadUrl: mocks.signedDownload,
+  },
 }));
 // Deliberately remove Redis serialization: these tests must prove MySQL CAS /
 // unique constraints themselves, not an in-memory mutex masquerading as proof.
@@ -180,7 +231,7 @@ async function crashReviewWriter(
   }
 }
 
-async function purchase(buyerId = shopperId) {
+async function purchase(buyerId = shopperId, itemProductId = productId) {
   const externalId = String(++sequence);
   const id = `order-${run}-${externalId}`;
   await prisma.weleticCommerceOrder.create({
@@ -208,7 +259,7 @@ async function purchase(buyerId = shopperId) {
         create: {
           id: `line-${id}`,
           externalId: `line-${externalId}`,
-          productId,
+          productId: itemProductId,
           title: "Review fixture product",
           quantity: 2,
           shopGross: 200,
@@ -324,6 +375,16 @@ describe("native reviews real MySQL production-service boundaries", () => {
         referralCode: `REF-${run}`,
       },
     });
+    // This fixture bypasses production ingestion; establish its private owner
+    // coverage explicitly before exercising public readers.
+    await prisma.$transaction((tx) =>
+      replaceReviewOwnerPrivacyProjection({
+        tx,
+        storeId,
+        shopperId,
+        installationGeneration: "g1",
+      }),
+    );
     await prisma.weleticShopifyProduct.create({
       data: {
         id: productId,
@@ -371,12 +432,1708 @@ describe("native reviews real MySQL production-service boundaries", () => {
       .mockReset()
       .mockResolvedValue({ url: "https://storage.invalid/test" });
     mocks.delete.mockReset().mockResolvedValue(undefined);
+    mocks.signedDownload
+      .mockReset()
+      .mockResolvedValue("https://storage.invalid/synthetic-private-download");
     mocks.beforeMediaLock = null;
+    mocks.summaryCredentials.mockReset().mockResolvedValue({
+      shopDomain: "isolated-summary.myshopify.com",
+      accessToken: "synthetic-not-a-credential",
+    });
+    mocks.summaryGraphql.mockReset().mockResolvedValue({
+      metafieldsSet: { userErrors: [] },
+      metafieldsDelete: { userErrors: [] },
+    });
   });
   afterAll(async () => {
     if (safeDatabase) await prisma.$disconnect();
     vi.unstubAllEnvs();
   });
+
+  it("review owner privacy: bounded multi-tenant query plans and public load", async () => {
+    const { verifyReviewPrivacyLoad } = await import(
+      "./helpers/review-privacy-load"
+    );
+    await verifyReviewPrivacyLoad({ run });
+  }, 120_000);
+
+  it("review owner privacy: retirement audit paginates orphan identities without skipped enum boundaries", async () => {
+    const envName = "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS";
+    const previous = process.env[envName];
+    const baseline = loadShopifyPrivacyHmacKeyring();
+    const currentKey = "audit-fixture-current";
+    const retiredKey = "audit-fixture-previous";
+    const orphanStores = [`audit-a-${run}`, `audit-b-${run}`];
+    const rows = orphanStores.flatMap((storeId) =>
+      ["owner-a", "owner-b"].flatMap((shopperId) =>
+        (["customer_id", "customer_email"] as const).flatMap((identityKind) =>
+          [currentKey, retiredKey].map((identityKeyId) => ({
+            storeId,
+            shopperId,
+            identityKind,
+            identityKeyId,
+            customerDigest: "C".repeat(64),
+          })),
+        ),
+      ),
+    );
+    try {
+      vi.stubEnv(
+        envName,
+        [
+          { identityKeyId: currentKey, secret: Buffer.alloc(32, 0x71) },
+          { identityKeyId: retiredKey, secret: Buffer.alloc(32, 0x72) },
+          ...baseline.all,
+        ]
+          .map((key) => `${key.identityKeyId}:${key.secret.toString("base64")}`)
+          .join(","),
+      );
+      // relationMode=prisma has no SQL FKs. Synthetic orphan proofs must be
+      // found without joining to coverage, owner or store records.
+      await prisma.weleticReviewOwnerPrivacyIdentity.createMany({ data: rows });
+      expect(
+        await prisma.weleticShopifyStore.count({
+          where: { id: { in: orphanStores } },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.weleticReviewOwnerPrivacyCoverage.count({
+          where: { storeId: { in: orphanStores } },
+        }),
+      ).toBe(0);
+      const expected = rows
+        .filter((row) => row.identityKeyId === retiredKey)
+        .map((row) =>
+          JSON.stringify([
+            row.storeId,
+            row.shopperId,
+            row.identityKind,
+            row.identityKeyId,
+          ]),
+        )
+        .sort();
+      const independentCount =
+        await prisma.weleticReviewOwnerPrivacyIdentity.count();
+      for (const batchSize of [1, 2, 3, 7]) {
+        // Source 12 is appended after the existing checkpoint-compatible sources.
+        let cursor: ShopifyPrivacyKeyRetirementAuditCursor | null = {
+          sourceIndex: 12,
+        };
+        const seen: string[] = [];
+        let scanned = 0;
+        let pages = 0;
+        while (cursor) {
+          expect(++pages).toBeLessThan(100);
+          const page = await auditShopifyPrivacyKeyRetirementBatch({
+            retiringKeyIds: [retiredKey],
+            cursor,
+            batchSize,
+          });
+          expect(page.scanned).toBeLessThanOrEqual(batchSize);
+          scanned += page.scanned;
+          for (const finding of page.dependencies) {
+            expect(finding.source).toBe("review_owner_identities");
+            expect(finding.keyId).toBe(retiredKey);
+            seen.push(...finding.sampleRecordIds);
+          }
+          cursor = page.cursor;
+        }
+        expect(scanned).toBe(independentCount);
+        // At most four previous-key rows per page, below the five-sample bound.
+        expect(seen.sort()).toEqual(expected);
+      }
+      const audit = await auditShopifyPrivacyKeyRetirement({
+        retiringKeyIds: [retiredKey],
+        retiringKeyLastWriteAt: new Date(Date.now() - 30 * 60 * 60 * 1000),
+        writersFenced: true,
+        batchSize: 3,
+      });
+      expect(audit.ready).toBe(false);
+      expect(audit.cacheOverlapSatisfied).toBe(true);
+      expect(
+        audit.dependencies.find(
+          (finding) => finding.source === "review_owner_identities",
+        ),
+      ).toMatchObject({ keyId: retiredKey, count: expected.length });
+      expect(JSON.stringify(audit)).not.toContain("C".repeat(64));
+    } finally {
+      await prisma.weleticReviewOwnerPrivacyIdentity.deleteMany({
+        where: { storeId: { in: orphanStores } },
+      });
+      vi.stubEnv(envName, previous);
+    }
+  });
+
+  it("review owner privacy: bounded backfill resumes and contains only authoritative suppression", async () => {
+    const owners = [`backfill-a-${run}`, `backfill-b-${run}`];
+    const ids = [String(++sequence), String(++sequence)];
+    for (const [index, owner] of owners.entries()) {
+      await prisma.weleticShopper.create({
+        data: {
+          id: owner,
+          storeId,
+          shopifyCustomerId: ids[index],
+          email: `backfill-${index}@example.test`,
+        },
+      });
+      const request = await invitation(await purchase(owner));
+      await submitNativeReview(storeId, input(request.token));
+    }
+    const scope = {
+      storeId,
+      installationGeneration: "g1",
+      keySetDigest: reviewPrivacyKeySetDigest(loadShopifyPrivacyHmacKeyring()),
+      limit: 1,
+      audit: {
+        runId: "6cfbe2b9-a0ae-4a20-a3c2-85392075b98e",
+        operatorReference: "isolated_test",
+      },
+    };
+    // Disposable schema only: force a database-side audit failure after the
+    // projection writes, then independently prove transaction rollback.
+    await prisma.$executeRawUnsafe(
+      "ALTER TABLE WeleticReviewPrivacyBackfillAudit ADD CONSTRAINT review_privacy_audit_failure CHECK (operatorReference <> 'isolated_test')",
+    );
+    try {
+      await expect(backfillReviewOwnerPrivacyPage(scope)).rejects.toThrow(
+        "review_privacy_audit_failure",
+      );
+      expect(
+        await prisma.weleticReviewOwnerPrivacyCoverage.count({
+          where: { storeId, shopperId: owners[0] },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.weleticReviewOwnerPrivacyIdentity.count({
+          where: { storeId, shopperId: owners[0] },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.weleticReviewPrivacyBackfillAudit.count({
+          where: { storeId, runId: scope.audit.runId },
+        }),
+      ).toBe(0);
+    } finally {
+      await prisma.$executeRawUnsafe(
+        "ALTER TABLE WeleticReviewPrivacyBackfillAudit DROP CHECK review_privacy_audit_failure",
+      );
+    }
+    const first = await backfillReviewOwnerPrivacyPage(scope);
+    expect(first).toMatchObject({
+      projected: 1,
+      suppressed: 0,
+      checkpoint: { afterShopperId: owners[0] },
+    });
+    const checkpoint = first.checkpoint!;
+    for (const value of [
+      "redacted:broken",
+      `redacted:v1:unavailable-key:${"A".repeat(64)}`,
+    ]) {
+      await prisma.weleticShopper.update({
+        where: { id: owners[1] },
+        data: { shopifyCustomerId: value },
+      });
+      await expect(
+        backfillReviewOwnerPrivacyPage({ ...scope, checkpoint }),
+      ).rejects.toThrow(/pseudonym/);
+      expect(
+        await prisma.weleticReviewOwnerPrivacyCoverage.findUnique({
+          where: { storeId_shopperId: { storeId, shopperId: owners[1] } },
+        }),
+      ).toBeNull();
+    }
+    await prisma.weleticShopper.update({
+      where: { id: owners[1] },
+      data: { shopifyCustomerId: ids[1] },
+    });
+    await upsertShopifyCustomerPrivacyTombstones({
+      storeId,
+      email: "backfill-1@example.test",
+      expiresAt: new Date("2000-01-01"),
+    });
+    const last = await backfillReviewOwnerPrivacyPage({ ...scope, checkpoint });
+    expect(last).toEqual({ projected: 0, suppressed: 1, checkpoint: null });
+    const coverage =
+      await prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+        where: { storeId_shopperId: { storeId, shopperId: owners[1] } },
+      });
+    expect(coverage).toMatchObject({
+      state: "redacted",
+      identityCount: 0,
+      sourceDigest: null,
+      keySetDigest: null,
+    });
+    expect(
+      await prisma.weleticReviewOwnerPrivacyIdentity.count({
+        where: { storeId, shopperId: owners[1] },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.weleticLoyaltyAccount.count({
+        where: { storeId, shopperId: { in: owners } },
+      }),
+    ).toBe(0);
+    const replay = await backfillReviewOwnerPrivacyPage({
+      ...scope,
+      checkpoint,
+    });
+    expect(replay).toEqual(last);
+    const auditRows = await prisma.weleticReviewPrivacyBackfillAudit.findMany({
+      where: { storeId, runId: scope.audit.runId },
+    });
+    expect(auditRows.map((row) => row.outcome).sort()).toEqual([
+      "projected",
+      "suppressed",
+      "suppressed",
+    ]);
+    expect(
+      auditRows.every(
+        (row) =>
+          row.operatorReference === "isolated_test" &&
+          row.installationGeneration === "g1",
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(auditRows)).not.toContain(owners[0]);
+    expect(JSON.stringify(auditRows)).not.toContain("@example.test");
+    expect(
+      (
+        await prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+          where: { storeId_shopperId: { storeId, shopperId: owners[1] } },
+        })
+      ).redactedAt,
+    ).toEqual(coverage.redactedAt);
+  });
+
+  it("review owner privacy: operator CLI previews, applies and resumes with private checkpoints", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "review-privacy-cli-"));
+    const runId = "662b565a-9019-4e26-8c85-290c1030cf32";
+    const cli = (args: string[], status = 0) => {
+      const child = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          createRequire(import.meta.url).resolve("tsx"),
+          fileURLToPath(
+            new URL(
+              "../../scripts/loyalty/backfill-review-privacy.ts",
+              import.meta.url,
+            ),
+          ),
+          "--store",
+          storeId,
+          "--generation",
+          "g1",
+          "--limit",
+          "1",
+          ...args,
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          timeout: 15000,
+          env: {
+            PATH: process.env.PATH,
+            NODE_ENV: "test",
+            DATABASE_URL: process.env.DATABASE_URL,
+            UPSTASH_REDIS_REST_URL: "http://127.0.0.1:1",
+            UPSTASH_REDIS_REST_TOKEN: "isolated-unused-placeholder",
+          },
+        },
+      );
+      expect(child.error).toBeUndefined();
+      expect(child.signal).toBeNull();
+      expect(child.status, child.stderr).toBe(status);
+      expect(child.stdout).not.toContain(storeId);
+      expect(child.stdout).not.toContain("@example.test");
+      if (status === 0) {
+        expect(child.stderr).toBe("");
+        return JSON.parse(child.stdout);
+      }
+      expect(child.stdout).toBe("");
+      return null;
+    };
+    const auditCount = () =>
+      prisma.weleticReviewPrivacyBackfillAudit.count({
+        where: { storeId, runId },
+      });
+    try {
+      const preview = cli([]);
+      expect(preview).toMatchObject({
+        mode: "preview",
+        productionReady: false,
+        preview: { selected: 1, hasMore: true },
+      });
+      expect(await auditCount()).toBe(0);
+      const output = join(directory, "first.json");
+      const applyArgs = [
+        "--apply",
+        "--expected-preview",
+        preview.preview.digest,
+        "--operator",
+        "sql_fixture",
+        "--run-id",
+        runId,
+        "--checkpoint-output",
+        output,
+      ];
+      expect(cli(applyArgs)).toMatchObject({
+        mode: "apply",
+        projected: 1,
+        suppressed: 0,
+        hasMore: true,
+      });
+      expect(await auditCount()).toBe(1);
+      expect(statSync(output).mode & 0o777).toBe(0o600);
+      const checkpoint = JSON.parse(readFileSync(output, "utf8"));
+      expect(checkpoint.storeId).toBe(storeId);
+      expect(checkpoint.afterShopperId).toBe(`backfill-a-${run}`);
+      cli(applyArgs, 1); // Never overwrite a completed private checkpoint.
+      expect(await auditCount()).toBe(1);
+      const next = cli(["--checkpoint", output]);
+      cli([
+        "--checkpoint",
+        output,
+        "--apply",
+        "--expected-preview",
+        next.preview.digest,
+        "--operator",
+        "sql_fixture",
+        "--run-id",
+        runId,
+        "--checkpoint-output",
+        join(directory, "second.json"),
+      ]);
+      expect(await auditCount()).toBe(2);
+      cli(
+        [
+          "--apply",
+          "--expected-preview",
+          "0".repeat(64),
+          "--operator",
+          "sql_fixture",
+          "--run-id",
+          runId,
+          "--checkpoint-output",
+          join(directory, "failed.json"),
+        ],
+        1,
+      );
+      expect(await auditCount()).toBe(2);
+    } finally {
+      rmSync(directory, { recursive: true });
+    }
+  });
+
+  it("review owner privacy: independently reconciles persisted sources and exact identity proofs", async () => {
+    const owner = `reconcile-${run}-1`;
+    const customerId = String(++sequence);
+    await prisma.weleticShopper.create({
+      data: {
+        id: owner,
+        storeId,
+        shopifyCustomerId: customerId,
+        email: "reconcile@example.test",
+      },
+    });
+    const request = await invitation(await purchase(owner));
+    const submitted = await submitNativeReview(storeId, input(request.token));
+    const checkpoint = {
+      storeId,
+      installationGeneration: "g1",
+      keySetDigest: reviewPrivacyKeySetDigest(),
+      afterShopperId: `reconcile-${run}-0`,
+    };
+    const inspect = () =>
+      reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "g1",
+        checkpoint,
+        limit: 1,
+      });
+    expect(await inspect()).toMatchObject({
+      checked: 1,
+      counts: { missing: 1 },
+      productionReady: false,
+    });
+    await prisma.$transaction((tx) =>
+      replaceReviewOwnerPrivacyProjection({
+        tx,
+        storeId,
+        shopperId: owner,
+        installationGeneration: "g1",
+      }),
+    );
+    const matched = await inspect();
+    expect(matched.counts.matched).toBe(1);
+    expect(JSON.stringify(matched.counts)).not.toContain(owner);
+    // Simulate a legacy writer bypassing the atomic projection update. Structural
+    // reader checks can miss this same-shaped stale email proof; source comparison cannot.
+    await prisma.weleticShopper.update({
+      where: { id: owner },
+      data: { email: "changed@example.test" },
+    });
+    expect((await inspect()).counts.mismatched).toBe(1);
+    await prisma.$transaction((tx) =>
+      replaceReviewOwnerPrivacyProjection({
+        tx,
+        storeId,
+        shopperId: owner,
+        installationGeneration: "g1",
+      }),
+    );
+    expect((await inspect()).counts.matched).toBe(1);
+    const before = await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+      where: { storeId, shopperId: owner },
+    });
+    await prisma.weleticReviewOwnerPrivacyIdentity.updateMany({
+      where: { storeId, shopperId: owner, identityKind: "customer_email" },
+      data: { customerDigest: "B".repeat(64) },
+    });
+    expect((await inspect()).counts.mismatched).toBe(1);
+    // Exact synthetic proof restoration only, not a production repair route.
+    for (const row of before)
+      await prisma.weleticReviewOwnerPrivacyIdentity.updateMany({
+        where: {
+          storeId,
+          shopperId: owner,
+          identityKind: row.identityKind,
+          identityKeyId: row.identityKeyId,
+        },
+        data: { customerDigest: row.customerDigest },
+      });
+    await upsertShopifyCustomerPrivacyTombstones({
+      storeId,
+      email: "changed@example.test",
+      expiresAt: new Date("2000-01-01"),
+    });
+    const suppressed = await inspect();
+    expect(suppressed.counts.suppressedPending).toBe(1);
+    // The persisted source moves again without its projection. The expired,
+    // unlinked tombstone still matches the retained proof and must block rewrite.
+    await prisma.weleticShopper.update({
+      where: { id: owner },
+      data: { email: "new-after-erasure@example.test" },
+    });
+    expect((await inspect()).counts.suppressedPending).toBe(1);
+    await expect(
+      prisma.$transaction((tx) =>
+        replaceReviewOwnerPrivacyProjection({
+          tx,
+          storeId,
+          shopperId: owner,
+          installationGeneration: "g1",
+        }),
+      ),
+    ).rejects.toThrow("source suppressed");
+    expect(
+      await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+        where: { storeId, shopperId: owner },
+      }),
+    ).toEqual(before);
+    await prisma.weleticShopper.update({
+      where: { id: owner },
+      data: { shopifyCustomerId: "redacted:broken" },
+    });
+    expect((await inspect()).counts.invalidSource).toBe(1);
+    await prisma.weleticShopper.update({
+      where: { id: owner },
+      data: { shopifyCustomerId: customerId },
+    });
+    await expect(
+      reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "stale",
+        limit: 1,
+      }),
+    ).rejects.toThrow("installation unavailable");
+    await expect(
+      reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "g1",
+        checkpoint: { ...checkpoint, storeId: "foreign" },
+      }),
+    ).rejects.toThrow("checkpoint mismatch");
+    const auditBefore = await prisma.weleticReviewPrivacyBackfillAudit.count({
+      where: { storeId },
+    });
+    for (const maxPages of [1, 100]) {
+      const child = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          createRequire(import.meta.url).resolve("tsx"),
+          fileURLToPath(
+            new URL(
+              "../../scripts/loyalty/inspect-review-privacy.ts",
+              import.meta.url,
+            ),
+          ),
+          "--store",
+          storeId,
+          "--generation",
+          "g1",
+          "--sources",
+          "--page-size",
+          "1",
+          "--max-pages",
+          String(maxPages),
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          timeout: 15000,
+          env: {
+            PATH: process.env.PATH,
+            NODE_ENV: "test",
+            DATABASE_URL: process.env.DATABASE_URL,
+            UPSTASH_REDIS_REST_URL: "http://127.0.0.1:1",
+            UPSTASH_REDIS_REST_TOKEN: "isolated-unused-placeholder",
+          },
+        },
+      );
+      expect(child.error).toBeUndefined();
+      expect(child.signal).toBeNull();
+      expect(child.status, child.stderr).toBe(1);
+      expect(child.stderr).toBe("");
+      const report = JSON.parse(child.stdout);
+      expect(report).toMatchObject({
+        scope: "persisted_review_owners",
+        productionReady: false,
+        consistentStoreSnapshot: false,
+        scanComplete: maxPages === 100,
+        orphanReviews: 0,
+      });
+      if (maxPages === 100) {
+        expect(report.counts.suppressedPending).toBeGreaterThanOrEqual(1);
+        const owners = await prisma.weleticShopper.count({
+          where: { storeId, nativeReviews: { some: { storeId } } },
+        });
+        expect(report.checked).toBe(owners);
+        expect(report.pages).toBe(owners);
+      } else expect(report.checked).toBe(1);
+      expect(child.stdout).not.toContain(owner);
+      expect(child.stdout).not.toContain("@example.test");
+      expect(child.stdout).not.toContain(checkpoint.keySetDigest);
+      expect(
+        await prisma.weleticReviewPrivacyBackfillAudit.count({
+          where: { storeId },
+        }),
+      ).toBe(auditBefore);
+    }
+    await prisma.weleticProductReview.updateMany({
+      where: { storeId, id: submitted.id },
+      data: { shopperId: `absent-${run}` },
+    });
+    try {
+      const orphan = await reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "g1",
+        limit: 1,
+      });
+      expect(orphan.orphanReviews).toBe(1);
+    } finally {
+      await prisma.weleticProductReview.updateMany({
+        where: { storeId, id: submitted.id },
+        data: { shopperId: owner },
+      });
+    }
+  });
+
+  it("review owner privacy: summary worker preserves unknowns, clears disabled ratings and rejects stale publication", async () => {
+    const isolatedProduct = `privacy-summary-${run}`;
+    const owner = `summary-owner-${run}`;
+    const externalId = "gid://shopify/Product/98766";
+    await prisma.weleticShopifyProduct.create({
+      data: {
+        id: isolatedProduct,
+        storeId,
+        programId,
+        externalId,
+        handle: "summary-isolated",
+        title: "Synthetic summary fixture",
+      },
+    });
+    await prisma.weleticShopper.create({
+      data: {
+        id: owner,
+        storeId,
+        shopifyCustomerId: String(++sequence),
+        email: "summary-owner@example.test",
+      },
+    });
+    const request = await invitation(await purchase(owner, isolatedProduct));
+    const review = await submitNativeReview(storeId, input(request.token));
+    await prisma.weleticProductReview.update({
+      where: { id: review.id },
+      data: { status: "published", rating: 4 },
+    });
+    const sync = () => syncProductReviewSummary(storeId, isolatedProduct, "g1");
+    const inspect = () =>
+      inspectReviewPrivacyReaderCoverage({
+        storeId,
+        installationGeneration: "g1",
+      });
+    const inspectProcess = (expectedStatus: number) => {
+      const child = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          createRequire(import.meta.url).resolve("tsx"),
+          fileURLToPath(
+            new URL(
+              "../../scripts/loyalty/inspect-review-privacy.ts",
+              import.meta.url,
+            ),
+          ),
+          "--store",
+          storeId,
+          "--generation",
+          "g1",
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          timeout: 15000,
+          env: {
+            PATH: process.env.PATH,
+            NODE_ENV: "test",
+            DATABASE_URL: process.env.DATABASE_URL,
+          },
+        },
+      );
+      expect(child.error).toBeUndefined();
+      expect(child.signal).toBeNull();
+      expect(child.status).toBe(expectedStatus);
+      expect(child.stderr).toBe("");
+      const result = JSON.parse(child.stdout);
+      expect(result.scope).toBe("currently_publishable_reviews");
+      expect(result.productionReady).toBe(false);
+      expect(child.stdout).not.toContain(owner);
+      expect(child.stdout).not.toContain("summary-owner@example.test");
+      return result;
+    };
+    try {
+      expect(await inspect()).toEqual({
+        status: "inspected",
+        readerCoverageComplete: false,
+        counts: { total: 1, eligible: 0, suppressed: 0, unknown: 1 },
+      });
+      expect(inspectProcess(1)).toMatchObject({
+        status: "inspected",
+        readerCoverageComplete: false,
+        counts: { unknown: 1 },
+      });
+      await expect(sync()).rejects.toThrow("privacy coverage unavailable");
+      expect(mocks.summaryCredentials).not.toHaveBeenCalled();
+      expect(mocks.summaryGraphql).not.toHaveBeenCalled();
+
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { enabled: false },
+      });
+      await sync();
+      expect(await inspect()).toEqual({
+        status: "module_disabled",
+        readerCoverageComplete: false,
+        counts: null,
+      });
+      expect(inspectProcess(1)).toMatchObject({
+        status: "module_disabled",
+        readerCoverageComplete: false,
+      });
+      expect(mocks.summaryGraphql).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          variables: {
+            metafields: [
+              {
+                ownerId: externalId,
+                namespace: "reviews",
+                key: "rating_count",
+                type: "number_integer",
+                value: "0",
+              },
+            ],
+            delete: [
+              { ownerId: externalId, namespace: "reviews", key: "rating" },
+            ],
+          },
+        }),
+      );
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { enabled: true },
+      });
+      await prisma.$transaction((tx) =>
+        replaceReviewOwnerPrivacyProjection({
+          tx,
+          storeId,
+          shopperId: owner,
+          installationGeneration: "g1",
+        }),
+      );
+      await sync();
+      const independent = await prisma.weleticProductReview.aggregate({
+        where: { id: review.id, storeId, productId: isolatedProduct },
+        _count: { rating: true },
+        _sum: { rating: true },
+      });
+      expect(await inspect()).toEqual({
+        status: "inspected",
+        readerCoverageComplete: true,
+        counts: { total: 1, eligible: 1, suppressed: 0, unknown: 0 },
+      });
+      expect(inspectProcess(0)).toMatchObject({
+        status: "inspected",
+        readerCoverageComplete: true,
+        counts: { eligible: 1 },
+      });
+      expect(independent).toEqual({
+        _count: { rating: 1 },
+        _sum: { rating: 4 },
+      });
+      expect(mocks.summaryGraphql).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          variables: {
+            metafields: [
+              {
+                ownerId: externalId,
+                namespace: "reviews",
+                key: "rating_count",
+                type: "number_integer",
+                value: "1",
+              },
+              {
+                ownerId: externalId,
+                namespace: "reviews",
+                key: "rating",
+                type: "rating",
+                value: JSON.stringify({
+                  value: "4.00",
+                  scale_min: "1.0",
+                  scale_max: "5.0",
+                }),
+              },
+            ],
+          },
+        }),
+      );
+      await upsertShopifyCustomerPrivacyTombstones({
+        storeId,
+        email: "summary-owner@example.test",
+        expiresAt: new Date("2000-01-01T00:00:00Z"),
+      });
+      await sync();
+      expect(await inspect()).toEqual({
+        status: "inspected",
+        readerCoverageComplete: true,
+        counts: { total: 1, eligible: 0, suppressed: 1, unknown: 0 },
+      });
+      expect(mocks.summaryGraphql).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          variables: expect.objectContaining({
+            metafields: [
+              expect.objectContaining({ key: "rating_count", value: "0" }),
+            ],
+            delete: [
+              { ownerId: externalId, namespace: "reviews", key: "rating" },
+            ],
+          }),
+        }),
+      );
+      // A real database generation change during mocked credential resolution
+      // must reject the stale worker before any further provider invocation.
+      mocks.summaryGraphql.mockClear();
+      mocks.summaryCredentials.mockImplementationOnce(async () => {
+        await prisma.weleticShopifyStore.update({
+          where: { id: storeId },
+          data: { installationGeneration: "g-summary-reinstalled" },
+        });
+        return {
+          shopDomain: "isolated-summary.myshopify.com",
+          accessToken: "synthetic-not-a-credential",
+        };
+      });
+      await expect(sync()).rejects.toThrow("stale_installation_generation");
+      expect(mocks.summaryGraphql).not.toHaveBeenCalled();
+    } finally {
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { enabled: true },
+      });
+      await prisma.weleticShopifyStore.update({
+        where: { id: storeId },
+        data: { installationGeneration: "g1" },
+      });
+    }
+  });
+
+  it("review owner privacy: key rotation preserves old tombstones and rejects same-id secret replacement", async () => {
+    const envName = "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS";
+    const previous = process.env[envName];
+    const baseline = loadShopifyPrivacyHmacKeyring();
+    const encode = (keys: typeof baseline.all) =>
+      keys
+        .map((key) => `${key.identityKeyId}:${key.secret.toString("base64")}`)
+        .join(",");
+    const owner = `rotation-${run}`;
+    const isolatedProduct = `rotation-product-${run}`;
+    await prisma.weleticShopifyProduct.create({
+      data: {
+        id: isolatedProduct,
+        storeId,
+        programId,
+        externalId: "gid://shopify/Product/98767",
+        handle: "rotation-fixture",
+        title: "Rotation fixture",
+      },
+    });
+    await prisma.weleticShopper.create({
+      data: {
+        id: owner,
+        storeId,
+        shopifyCustomerId: String(++sequence),
+        email: "rotation-owner@example.test",
+      },
+    });
+    const request = await invitation(await purchase(owner, isolatedProduct));
+    const review = await submitNativeReview(storeId, input(request.token));
+    await prisma.weleticProductReview.update({
+      where: { id: review.id },
+      data: { status: "published" },
+    });
+    const replace = () =>
+      prisma.$transaction((tx) =>
+        replaceReviewOwnerPrivacyProjection({
+          tx,
+          storeId,
+          shopperId: owner,
+          installationGeneration: "g1",
+        }),
+      );
+    const read = () => getPublicProductReviews(storeId, { productId: "98767" });
+    try {
+      await replace();
+      expect((await read()).summary.count).toBe(1);
+      const before = await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+        where: { storeId, shopperId: owner },
+        orderBy: [{ identityKind: "asc" }, { identityKeyId: "asc" }],
+      });
+      vi.stubEnv(
+        envName,
+        encode(
+          baseline.all.map((key, index) =>
+            index === 0 ? { ...key, secret: Buffer.alloc(32, 0x66) } : key,
+          ),
+        ),
+      );
+      await expect(read()).rejects.toMatchObject({ code: "unavailable" });
+      await expect(replace()).rejects.toThrow(
+        "retained identity proof mismatch",
+      );
+      expect(
+        await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+          where: { storeId, shopperId: owner },
+          orderBy: [{ identityKind: "asc" }, { identityKeyId: "asc" }],
+        }),
+      ).toEqual(before);
+      for (const emailOnly of [true, false]) {
+        await prisma.weleticReviewOwnerPrivacyIdentity.deleteMany({
+          where: {
+            storeId,
+            shopperId: owner,
+            ...(emailOnly ? { identityKind: "customer_id" as const } : {}),
+          },
+        });
+        const remaining =
+          await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+            where: { storeId, shopperId: owner },
+            orderBy: [{ identityKind: "asc" }, { identityKeyId: "asc" }],
+          });
+        await expect(replace()).rejects.toThrow("anchors unavailable");
+        expect(
+          await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+            where: { storeId, shopperId: owner },
+            orderBy: [{ identityKind: "asc" }, { identityKeyId: "asc" }],
+          }),
+        ).toEqual(remaining);
+      }
+      // Restore only the exact synthetic rows deliberately removed above.
+      await prisma.weleticReviewOwnerPrivacyIdentity.createMany({
+        data: before,
+      });
+      const rotated = [
+        {
+          identityKeyId: "rotation-fixture-v2",
+          secret: Buffer.alloc(32, 0x67),
+        },
+        ...baseline.all,
+      ];
+      vi.stubEnv(envName, encode(rotated));
+      await expect(read()).rejects.toMatchObject({ code: "unavailable" });
+      await replace();
+      expect((await read()).summary.count).toBe(1);
+      expect(
+        await prisma.weleticReviewOwnerPrivacyIdentity.count({
+          where: { storeId, shopperId: owner },
+        }),
+      ).toBe(rotated.length * 2);
+      const newKeyProofs =
+        await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+          where: {
+            storeId,
+            shopperId: owner,
+            identityKeyId: rotated[0].identityKeyId,
+          },
+        });
+      await prisma.weleticReviewOwnerPrivacyIdentity.deleteMany({
+        where: {
+          storeId,
+          shopperId: owner,
+          identityKeyId: rotated[0].identityKeyId,
+        },
+      });
+      vi.stubEnv(
+        envName,
+        encode([
+          { ...rotated[0], secret: Buffer.alloc(32, 0x68) },
+          ...baseline.all,
+        ]),
+      );
+      await expect(replace()).rejects.toThrow(
+        "retained identity count mismatch",
+      );
+      expect(
+        await prisma.weleticReviewOwnerPrivacyIdentity.count({
+          where: { storeId, shopperId: owner },
+        }),
+      ).toBe(baseline.all.length * 2);
+      await prisma.weleticReviewOwnerPrivacyIdentity.createMany({
+        data: newKeyProofs,
+      });
+      vi.stubEnv(envName, encode(rotated));
+      // Insert through the real old-key writer, then restore the new current key.
+      vi.stubEnv(envName, encode(baseline.all));
+      await upsertShopifyCustomerPrivacyTombstones({
+        storeId,
+        email: "rotation-owner@example.test",
+        expiresAt: new Date("2000-01-01"),
+      });
+      vi.stubEnv(envName, encode(rotated));
+      const tombstone =
+        await prisma.weleticShopifyCustomerPrivacyTombstone.findFirstOrThrow({
+          where: {
+            storeId,
+            identityKind: "customer_email",
+            identityKeyId: baseline.current.identityKeyId,
+            customerDigest: before.find(
+              (row) =>
+                row.identityKind === "customer_email" &&
+                row.identityKeyId === baseline.current.identityKeyId,
+            )!.customerDigest,
+            shopperId: null,
+          },
+          orderBy: { createdAt: "desc" },
+        });
+      expect(tombstone.expiresAt.getTime()).toBeLessThan(Date.now());
+      expect((await read()).summary.count).toBe(0);
+      await expect(replace()).rejects.toThrow("source suppressed");
+      const retainedCoverage =
+        await prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+          where: { storeId_shopperId: { storeId, shopperId: owner } },
+        });
+      const retainedIdentities =
+        await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+          where: { storeId, shopperId: owner },
+          orderBy: [{ identityKind: "asc" }, { identityKeyId: "asc" }],
+        });
+      vi.stubEnv(envName, encode([rotated[0]]));
+      // Retained proofs still match the old-key tombstone even when that key
+      // is absent from configuration; authoritative suppression takes precedence.
+      await expect(replace()).rejects.toThrow("source suppressed");
+      expect(
+        await prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+          where: { storeId_shopperId: { storeId, shopperId: owner } },
+        }),
+      ).toEqual(retainedCoverage);
+      expect(
+        await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+          where: { storeId, shopperId: owner },
+          orderBy: [{ identityKind: "asc" }, { identityKeyId: "asc" }],
+        }),
+      ).toEqual(retainedIdentities);
+      expect((await read()).summary.count).toBe(0);
+    } finally {
+      vi.stubEnv(envName, previous);
+      await prisma.weleticProductReview.update({
+        where: { id: review.id },
+        data: { status: "hidden" },
+      });
+    }
+  });
+
+  it("review owner privacy: public pagination skips suppressed boundaries across sorts and rating filters", async () => {
+    const isolatedProduct = `privacy-pages-${run}`;
+    await prisma.weleticShopifyProduct.create({
+      data: {
+        id: isolatedProduct,
+        storeId,
+        programId,
+        externalId: "gid://shopify/Product/98765",
+        handle: "privacy-pages",
+        title: "Privacy page fixture",
+      },
+    });
+    const rows: Array<{
+      id: string;
+      rating: number;
+      createdAt: Date;
+      suppressed: boolean;
+      owner: string;
+      email: string;
+    }> = [];
+    const ratings = [3, 2, 5, 1, 2, 5, 4];
+    for (let index = 0; index < ratings.length; index++) {
+      const owner = `privacy-pages-owner-${run}-${index}`;
+      const email = `privacy-pages-${index}@example.test`;
+      await prisma.weleticShopper.create({
+        data: {
+          id: owner,
+          storeId,
+          shopifyCustomerId: String(++sequence),
+          email,
+        },
+      });
+      await prisma.$transaction((tx) =>
+        replaceReviewOwnerPrivacyProjection({
+          tx,
+          storeId,
+          shopperId: owner,
+          installationGeneration: "g1",
+        }),
+      );
+      const invitationResult = await invitation(
+        await purchase(owner, isolatedProduct),
+      );
+      const review = await submitNativeReview(storeId, {
+        ...input(invitationResult.token),
+        rating: ratings[index],
+      });
+      const createdAt = new Date(Date.UTC(2026, 8, 1, 0, 0, index));
+      // Synthetic publication/time setup; reader and SQL transport are real.
+      await prisma.weleticProductReview.update({
+        where: { id: review.id },
+        data: { status: "published", createdAt },
+      });
+      const suppressed = [0, 3, 6].includes(index);
+      if (suppressed)
+        await upsertShopifyCustomerPrivacyTombstones({
+          storeId,
+          email,
+          expiresAt: new Date("2000-01-01T00:00:00Z"),
+        });
+      rows.push({
+        id: review.id,
+        rating: ratings[index],
+        createdAt,
+        suppressed,
+        owner,
+        email,
+      });
+    }
+    for (const sort of ["newest", "highest", "lowest"] as const) {
+      for (const rating of [undefined, 2, 5]) {
+        const expected = rows
+          .filter(
+            (row) => !row.suppressed && (!rating || row.rating === rating),
+          )
+          .sort((a, b) => {
+            const ratingOrder =
+              sort === "newest"
+                ? 0
+                : sort === "highest"
+                  ? b.rating - a.rating
+                  : a.rating - b.rating;
+            return (
+              ratingOrder ||
+              b.createdAt.getTime() - a.createdAt.getTime() ||
+              b.id.localeCompare(a.id)
+            );
+          });
+        const seen: string[] = [];
+        let cursor: string | undefined;
+        for (let pageIndex = 0; pageIndex <= expected.length; pageIndex++) {
+          const page = await getPublicProductReviews(storeId, {
+            productId: "98765",
+            sort,
+            rating,
+            limit: 1,
+            cursor,
+          });
+          expect(page.summary).toEqual({
+            count: 4,
+            average: 3.5,
+            distribution: { 1: 0, 2: 2, 3: 0, 4: 0, 5: 2 },
+          });
+          expect(page.items).toHaveLength(1);
+          seen.push(page.items[0].id);
+          for (const row of rows) {
+            expect(JSON.stringify(page)).not.toContain(row.owner);
+            expect(JSON.stringify(page)).not.toContain(row.email);
+          }
+          if (!page.nextCursor) break;
+          const boundary = JSON.parse(
+            Buffer.from(page.nextCursor, "base64url").toString("utf8"),
+          );
+          expect(rows.find((row) => row.id === boundary.id)?.suppressed).toBe(
+            false,
+          );
+          cursor = page.nextCursor;
+        }
+        expect(seen).toEqual(expected.map((row) => row.id));
+        expect(new Set(seen).size).toBe(seen.length);
+      }
+    }
+  });
+
+  it("review owner privacy: shared SQL distinguishes missing coverage and excludes retained unlinked tombstones before aggregates", async () => {
+    const owner = `privacy-sql-${run}`;
+    const customerId = String(++sequence);
+    await prisma.weleticShopper.create({
+      data: {
+        id: owner,
+        storeId,
+        shopifyCustomerId: customerId,
+        email: "sql-privacy@example.test",
+      },
+    });
+    const request = await invitation(await purchase(owner));
+    const review = await submitNativeReview(storeId, input(request.token));
+    // Synthetic publication isolates this SQL predicate test from merchant UI.
+    await prisma.weleticProductReview.update({
+      where: { id: review.id },
+      data: { status: "published" },
+    });
+    const mediaId = `privacy-photo-${run}`;
+    await prisma.weleticReviewMedia.create({
+      data: {
+        id: mediaId,
+        storeId,
+        requestId: request.id,
+        reviewId: review.id,
+        objectKey: `weletic/reviews/${storeId}/${mediaId}.webp`,
+        contentType: "image/webp",
+        sizeBytes: 10,
+        status: "uploaded",
+        uploadExpiresAt: new Date(),
+      },
+    });
+    await expect(getPublicReviewPhoto(storeId, mediaId)).rejects.toMatchObject({
+      code: "not_found",
+    });
+    const fragments = buildReviewPublicPrivacySql({
+      storeId,
+      productId,
+      installationGeneration: "g1",
+    });
+    const counts = async () => {
+      const [eligible] = await prisma.$queryRaw<Array<{ count: bigint }>>(
+        Prisma.sql`SELECT COUNT(*) AS count FROM ${fragments.from} WHERE ${fragments.eligible} AND r.id = ${review.id}`,
+      );
+      const [unknown] = await prisma.$queryRaw<Array<{ count: bigint }>>(
+        Prisma.sql`SELECT COUNT(*) AS count FROM ${fragments.from} WHERE ${fragments.unknown} AND r.id = ${review.id}`,
+      );
+      return {
+        eligible: Number(eligible.count),
+        unknown: Number(unknown.count),
+      };
+    };
+    expect(await counts()).toEqual({ eligible: 0, unknown: 1 });
+    await expect(
+      getPublicProductReviews(storeId, { productId: "1234" }),
+    ).rejects.toMatchObject({ code: "unavailable" });
+    await prisma.$transaction((tx) =>
+      replaceReviewOwnerPrivacyProjection({
+        tx,
+        storeId,
+        shopperId: owner,
+        installationGeneration: "g1",
+      }),
+    );
+    expect(await counts()).toEqual({ eligible: 1, unknown: 0 });
+    const storageNames = [
+      "STORAGE_ENDPOINT",
+      "STORAGE_PRIVATE_BUCKET",
+      "STORAGE_ACCESS_KEY_ID",
+      "STORAGE_SECRET_ACCESS_KEY",
+    ];
+    const previousStorage = storageNames.map((name) => process.env[name]);
+    try {
+      for (const name of storageNames) vi.stubEnv(name, "isolated-placeholder");
+      expect(await getPublicReviewPhoto(storeId, mediaId)).toEqual({
+        url: "https://storage.invalid/synthetic-private-download",
+      });
+    } finally {
+      storageNames.forEach((name, index) =>
+        vi.stubEnv(name, previousStorage[index]),
+      );
+    }
+    expect(mocks.signedDownload).toHaveBeenCalledTimes(1);
+    expect(mocks.signedDownload).toHaveBeenCalledWith({
+      key: `weletic/reviews/${storeId}/${mediaId}.webp`,
+      bucket: "private",
+      expiresIn: 60,
+    });
+    const publicPage = await getPublicProductReviews(storeId, {
+      productId: "1234",
+    });
+    expect(publicPage.items.map((row) => row.id)).toContain(review.id);
+    await prisma.weleticReviewOwnerPrivacyCoverage.update({
+      where: { storeId_shopperId: { storeId, shopperId: owner } },
+      data: { identityCount: 1 },
+    });
+    expect(await counts()).toEqual({ eligible: 0, unknown: 1 });
+    await expect(
+      prisma.$transaction((tx) =>
+        replaceReviewOwnerPrivacyProjection({
+          tx,
+          storeId,
+          shopperId: owner,
+          installationGeneration: "g1",
+        }),
+      ),
+    ).rejects.toThrow("retained identity count mismatch");
+    // Restore the exact fixture marker that this test deliberately corrupted;
+    // ordinary backfill is not an authority to repair ambiguous retained proofs.
+    await prisma.weleticReviewOwnerPrivacyCoverage.update({
+      where: { storeId_shopperId: { storeId, shopperId: owner } },
+      data: {
+        identityCount: await prisma.weleticReviewOwnerPrivacyIdentity.count({
+          where: { storeId, shopperId: owner },
+        }),
+      },
+    });
+    await upsertShopifyCustomerPrivacyTombstones({
+      storeId,
+      email: "sql-privacy@example.test",
+      expiresAt: new Date("2000-01-01T00:00:00Z"),
+    });
+    expect(await counts()).toEqual({ eligible: 0, unknown: 0 });
+    await expect(getPublicReviewPhoto(storeId, mediaId)).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(mocks.signedDownload).toHaveBeenCalledTimes(1);
+    const suppressedPage = await getPublicProductReviews(storeId, {
+      productId: "1234",
+    });
+    expect(suppressedPage.items.map((row) => row.id)).not.toContain(review.id);
+    expect(suppressedPage.summary.count).toBe(publicPage.summary.count - 1);
+    await prisma.weleticReviewMedia.update({
+      where: { id: mediaId },
+      data: { status: "deletion_pending" },
+    });
+    try {
+      for (const name of storageNames) vi.stubEnv(name, "isolated-placeholder");
+      await cleanupReviewPhoto(storeId, mediaId);
+    } finally {
+      storageNames.forEach((name, index) =>
+        vi.stubEnv(name, previousStorage[index]),
+      );
+    }
+    expect(mocks.delete).toHaveBeenCalledWith({
+      key: `weletic/reviews/${storeId}/${mediaId}.webp`,
+      bucket: "private",
+    });
+    expect(
+      (
+        await prisma.weleticReviewMedia.findUniqueOrThrow({
+          where: { id: mediaId },
+        })
+      ).status,
+    ).toBe("deleted");
+  });
+
+  it("review owner privacy: ingestion preserves partial identity, isolates enrollment and rejects saved-email erasure bypass", async () => {
+    const customerId = String(++sequence);
+    await prisma.weleticLoyaltyProgram.update({
+      where: { id: loyaltyProgramId },
+      data: { status: "disabled" },
+    });
+    try {
+      const ingest = (customer: {
+        id: string;
+        email?: string;
+        first_name?: string;
+      }) =>
+        upsertWeleticShopper({
+          storeId,
+          customer,
+          expectedInstallationGeneration: "g1",
+        });
+      const first = await ingest({
+        id: customerId,
+        email: "saved-ingress@example.test",
+        first_name: "Original",
+      });
+      expect(first).toMatchObject({
+        loyaltyAccount: null,
+        loyaltyAccountCreated: false,
+        privacyTombstoned: false,
+      });
+      const owner = first!.shopper!.id;
+      const read = () =>
+        prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+          where: { storeId_shopperId: { storeId, shopperId: owner } },
+          include: {
+            identities: {
+              orderBy: [{ identityKind: "asc" }, { identityKeyId: "asc" }],
+            },
+          },
+        });
+      const original = await read();
+      const partial = await ingest({ id: customerId, first_name: "Updated" });
+      expect(partial?.shopper?.email).toBe("saved-ingress@example.test");
+      const saved = await read();
+      expect(saved.sourceDigest).toBe(original.sourceDigest);
+      expect(saved.identities).toEqual(original.identities);
+      expect(
+        await prisma.weleticLoyaltyAccount.count({
+          where: { storeId, shopperId: owner },
+        }),
+      ).toBe(0);
+      const tombstones = await upsertShopifyCustomerPrivacyTombstones({
+        storeId,
+        email: "saved-ingress@example.test",
+      });
+      expect(
+        (
+          await ingest({
+            id: customerId,
+            email: "replacement@example.test",
+            first_name: "Must not persist",
+          })
+        )?.privacyTombstoned,
+      ).toBe(true);
+      await prisma.weleticShopifyCustomerPrivacyTombstone.updateMany({
+        where: { storeId, id: { in: tombstones.map((row) => row.id) } },
+        data: { expiresAt: new Date("2000-01-01T00:00:00Z") },
+      });
+      await expect(
+        ingest({
+          id: customerId,
+          email: "replacement@example.test",
+          first_name: "Still must not persist",
+        }),
+      ).rejects.toThrow("Review privacy source suppressed");
+      expect(
+        await prisma.weleticShopper.findUniqueOrThrow({ where: { id: owner } }),
+      ).toMatchObject({
+        email: "saved-ingress@example.test",
+        firstName: "Updated",
+      });
+      expect(await read()).toEqual(saved);
+    } finally {
+      await prisma.weleticLoyaltyProgram.update({
+        where: { id: loyaltyProgramId },
+        data: { status: "active" },
+      });
+    }
+  });
+
+  it("review owner privacy: legacy null-generation erasure needs no operational installation", async () => {
+    const owner = `privacy-legacy-${run}`;
+    const customerId = String(++sequence);
+    await prisma.weleticShopper.create({
+      data: {
+        id: owner,
+        storeId,
+        shopifyCustomerId: customerId,
+        email: "legacy@example.test",
+      },
+    });
+    await prisma.weleticShopifyStore.update({
+      where: { id: storeId },
+      data: { installationGeneration: null },
+    });
+    try {
+      await scrubWeleticShopperCustomerContext({
+        storeId,
+        shopifyCustomerId: customerId,
+        shopperId: owner,
+      });
+      // Shop erasure's already-pseudonymized retry uses the same primitive.
+      await prisma.$transaction((tx) =>
+        redactReviewOwnerPrivacyProjection({ tx, storeId, shopperId: owner }),
+      );
+      expect(
+        await prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+          where: { storeId_shopperId: { storeId, shopperId: owner } },
+          include: { identities: true },
+        }),
+      ).toMatchObject({
+        state: "redacted",
+        installationGeneration: null,
+        identityCount: 0,
+        identities: [],
+      });
+      expect(
+        await prisma.weleticShopper.findUniqueOrThrow({ where: { id: owner } }),
+      ).toMatchObject({
+        email: null,
+        shopifyCustomerId: expect.stringMatching(/^redacted:/),
+      });
+    } finally {
+      await prisma.weleticShopifyStore.update({
+        where: { id: storeId },
+        data: { installationGeneration: "g1" },
+      });
+    }
+  });
+
+  it("review owner privacy: source erasure, rollback and replay preserve terminal coverage without identity proofs", async () => {
+    const owner = `privacy-erase-${run}`;
+    const customerId = String(++sequence);
+    await prisma.weleticShopper.create({
+      data: {
+        id: owner,
+        storeId,
+        shopifyCustomerId: customerId,
+        email: "erase@example.test",
+      },
+    });
+    await prisma.$transaction((tx) =>
+      replaceReviewOwnerPrivacyProjection({
+        tx,
+        storeId,
+        shopperId: owner,
+        installationGeneration: "g1",
+      }),
+    );
+    const read = () =>
+      prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+        where: { storeId_shopperId: { storeId, shopperId: owner } },
+        include: {
+          identities: {
+            orderBy: [{ identityKind: "asc" }, { identityKeyId: "asc" }],
+          },
+        },
+      });
+    const before = await read();
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await redactReviewOwnerPrivacyProjection({
+          tx,
+          storeId,
+          shopperId: owner,
+        });
+        await tx.weleticShopper.update({
+          where: { id: owner },
+          data: { email: null },
+        });
+        throw new Error("synthetic source transaction failure");
+      }),
+    ).rejects.toThrow("synthetic source transaction failure");
+    expect(await read()).toEqual(before);
+    expect(
+      (await prisma.weleticShopper.findUniqueOrThrow({ where: { id: owner } }))
+        .email,
+    ).toBe("erase@example.test");
+
+    const redactedAt = new Date("2026-09-20T00:00:00Z");
+    await scrubWeleticShopperCustomerContext({
+      storeId,
+      shopifyCustomerId: customerId,
+      shopperId: owner,
+      redactedAt,
+    });
+    const erased = await read();
+    expect(erased).toMatchObject({
+      state: "redacted",
+      keySetDigest: null,
+      sourceDigest: null,
+      identityCount: 0,
+      redactedAt,
+      identities: [],
+    });
+    const shopper = await prisma.weleticShopper.findUniqueOrThrow({
+      where: { id: owner },
+    });
+    expect(shopper.email).toBeNull();
+    expect(shopper.shopifyCustomerId).toMatch(/^redacted:/);
+    await scrubWeleticShopperCustomerContext({
+      storeId,
+      shopifyCustomerId: customerId,
+      shopperId: owner,
+      redactedAt: new Date("2026-09-21T00:00:00Z"),
+    });
+    expect(await read()).toMatchObject({
+      state: "redacted",
+      redactedAt,
+      identities: [],
+    });
+    await expect(
+      prisma.$transaction((tx) =>
+        replaceReviewOwnerPrivacyProjection({
+          tx,
+          storeId,
+          shopperId: owner,
+          installationGeneration: "g1",
+        }),
+      ),
+    ).rejects.toThrow();
+    expect(await read()).toMatchObject({
+      state: "redacted",
+      redactedAt,
+      identities: [],
+    });
+  });
+
+  it.each(["email", "redacted", "tombstone"] as const)(
+    "review owner privacy: current reads defeat an established snapshot after %s commits",
+    async (change) => {
+      const owner = `privacy-owner-${run}-${change}`;
+      const customerId = String(++sequence);
+      const oldEmail = `before-${change}@example.test`;
+      const newEmail = `after-${change}@example.test`;
+      await prisma.weleticShopper.create({
+        data: {
+          id: owner,
+          storeId,
+          shopifyCustomerId: customerId,
+          email: oldEmail,
+        },
+      });
+      const replace = (tx: Prisma.TransactionClient) =>
+        replaceReviewOwnerPrivacyProjection({
+          tx,
+          storeId,
+          shopperId: owner,
+          installationGeneration: "g1",
+        });
+      await prisma.$transaction(replace);
+      const readProjection = () =>
+        prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+          where: { storeId_shopperId: { storeId, shopperId: owner } },
+          include: {
+            identities: {
+              orderBy: [{ identityKind: "asc" }, { identityKeyId: "asc" }],
+            },
+          },
+        });
+      let beforeDenial: Awaited<ReturnType<typeof readProjection>> | undefined;
+      await prisma.$transaction(
+        async (tx) => {
+          const initial = await tx.weleticShopper.findUniqueOrThrow({
+            where: { id: owner },
+          });
+          expect(initial.email).toBe(oldEmail);
+          expect(
+            await tx.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+              where: { storeId_shopperId: { storeId, shopperId: owner } },
+            }),
+          ).toMatchObject({ state: "active" });
+          expect(
+            await tx.weleticShopifyCustomerPrivacyTombstone.count({
+              where: { storeId, shopperId: owner },
+            }),
+          ).toBe(0);
+          const [readerConnection] = await tx.$queryRaw<
+            Array<{ id: bigint }>
+          >`SELECT CONNECTION_ID() AS id`;
+          await prisma.$transaction(async (writer) => {
+            const [writerConnection] = await writer.$queryRaw<
+              Array<{ id: bigint }>
+            >`SELECT CONNECTION_ID() AS id`;
+            expect(String(writerConnection.id)).not.toBe(
+              String(readerConnection.id),
+            );
+            if (change === "email")
+              await writer.weleticShopper.update({
+                where: { id: owner },
+                data: { email: newEmail },
+              });
+            if (change === "redacted")
+              await writer.weleticReviewOwnerPrivacyCoverage.update({
+                where: { storeId_shopperId: { storeId, shopperId: owner } },
+                data: {
+                  state: "redacted",
+                  redactedAt: new Date(),
+                  sourceDigest: null,
+                  keySetDigest: null,
+                  identityCount: 0,
+                },
+              });
+            if (change === "tombstone")
+              await upsertShopifyCustomerPrivacyTombstones({
+                tx: writer,
+                storeId,
+                shopifyCustomerId: customerId,
+              });
+          });
+          if (change !== "email") beforeDenial = await readProjection();
+          // Prove the ordinary reader really remains stale after the other commit.
+          expect(
+            (
+              await tx.weleticShopper.findUniqueOrThrow({
+                where: { id: owner },
+              })
+            ).email,
+          ).toBe(oldEmail);
+          expect(
+            (
+              await tx.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+                where: { storeId_shopperId: { storeId, shopperId: owner } },
+              })
+            ).state,
+          ).toBe("active");
+          if (change === "email")
+            expect(await replace(tx)).toEqual({ identityCount: 2 });
+          else
+            await expect(replace(tx)).rejects.toThrow(
+              "Review privacy source suppressed",
+            );
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+          timeout: 15000,
+        },
+      );
+      // Denial is caught inside the transaction: commit must still preserve the
+      // entire prior projection, detecting accidental writes before throwing.
+      if (change !== "email")
+        expect(await readProjection()).toEqual(beforeDenial);
+      const coverage =
+        await prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
+          where: { storeId_shopperId: { storeId, shopperId: owner } },
+        });
+      if (change === "redacted")
+        expect(coverage).toMatchObject({
+          state: "redacted",
+          sourceDigest: null,
+          identityCount: 0,
+        });
+      if (change === "email") {
+        const expected = buildReviewPrivacyOwnerProjection({
+          storeId,
+          shopperId: owner,
+          installationGeneration: "g1",
+          shopifyCustomerId: customerId,
+          email: newEmail,
+        });
+        expect(coverage.sourceDigest).toBe(expected.sourceDigest);
+        const identities =
+          await prisma.weleticReviewOwnerPrivacyIdentity.findMany({
+            where: { storeId, shopperId: owner },
+            select: {
+              identityKind: true,
+              identityKeyId: true,
+              customerDigest: true,
+            },
+          });
+        expect(identities).toHaveLength(expected.identities.length);
+        expect(identities).toEqual(expect.arrayContaining(expected.identities));
+      }
+    },
+  );
 
   it.each(["before_commit", "after_commit"] as const)(
     "recovers moderation after a real process crash %s without a duplicate audit",
@@ -698,6 +2455,1068 @@ describe("native reviews real MySQL production-service boundaries", () => {
       await competitor;
       await prisma.$executeRaw`DROP TABLE ReviewDeadlockFixture`;
     }
+  });
+
+  async function translationFixture() {
+    const request = await invitation(await purchase());
+    return submitNativeReview(storeId, input(request.token));
+  }
+  it("manual translations: retries an actual MySQL deadlock then commits one translation audit", async () => {
+    const review = await translationFixture();
+    // This file is restricted to disposable test databases. The scratch table
+    // deliberately inverts lock order to provoke recovery, not production use.
+    await prisma.$executeRaw`CREATE TABLE ReviewTranslationDeadlockFixture (id INT PRIMARY KEY, value INT NOT NULL) ENGINE=InnoDB`;
+    let releaseWriter!: () => void;
+    const writerEntered = new Promise<void>((resolve) => {
+      releaseWriter = resolve;
+    });
+    let ready!: () => void;
+    let failReady!: (error: unknown) => void;
+    const competitorReady = new Promise<void>((resolve, reject) => {
+      ready = resolve;
+      failReady = reject;
+    });
+    let competitor: Promise<void> | undefined;
+    let competingError: unknown;
+    let attempts = 0;
+    const deadlocks: unknown[] = [];
+    try {
+      await prisma.$executeRaw(Prisma.sql`
+        INSERT INTO ReviewTranslationDeadlockFixture (id, value)
+        VALUES ${Prisma.join(Array.from({ length: 1024 }, (_, index) => Prisma.sql`(${index + 1}, 0)`))}
+      `);
+      competitor = prisma
+        .$transaction(
+          async (tx) => {
+            // More modified rows than the review transaction make the latter the
+            // lighter rollback victim; assertions below require that actual error.
+            await tx.$executeRaw`UPDATE ReviewTranslationDeadlockFixture SET value = value + 1`;
+            ready();
+            await writerEntered;
+            await tx.$queryRaw`SELECT id FROM WeleticShopifyStore WHERE id = ${storeId} FOR UPDATE`;
+          },
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            timeout: 10000,
+          },
+        )
+        .then(
+          () => undefined,
+          (error) => {
+            competingError = error;
+            failReady(error);
+          },
+        );
+      await competitorReady;
+      const stableActor = translationActor();
+      const result = await withReviewMutation(
+        storeId,
+        async (tx, generation) => {
+          attempts++;
+          const written = await writeReviewTranslationInTransaction({
+            tx,
+            storeId,
+            generation,
+            actor: stableActor,
+            input: {
+              action: "save",
+              reviewId: review.id,
+              locale: "ja",
+              sourceLocale: "en",
+              expectedInstallationGeneration: "g1",
+              expectedReviewVersion: 1,
+              expectedTranslationRevision: 0,
+              title: "After deadlock",
+              body: "Committed only once",
+            },
+          });
+          // Both rows exist inside this attempt before it becomes the victim.
+          // The retry must reuse the same action identity after real rollback.
+          releaseWriter();
+          try {
+            await tx.$queryRaw`SELECT id FROM ReviewTranslationDeadlockFixture WHERE id = 1 FOR UPDATE`;
+          } catch (error) {
+            deadlocks.push(error);
+            throw error;
+          }
+          return written;
+        },
+        "g1",
+      );
+      await competitor;
+      expect(competingError).toBeUndefined();
+      expect(attempts).toBe(2);
+      expect(deadlocks).toHaveLength(1);
+      expect(deadlocks[0]).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+      expect(deadlocks[0]).toMatchObject({
+        code: "P2010",
+        meta: { code: "1213" },
+      });
+      expect(result.revision).toBe(1);
+      expect(
+        await prisma.weleticProductReviewTranslation.count({
+          where: { storeId, reviewId: review.id },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.weleticReviewTranslationAudit.count({
+          where: { storeId, translation: { reviewId: review.id } },
+        }),
+      ).toBe(1);
+    } finally {
+      releaseWriter();
+      await competitor;
+      await prisma.$executeRaw`DROP TABLE ReviewTranslationDeadlockFixture`;
+    }
+  });
+  it.each(["legacy", "public"] as const)(
+    "manual translations: %s staff authorization and action receipt commit atomically with content",
+    async (mode) => {
+      const { encrypt } = await import("@/lib/encryption");
+      const { SHOPIFY_INTEGRATION_ID } = await import("@dub/utils");
+      const { bindShopifyOnlineSession } = await import(
+        "@/lib/weletic/shopify/session-online-binding"
+      );
+      const review = await translationFixture();
+      const shop = `${run}.myshopify.com`;
+      const appId = "translation-auth-sql";
+      const installationId = `translation-install-${run}`;
+      const admissionId = `translation-admission-${run}`;
+      const sessionIds = [`offline_${shop}`, `${shop}_123`, `${shop}_456`];
+      const previousAppId = process.env.SHOPIFY_API_KEY;
+      vi.stubEnv("SHOPIFY_API_KEY", appId);
+      const actor = async (
+        owner: boolean,
+      ): Promise<ShopifyMerchantActorEnvelope> => {
+        const userId = owner ? "123" : "456";
+        const sessionId = `${shop}_${userId}`;
+        const expiresAt = new Date(Date.now() + 3600000);
+        const binding = { appId, shop, storeId, installationGeneration: "g1" };
+        const payload = encrypt(
+          JSON.stringify(
+            bindShopifyOnlineSession(
+              [
+                ["id", sessionId],
+                ["shop", shop],
+                ["isOnline", true],
+                ["userId", Number(userId)],
+                ["accountOwner", owner],
+                ["collaborator", false],
+                ["associatedUserScope", "read_products"],
+                ["accessToken", "synthetic-online"],
+                ["expires", expiresAt.getTime()],
+              ],
+              binding,
+            ),
+          ),
+        );
+        await prisma.weleticShopifyAppSession.upsert({
+          where: { id: sessionId },
+          create: { id: sessionId, shop, isOnline: true, payload, expiresAt },
+          update: { payload, expiresAt },
+        });
+        return {
+          ...binding,
+          version: 1,
+          userId,
+          sessionId,
+          sessionDigest: createHash("sha256").update(payload).digest("hex"),
+          authenticatedAt: Date.now() - 1000,
+          requestId: randomBytes(32).toString("hex"),
+        };
+      };
+      try {
+        if (mode === "public") {
+          const { deriveAllShopifyShopPrivacyIdentities } = await import(
+            "@/lib/weletic/shopify/privacy-identity"
+          );
+          const { publishStoreOwnedShopifyCredential } = await import(
+            "@/lib/weletic/shopify/store-owned-credential"
+          );
+          const identity = deriveAllShopifyShopPrivacyIdentities({
+            shopDomain: shop,
+          })[0];
+          await prisma.weleticShopifyPendingInstallation.create({
+            data: {
+              id: admissionId,
+              appId,
+              ...identity,
+              state: "mapped",
+              mappedStoreId: storeId,
+              installationGeneration: "g1",
+              authenticatedAt: new Date(),
+            },
+          });
+          await prisma.$transaction((tx) =>
+            publishStoreOwnedShopifyCredential(tx, {
+              identity: {
+                storeId,
+                workspaceId,
+                appId,
+                shop,
+                installationGeneration: "g1",
+              },
+              expectedRevision: null,
+              material: {
+                accessToken: "synthetic-offline",
+                scope: "read_products",
+              },
+            }),
+          );
+        } else {
+          await prisma.installedIntegration.create({
+            data: {
+              id: installationId,
+              projectId: workspaceId,
+              userId: `synthetic-user-${run}`,
+              integrationId: SHOPIFY_INTEGRATION_ID,
+              credentials: {
+                shop,
+                accessToken: encrypt("synthetic-offline"),
+                installationGeneration: "g1",
+              },
+            },
+          });
+        }
+        await prisma.weleticShopifyAppSession.create({
+          data: {
+            id: sessionIds[0],
+            shop,
+            isOnline: false,
+            payload: encrypt(
+              JSON.stringify([
+                ["id", sessionIds[0]],
+                ["shop", shop],
+                ["isOnline", false],
+                ["accessToken", "synthetic-offline"],
+              ]),
+            ),
+          },
+        });
+        const envelope = await actor(true);
+        const source = await prisma.weleticProductReview.findUniqueOrThrow({
+          where: { storeId_id: { storeId, id: review.id } },
+          select: { version: true },
+        });
+        const patch = {
+          action: "save",
+          reviewId: review.id,
+          locale: "ja",
+          sourceLocale: "en",
+          expectedInstallationGeneration: "g1",
+          expectedReviewVersion: source.version,
+          expectedTranslationRevision: 0,
+          title: "日本語",
+          body: "認証済みの翻訳",
+        };
+        await expect(
+          writeShopifyMerchantReviewTranslation({ envelope, input: patch }),
+        ).resolves.toMatchObject({ revision: 1 });
+        const actions = () =>
+          prisma.weleticShopifyMerchantAction.findMany({
+            where: { storeId, appId },
+          });
+        let receipts = await actions();
+        expect(receipts).toHaveLength(1);
+        expect(receipts[0]).toMatchObject({
+          permission: "reviews.moderate",
+          owner: true,
+          requestId: envelope.requestId,
+        });
+        const audit =
+          await prisma.weleticReviewTranslationAudit.findFirstOrThrow({
+            where: { storeId, translation: { reviewId: review.id } },
+          });
+        expect(audit.merchantActionId).toBe(receipts[0].id);
+        await expect(
+          writeShopifyMerchantReviewTranslation({
+            envelope,
+            input: { ...patch, expectedTranslationRevision: 1 },
+          }),
+        ).rejects.toMatchObject({ code: "request_replayed" });
+        expect(await actions()).toHaveLength(1);
+        const fresh = {
+          ...envelope,
+          requestId: randomBytes(32).toString("hex"),
+        };
+        await expect(
+          writeShopifyMerchantReviewTranslation({
+            envelope: fresh,
+            input: patch,
+          }),
+        ).rejects.toMatchObject({ code: "conflict" });
+        expect(await actions()).toHaveLength(1);
+        const unauthorized = await actor(false);
+        await expect(
+          writeShopifyMerchantReviewTranslation({
+            envelope: unauthorized,
+            input: { ...patch, expectedTranslationRevision: 1 },
+          }),
+        ).rejects.toMatchObject({ code: "access_denied" });
+        expect(await actions()).toHaveLength(1);
+        // A failed write's action receipt rolls back: the same fresh request
+        // identity remains usable for a later authorized read.
+        const page = await readShopifyMerchantReviewTranslations({
+          envelope: fresh,
+          input: { reviewId: review.id },
+        });
+        expect(page.translations).toHaveLength(1);
+        expect(page.translations[0]).toMatchObject({
+          revision: 1,
+          title: patch.title,
+        });
+        receipts = await actions();
+        expect(receipts).toHaveLength(2);
+        expect(
+          receipts.find((item) => item.requestId === fresh.requestId)
+            ?.permission,
+        ).toBe("reviews.read");
+        expect(
+          await prisma.weleticReviewTranslationAudit.count({
+            where: { storeId, translation: { reviewId: review.id } },
+          }),
+        ).toBe(1);
+      } finally {
+        await prisma.weleticShopifyMerchantAction.deleteMany({
+          where: { storeId, appId },
+        });
+        await prisma.weleticShopifyAppSession.deleteMany({
+          where: { id: { in: sessionIds }, shop },
+        });
+        await prisma.weleticShopifySessionCoordination.deleteMany({
+          where: { appId, shop },
+        });
+        await prisma.weleticShopifyInstallationCredential.deleteMany({
+          where: { storeId, appId },
+        });
+        await prisma.weleticShopifyPendingInstallation.deleteMany({
+          where: { id: admissionId, appId, mappedStoreId: storeId },
+        });
+        await prisma.installedIntegration.deleteMany({
+          where: { id: installationId, projectId: workspaceId },
+        });
+        if (previousAppId === undefined) delete process.env.SHOPIFY_API_KEY;
+        else process.env.SHOPIFY_API_KEY = previousAppId;
+      }
+    },
+  );
+  const translationActor = () => ({
+    kind: "shopify",
+    userId: "42",
+    appId: "test-public-app",
+    installationGeneration: "g1",
+    merchantActionId: randomBytes(32).toString("hex"),
+  });
+  function translationWrite(
+    reviewId: string,
+    revision = 0,
+    actor = translationActor(),
+    extra: Record<string, unknown> = {},
+  ) {
+    return withReviewMutation(
+      storeId,
+      (tx, generation) =>
+        writeReviewTranslationInTransaction({
+          tx,
+          storeId,
+          generation,
+          actor,
+          input: {
+            action: "save",
+            reviewId,
+            locale: "ja",
+            sourceLocale: "en",
+            title: "手動翻訳",
+            body: "手動で翻訳したレビューです。",
+            expectedInstallationGeneration: "g1",
+            expectedReviewVersion: 1,
+            expectedTranslationRevision: revision,
+            ...extra,
+          },
+        }),
+      "g1",
+    );
+  }
+  it.each(["expired", "old_email", "terminal", "pseudonym"] as const)(
+    "manual translations: retained %s owner suppression blocks both editor read and write",
+    async (mode) => {
+      const customerId = String(++sequence);
+      const ownerId = `translation-owner-${run}-${customerId}`;
+      const email = `translation-${customerId}@example.test`;
+      await prisma.weleticShopper.create({
+        data: {
+          id: ownerId,
+          storeId,
+          shopifyCustomerId: customerId,
+          email,
+        },
+      });
+      await prisma.$transaction((tx) =>
+        replaceReviewOwnerPrivacyProjection({
+          tx,
+          storeId,
+          shopperId: ownerId,
+          installationGeneration: "g1",
+        }),
+      );
+      const request = await invitation(await purchase(ownerId));
+      const review = await submitNativeReview(storeId, input(request.token));
+      if (mode === "expired" || mode === "old_email") {
+        await upsertShopifyCustomerPrivacyTombstones({
+          storeId,
+          email,
+          expiresAt: new Date("2000-01-01"),
+        });
+        if (mode === "old_email")
+          await prisma.weleticShopper.update({
+            where: { id: ownerId },
+            data: { email: `changed-${email}` },
+          });
+      } else {
+        if (mode === "terminal")
+          await prisma.$transaction((tx) =>
+            redactReviewOwnerPrivacyProjection({
+              tx,
+              storeId,
+              shopperId: ownerId,
+            }),
+          );
+        if (mode === "pseudonym") {
+          const { getShopifyCustomerPrivacyPseudonym } = await import(
+            "@/lib/weletic/shopify/privacy-identity"
+          );
+          await prisma.weleticShopper.update({
+            where: { id: ownerId },
+            data: {
+              shopifyCustomerId: getShopifyCustomerPrivacyPseudonym({
+                storeId,
+                shopifyCustomerId: customerId,
+              }),
+              email: null,
+            },
+          });
+        }
+      }
+      await expect(
+        withReviewMutation(
+          storeId,
+          (tx, generation) =>
+            readReviewTranslationsInTransaction({
+              tx,
+              storeId,
+              reviewId: review.id,
+              generation: generation!,
+            }),
+          "g1",
+        ),
+      ).rejects.toThrow("Review unavailable");
+      await expect(translationWrite(review.id)).rejects.toThrow(
+        "Review unavailable",
+      );
+      expect(
+        await prisma.weleticProductReviewTranslation.count({
+          where: { storeId, reviewId: review.id },
+        }),
+      ).toBe(0);
+      expect(
+        await prisma.weleticReviewTranslationAudit.count({
+          where: { storeId, translation: { reviewId: review.id } },
+        }),
+      ).toBe(0);
+    },
+  );
+  it("manual translations: lifecycle and exact private export retain revision tombstones", async () => {
+    const review = await translationFixture();
+    for (const locale of ["en", "ja", "vi"])
+      await translationWrite(review.id, 0, translationActor(), {
+        locale,
+        sourceLocale: null,
+      });
+    const page = await withReviewMutation(
+      storeId,
+      (tx) =>
+        readReviewTranslationsInTransaction({
+          tx,
+          storeId,
+          reviewId: review.id,
+          generation: "g1",
+        }),
+      "g1",
+    );
+    expect(page.translations).toHaveLength(3);
+    expect(
+      page.translations.every(
+        (row) => row.revision === 1 && row.status === "active",
+      ),
+    ).toBe(true);
+    const exported = await prisma.weleticProductReview.findFirstOrThrow({
+      where: { storeId, id: review.id, shopperId },
+      select: { translations: reviewTranslationExportSelection(storeId) },
+    });
+    expect(exported.translations.map((row) => row.locale)).toEqual([
+      "en",
+      "ja",
+      "vi",
+    ]);
+    expect(JSON.stringify(exported)).not.toContain("sourceDigest");
+    await withReviewMutation(
+      storeId,
+      (tx, generation) =>
+        writeReviewTranslationInTransaction({
+          tx,
+          storeId,
+          generation,
+          actor: translationActor(),
+          input: {
+            action: "remove",
+            reviewId: review.id,
+            locale: "ja",
+            expectedInstallationGeneration: "g1",
+            expectedReviewVersion: 1,
+            expectedTranslationRevision: 1,
+          },
+        }),
+      "g1",
+    );
+    await expect(translationWrite(review.id, 1)).rejects.toThrow(
+      "Translation changed",
+    );
+    expect(
+      await prisma.weleticProductReviewTranslation.findUniqueOrThrow({
+        where: {
+          storeId_reviewId_locale: {
+            storeId,
+            reviewId: review.id,
+            locale: "ja",
+          },
+        },
+      }),
+    ).toMatchObject({
+      revision: 2,
+      status: "removed",
+      title: null,
+      body: null,
+      sourceDigest: null,
+    });
+    await translationWrite(review.id, 2);
+    expect(
+      await prisma.weleticReviewTranslationAudit.count({
+        where: { storeId, translation: { reviewId: review.id } },
+      }),
+    ).toBe(5);
+    expect(
+      await prisma.weleticProductReview.findUniqueOrThrow({
+        where: { id: review.id },
+      }),
+    ).toMatchObject({ version: 1, title: "Honest review", rating: 1 });
+  });
+  it("manual translations: concurrent identical revision permits one committed writer", async () => {
+    const review = await translationFixture();
+    const results = await Promise.allSettled([
+      translationWrite(review.id),
+      translationWrite(review.id),
+    ]);
+    expect(
+      results.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    expect(
+      results.find((result) => result.status === "rejected"),
+    ).toMatchObject({
+      status: "rejected",
+      reason: {
+        code: "conflict",
+        message: "Translation changed; reload before editing",
+      },
+    });
+    expect(
+      await prisma.weleticProductReviewTranslation.count({
+        where: { storeId, reviewId: review.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.weleticReviewTranslationAudit.count({
+        where: { storeId, translation: { reviewId: review.id } },
+      }),
+    ).toBe(1);
+  });
+  it("manual translations: audit uniqueness failure rolls back content and revision", async () => {
+    const review = await translationFixture();
+    const actor = translationActor();
+    await translationWrite(review.id, 0, actor);
+    const failure = await translationWrite(review.id, 1, actor, {
+      title: "Must roll back",
+    }).catch((error) => error);
+    expect(failure).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+    expect(failure).toMatchObject({ code: "P2002" });
+    expect(String(failure.meta?.target)).toContain("review_translation_action");
+    expect(
+      await prisma.weleticReviewTranslationAudit.count({
+        where: { storeId, translation: { reviewId: review.id } },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.weleticProductReviewTranslation.findUniqueOrThrow({
+        where: {
+          storeId_reviewId_locale: {
+            storeId,
+            reviewId: review.id,
+            locale: "ja",
+          },
+        },
+      }),
+    ).toMatchObject({ revision: 1, title: "手動翻訳" });
+  });
+  it.each(["customer", "email"])(
+    "manual translations: unlinked %s erasure blocks real read and write",
+    async (identity) => {
+      const review = await translationFixture();
+      const tombstones = await upsertShopifyCustomerPrivacyTombstones({
+        storeId,
+        ...(identity === "customer"
+          ? { shopifyCustomerId: "123456" }
+          : { email: "buyer@example.test" }),
+      });
+      try {
+        expect(tombstones.every((row) => row.shopperId === null)).toBe(true);
+        await expect(translationWrite(review.id)).rejects.toThrow(
+          "Review unavailable",
+        );
+        await expect(
+          withReviewMutation(
+            storeId,
+            (tx) =>
+              readReviewTranslationsInTransaction({
+                tx,
+                storeId,
+                reviewId: review.id,
+                generation: "g1",
+              }),
+            "g1",
+          ),
+        ).rejects.toThrow("Review unavailable");
+        expect(
+          await prisma.weleticProductReviewTranslation.count({
+            where: { storeId, reviewId: review.id },
+          }),
+        ).toBe(0);
+      } finally {
+        await prisma.weleticShopifyCustomerPrivacyTombstone.deleteMany({
+          where: { storeId, id: { in: tombstones.map((row) => row.id) } },
+        });
+      }
+    },
+  );
+
+  it("manual translations: another active store cannot read or change owned content", async () => {
+    const review = await translationFixture();
+    await translationWrite(review.id);
+    const other = `foreign-${run}`;
+    await prisma.project.create({
+      data: {
+        id: other,
+        name: "Foreign fixture",
+        slug: other,
+        billingCycleStart: 1,
+      },
+    });
+    await prisma.program.create({
+      data: {
+        id: other,
+        workspaceId: other,
+        defaultFolderId: `folder-${other}`,
+        defaultGroupId: `group-${other}`,
+        name: "Foreign fixture",
+        slug: other,
+      },
+    });
+    await prisma.weleticShopifyStore.create({
+      data: {
+        id: other,
+        projectId: other,
+        programId: other,
+        shopDomain: `${other}.myshopify.com`,
+        shopCurrency: "USD",
+        apiVersion: "2026-07",
+        installationGeneration: "g1",
+        storeAccessState: "active",
+      },
+    });
+    await expect(
+      withReviewMutation(
+        other,
+        (tx) =>
+          readReviewTranslationsInTransaction({
+            tx,
+            storeId: other,
+            reviewId: review.id,
+            generation: "g1",
+          }),
+        "g1",
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      withReviewMutation(
+        other,
+        (tx, generation) =>
+          writeReviewTranslationInTransaction({
+            tx,
+            storeId: other,
+            generation,
+            actor: translationActor(),
+            input: {
+              action: "remove",
+              reviewId: review.id,
+              locale: "ja",
+              expectedInstallationGeneration: "g1",
+              expectedReviewVersion: 1,
+              expectedTranslationRevision: 1,
+            },
+          }),
+        "g1",
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect(
+      await prisma.weleticProductReviewTranslation.findUniqueOrThrow({
+        where: {
+          storeId_reviewId_locale: {
+            storeId,
+            reviewId: review.id,
+            locale: "ja",
+          },
+        },
+      }),
+    ).toMatchObject({ revision: 1, status: "active", title: "手動翻訳" });
+    expect(
+      await prisma.weleticReviewTranslationAudit.count({
+        where: { storeId: other },
+      }),
+    ).toBe(0);
+  });
+
+  it.each(["customer", "email"])(
+    "manual translations: concurrent uncommitted %s tombstone blocks then rejects writer",
+    async (identity) => {
+      const review = await translationFixture();
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let ready!: () => void;
+      let failReady!: (error: unknown) => void;
+      const inserted = new Promise<void>((resolve, reject) => {
+        ready = resolve;
+        failReady = reject;
+      });
+      let entered!: () => void;
+      const writerEntered = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let privacyConnection = "";
+      let writerConnection = "";
+      let tombstoneIds: string[] = [];
+      let privacyError: unknown;
+      const privacy = prisma
+        .$transaction(
+          async (tx) => {
+            const connections = await tx.$queryRaw<
+              Array<{ id: bigint }>
+            >`SELECT CONNECTION_ID() AS id`;
+            privacyConnection = String(connections[0].id);
+            const rows = await upsertShopifyCustomerPrivacyTombstones({
+              tx,
+              storeId,
+              ...(identity === "customer"
+                ? { shopifyCustomerId: "123456" }
+                : { email: "buyer@example.test" }),
+            });
+            tombstoneIds = rows.map((row) => row.id);
+            ready();
+            await held;
+          },
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            timeout: 10000,
+          },
+        )
+        .catch((error) => {
+          privacyError = error;
+          failReady(error);
+        });
+      let writerOutcome: Promise<unknown> | undefined;
+      try {
+        await inserted;
+        writerOutcome = withReviewMutation(
+          storeId,
+          async (tx, generation) => {
+            const connections = await tx.$queryRaw<
+              Array<{ id: bigint }>
+            >`SELECT CONNECTION_ID() AS id`;
+            writerConnection = String(connections[0].id);
+            entered();
+            return writeReviewTranslationInTransaction({
+              tx,
+              storeId,
+              generation,
+              actor: translationActor(),
+              input: {
+                action: "save",
+                reviewId: review.id,
+                locale: "ja",
+                sourceLocale: "en",
+                title: "Must not persist",
+                body: "Concurrent private text",
+                expectedInstallationGeneration: "g1",
+                expectedReviewVersion: 1,
+                expectedTranslationRevision: 0,
+              },
+            });
+          },
+          "g1",
+        ).then(
+          (value) => ({ success: value }),
+          (error) => ({ error }),
+        );
+        await Promise.race([
+          writerEntered,
+          writerOutcome.then(() => {
+            throw new Error("Writer settled before entering transaction");
+          }),
+        ]);
+        expect(writerConnection).not.toBe(privacyConnection);
+        // Barriers establish actual insert and writer transaction entry; this
+        // bounded observation additionally rejects an early commit/early error.
+        expect(
+          await Promise.race([
+            writerOutcome.then(() => "settled"),
+            new Promise<string>((resolve) =>
+              setTimeout(() => resolve("pending"), 100),
+            ),
+          ]),
+        ).toBe("pending");
+        release();
+        await privacy;
+        expect(privacyError).toBeUndefined();
+        expect(await writerOutcome).toMatchObject({
+          error: { code: "not_found", message: "Review unavailable" },
+        });
+        expect(
+          await prisma.weleticProductReviewTranslation.count({
+            where: { storeId, reviewId: review.id },
+          }),
+        ).toBe(0);
+        expect(
+          await prisma.weleticReviewTranslationAudit.count({
+            where: { storeId, translation: { reviewId: review.id } },
+          }),
+        ).toBe(0);
+      } finally {
+        release();
+        await privacy;
+        await writerOutcome;
+        await prisma.weleticShopifyCustomerPrivacyTombstone.deleteMany({
+          where: { storeId, id: { in: tombstoneIds } },
+        });
+      }
+    },
+  );
+
+  it.each(["customer", "email"])(
+    "manual translations: writer-first concurrent %s privacy finishes by erasing committed text",
+    async (identity) => {
+      const review = await translationFixture();
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let ready!: () => void;
+      const written = new Promise<void>((resolve) => {
+        ready = resolve;
+      });
+      let privacyEntered!: () => void;
+      const enteringPrivacy = new Promise<void>((resolve) => {
+        privacyEntered = resolve;
+      });
+      let writerConnection = "";
+      let privacyConnection = "";
+      let tombstoneIds: string[] = [];
+      const writer = withReviewMutation(
+        storeId,
+        async (tx, generation) => {
+          const connections = await tx.$queryRaw<
+            Array<{ id: bigint }>
+          >`SELECT CONNECTION_ID() AS id`;
+          writerConnection = String(connections[0].id);
+          const result = await writeReviewTranslationInTransaction({
+            tx,
+            storeId,
+            generation,
+            actor: translationActor(),
+            input: {
+              action: "save",
+              reviewId: review.id,
+              locale: "ja",
+              sourceLocale: "en",
+              title: "Private translated title",
+              body: "Private translated text",
+              expectedInstallationGeneration: "g1",
+              expectedReviewVersion: 1,
+              expectedTranslationRevision: 0,
+            },
+          });
+          ready();
+          await held;
+          return result;
+        },
+        "g1",
+      ).then(
+        (value) => ({ success: value }),
+        (error) => ({ error }),
+      );
+      let privacy: Promise<unknown> | undefined;
+      try {
+        await Promise.race([
+          written,
+          writer.then(() => {
+            throw new Error("Writer settled before held content write");
+          }),
+        ]);
+        privacy = prisma
+          .$transaction(
+            async (tx) => {
+              const connections = await tx.$queryRaw<
+                Array<{ id: bigint }>
+              >`SELECT CONNECTION_ID() AS id`;
+              privacyConnection = String(connections[0].id);
+              privacyEntered();
+              const rows = await upsertShopifyCustomerPrivacyTombstones({
+                tx,
+                storeId,
+                ...(identity === "customer"
+                  ? { shopifyCustomerId: "123456" }
+                  : { email: "buyer@example.test" }),
+              });
+              tombstoneIds = rows.map((row) => row.id);
+            },
+            {
+              isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+              timeout: 10000,
+            },
+          )
+          .then(
+            () => ({ success: true }),
+            (error) => ({ error }),
+          );
+        await Promise.race([
+          enteringPrivacy,
+          privacy.then(() => {
+            throw new Error("Privacy settled before transaction entry");
+          }),
+        ]);
+        expect(privacyConnection).not.toBe(writerConnection);
+        expect(
+          await Promise.race([
+            privacy.then(() => "settled"),
+            new Promise<string>((resolve) =>
+              setTimeout(() => resolve("pending"), 100),
+            ),
+          ]),
+        ).toBe("pending");
+        release();
+        expect(await writer).toMatchObject({
+          success: { revision: 1, status: "active" },
+        });
+        expect(await privacy).toEqual({ success: true });
+        let more = true;
+        for (let page = 0; page < 50 && more; page++)
+          more = (await redactNativeReviewsBatch(storeId, shopperId)).hasMore;
+        expect(more).toBe(false);
+        const erased =
+          await prisma.weleticProductReviewTranslation.findUniqueOrThrow({
+            where: {
+              storeId_reviewId_locale: {
+                storeId,
+                reviewId: review.id,
+                locale: "ja",
+              },
+            },
+          });
+        expect(erased).toMatchObject({
+          status: "redacted",
+          revision: 1,
+          title: null,
+          body: null,
+          sourceDigest: null,
+        });
+        expect(
+          await prisma.weleticReviewTranslationAudit.count({
+            where: { storeId, translationId: erased.id },
+          }),
+        ).toBe(1);
+        await expect(translationWrite(review.id, 1)).rejects.toMatchObject({
+          code: "not_found",
+        });
+      } finally {
+        release();
+        await writer;
+        await privacy;
+        await prisma.weleticShopifyCustomerPrivacyTombstone.deleteMany({
+          where: { storeId, id: { in: tombstoneIds } },
+        });
+      }
+    },
+  );
+
+  it("manual translations: completed privacy erasure clears content and export without deleting audit history", async () => {
+    const review = await translationFixture();
+    await translationWrite(review.id);
+    const before =
+      await prisma.weleticProductReviewTranslation.findUniqueOrThrow({
+        where: {
+          storeId_reviewId_locale: {
+            storeId,
+            reviewId: review.id,
+            locale: "ja",
+          },
+        },
+      });
+    const ledgerCount = await prisma.weleticPointsLedgerEntry.count({
+      where: { storeId },
+    });
+    let more = true;
+    for (let page = 0; page < 50 && more; page++)
+      more = (await redactNativeReviewsBatch(storeId, shopperId)).hasMore;
+    expect(more).toBe(false);
+    const erased =
+      await prisma.weleticProductReviewTranslation.findUniqueOrThrow({
+        where: { id: before.id },
+      });
+    expect(erased).toMatchObject({
+      revision: 1,
+      status: "redacted",
+      title: null,
+      body: null,
+      sourceDigest: null,
+      sourceLocale: null,
+    });
+    expect(erased.redactedAt).toBeInstanceOf(Date);
+    expect(
+      await prisma.weleticReviewTranslationAudit.count({
+        where: { storeId, translationId: before.id },
+      }),
+    ).toBe(1);
+    const exported = await prisma.weleticProductReview.findFirstOrThrow({
+      where: { storeId, id: review.id },
+      select: { translations: reviewTranslationExportSelection(storeId) },
+    });
+    expect(exported.translations).toEqual([
+      expect.objectContaining({ status: "redacted", title: null, body: null }),
+    ]);
+    await expect(translationWrite(review.id, 1)).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(
+      await prisma.weleticPointsLedgerEntry.count({ where: { storeId } }),
+    ).toBe(ledgerCount);
   });
 
   it.each([

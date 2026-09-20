@@ -38,6 +38,8 @@ import {
   purgeNativeReviewsBatch,
   redactNativeReviewsBatch,
 } from "@/lib/weletic/reviews/privacy";
+import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
+import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
 import {
   addRetentionDays,
   getShopifyComplianceExportRetentionHours,
@@ -585,6 +587,7 @@ async function fetchExportPage({
           where: { storeId, shopperId },
           select: {
             ...reviewParticipationExportSelect,
+            translations: reviewTranslationExportSelection(storeId),
             id: true,
             requestId: true,
             productId: true,
@@ -1888,6 +1891,13 @@ async function redactShopperIdentityForShopErasure({
   // already pseudonymized. Treat that retained identity as the completed page
   // result instead of hashing it again and chaining pseudonyms/tombstones.
   if (parseShopifyCustomerPrivacyPseudonym(shopper.shopifyCustomerId)) {
+    await prisma.$transaction((tx) =>
+      redactReviewOwnerPrivacyProjection({
+        tx,
+        storeId: request.storeId,
+        shopperId: shopper.id,
+      }),
+    );
     return;
   }
   await withShopifyCustomerSettlementLocks({
@@ -1940,19 +1950,34 @@ async function redactShopperIdentityForShopErasure({
           projectConnectId: null,
         },
       });
-      await prisma.weleticShopper.update({
-        where: { id: shopper.id },
-        data: {
-          shopifyCustomerId: pseudonymousCustomerId,
-          firstName: "Redacted",
-          lastName: "Customer",
-          email: null,
-          phone: null,
-          locale: null,
-          tags: Prisma.DbNull,
-          segmentIds: Prisma.DbNull,
-          acceptsMarketing: false,
-        },
+      await prisma.$transaction(async (tx) => {
+        await redactReviewOwnerPrivacyProjection({
+          tx,
+          storeId: request.storeId,
+          shopperId: shopper.id,
+        });
+        const changed = await tx.weleticShopper.updateMany({
+          where: {
+            id: shopper.id,
+            storeId: request.storeId,
+            shopifyCustomerId: {
+              in: [shopper.shopifyCustomerId, pseudonymousCustomerId],
+            },
+          },
+          data: {
+            shopifyCustomerId: pseudonymousCustomerId,
+            firstName: "Redacted",
+            lastName: "Customer",
+            email: null,
+            phone: null,
+            locale: null,
+            tags: Prisma.DbNull,
+            segmentIds: Prisma.DbNull,
+            acceptsMarketing: false,
+          },
+        });
+        if (changed.count !== 1)
+          throw new Error("Shopper identity changed during shop erasure");
       });
     },
   });

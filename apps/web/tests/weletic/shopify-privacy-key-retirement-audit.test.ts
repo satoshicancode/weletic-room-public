@@ -21,10 +21,14 @@ const mocks = vi.hoisted(() => ({
   outboxFindMany: vi.fn(),
   webhookEventFindMany: vi.fn(),
   pendingInstallationFindMany: vi.fn(),
+  reviewIdentityFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    weleticReviewOwnerPrivacyIdentity: {
+      findMany: mocks.reviewIdentityFindMany,
+    },
     weleticShopifyPendingInstallation: {
       findMany: mocks.pendingInstallationFindMany,
     },
@@ -68,6 +72,130 @@ describe("Shopify privacy HMAC key-retirement audit", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+  });
+  it("blocks retiring a retained review-owner key without reading identity proofs", async () => {
+    const row = {
+      storeId: "store-1",
+      shopperId: "orphan-owner-1",
+      identityKind: "customer_id",
+      identityKeyId: "previous-2025",
+    };
+    mocks.reviewIdentityFindMany.mockResolvedValue([row]);
+    const result = await auditShopifyPrivacyKeyRetirementBatch({
+      retiringKeyIds: ["previous-2025"],
+      cursor: { sourceIndex: 12 },
+      batchSize: 2,
+    });
+    expect(result.dependencies).toEqual([
+      {
+        source: "review_owner_identities",
+        keyId: "previous-2025",
+        count: 1,
+        sampleRecordIds: [
+          JSON.stringify([
+            row.storeId,
+            row.shopperId,
+            row.identityKind,
+            row.identityKeyId,
+          ]),
+        ],
+      },
+    ]);
+    expect(mocks.reviewIdentityFindMany).toHaveBeenCalledWith({
+      where: {},
+      take: 3,
+      orderBy: [
+        { storeId: "asc" },
+        { shopperId: "asc" },
+        { identityKind: "asc" },
+        { identityKeyId: "asc" },
+      ],
+      select: {
+        storeId: true,
+        shopperId: true,
+        identityKind: true,
+        identityKeyId: true,
+      },
+    });
+    expect(mocks.shopperFindMany).not.toHaveBeenCalled();
+  });
+
+  it("does not skip an unavailable review identity table during key retirement", async () => {
+    mocks.reviewIdentityFindMany.mockRejectedValueOnce(
+      new Error("review identity schema unavailable"),
+    );
+    await expect(
+      auditShopifyPrivacyKeyRetirementBatch({
+        retiringKeyIds: ["previous-2025"],
+        cursor: { sourceIndex: 12 },
+        batchSize: 2,
+      }),
+    ).rejects.toThrow("review identity schema unavailable");
+  });
+  it("resumes composite identity pages in MySQL enum order", async () => {
+    const rows = ["customer_id", "customer_email"].map((identityKind) => ({
+      storeId: "store-a",
+      shopperId: "owner-a",
+      identityKind,
+      identityKeyId: "previous-2025",
+    }));
+    mocks.reviewIdentityFindMany
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([rows[1]]);
+    const first = await auditShopifyPrivacyKeyRetirementBatch({
+      retiringKeyIds: ["previous-2025"],
+      cursor: { sourceIndex: 12 },
+      batchSize: 1,
+    });
+    expect(first.cursor).toEqual({
+      sourceIndex: 12,
+      lastId: JSON.stringify([
+        "store-a",
+        "owner-a",
+        "customer_id",
+        "previous-2025",
+      ]),
+    });
+    await auditShopifyPrivacyKeyRetirementBatch({
+      retiringKeyIds: ["previous-2025"],
+      cursor: first.cursor!,
+      batchSize: 1,
+    });
+    expect(mocks.reviewIdentityFindMany.mock.calls[1][0].where).toEqual({
+      OR: [
+        { storeId: { gt: "store-a" } },
+        { storeId: "store-a", shopperId: { gt: "owner-a" } },
+        {
+          storeId: "store-a",
+          shopperId: "owner-a",
+          identityKind: "customer_email",
+        },
+        {
+          storeId: "store-a",
+          shopperId: "owner-a",
+          identityKind: "customer_id",
+          identityKeyId: { gt: "previous-2025" },
+        },
+      ],
+    });
+  });
+
+  it("rejects malformed composite identity cursors before querying", async () => {
+    await expect(
+      auditShopifyPrivacyKeyRetirementBatch({
+        retiringKeyIds: ["previous-2025"],
+        cursor: {
+          sourceIndex: 12,
+          lastId: JSON.stringify([
+            "store-a",
+            "owner-a",
+            "unknown-kind",
+            "previous-2025",
+          ]),
+        },
+      }),
+    ).rejects.toThrow("Invalid review privacy key audit cursor");
+    expect(mocks.reviewIdentityFindMany).not.toHaveBeenCalled();
   });
   it("retains keys needed by pre-workspace installations", async () => {
     mocks.pendingInstallationFindMany.mockResolvedValue([

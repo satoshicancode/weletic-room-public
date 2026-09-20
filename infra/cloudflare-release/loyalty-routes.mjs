@@ -74,6 +74,8 @@ export const reviewRoutes = Object.freeze([
     "incentives/draft",
     "incentives/activate",
     "incentives/coupons",
+    "translations/read",
+    "translations/write",
   ].map((action) => internal + "merchant/reviews/" + action),
 ]);
 const reviewPaths = new Set(reviewRoutes);

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
     weleticLoyaltyProgram: { findUnique: vi.fn(), create: vi.fn() },
     weleticLoyaltyAccount: { create: vi.fn() },
     weleticLoyaltyEarningRule: { findFirst: vi.fn() },
+    weleticLoyaltyOutboxJob: { findMany: vi.fn().mockResolvedValue([]) },
   };
   return {
     tx,
@@ -15,6 +16,8 @@ const mocks = vi.hoisted(() => {
     tombstone: vi.fn(),
     legacyTombstone: vi.fn(),
     signup: vi.fn(),
+    projection: vi.fn(),
+    lockSource: vi.fn(),
   };
 });
 
@@ -34,6 +37,10 @@ vi.mock("@/lib/weletic/loyalty/shopper-privacy", () => ({
 }));
 vi.mock("@/lib/weletic/loyalty/non-purchase-earn", () => ({
   awardSignupWelcomeBonus: mocks.signup,
+}));
+vi.mock("@/lib/weletic/reviews/privacy-owner-write", () => ({
+  replaceReviewOwnerPrivacyProjection: mocks.projection,
+  lockReviewOwnerPrivacySource: mocks.lockSource,
 }));
 
 const shopper = { id: "shopper_lifecycle", storeId: "store_lifecycle" };
@@ -61,7 +68,11 @@ const input = {
 describe("shared shopper ingestion and explicit loyalty activation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.fence.mockResolvedValue(undefined);
+    mocks.fence.mockResolvedValue({
+      installationGeneration: "generation_lifecycle",
+    });
+    mocks.projection.mockReset().mockResolvedValue({ identityCount: 2 });
+    mocks.lockSource.mockReset().mockResolvedValue({});
     mocks.tombstone.mockResolvedValue(false);
     mocks.legacyTombstone.mockReturnValue(false);
     mocks.tx.weleticShopper.findUnique.mockResolvedValue(null);
@@ -91,6 +102,13 @@ describe("shared shopper ingestion and explicit loyalty activation", () => {
       privacyTombstoned: false,
     });
     expect(mocks.tx.weleticShopper.upsert).toHaveBeenCalledOnce();
+    expect(mocks.projection).toHaveBeenCalledWith({
+      tx: mocks.tx,
+      storeId: shopper.storeId,
+      shopperId: shopper.id,
+      installationGeneration: "generation_lifecycle",
+      loyaltyMaintenancePermit: undefined,
+    });
     expect(mocks.tx.weleticLoyaltyProgram.create).not.toHaveBeenCalled();
     expect(mocks.tx.weleticLoyaltyAccount.create).not.toHaveBeenCalled();
     expect(mocks.tx.weleticLoyaltyEarningRule.findFirst).not.toHaveBeenCalled();
@@ -158,6 +176,60 @@ describe("shared shopper ingestion and explicit loyalty activation", () => {
     );
     expect(mocks.tx.weleticLoyaltyAccount.create).not.toHaveBeenCalled();
     expect(mocks.signup).not.toHaveBeenCalled();
+  });
+
+  it("does not manufacture active coverage for legacy stores without a generation", async () => {
+    mocks.fence.mockResolvedValue({ installationGeneration: null });
+    mocks.tx.weleticLoyaltyProgram.findUnique.mockResolvedValue(null);
+    await upsertWeleticShopper({
+      ...input,
+      expectedInstallationGeneration: undefined,
+    });
+    expect(mocks.projection).not.toHaveBeenCalled();
+    expect(mocks.tx.weleticLoyaltyAccount.create).not.toHaveBeenCalled();
+  });
+
+  it("checks the saved email before allowing an identity change", async () => {
+    mocks.tx.weleticShopper.findUnique.mockResolvedValue({
+      ...shopper,
+      email: "old@example.test",
+      loyaltyAccount: null,
+    });
+    mocks.tombstone.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    expect((await upsertWeleticShopper(input))?.privacyTombstoned).toBe(true);
+    expect(mocks.tombstone).toHaveBeenLastCalledWith({
+      tx: mocks.tx,
+      storeId: shopper.storeId,
+      shopifyCustomerId: "42",
+      email: "old@example.test",
+    });
+    expect(mocks.tx.weleticShopper.upsert).not.toHaveBeenCalled();
+    expect(mocks.projection).not.toHaveBeenCalled();
+  });
+
+  it("propagates projection failure before enrollment or signup writes", async () => {
+    mocks.projection.mockRejectedValueOnce(new Error("projection unavailable"));
+    await expect(upsertWeleticShopper(input)).rejects.toThrow(
+      "projection unavailable",
+    );
+    expect(mocks.tx.weleticLoyaltyAccount.create).not.toHaveBeenCalled();
+    expect(mocks.signup).not.toHaveBeenCalled();
+  });
+
+  it("locks retained saved-identity suppression before any source rewrite", async () => {
+    mocks.tx.weleticShopper.findUnique.mockResolvedValue({
+      ...shopper,
+      email: "old@example.test",
+      loyaltyAccount: null,
+    });
+    mocks.lockSource.mockRejectedValueOnce(
+      new Error("Review privacy source suppressed"),
+    );
+    await expect(upsertWeleticShopper(input)).rejects.toThrow(
+      "Review privacy source suppressed",
+    );
+    expect(mocks.tx.weleticShopper.upsert).not.toHaveBeenCalled();
+    expect(mocks.projection).not.toHaveBeenCalled();
   });
 
   it("passes installation fencing into the same transaction before shopper writes", async () => {

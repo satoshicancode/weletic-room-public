@@ -29,11 +29,14 @@ import {
 import type { AuditedReviewModerationInput } from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
 import { ReviewIncentivesPanel } from "../components/ReviewIncentivesPanel";
 import { ReviewModerationForm } from "../components/ReviewModerationForm";
+import { ReviewTranslationsPanel } from "../components/ReviewTranslationsPanel";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { createMerchantReviewModerationClient } from "../merchant-review-moderation-client";
+import { createMerchantReviewTranslationsClient } from "../merchant-review-translations-client";
 import { createMerchantReviewsClient } from "../merchant-reviews-client";
 import { merchantReviewsCopy } from "../merchant-reviews-copy";
 import { reviewModerationCopy } from "../review-moderation-copy";
+import { reviewTranslationCopy } from "../review-translation-copy";
 import { authenticate } from "../shopify.server";
 import { StaffAccessClientError } from "../staff-access-client";
 
@@ -73,6 +76,10 @@ export default function ReviewsPage() {
     () => createMerchantReviewIncentivesClient(() => shopify.idToken()),
     [shopify],
   );
+  const translationClient = useMemo(
+    () => createMerchantReviewTranslationsClient(() => shopify.idToken()),
+    [shopify],
+  );
   const copy = merchantReviewsCopy[locale];
   const moderationCopy = reviewModerationCopy[locale];
   const write = useMemo(
@@ -95,9 +102,44 @@ export default function ReviewsPage() {
   const mounted = useRef(true);
   const inFlight = useRef(false);
   const notice = useRef<HTMLDivElement>(null);
+  const dirtyTranslations = useRef(new Set<string>());
+  const discardCopy = useRef(reviewTranslationCopy[locale].discardPage);
+  discardCopy.current = reviewTranslationCopy[locale].discardPage;
+  const confirmDiscard = useCallback(
+    () =>
+      dirtyTranslations.current.size === 0 ||
+      window.confirm(discardCopy.current),
+    [],
+  );
+  const loseReviewAccess = useCallback(() => {
+    setData(null);
+    setError("denied");
+  }, []);
+  useEffect(() => {
+    const preventLeaving = (event: BeforeUnloadEvent) => {
+      if (inFlight.current || dirtyTranslations.current.size) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", preventLeaving);
+    return () => window.removeEventListener("beforeunload", preventLeaving);
+  }, []);
+  const acquireTranslationOperation = useCallback(() => {
+    if (inFlight.current) return null;
+    inFlight.current = true;
+    setBusy(true);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      inFlight.current = false;
+      if (mounted.current) setBusy(false);
+    };
+  }, []);
   const load = useCallback(
     async (query: MerchantReviewListInput, pageNumber: number) => {
-      if (inFlight.current) return;
+      if (inFlight.current || !confirmDiscard()) return;
       inFlight.current = true;
       setBusy(true);
       setData(null);
@@ -121,11 +163,11 @@ export default function ReviewsPage() {
         if (mounted.current) setBusy(false);
       }
     },
-    [read],
+    [read, confirmDiscard],
   );
   const save = async (input: AuditedReviewModerationInput) => {
     // One synchronous guard covers all forms, reads and page navigation.
-    if (inFlight.current) return;
+    if (inFlight.current || !confirmDiscard()) return;
     inFlight.current = true;
     setBusy(true);
     setSaving(true);
@@ -161,6 +203,7 @@ export default function ReviewsPage() {
     if (error || moderationResult) notice.current?.focus();
   }, [error, moderationResult]);
   const changeFilter = (next: MerchantReviewListInput) => {
+    if (inFlight.current || !confirmDiscard()) return;
     setFilter(next);
     setData(null);
     setError(null);
@@ -176,7 +219,16 @@ export default function ReviewsPage() {
       <div lang={locale}>
         <Page title={copy.title}>
           <BlockStack gap="400">
-            <Link to="/">{copy.home}</Link>
+            <Link
+              to="/"
+              aria-disabled={busy}
+              onClick={(event) => {
+                if (inFlight.current || !confirmDiscard())
+                  event.preventDefault();
+              }}
+            >
+              {copy.home}
+            </Link>
             <Select
               label={copy.language}
               value={locale}
@@ -349,6 +401,22 @@ export default function ReviewsPage() {
                                 save={save}
                               />
                             )}
+                          {row.status !== "redacted" && (
+                            <ReviewTranslationsPanel
+                              key={`translations:${row.id}:${row.version}`}
+                              reviewId={row.id}
+                              client={translationClient}
+                              locale={locale}
+                              disabled={busy}
+                              acquireOperation={acquireTranslationOperation}
+                              onDirtyChange={(dirty) => {
+                                if (dirty)
+                                  dirtyTranslations.current.add(row.id);
+                                else dirtyTranslations.current.delete(row.id);
+                              }}
+                              onAccessLost={loseReviewAccess}
+                            />
+                          )}
                         </>
                       ) : (
                         <>
