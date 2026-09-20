@@ -689,10 +689,13 @@ export async function deliverComplianceExportReference({
   return { downloadUrl, expiresAt: artifact.expiresAt };
 }
 
-async function fetchAndDecryptArtifact(artifact: {
-  storageKey: string;
-  contentSha256: string;
-}) {
+async function fetchAndDecryptArtifact(
+  artifact: {
+    storageKey: string;
+    contentSha256: string;
+  },
+  maxBytes?: number,
+) {
   assertPrivateComplianceStorageConfigured();
   const signedUrl = await storage.getSignedDownloadUrl({
     key: artifact.storageKey,
@@ -701,13 +704,35 @@ async function fetchAndDecryptArtifact(artifact: {
   });
   const response = await fetch(signedUrl, {
     headers: { "Cache-Control": "no-store" },
+    redirect: "error",
+    signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
     throw new Error(
       `Compliance artifact download failed (${response.status}).`,
     );
   }
-  const ciphertext = await response.text();
+  let ciphertext: string;
+  if (maxBytes !== undefined) {
+    if (!response.body) throw new Error("Compliance artifact body missing");
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let length = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.byteLength;
+        if (length > maxBytes)
+          throw new Error("Compliance artifact exceeds recovery bound");
+        chunks.push(Buffer.from(value));
+      }
+      ciphertext = Buffer.concat(chunks, length).toString("utf8");
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+  } else ciphertext = await response.text();
   const actualHash = sha256(Buffer.from(ciphertext, "utf8"));
   const expected = Buffer.from(artifact.contentSha256, "hex");
   const actual = Buffer.from(actualHash, "hex");
@@ -715,6 +740,52 @@ async function fetchAndDecryptArtifact(artifact: {
     throw new Error("Compliance artifact integrity verification failed.");
   }
   return JSON.parse(decrypt(ciphertext));
+}
+
+/** Recover an immutable media checkpoint under the current worker lease, not a
+ * public download token. Never resume from a new live page after publication.
+ */
+export async function readComplianceMediaCheckpoint({
+  requestId,
+  storeId,
+  sequence,
+  lease,
+}: {
+  requestId: string;
+  storeId: string;
+  sequence: number;
+  lease: ComplianceArtifactLease;
+}): Promise<unknown | null> {
+  await assertComplianceArtifactWriteLease({
+    client: prisma,
+    requestId,
+    storeId,
+    lease,
+  });
+  const artifact = await prisma.weleticShopifyComplianceArtifact.findUnique({
+    where: {
+      requestId_kind_sequence: { requestId, kind: "review_media", sequence },
+    },
+  });
+  if (!artifact) return null;
+  if (
+    artifact.storeId !== storeId ||
+    artifact.deletedAt ||
+    artifact.expiresAt <= new Date() ||
+    artifact.byteSize > BigInt(4 * 1024 * 1024)
+  )
+    throw new Error("Compliance media checkpoint is unavailable");
+  const value: unknown = await fetchAndDecryptArtifact(
+    artifact,
+    4 * 1024 * 1024,
+  );
+  await assertComplianceArtifactWriteLease({
+    client: prisma,
+    requestId,
+    storeId,
+    lease,
+  });
+  return value;
 }
 
 async function authorizeComplianceExport({
@@ -854,6 +925,9 @@ async function* generateComplianceExport({
         sequence: artifact.sequence,
         data: await fetchAndDecryptArtifact(artifact),
       };
+      // Retrieval can overlap redaction. Do not release fetched plaintext
+      // under authority checked only before the remote read.
+      await assertComplianceExportStillReadable(requestId);
       yield `${first ? "" : ","}${jsonStringify(chunk)}`;
       first = false;
     }

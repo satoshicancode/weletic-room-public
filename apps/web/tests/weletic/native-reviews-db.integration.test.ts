@@ -89,6 +89,7 @@ const mocks = vi.hoisted(() => ({
   delete: vi.fn(),
   signedDownload: vi.fn(),
   headPrivate: vi.fn(),
+  readPrivate: vi.fn(),
   summaryGraphql: vi.fn(),
   summaryCredentials: vi.fn(),
   beforeMediaLock: null as null | (() => Promise<void>),
@@ -124,6 +125,7 @@ vi.mock("@/lib/storage", () => ({
     delete: mocks.delete,
     getSignedDownloadUrl: mocks.signedDownload,
     headPrivateR2Object: mocks.headPrivate,
+    readPrivateR2Object: mocks.readPrivate,
   },
 }));
 // Deliberately remove Redis serialization: these tests must prove MySQL CAS /
@@ -6301,6 +6303,288 @@ describe("native reviews real MySQL production-service boundaries", () => {
     } finally {
       await prisma.weleticOpenReviewSubmission.deleteMany({
         where: { id, storeId: scope },
+      });
+    }
+  });
+
+  it("private media export: SQL artifact survives a lost checkpoint and deletion of its cursor row", async () => {
+    const { exportReviewMediaPage } = await import(
+      "@/lib/weletic/reviews/media-export-checkpoint"
+    );
+    const requestId = `media-export-request-${run}`;
+    const exportShopperId = `media-export-shopper-${run}`;
+    const ids = ["a", "b", "c"].map(
+      (suffix) => `media-export-${run}-${suffix}`,
+    );
+    const objects = new Map<string, Buffer>();
+    for (const key of [
+      "STORAGE_ENDPOINT",
+      "STORAGE_PRIVATE_BUCKET",
+      "STORAGE_ACCESS_KEY_ID",
+      "STORAGE_SECRET_ACCESS_KEY",
+    ])
+      vi.stubEnv(key, "synthetic-export-storage");
+    mocks.upload.mockImplementation(async ({ key, body }) => {
+      objects.set(key, Buffer.from(body));
+      return { url: "unused" };
+    });
+    mocks.delete.mockImplementation(async ({ key }) => {
+      objects.delete(key);
+    });
+    mocks.signedDownload.mockImplementation(
+      async ({ key }) =>
+        `https://export-fixture.invalid/${encodeURIComponent(key)}`,
+    );
+    mocks.readPrivate.mockResolvedValue(Buffer.from("photo"));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const parsed = new URL(url);
+        if (parsed.hostname !== "export-fixture.invalid")
+          throw new Error("Unexpected fixture network request");
+        const bytes = objects.get(decodeURIComponent(parsed.pathname.slice(1)));
+        return new Response(bytes ? new Uint8Array(bytes) : null, {
+          status: bytes ? 200 : 404,
+        });
+      }),
+    );
+    await prisma.weleticShopifyComplianceRequest.create({
+      data: {
+        id: requestId,
+        storeId,
+        webhookId: requestId,
+        shopDomain: "fixture.myshopify.com",
+        requestType: "customer_data_request",
+        status: "processing",
+        phase: "export_review_media",
+        lockedBy: "export-worker",
+        leaseVersion: 1,
+        progress: { ownerShopperId: exportShopperId },
+      },
+    });
+    try {
+      for (const id of ids) {
+        await prisma.weleticReviewMedia.create({
+          data: {
+            id,
+            storeId,
+            requestId: null,
+            objectKey: `weletic/reviews/${storeId}/${id}.webp`,
+            contentType: "image/webp",
+            sizeBytes: 5,
+            status: "uploaded",
+            uploadExpiresAt: new Date(Date.now() + 60_000),
+          },
+        });
+        const key = createHash("sha256").update(id).digest("hex");
+        await prisma.weleticOpenReviewMediaOwnership.create({
+          data: {
+            id: `owner-${id}`,
+            storeId,
+            mediaId: id,
+            shopperId: exportShopperId,
+            productId,
+            installationGeneration: "g1",
+            source: "app_proxy",
+            settingsRevision: 1,
+            submissionKey: key,
+            idempotencyKey: key,
+            contentDigest: "d".repeat(64),
+            storageWriteState: "confirmed",
+          },
+        });
+      }
+      const input = {
+        requestId,
+        storeId,
+        shopperId: exportShopperId,
+        sequence: 0,
+        afterId: null,
+        expiresAt: new Date(Date.now() + 60_000),
+        lease: { workerId: "export-worker", leaseVersion: 1 },
+      };
+      expect(await exportReviewMediaPage(input)).toEqual({
+        fileId: ids[0],
+        hasMore: true,
+      });
+      // Intentionally lose the returned cursor; emulate a process stopping
+      // after durable artifact publication but before the worker checkpoint.
+      await prisma.weleticOpenReviewMediaOwnership.deleteMany({
+        where: { storeId, mediaId: ids[0] },
+      });
+      await prisma.weleticReviewMedia.deleteMany({
+        where: { storeId, id: ids[0] },
+      });
+      const reads = mocks.readPrivate.mock.calls.length;
+      expect(await exportReviewMediaPage(input)).toEqual({
+        fileId: ids[0],
+        hasMore: true,
+      });
+      expect(mocks.readPrivate).toHaveBeenCalledTimes(reads);
+      expect(
+        await exportReviewMediaPage({ ...input, sequence: 1, afterId: ids[0] }),
+      ).toEqual({ fileId: ids[1], hasMore: true });
+      const artifacts = await prisma.weleticShopifyComplianceArtifact.findMany({
+        where: { requestId, storeId, kind: "review_media" },
+        orderBy: { sequence: "asc" },
+      });
+      expect(artifacts.map(({ sequence }) => sequence)).toEqual([0, 1]);
+      const { decrypt } = await import("@/lib/encryption");
+      const snapshots = artifacts.map((artifact) =>
+        JSON.parse(decrypt(objects.get(artifact.storageKey)!.toString("utf8"))),
+      );
+      expect(snapshots.map((snapshot) => snapshot.files[0].id)).toEqual(
+        ids.slice(0, 2),
+      );
+      expect(JSON.stringify(snapshots)).not.toContain("downloadUrl");
+      expect(JSON.stringify(snapshots)).not.toContain("objectKey");
+      await prisma.weleticShopifyComplianceRequest.update({
+        where: { id: requestId },
+        data: { leaseVersion: 2 },
+      });
+      await expect(exportReviewMediaPage(input)).rejects.toThrow(
+        "lease is no longer valid",
+      );
+    } finally {
+      await prisma.weleticShopifyComplianceArtifact.deleteMany({
+        where: { storeId, requestId },
+      });
+      await prisma.weleticShopifyComplianceRequest.deleteMany({
+        where: { storeId, id: requestId },
+      });
+      await prisma.weleticOpenReviewMediaOwnership.deleteMany({
+        where: { storeId, mediaId: { in: ids } },
+      });
+      await prisma.weleticReviewMedia.deleteMany({
+        where: { storeId, id: { in: ids } },
+      });
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("private media export: real ownership, attached-source corruption and erasure during read", async () => {
+    const { exportReviewMediaFile, reviewMediaFileExportSelect } = await import(
+      "@/lib/weletic/reviews/media-file-export"
+    );
+    const id = `export-photo-${run}`;
+    const reviewId = `export-review-${run}`;
+    const submissionKey = createHash("sha256").update(id).digest("hex");
+    const ledgerBefore = await prisma.weleticPointsLedgerEntry.count({
+      where: { storeId },
+    });
+    await prisma.weleticReviewMedia.create({
+      data: {
+        id,
+        storeId,
+        requestId: null,
+        objectKey: `weletic/reviews/${storeId}/${id}.webp`,
+        contentType: "image/webp",
+        sizeBytes: 5,
+        status: "uploaded",
+        uploadExpiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    await prisma.weleticOpenReviewMediaOwnership.create({
+      data: {
+        id: `owner-${id}`,
+        storeId,
+        mediaId: id,
+        shopperId,
+        productId,
+        installationGeneration: "g1",
+        source: "app_proxy",
+        settingsRevision: 1,
+        submissionKey,
+        idempotencyKey: submissionKey,
+        contentDigest: "d".repeat(64),
+        storageWriteState: "confirmed",
+      },
+    });
+    const row = () =>
+      prisma.weleticReviewMedia.findUniqueOrThrow({
+        where: { id },
+        select: reviewMediaFileExportSelect,
+      });
+    try {
+      mocks.readPrivate.mockResolvedValue(Buffer.from("photo"));
+      expect(
+        (await exportReviewMediaFile(storeId, shopperId, await row())).data,
+      ).toBe("cGhvdG8=");
+      const calls = mocks.readPrivate.mock.calls.length;
+      await expect(
+        exportReviewMediaFile(storeId, "foreign-owner", await row()),
+      ).rejects.toThrow("ownership changed");
+      expect(mocks.readPrivate).toHaveBeenCalledTimes(calls);
+      await prisma.weleticProductReview.create({
+        data: {
+          id: reviewId,
+          storeId,
+          shopperId,
+          productId,
+          requestId: null,
+          rating: 1,
+          title: "Synthetic export",
+          body: "Synthetic export",
+          displayName: "Fixture",
+          status: "pending",
+        },
+      });
+      await prisma.weleticOpenReviewSubmission.create({
+        data: {
+          id: `source-${id}`,
+          storeId,
+          reviewId,
+          shopperId,
+          installationGeneration: "g1",
+          source: "app_proxy",
+          idempotencyKey: submissionKey,
+          settingsRevision: 1,
+          disclosureRevision: "open-review-v1",
+          locale: "en",
+          contentDigest: "c".repeat(64),
+        },
+      });
+      await prisma.weleticReviewMedia.update({
+        where: { id },
+        data: { reviewId },
+      });
+      expect(
+        (await exportReviewMediaFile(storeId, shopperId, await row())).data,
+      ).toBe("cGhvdG8=");
+      await prisma.weleticOpenReviewSubmission.update({
+        where: { reviewId },
+        data: { settingsRevision: 2 },
+      });
+      await expect(
+        exportReviewMediaFile(storeId, shopperId, await row()),
+      ).rejects.toThrow("attached photo ownership invalid");
+      await prisma.weleticOpenReviewSubmission.update({
+        where: { reviewId },
+        data: { settingsRevision: 1 },
+      });
+      mocks.readPrivate.mockImplementationOnce(async () => {
+        await prisma.weleticOpenReviewMediaOwnership.update({
+          where: { mediaId: id },
+          data: { redactedAt: new Date(), contentDigest: null },
+        });
+        return Buffer.from("photo");
+      });
+      await expect(
+        exportReviewMediaFile(storeId, shopperId, await row()),
+      ).rejects.toThrow("ownership changed");
+      expect(
+        await prisma.weleticPointsLedgerEntry.count({ where: { storeId } }),
+      ).toBe(ledgerBefore);
+    } finally {
+      await prisma.weleticOpenReviewMediaOwnership.deleteMany({
+        where: { storeId, mediaId: id },
+      });
+      await prisma.weleticReviewMedia.deleteMany({ where: { storeId, id } });
+      await prisma.weleticOpenReviewSubmission.deleteMany({
+        where: { storeId, reviewId },
+      });
+      await prisma.weleticProductReview.deleteMany({
+        where: { storeId, id: reviewId },
       });
     }
   });

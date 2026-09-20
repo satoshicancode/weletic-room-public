@@ -2,7 +2,6 @@ import { decrypt, encrypt } from "@/lib/encryption";
 import { integrationCredentialsSchema } from "@/lib/integrations/shopify/schema";
 import { generateRandomName } from "@/lib/names";
 import { prisma } from "@/lib/prisma";
-import { storage } from "@/lib/storage";
 import { deleteExpiredShopperCouponUsesBatch } from "@/lib/weletic/loyalty/coupon-use-retention";
 import { publishLoyaltyEarnPolicyRevision } from "@/lib/weletic/loyalty/earn-policy-revision";
 import {
@@ -34,6 +33,7 @@ import {
   reviewIncentivePolicyExportSelect,
   reviewParticipationExportSelect,
 } from "@/lib/weletic/reviews/incentive-export";
+import { exportReviewMediaPage } from "@/lib/weletic/reviews/media-export-checkpoint";
 import {
   openReviewMediaExportSelect,
   openReviewMediaExportWhere,
@@ -673,38 +673,7 @@ async function fetchExportPage({
       : [];
   }
   if (phase === "export_review_media") {
-    const records = shopperId
-      ? await prisma.weleticReviewMedia.findMany({
-          ...page,
-          where: {
-            storeId,
-            request: { storeId, shopperId },
-            status: "uploaded",
-          },
-          select: {
-            id: true,
-            requestId: true,
-            reviewId: true,
-            contentType: true,
-            sizeBytes: true,
-            objectKey: true,
-            createdAt: true,
-          },
-        })
-      : [];
-    return Promise.all(
-      records.map(async ({ objectKey, ...record }) => ({
-        ...record,
-        downloadUrl: await storage.getSignedDownloadUrl({
-          key: objectKey,
-          bucket: "private",
-          expiresIn: Math.min(
-            604800,
-            getShopifyComplianceExportRetentionHours() * 3600,
-          ),
-        }),
-      })),
-    );
+    throw new Error("Review media must use durable file checkpoints");
   }
   if (phase === "export_ledger") {
     return accountId
@@ -927,6 +896,30 @@ export async function processCustomerDataRequestStep(
       subject.customerId ?? null,
       subject,
     );
+    if (phase === "export_review_media") {
+      const sequence = Number(cursor.sequence ?? 0);
+      const result = await exportReviewMediaPage({
+        requestId: request.id,
+        storeId: request.storeId,
+        shopperId: context.shopperId,
+        sequence,
+        afterId: cursor.lastId ?? null,
+        expiresAt: exportExpiry(),
+        lease,
+      });
+      return {
+        completed: false,
+        phase: result.hasMore ? phase : nextExportPhase(phase),
+        cursor: result.hasMore
+          ? { lastId: result.fileId!, sequence: sequence + 1 }
+          : Prisma.DbNull,
+        progress: {
+          ...progress,
+          chunks: Number(progress.chunks ?? 0) + (result.fileId ? 1 : 0),
+          records: Number(progress.records ?? 0) + (result.fileId ? 1 : 0),
+        },
+      };
+    }
     const records = await fetchExportPage({
       phase,
       storeId: request.storeId,

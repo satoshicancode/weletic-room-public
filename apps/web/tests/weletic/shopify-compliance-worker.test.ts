@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   nativeReviewFindMany: vi.fn(),
   nativeRequestFindMany: vi.fn(),
   nativeMediaFindMany: vi.fn(),
+  nativeMediaFindFirst: vi.fn(),
+  nativeMediaProductFindFirst: vi.fn(),
   openMediaFindMany: vi.fn(),
   incentiveClaimFindMany: vi.fn(),
   incentivePolicyFindMany: vi.fn(),
@@ -61,6 +63,7 @@ const mocks = vi.hoisted(() => ({
   redactFriendShopBatch: vi.fn(),
   deriveReferralEmailDigests: vi.fn(),
   artifactStore: vi.fn(),
+  artifactCheckpoint: vi.fn(),
   artifactDeliver: vi.fn(),
   artifactExpiryDeleteBatch: vi.fn(),
   artifactStoreDeleteBatch: vi.fn(),
@@ -135,7 +138,7 @@ vi.mock("@/lib/weletic/reviews/privacy-owner-redact", () => ({
   redactReviewOwnerPrivacyProjection: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/storage", () => ({
-  storage: { getSignedDownloadUrl: mocks.nativeMediaDownload },
+  storage: { readPrivateR2Object: mocks.nativeMediaDownload },
 }));
 vi.mock("@/lib/weletic/loyalty/earn-policy-revision", () => ({
   publishLoyaltyEarnPolicyRevision: mocks.publishPolicyRevision,
@@ -170,7 +173,10 @@ vi.mock("@/lib/prisma", () => ({
     weleticReviewIncentiveInvalidation: {
       findMany: mocks.invalidationFindMany,
     },
-    weleticReviewMedia: { findMany: mocks.nativeMediaFindMany },
+    weleticReviewMedia: {
+      findMany: mocks.nativeMediaFindMany,
+      findFirst: mocks.nativeMediaFindFirst,
+    },
     weleticOpenReviewMediaOwnership: { findMany: mocks.openMediaFindMany },
     weleticLoyaltyEarnGrant: {
       findMany: mocks.earnGrantFindMany,
@@ -254,7 +260,10 @@ vi.mock("@/lib/prisma", () => ({
     weleticShopifyShopPrivacyTombstone: {
       findFirst: mocks.shopPrivacyTombstoneFindFirst,
     },
-    weleticShopifyProduct: { deleteMany: mocks.productDeleteMany },
+    weleticShopifyProduct: {
+      deleteMany: mocks.productDeleteMany,
+      findFirst: mocks.nativeMediaProductFindFirst,
+    },
     weleticShopifyMarket: { deleteMany: mocks.marketDeleteMany },
     weleticShopifyWebhookEvent: { deleteMany: mocks.webhookDeleteMany },
     weleticShopifySyncRun: { deleteMany: mocks.syncRunDeleteMany },
@@ -353,6 +362,7 @@ vi.mock("@/lib/weletic/shopify/store-resolver", () => ({
       .replace(/\/.*$/, ""),
 }));
 vi.mock("@/lib/weletic/shopify/compliance-artifacts", () => ({
+  readComplianceMediaCheckpoint: mocks.artifactCheckpoint,
   storeEncryptedComplianceArtifact: mocks.artifactStore,
   deliverComplianceExportReference: mocks.artifactDeliver,
   deleteExpiredComplianceArtifactsBatch: mocks.artifactExpiryDeleteBatch,
@@ -413,9 +423,37 @@ describe("durable compliance worker boundaries", () => {
     mocks.nativeRequestFindMany.mockResolvedValue([]);
     mocks.nativeMediaFindMany.mockResolvedValue([]);
     mocks.openMediaFindMany.mockResolvedValue([]);
-    mocks.nativeMediaDownload.mockResolvedValue(
-      "https://private.example.test/signed",
-    );
+    mocks.nativeMediaDownload.mockResolvedValue(Buffer.from("photo"));
+    mocks.nativeMediaFindFirst.mockImplementation(async ({ where }) => ({
+      ...where,
+      storeId: "store_1",
+      status: "uploaded",
+      review: null,
+      request: where.requestId
+        ? {
+            id: where.requestId,
+            storeId: "store_1",
+            shopperId: "shopper_1",
+            productId: "product_1",
+          }
+        : null,
+      openOwnership: where.requestId
+        ? null
+        : {
+            storeId: "store_1",
+            mediaId: where.id,
+            shopperId: "shopper_1",
+            productId: "product_1",
+            installationGeneration: "generation_1",
+            source: "app_proxy",
+            submissionKey: "a".repeat(64),
+            settingsRevision: 1,
+            redactedAt: null,
+            contentDigest: "b".repeat(64),
+            storageWriteState: "confirmed",
+          },
+    }));
+    mocks.nativeMediaProductFindFirst.mockResolvedValue({ id: "product_1" });
     mocks.earnGrantFindMany.mockResolvedValue([]);
     mocks.earnGrantUpdateMany.mockResolvedValue({ count: 0 });
     mocks.orderLineEarnFindMany.mockResolvedValue([]);
@@ -450,7 +488,17 @@ describe("durable compliance worker boundaries", () => {
     mocks.deriveReferralEmailDigests.mockReturnValue([
       "hmac:v1:kid_1:FRIEND_EMAIL_DIGEST",
     ]);
-    mocks.artifactStore.mockResolvedValue({});
+    const fileCheckpoints = new Map<number, unknown>();
+    mocks.artifactCheckpoint.mockImplementation(
+      async ({ sequence }) => fileCheckpoints.get(sequence) ?? null,
+    );
+    mocks.artifactStore.mockImplementation(
+      async ({ kind, sequence, value }) => {
+        if (kind === "review_media" && !fileCheckpoints.has(sequence))
+          fileCheckpoints.set(sequence, value);
+        return {};
+      },
+    );
     mocks.artifactDeliver.mockResolvedValue({});
     mocks.artifactExpiryDeleteBatch.mockResolvedValue({
       selected: 0,
@@ -840,7 +888,15 @@ describe("durable compliance worker boundaries", () => {
       { id: "request_1", status: "submitted" },
     ]);
     mocks.nativeMediaFindMany.mockResolvedValue([
-      { id: "media_1", objectKey: "private-review-object" },
+      {
+        id: "media_1",
+        objectKey: "weletic/reviews/store_1/media_1.webp",
+        requestId: "request_1",
+        reviewId: null,
+        contentType: "image/webp",
+        sizeBytes: 5,
+        createdAt: new Date(0),
+      },
     ]);
     mocks.incentiveClaimFindMany.mockResolvedValue([
       { id: "claim_1", policyId: "policy_1", status: "reserved" },
@@ -998,27 +1054,97 @@ describe("durable compliance worker boundaries", () => {
       expect(selected).not.toHaveProperty(secret);
     expect(mocks.nativeMediaFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
+        where: expect.objectContaining({
           storeId: "store_1",
-          request: { storeId: "store_1", shopperId: "shopper_1" },
           status: "uploaded",
-        },
+        }),
+        take: 2,
       }),
     );
     expect(mocks.nativeMediaDownload).toHaveBeenCalledWith(
-      expect.objectContaining({
-        key: "private-review-object",
-        bucket: "private",
-      }),
+      "weletic/reviews/store_1/media_1.webp",
+      5,
     );
     expect(mocks.artifactStore).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "review_media",
-        value: [
-          { id: "media_1", downloadUrl: "https://private.example.test/signed" },
-        ],
+        value: {
+          format: "review_media_files_v1",
+          sequence: 0,
+          afterId: null,
+          hasMore: false,
+          files: [
+            {
+              id: "media_1",
+              reviewId: null,
+              contentType: "image/webp",
+              sizeBytes: 5,
+              createdAt: new Date(0),
+              fileName: "media_1.webp",
+              encoding: "base64",
+              data: Buffer.from("photo").toString("base64"),
+            },
+          ],
+        },
       }),
     );
+  });
+
+  it("exports one bounded photo per chunk without reading lookahead bytes", async () => {
+    mocks.shopperFindUnique.mockResolvedValue({
+      id: "shopper_1",
+      loyaltyAccount: null,
+    });
+    const photos = ["media_1", "media_2"].map((id) => ({
+      id,
+      objectKey: `weletic/reviews/store_1/${id}.webp`,
+      requestId: null,
+      reviewId: null,
+      contentType: "image/webp",
+      sizeBytes: 5,
+      createdAt: new Date(0),
+    }));
+    mocks.nativeMediaFindMany
+      .mockResolvedValueOnce(photos)
+      .mockResolvedValueOnce([photos[1]]);
+    const request = {
+      id: "request_export",
+      storeId: "store_1",
+      phase: "export_review_media",
+      lockedBy: "worker_1",
+      leaseVersion: 1,
+      payloadCiphertext: JSON.stringify({
+        shopDomain: "target.myshopify.com",
+        customerId: "42",
+        orderExternalIds: [],
+      }),
+      cursor: null,
+      progress: null,
+      store: { projectId: "workspace_1" },
+    };
+    const first = await processCustomerDataRequestStep(request);
+    expect(first.phase).toBe("export_review_media");
+    expect(first.cursor).toEqual({ lastId: "media_1", sequence: 1 });
+    expect(mocks.nativeMediaDownload).toHaveBeenCalledTimes(1);
+    const second = await processCustomerDataRequestStep({
+      ...request,
+      cursor: first.cursor,
+      progress: first.progress,
+    });
+    expect(second.phase).toBe("export_open_review_uploads");
+    expect(mocks.nativeMediaFindMany.mock.calls[1][0]).toMatchObject({
+      take: 2,
+      where: expect.objectContaining({ id: { gt: "media_1" } }),
+    });
+    expect(
+      mocks.artifactStore.mock.calls.map(([input]) => input.sequence),
+    ).toEqual([0, 1]);
+    expect(mocks.nativeMediaDownload).toHaveBeenCalledTimes(2);
+    for (const [input] of mocks.artifactStore.mock.calls) {
+      expect(input.value.files).toHaveLength(1);
+      expect(input.value.files[0]).not.toHaveProperty("downloadUrl");
+      expect(input.value.files[0]).not.toHaveProperty("objectKey");
+    }
   });
 
   it("checkpoints a 100-record export page and resumes from its exact cursor", async () => {
