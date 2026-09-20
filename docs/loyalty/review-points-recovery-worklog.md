@@ -227,3 +227,7 @@ that run predates this separate Flow schema addition and is not represented as
 a combined-schema SQL rehearsal. Fresh full build and CI remain required.
 Deployments must satisfy both recovery and Flow schema-first gates, even if the
 Flow action stays disabled; see [Flow acceptance](flow-points-action-acceptance.md).
+
+The combined-head full Next build then passed at `e85aa454a2`, including all
+353 static pages and build traces. No provider credentials or services were
+used. Fresh committed-head public CI remains the merge gate.
