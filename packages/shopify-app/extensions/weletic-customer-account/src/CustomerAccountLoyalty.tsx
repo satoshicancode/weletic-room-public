@@ -1,7 +1,9 @@
 /** @jsxImportSource preact */
+import type { Navigation } from "@shopify/ui-extensions/customer-account";
 import type { Api } from "@shopify/ui-extensions/customer-account.page.render";
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
+import { CustomerAccountReviews } from "./CustomerAccountReviews";
 import {
   hubActivityLabel,
   hubDate,
@@ -12,8 +14,14 @@ import {
   hubRequestError,
   hubText,
 } from "./localization";
+import { accountReviewProduct, accountReviewTransport } from "./reviews-client";
+import { accountReviewCopy, accountReviewLocale } from "./reviews-copy";
+import type { ReviewProductQuery } from "./reviews-products";
 
 declare const shopify: Api;
+// The installed 2026.7 SDK exposes this as a global (its own navigation hook
+// uses the same global), rather than a member of StandardApi.
+declare const navigation: Navigation;
 
 const API_BASE_URL = "https://shopify.weletic.com/api/customer-account/loyalty";
 const CUSTOMER_REQUEST_TIMEOUT_MS = 10_000;
@@ -1297,7 +1305,56 @@ async function authenticatedRequest(path: string, init?: RequestInit) {
 }
 
 export default function extension() {
-  render(<CustomerAccountLoyalty />, document.body);
+  render(<CustomerAccountModules />, document.body);
+}
+
+export function CustomerAccountModules() {
+  const queryProducts = useRef<ReviewProductQuery>((query, options) =>
+    shopify.query(query, options),
+  );
+  const [reviewPending, setReviewPending] = useState(false);
+  const [url, setUrl] = useState(() =>
+    typeof navigation === "undefined"
+      ? null
+      : navigation.currentEntry?.url ?? null,
+  );
+  const transport = useRef(
+    accountReviewTransport(API_BASE_URL.replace(/\/loyalty$/, "/reviews"), () =>
+      shopify.sessionToken.get(),
+    ),
+  );
+  useEffect(() => {
+    if (typeof navigation === "undefined") return;
+    const changed = () => setUrl(navigation.currentEntry?.url ?? null);
+    navigation?.addEventListener("currententrychange", changed);
+    return () => navigation?.removeEventListener("currententrychange", changed);
+  }, []);
+  const productId = accountReviewProduct(url);
+  let reviews = productId !== null || reviewPending;
+  try {
+    reviews ||= new URL(url || "").searchParams.get("view") === "reviews";
+  } catch {
+    /* Missing navigation keeps the Loyalty home. */
+  }
+  return reviews ? (
+    <CustomerAccountReviews
+      productId={productId}
+      language={hubLocale()}
+      transport={transport.current}
+      onPendingChange={setReviewPending}
+      queryProducts={queryProducts.current}
+    />
+  ) : (
+    <CustomerAccountLoyalty />
+  );
+}
+
+function ReviewsEntry() {
+  return (
+    <s-button href="extension://reviews?view=reviews">
+      {accountReviewCopy[accountReviewLocale(hubLocale())].browseReviews}
+    </s-button>
+  );
 }
 
 export function CustomerAccountLoyalty() {
@@ -1583,6 +1640,7 @@ export function CustomerAccountLoyalty() {
         subheading={hubText("memberBenefits")}
       >
         <s-stack direction="block" gap="base">
+          <ReviewsEntry />
           <s-banner tone="critical">{error}</s-banner>
           <s-button onClick={retrySummary} variant="primary">
             {hubText("retry")}
@@ -1598,6 +1656,7 @@ export function CustomerAccountLoyalty() {
         subheading={hubText("memberBenefits")}
       >
         <s-stack direction="block" gap="base">
+          <ReviewsEntry />
           <s-section heading={hubText("pointsBalance")}>
             <s-skeleton-paragraph content={hubText("loadingPoints")} />
           </s-section>
@@ -1614,6 +1673,7 @@ export function CustomerAccountLoyalty() {
         heading={hubText("hubTitle")}
         subheading={hubText("memberBenefits")}
       >
+        <ReviewsEntry />
         <s-banner tone="info">{hubText("joinNotice")}</s-banner>
       </s-page>
     );
@@ -1716,6 +1776,7 @@ export function CustomerAccountLoyalty() {
       subheading={summary.program?.branding?.subtitle ?? hubText("subtitle")}
     >
       <s-stack direction="block" gap="base">
+        <ReviewsEntry />
         {issuedReward ? (
           <s-banner tone="success">
             {issuedReward.artifactKind === "store_credit"

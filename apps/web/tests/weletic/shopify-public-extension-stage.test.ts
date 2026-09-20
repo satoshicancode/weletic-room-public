@@ -77,10 +77,24 @@ describe("offline public extension staging", () => {
     expect(action).not.toMatch(/number_integer|number_decimal|uid\s*=/);
     for (const [path, text] of Object.entries(files)) {
       if (path.endsWith(".tsx")) {
-        expect(text).toContain("https://loyalty-shopify-dev.weletic.com/api/");
+        if (
+          !path.endsWith("/CustomerAccountReviews.tsx") &&
+          !path.endsWith("/ReviewProductPicker.tsx")
+        )
+          expect(text).toContain(
+            "https://loyalty-shopify-dev.weletic.com/api/",
+          );
+        else {
+          expect(text).toMatch(/from "\.\/reviews-(client|products)"/);
+          expect(text).not.toMatch(/https?:\/\//);
+        }
         expect(text).not.toContain("https://shopify.weletic.com");
       }
     }
+    for (const name of ["reviews-client.ts", "reviews-copy.ts"])
+      expect(
+        files[`extensions/weletic-customer-account/src/${name}`],
+      ).toBeTruthy();
     expect(
       files["extensions/weletic-flow-lifecycle/shopify.extension.toml"],
     ).toContain(
