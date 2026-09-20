@@ -132,6 +132,8 @@ model WeleticShopifyStore {
   loyaltyEarnGrants            WeleticLoyaltyEarnGrant[]
   loyaltyOutboxJobs            WeleticLoyaltyOutboxJob[]
   flowTriggerStates            WeleticShopifyFlowTriggerState[]
+  flowPointsGrants             WeleticShopifyFlowPointsGrant[]
+  flowActionRuns               WeleticShopifyFlowActionRun[]
   loyaltyReviewIntegrations    WeleticLoyaltyReviewIntegration[]
   reviewSettings               WeleticReviewSettings?
   reviewIncentivePolicies      WeleticReviewIncentivePolicy[]
