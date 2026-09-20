@@ -84,6 +84,14 @@ or prove provider/queue-worker recovery.
 
 ## Reproduction and remaining gates
 
+Integration after PR #92: both the real post-mutation deadlock case and all four
+process-crash cases are retained. Fresh fixture
+`weletic_loyalty_it_shopper_da3e29a93459` passed **41 native-review tests** on
+September 20. Exact fixture database/account cleanup completed; retained ledger
+remained **16 → 16**. Typecheck and formatting passed; independent review found
+no merge-specific fixture interaction. This is local integration evidence, not
+new live acceptance. The updated branch requires fresh CI.
+
 Use a newly created isolated MySQL database/account whose database name begins
 with `weletic_loyalty_it_`, generated current Prisma client, and the checked-in
 schema/activation migration. Run the native-review file with

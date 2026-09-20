@@ -591,6 +591,114 @@ describe("native reviews real MySQL production-service boundaries", () => {
       });
     },
   );
+  it("review transaction retries a real post-mutation deadlock with one moderation audit", async () => {
+    const request = await invitation(await purchase());
+    const review = await submitNativeReview(storeId, input(request.token));
+    // This file is restricted to disposable test databases. The scratch table
+    // deliberately inverts lock order to provoke recovery, not production use.
+    await prisma.$executeRaw`CREATE TABLE ReviewDeadlockFixture (id INT PRIMARY KEY, value INT NOT NULL) ENGINE=InnoDB`;
+    let releaseWriter!: () => void;
+    const writerEntered = new Promise<void>((resolve) => {
+      releaseWriter = resolve;
+    });
+    let ready!: () => void;
+    let failReady!: (error: unknown) => void;
+    const competitorReady = new Promise<void>((resolve, reject) => {
+      ready = resolve;
+      failReady = reject;
+    });
+    let competitor: Promise<void> | undefined;
+    let competingError: unknown;
+    let attempts = 0;
+    const deadlocks: unknown[] = [];
+    try {
+      await prisma.$executeRaw(Prisma.sql`
+        INSERT INTO ReviewDeadlockFixture (id, value)
+        VALUES ${Prisma.join(Array.from({ length: 1024 }, (_, index) => Prisma.sql`(${index + 1}, 0)`))}
+      `);
+      competitor = prisma
+        .$transaction(
+          async (tx) => {
+            // More modified rows than the review transaction make the latter the
+            // lighter rollback victim; assertions below require that actual error.
+            await tx.$executeRaw`UPDATE ReviewDeadlockFixture SET value = value + 1`;
+            ready();
+            await writerEntered;
+            await tx.$queryRaw`SELECT id FROM WeleticShopifyStore WHERE id = ${storeId} FOR UPDATE`;
+          },
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            timeout: 10000,
+          },
+        )
+        .then(
+          () => undefined,
+          (error) => {
+            competingError = error;
+            failReady(error);
+          },
+        );
+      await competitorReady;
+      const stableActor = {
+        kind: "workspace" as const,
+        userId: "synthetic-review-operator",
+      };
+      const result = await withReviewMutation(
+        storeId,
+        async (tx, generation) => {
+          attempts++;
+          const written = await moderateReviewWithAuditInTransaction({
+            tx,
+            storeId,
+            generation,
+            actor: stableActor,
+            input: {
+              reviewId: review.id,
+              version: 1,
+              merchantReply: "Committed only once",
+              reason: "merchant_reply",
+            },
+          });
+          // Both rows exist inside this attempt before it becomes the victim.
+          // The retry must reuse the same actor and expected version after rollback.
+          releaseWriter();
+          try {
+            await tx.$queryRaw`SELECT id FROM ReviewDeadlockFixture WHERE id = 1 FOR UPDATE`;
+          } catch (error) {
+            deadlocks.push(error);
+            throw error;
+          }
+          return written;
+        },
+        "g1",
+      );
+      await competitor;
+      expect(competingError).toBeUndefined();
+      expect(attempts).toBe(2);
+      expect(deadlocks).toHaveLength(1);
+      expect(deadlocks[0]).toBeInstanceOf(Prisma.PrismaClientKnownRequestError);
+      expect(deadlocks[0]).toMatchObject({
+        code: "P2010",
+        meta: { code: "1213" },
+      });
+      expect(result.version).toBe(2);
+      expect(
+        await prisma.weleticProductReview.findFirst({
+          where: { storeId, id: review.id },
+          select: { version: true, merchantReply: true },
+        }),
+      ).toEqual({ version: 2, merchantReply: "Committed only once" });
+      expect(
+        await prisma.weleticReviewModerationAudit.count({
+          where: { storeId, reviewId: review.id },
+        }),
+      ).toBe(1);
+    } finally {
+      releaseWriter();
+      await competitor;
+      await prisma.$executeRaw`DROP TABLE ReviewDeadlockFixture`;
+    }
+  });
 
   it.each([
     "enabled",
