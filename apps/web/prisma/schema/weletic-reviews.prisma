@@ -112,6 +112,8 @@ model WeleticReviewIncentiveClaim {
   status             String   @default("reserved") @db.VarChar(32)
   awardSnapshot      Json     @db.Json
   validationSnapshot Json     @db.Json
+  // Operational discovery rotation only; never part of the immutable promise.
+  recoveryDiscoveryCheckedAt DateTime? @db.DateTime(3)
   createdAt          DateTime @default(now())
 
   store        WeleticShopifyStore                 @relation(fields: [storeId], references: [id], onDelete: Restrict)
@@ -122,6 +124,7 @@ model WeleticReviewIncentiveClaim {
 
   @@unique([storeId, id], map: "wl_review_claim_store_id_uq")
   @@unique([storeId, orderId], map: "wl_review_incentive_order_uq")
+  @@index([status, subjectType, recoveryDiscoveryCheckedAt, id], map: "review_claim_recovery_scan")
   @@index([storeId, shopperId])
   @@index([storeId, policyId])
   @@index(orderId)

@@ -3,6 +3,7 @@ import { createWeleticId } from "@/lib/weletic/ids";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { awardSignupWelcomeBonus } from "@/lib/weletic/loyalty/non-purchase-earn";
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
+import { wakeReviewPointsAfterEnrollment } from "@/lib/weletic/reviews/points-recovery-wakeup";
 import { hasShopifyCustomerPrivacyTombstone } from "@/lib/weletic/shopify/privacy-identity";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import { Prisma, type WeleticLoyaltyAccount } from "@prisma/client";
@@ -54,7 +55,7 @@ export async function upsertWeleticShopper({
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    await assertShopifyStoreAcceptsOperationalWrites({
+    const operationalStore = await assertShopifyStoreAcceptsOperationalWrites({
       storeId,
       action: "shopper_upsert",
       expectedInstallationGeneration,
@@ -236,6 +237,18 @@ export async function upsertWeleticShopper({
         });
       }
     }
+
+    if (
+      operationalStore?.installationGeneration &&
+      loyaltyAccount.status === "active" &&
+      !hasShopifyCustomerRedactionTombstone(loyaltyAccount.metadata)
+    )
+      await wakeReviewPointsAfterEnrollment({
+        tx,
+        storeId,
+        shopperId: shopper.id,
+        installationGeneration: operationalStore.installationGeneration,
+      });
 
     return {
       shopper,

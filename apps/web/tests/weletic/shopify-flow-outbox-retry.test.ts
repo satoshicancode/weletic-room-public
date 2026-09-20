@@ -85,7 +85,7 @@ describe("Shopify Flow durable retry transitions", () => {
       expect.objectContaining({
         take: 50,
         where: expect.objectContaining({
-          AND: reviewFlowCandidateWhere(),
+          AND: expect.arrayContaining([reviewFlowCandidateWhere()]),
         }),
       }),
     );

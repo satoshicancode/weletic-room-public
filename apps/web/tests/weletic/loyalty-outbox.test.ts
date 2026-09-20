@@ -28,6 +28,8 @@ import { createLoyaltyDiscountProvisioningIdentity } from "@/lib/weletic/loyalty
 import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
 import { ShopperEmailPausedError } from "@/lib/weletic/merchant-settings/communications";
 import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
+import { recoverReviewPoints } from "@/lib/weletic/reviews/points-recovery";
+import { ReviewPointsRecoveryPendingError } from "@/lib/weletic/reviews/points-recovery-contract";
 import {
   Prisma,
   WeleticLoyaltyOutboxJobStatus,
@@ -96,6 +98,9 @@ vi.mock("@/lib/weletic/loyalty/birthday-communication-producer", () => ({
 }));
 vi.mock("@/lib/weletic/loyalty/points-earned-notifications", () => ({
   sendPointsEarnedNotification: vi.fn(),
+}));
+vi.mock("@/lib/weletic/reviews/points-recovery", () => ({
+  recoverReviewPoints: vi.fn(),
 }));
 
 const TEST_STORE_ID = "wstore_test_m2";
@@ -533,6 +538,80 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
   // 2. Worker Polling, Concurrency Locking & Backoff
   // =========================================================================
   describe("2. Worker Polling, Concurrency Locking & Backoff", () => {
+    it.each(["pending", "failed"])(
+      "defers waiting review points from %s without consuming attempts or resetting failure history",
+      async (status) => {
+        const job = {
+          id: "review_recovery_batch",
+          storeId: TEST_STORE_ID,
+          jobType: "REVIEW_POINTS_RECOVERY",
+          status,
+          payload: {
+            claimId: "claim",
+            shopperId: TEST_SHOPPER_ID,
+            installationGeneration: "sgen_outbox_two",
+          },
+          attempts: 2,
+          maxAttempts: 5,
+          scheduledFor: new Date(0),
+          nextRetryAt: null,
+          lockedAt: null,
+          lockedBy: null,
+          errorLog: [{ attempt: 2, error: "prior failure" }],
+        };
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.findMany)
+          .mockResolvedValueOnce([job as never])
+          .mockResolvedValueOnce([]);
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.updateMany).mockResolvedValue({
+          count: 1,
+        });
+        vi.mocked(recoverReviewPoints).mockRejectedValueOnce(
+          new ReviewPointsRecoveryPendingError(),
+        );
+        const before = Date.now();
+        const result = await processOutboxJobsBatch({
+          storeId: TEST_STORE_ID,
+          jobIds: [job.id],
+        });
+        expect(recoverReviewPoints).toHaveBeenCalledWith({
+          storeId: TEST_STORE_ID,
+          payload: job.payload,
+          loyaltyMaintenancePermit: undefined,
+        });
+        expect(result).toMatchObject({
+          processed: 0,
+          skipped: 1,
+          succeeded: 0,
+          failed: 0,
+          deadLettered: 0,
+        });
+        const transition = vi
+          .mocked(prisma.weleticLoyaltyOutboxJob.updateMany)
+          .mock.calls.map(([args]) => args)
+          .find((args) => (args.data as any).attempts === 2);
+        expect(transition).toMatchObject({
+          where: {
+            id: job.id,
+            storeId: TEST_STORE_ID,
+            status: "processing",
+            attempts: 3,
+            lockedAt: expect.any(Date),
+            lockedBy: expect.any(String),
+          },
+          data: {
+            status,
+            attempts: 2,
+            lockedAt: null,
+            lockedBy: null,
+            nextRetryAt: expect.any(Date),
+          },
+        });
+        expect(
+          (transition!.data.nextRetryAt as Date).getTime(),
+        ).toBeGreaterThanOrEqual(before + 300000);
+        expect(transition!.data).not.toHaveProperty("errorLog");
+      },
+    );
     it.each(["pause", "reconcile", "success"])(
       "handles communication %s with the winning claim fence",
       async (outcome) => {
@@ -699,7 +778,22 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
           },
           scheduledFor: { lte: now },
           OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: now } }],
-          AND: reviewFlowCandidateWhere(),
+          AND: [
+            reviewFlowCandidateWhere(),
+            {
+              OR: [
+                { jobType: { not: "REVIEW_POINTS_RECOVERY" } },
+                {
+                  store: {
+                    reviewSettings: { is: { enabled: true } },
+                    loyaltyProgram: {
+                      is: { status: "active", killSwitchActive: false },
+                    },
+                  },
+                },
+              ],
+            },
+          ],
           NOT: {
             store: { merchantSettings: { is: { shopperEmailPaused: true } } },
             OR: [
