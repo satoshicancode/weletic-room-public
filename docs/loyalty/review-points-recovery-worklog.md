@@ -213,3 +213,8 @@ committed-head CI are still pending at this checkpoint. A local build wrapper
 first failed to locate pnpm under the sanitized temporary HOME; the restarted
 build invokes the installed Next binary directly with the same non-secret,
 loopback-only provider placeholders. No runtime authentication was bypassed.
+
+The full Next production build subsequently passed, including all 353 static
+pages, at local integration commit `234e10dfa0`. Existing CSS, route-revalidation
+and unset build-only provider warnings were nonfatal. This is local build
+evidence, not a deployed provider or authenticated acceptance result.
