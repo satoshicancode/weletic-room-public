@@ -8,6 +8,10 @@ import {
 import { clearExpiredReviewDeliveryEvidence } from "@/lib/weletic/reviews/delivery-retention";
 import { deliverReviewRequest } from "@/lib/weletic/reviews/email";
 import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
+import {
+  fulfillProductReviewPointsIncentive,
+  reviewIncentivePointsKey,
+} from "@/lib/weletic/reviews/incentive-points";
 import { createReviewIncentivePolicyRevision } from "@/lib/weletic/reviews/incentive-policy";
 import { uploadReviewPhoto } from "@/lib/weletic/reviews/media";
 import { moderateReviewWithAuditInTransaction } from "@/lib/weletic/reviews/moderation-audit";
@@ -109,6 +113,7 @@ let safeDatabase = false;
 async function crashReviewWriter(
   reviewId: string,
   phase: "before_commit" | "after_commit",
+  claimId?: string,
 ) {
   const resolve = createRequire(import.meta.url).resolve;
   const child = fork(
@@ -157,7 +162,13 @@ async function crashReviewWriter(
         else
           reject(new Error("Crash worker did not reach the requested phase"));
       });
-      child.send({ phase, storeId, reviewId });
+      child.send({
+        phase,
+        storeId,
+        reviewId,
+        claimId,
+        operation: claimId ? "points" : "moderation",
+      });
     });
     expect(child.kill("SIGKILL")).toBe(true);
     expect(await exited).toBe("SIGKILL");
@@ -169,7 +180,7 @@ async function crashReviewWriter(
   }
 }
 
-async function purchase() {
+async function purchase(buyerId = shopperId) {
   const externalId = String(++sequence);
   const id = `order-${run}-${externalId}`;
   await prisma.weleticCommerceOrder.create({
@@ -177,7 +188,7 @@ async function purchase() {
       id,
       storeId,
       programId,
-      shopperId,
+      shopperId: buyerId,
       externalId,
       occurredAt: new Date(),
       status: "paid",
@@ -422,6 +433,165 @@ describe("native reviews real MySQL production-service boundaries", () => {
     },
   );
 
+  it.each(["before_commit", "after_commit"] as const)(
+    "reconciles review points after a real process crash %s with one award and outbox pair",
+    async (phase) => {
+      const buyerId = `crash-buyer-${run}-${phase}`;
+      const buyerAccountId = `crash-account-${run}-${phase}`;
+      // Above Number.MAX_SAFE_INTEGER, but within the signed ledger range.
+      const points = "9007199254740993";
+      await prisma.weleticShopper.create({
+        data: {
+          id: buyerId,
+          storeId,
+          shopifyCustomerId: String(++sequence),
+          email: `crash-${phase}@example.test`,
+        },
+      });
+      await prisma.weleticLoyaltyAccount.create({
+        data: {
+          id: buyerAccountId,
+          storeId,
+          shopperId: buyerId,
+          programId: loyaltyProgramId,
+          status: "suspended",
+        },
+      });
+      const policy = await createReviewIncentivePolicyRevision(storeId, {
+        kind: "points",
+        basePoints: points,
+        photoBonusPoints: "0",
+        videoBonusPoints: "0",
+        maxPoints: points,
+      });
+      const request = await invitation(await purchase(buyerId));
+      // Fixture binds a synthetic promise; disclosure, activation and email
+      // acceptance are outside this crash test.
+      await prisma.weleticReviewRequest.update({
+        where: { id: request.id },
+        data: { incentivePolicyId: policy.id },
+      });
+      const review = await submitNativeReview(storeId, input(request.token));
+      const claim = await prisma.weleticReviewIncentiveClaim.findFirstOrThrow({
+        where: { storeId, sourceReviewId: review.id },
+      });
+      expect(claim.status).toBe("reserved");
+      await prisma.weleticLoyaltyAccount.update({
+        where: { id: buyerAccountId },
+        data: { status: "active" },
+      });
+      const readState = async () => ({
+        account: await prisma.weleticLoyaltyAccount.findUniqueOrThrow({
+          where: { id: buyerAccountId },
+          select: {
+            cachedPointsBalance: true,
+            cachedPendingPoints: true,
+            lifetimePointsEarned: true,
+            ledgerVersion: true,
+          },
+        }),
+        claim: await prisma.weleticReviewIncentiveClaim.findUniqueOrThrow({
+          where: { id: claim.id },
+          select: { status: true },
+        }),
+        review: await prisma.weleticProductReview.findUniqueOrThrow({
+          where: { id: review.id },
+          select: { rewardStatus: true, rewardLedgerId: true },
+        }),
+        ledger: await prisma.weleticPointsLedgerEntry.findMany({
+          where: { storeId, accountId: buyerAccountId },
+          select: {
+            id: true,
+            pointsDelta: true,
+            pendingDelta: true,
+            referenceType: true,
+            referenceId: true,
+            idempotencyKey: true,
+          },
+        }),
+        jobs: await prisma.weleticLoyaltyOutboxJob.findMany({
+          where: {
+            storeId,
+            jobType: { in: ["FLOW_TRIGGER", "TIER_REVIEW"] },
+            payload: { path: "$.accountId", equals: buyerAccountId },
+          },
+          orderBy: { idempotencyKey: "asc" },
+          select: { jobType: true, idempotencyKey: true, payload: true },
+        }),
+        // Independent SQL aggregation, not the application's balance helper.
+        sums: await prisma.$queryRaw<
+          Array<{ points: string; pending: string }>
+        >`
+          SELECT CAST(COALESCE(SUM(pointsDelta), 0) AS CHAR) AS points,
+                 CAST(COALESCE(SUM(pendingDelta), 0) AS CHAR) AS pending
+          FROM WeleticPointsLedgerEntry
+          WHERE storeId = ${storeId} AND accountId = ${buyerAccountId}
+        `,
+      });
+      const original = await readState();
+      expect(original.account).toEqual({
+        cachedPointsBalance: BigInt(0),
+        cachedPendingPoints: BigInt(0),
+        lifetimePointsEarned: BigInt(0),
+        ledgerVersion: 0,
+      });
+      expect(original.ledger).toEqual([]);
+      expect(original.jobs).toEqual([]);
+      expect(original.sums).toEqual([{ points: "0", pending: "0" }]);
+
+      await crashReviewWriter(review.id, phase, claim.id);
+      const afterCrash = await readState();
+      if (phase === "before_commit") expect(afterCrash).toEqual(original);
+      const recovered = await fulfillProductReviewPointsIncentive({
+        storeId,
+        claimId: claim.id,
+        expectedInstallationGeneration: "g1",
+      });
+      expect(recovered.status).toBe(
+        phase === "before_commit" ? "fulfilled" : "already_fulfilled",
+      );
+      const final = await readState();
+      if (phase === "after_commit") expect(final).toEqual(afterCrash);
+      expect(final.account).toEqual({
+        cachedPointsBalance: BigInt(points),
+        cachedPendingPoints: BigInt(0),
+        lifetimePointsEarned: BigInt(points),
+        ledgerVersion: 1,
+      });
+      expect(final.claim.status).toBe("fulfilled");
+      expect(final.ledger).toHaveLength(1);
+      const ledger = final.ledger[0];
+      expect(ledger).toMatchObject({
+        pointsDelta: BigInt(points),
+        pendingDelta: BigInt(0),
+        referenceType: "REVIEW_INCENTIVE",
+        referenceId: claim.id,
+        idempotencyKey: reviewIncentivePointsKey(claim.id),
+      });
+      expect(final.review).toEqual({
+        rewardStatus: "awarded",
+        rewardLedgerId: ledger.id,
+      });
+      expect(final.sums).toEqual([{ points, pending: "0" }]);
+      expect(final.jobs).toHaveLength(2);
+      expect(final.jobs[0]).toMatchObject({
+        jobType: "FLOW_TRIGGER",
+        idempotencyKey: `flow_trigger:weletic-points-earned:${ledger.id}`,
+        payload: {
+          accountId: buyerAccountId,
+          pointsDelta: points,
+          pointsBalance: points,
+          installationGeneration: "g1",
+        },
+      });
+      expect(final.jobs[1]).toMatchObject({
+        jobType: "TIER_REVIEW",
+        idempotencyKey: `tier_review:${buyerAccountId}:${reviewIncentivePointsKey(claim.id)}`,
+        payload: { accountId: buyerAccountId, installationGeneration: "g1" },
+      });
+    },
+  );
+
   it.each([
     "enabled",
     "disabled",
@@ -433,6 +603,10 @@ describe("native reviews real MySQL production-service boundaries", () => {
     "keeps malformed Flow JSON selectable with %s review authority",
     async (state) => {
       const prefix = `flow-json-${run}-${state}`;
+      const originalSettings =
+        await prisma.weleticReviewSettings.findUniqueOrThrow({
+          where: { storeId },
+        });
       const payloads = [
         {},
         Prisma.JsonNull,
@@ -499,14 +673,8 @@ describe("native reviews real MySQL production-service boundaries", () => {
         });
         await prisma.weleticReviewSettings.upsert({
           where: { storeId },
-          update: { enabled: true },
-          create: {
-            storeId,
-            enabled: true,
-            requestEmailEnabled: true,
-            sendAfterDays: 0,
-            activatedAt: new Date("2020-01-01"),
-          },
+          update: originalSettings,
+          create: originalSettings,
         });
       }
     },
@@ -1604,31 +1772,60 @@ describe("native reviews real MySQL production-service boundaries", () => {
     const ledgerCount = await prisma.weleticPointsLedgerEntry.count({
       where: { storeId },
     });
+    const otherBuyers = ["before_commit", "after_commit"].map(
+      (phase) => `crash-buyer-${run}-${phase}`,
+    );
+    const readOtherState = async () => ({
+      reviews: await prisma.weleticProductReview.findMany({
+        where: { storeId, shopperId: { in: otherBuyers } },
+        orderBy: { id: "asc" },
+      }),
+      requests: await prisma.weleticReviewRequest.findMany({
+        where: { storeId, shopperId: { in: otherBuyers } },
+        orderBy: { id: "asc" },
+      }),
+      accounts: await prisma.weleticLoyaltyAccount.findMany({
+        where: { storeId, shopperId: { in: otherBuyers } },
+        orderBy: { id: "asc" },
+      }),
+      claims: await prisma.weleticReviewIncentiveClaim.findMany({
+        where: { storeId, shopperId: { in: otherBuyers } },
+        orderBy: { id: "asc" },
+      }),
+      ledger: await prisma.weleticPointsLedgerEntry.findMany({
+        where: { storeId, account: { shopperId: { in: otherBuyers } } },
+        orderBy: { id: "asc" },
+      }),
+    });
+    const otherState = await readOtherState();
+    for (const records of Object.values(otherState))
+      expect(records).toHaveLength(2);
     while ((await redactNativeReviewsBatch(storeId, shopperId)).hasMore) {
       /* Drain bounded test pages. */
     }
     expect(
       await prisma.weleticReviewRequest.count({
-        where: { storeId, tokenHash: { not: null } },
+        where: { storeId, shopperId, tokenHash: { not: null } },
       }),
     ).toBe(0);
     expect(
       await prisma.weleticReviewRequest.count({
-        where: { storeId, encryptedDeliverySnapshot: { not: null } },
+        where: { storeId, shopperId, encryptedDeliverySnapshot: { not: null } },
       }),
     ).toBe(0);
     expect(
       await prisma.weleticProductReview.count({
-        where: { storeId, status: { not: "redacted" } },
+        where: { storeId, shopperId, status: { not: "redacted" } },
       }),
     ).toBe(0);
     expect(
       await prisma.weleticProductReview.count({
-        where: { storeId, body: { not: "" } },
+        where: { storeId, shopperId, body: { not: "" } },
       }),
     ).toBe(0);
     expect(
       await prisma.weleticPointsLedgerEntry.count({ where: { storeId } }),
     ).toBe(ledgerCount);
+    expect(await readOtherState()).toEqual(otherState);
   });
 });

@@ -14,6 +14,7 @@ async function run(message: unknown) {
   const input = message as Record<string, unknown>;
   if (
     !input ||
+    !["moderation", "points"].includes(String(input.operation)) ||
     !["before_commit", "after_commit"].includes(String(input.phase)) ||
     typeof input.storeId !== "string" ||
     !input.storeId.startsWith("store-reviews-it-") ||
@@ -22,12 +23,22 @@ async function run(message: unknown) {
     input.reviewId.length > 191
   )
     throw new Error("Synthetic fixture identity required");
+  if (
+    input.operation === "points" &&
+    (typeof input.claimId !== "string" ||
+      !input.claimId ||
+      input.claimId.length > 191)
+  )
+    throw new Error("Synthetic claim identity required");
 
   const { withReviewMutation } = await import(
     "../../../lib/weletic/reviews/transaction"
   );
   const { moderateReviewWithAuditInTransaction } = await import(
     "../../../lib/weletic/reviews/moderation-audit"
+  );
+  const { fulfillReviewPointsClaimInTransaction } = await import(
+    "../../../lib/weletic/reviews/incentive-points"
   );
   const holdForCrash = () =>
     new Promise<never>(() => {
@@ -38,18 +49,29 @@ async function run(message: unknown) {
   await withReviewMutation(
     input.storeId,
     async (tx, generation) => {
-      await moderateReviewWithAuditInTransaction({
-        tx,
-        storeId: input.storeId as string,
-        generation,
-        actor: { kind: "workspace", userId: "synthetic-crash-operator" },
-        input: {
-          reviewId: input.reviewId,
-          version: 1,
-          merchantReply: "One durable reply",
-          reason: "merchant_reply",
-        },
-      });
+      if (input.operation === "points") {
+        if (!generation) throw new Error("Fixture generation required");
+        const result = await fulfillReviewPointsClaimInTransaction({
+          tx,
+          storeId: input.storeId as string,
+          claimId: input.claimId as string,
+          generation,
+        });
+        if (result.status !== "fulfilled")
+          throw new Error("Fixture was not fulfilled");
+      } else
+        await moderateReviewWithAuditInTransaction({
+          tx,
+          storeId: input.storeId as string,
+          generation,
+          actor: { kind: "workspace", userId: "synthetic-crash-operator" },
+          input: {
+            reviewId: input.reviewId,
+            version: 1,
+            merchantReply: "One durable reply",
+            reason: "merchant_reply",
+          },
+        });
       if (input.phase === "before_commit") await holdForCrash();
     },
     "g1",

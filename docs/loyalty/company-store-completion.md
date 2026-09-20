@@ -76,10 +76,11 @@ Dependencies describe implementation prerequisites, not mandatory closure of
 every acceptance test in the preceding task. R05's product/store competition
 test closes jointly with R07; product-only acceptance cannot certify it early.
 
-Additional local R02/S04 evidence: [process-crash acceptance](review-process-crash-acceptance.md)
-verifies reply/audit rollback before commit and stale-replay rejection after
-commit using a killed child process and real isolated MySQL. It does not close
-authenticated HTTP, provider, worker, financial or live-store recovery gates.
+Additional local R02/R05/S04 evidence: [process-crash acceptance](review-process-crash-acceptance.md)
+verifies reply/audit rollback and stale-replay rejection, plus exact review-points
+rollback/idempotent recovery with independent ledger/cache/outbox reconciliation,
+using killed child processes and real isolated MySQL. It does not close
+authenticated HTTP, provider, queue-worker, coupon or live-store recovery gates.
 
 | Task / scope / subsystem                                                      | Status and reference                                                                                 | Implementation / dependencies                                                                                                                                                                                                                                  | Tests and definition of done                                                                                                                                                                                   |
 | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
