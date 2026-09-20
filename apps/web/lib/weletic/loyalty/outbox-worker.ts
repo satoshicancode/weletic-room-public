@@ -72,6 +72,10 @@ import { ShopperEmailPausedError } from "@/lib/weletic/merchant-settings/communi
 import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
 import { REVIEW_FLOW_HANDLES } from "@/lib/weletic/reviews/flow-contract";
 import { ReviewFlowDeferredError } from "@/lib/weletic/reviews/flow-errors";
+import {
+  ReviewPointsRecoveryPendingError,
+  ReviewPointsRecoveryReconciliationError,
+} from "@/lib/weletic/reviews/points-recovery-contract";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import {
   assertShopifyStoreAcceptsOperationalWrites,
@@ -1182,9 +1186,24 @@ export async function processOutboxJobsBatch(
       },
       scheduledFor: { lte: eligibilityNow },
       OR: [{ nextRetryAt: null }, { nextRetryAt: { lte: eligibilityNow } }],
-      // Disabled Reviews must not monopolize a minute-based scheduler's bounded
-      // page with the same deferred events. Workers still recheck after polling.
-      AND: reviewFlowCandidateWhere(),
+      // Disabled review/loyalty modules must not occupy the bounded poll page.
+      // The financial writer rechecks eligibility after a pause races polling.
+      AND: [
+        reviewFlowCandidateWhere(),
+        {
+          OR: [
+            { jobType: { not: "REVIEW_POINTS_RECOVERY" } },
+            {
+              store: {
+                reviewSettings: { is: { enabled: true } },
+                loyaltyProgram: {
+                  is: { status: "active", killSwitchActive: false },
+                },
+              },
+            },
+          ],
+        },
+      ],
       // Paused email jobs must not fill the bounded candidate page and starve
       // financial/cleanup work. Final producer checks close pause-after-poll.
       NOT: {
@@ -1325,6 +1344,23 @@ export async function processOutboxJobsBatch(
       });
     } catch (error: any) {
       if (
+        candidate.jobType === "REVIEW_POINTS_RECOVERY" &&
+        error instanceof ReviewPointsRecoveryPendingError
+      ) {
+        // Legitimate enrollment/module waiting does not consume retries. Keep
+        // the exact winning lease fence and leave real failure history intact.
+        const deferredAt = new Date();
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: deferredAt,
+          retryAt: new Date(deferredAt.getTime() + 5 * 60_000),
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
+      if (
         candidate.jobType === "FLOW_TRIGGER" &&
         error instanceof ReviewFlowDeferredError
       ) {
@@ -1379,6 +1415,7 @@ export async function processOutboxJobsBatch(
         error instanceof LoyaltyDiscountReconciliationPendingError ||
         error instanceof VoucherCleanupRetryableError;
       const terminalOutboxFailure =
+        error instanceof ReviewPointsRecoveryReconciliationError ||
         (error instanceof ShopifyFlowDispatchError && !error.retryable) ||
         error instanceof HistoricalImportExecutionContainedError ||
         error instanceof ExpiryDeliveryReconciliationRequiredError ||
@@ -1521,6 +1558,20 @@ export async function executeOutboxJob(
   };
   if (loyaltyMaintenancePermit !== undefined) {
     assertLoyaltyMaintenanceOwnerPermitAuthorization(loyaltyMaintenancePermit);
+  }
+  if (job.jobType === "REVIEW_POINTS_RECOVERY") {
+    // Unlike legacy projection jobs, a blocked financial promise must never be
+    // acknowledged as a successful no-op. Its handler owns strict validation,
+    // store/generation fencing, eligibility deferral and reconciliation.
+    const { recoverReviewPoints } = await import(
+      "@/lib/weletic/reviews/points-recovery"
+    );
+    await recoverReviewPoints({
+      storeId: job.storeId,
+      payload: job.payload,
+      loyaltyMaintenancePermit,
+    });
+    return;
   }
   if (job.jobType === "HISTORICAL_IMPORT_COMMIT") {
     const { executeHistoricalImportCommitJob } = await import(

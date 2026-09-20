@@ -38,6 +38,7 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
       "LOYALTY_COMMUNICATION",
       "HISTORICAL_IMPORT_COMMIT",
       "HISTORICAL_IMPORT_ROLLBACK",
+      "REVIEW_POINTS_RECOVERY",
     ]);
     const expansion = readFileSync(
       new URL(
@@ -68,7 +69,22 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
         communicationEnum[1].matchAll(/'([^']+)'/g),
         (match) => match[1],
       ),
-    ).toEqual(prismaLabels.slice(0, -2));
+    ).toEqual(prismaLabels.slice(0, -3));
+    const recoveryExpansion = readFileSync(
+      new URL(
+        "../../../../infra/shopify-development/migrations/20260920_review_points_recovery.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const recoveryEnum = recoveryExpansion.match(
+      /MODIFY COLUMN `jobType` ENUM\(([^)]+)\)/,
+    );
+    if (!recoveryEnum)
+      throw new Error("Review recovery enum expansion missing");
+    expect(
+      Array.from(recoveryEnum[1].matchAll(/'([^']+)'/g), (match) => match[1]),
+    ).toEqual(prismaLabels);
     expect(sqlLabels).toEqual(
       expect.arrayContaining([
         "REVIEW_REQUEST_EMAIL",

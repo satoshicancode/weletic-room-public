@@ -9,6 +9,7 @@ import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-w
 import { lockLoyaltyProgramRowIfPresent } from "@/lib/weletic/loyalty/program-write-fence";
 import { ReferralCouponRewardSnapshotSchema } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
 import { ReviewFlowJobSchema } from "@/lib/weletic/reviews/flow-contract";
+import { ReviewPointsRecoveryPayloadSchema } from "@/lib/weletic/reviews/points-recovery-contract";
 import {
   assertShopifyStoreAcceptsOperationalWrites,
   ShopifyStoreOperationalWritesBlockedError,
@@ -275,6 +276,7 @@ export type FlowTriggerPayload = z.infer<typeof FlowTriggerPayloadSchema>;
  * Union of all valid outbox payloads
  */
 export type LoyaltyOutboxPayloadMap = {
+  REVIEW_POINTS_RECOVERY: z.infer<typeof ReviewPointsRecoveryPayloadSchema>;
   HISTORICAL_IMPORT_COMMIT: HistoricalImportJobPayload;
   HISTORICAL_IMPORT_ROLLBACK: HistoricalImportJobPayload;
   LOYALTY_COMMUNICATION: z.infer<typeof loyaltyCommunicationJobPayloadSchema>;
@@ -454,6 +456,7 @@ function isInstallationBoundOperationalJob({
       "BIRTHDAY_REWARD",
       "FLOW_TRIGGER",
       "REVIEW_REQUEST_EMAIL",
+      "REVIEW_POINTS_RECOVERY",
       "SHOPPER_REWARD_PROVISION",
       "REVIEW_SUMMARY_SYNC",
       "HISTORICAL_IMPORT_COMMIT",
@@ -492,6 +495,7 @@ async function bindOperationalJobToInstallationGeneration({
       process.env.NODE_ENV === "test" &&
       jobType !== "HISTORICAL_IMPORT_COMMIT" &&
       jobType !== "HISTORICAL_IMPORT_ROLLBACK" &&
+      jobType !== "REVIEW_POINTS_RECOVERY" &&
       jobType !== "LOYALTY_COMMUNICATION"
     ) {
       return {
@@ -521,11 +525,16 @@ async function bindOperationalJobToInstallationGeneration({
     throw new Error("Historical import installation generation changed.");
   }
   if (
-    jobType === "LOYALTY_COMMUNICATION" &&
+    (jobType === "LOYALTY_COMMUNICATION" ||
+      jobType === "REVIEW_POINTS_RECOVERY") &&
     store.installationGeneration !==
       (payload as Record<string, unknown>).installationGeneration
   ) {
-    throw new Error("Loyalty communication installation changed");
+    throw new Error(
+      jobType === "LOYALTY_COMMUNICATION"
+        ? "Loyalty communication installation changed"
+        : "Review points recovery installation changed",
+    );
   }
   if (
     jobType === "FLOW_TRIGGER" &&
@@ -547,6 +556,9 @@ export function validateOutboxPayload(
   payload: unknown,
 ): void {
   switch (jobType) {
+    case "REVIEW_POINTS_RECOVERY":
+      ReviewPointsRecoveryPayloadSchema.parse(payload);
+      break;
     case "HISTORICAL_IMPORT_COMMIT":
     case "HISTORICAL_IMPORT_ROLLBACK":
       HistoricalImportJobPayloadSchema.parse(payload);
