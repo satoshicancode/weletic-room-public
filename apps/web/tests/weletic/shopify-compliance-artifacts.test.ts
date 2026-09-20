@@ -77,6 +77,7 @@ import {
   deleteExpiredComplianceArtifactsBatch,
   deliverComplianceExportReference,
   ensureComplianceExportManifest,
+  readComplianceMediaCheckpoint,
   storeEncryptedComplianceArtifact,
 } from "../../lib/weletic/shopify/compliance-artifacts";
 
@@ -185,6 +186,97 @@ describe("encrypted compliance artifact lifecycle", () => {
         }),
       }),
     );
+  });
+
+  it("recovers a bounded encrypted checkpoint under the current lease on both sides of I/O", async () => {
+    const value = {
+      format: "review_media_files_v1",
+      sequence: 0,
+      afterId: null,
+      hasMore: true,
+      files: [{ id: "photo_A" }],
+    };
+    const ciphertext = `enc:${JSON.stringify(value)}`;
+    mocks.artifactFindUnique.mockResolvedValue({
+      storeId: "store_1",
+      deletedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      byteSize: BigInt(ciphertext.length),
+      storageKey: "checkpoint.enc",
+      contentSha256: createHash("sha256").update(ciphertext).digest("hex"),
+    });
+    mocks.signedDownload.mockResolvedValue("https://storage.test/checkpoint");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(ciphertext)));
+    const lease = { workerId: "worker_1", leaseVersion: 4 };
+    expect(
+      await readComplianceMediaCheckpoint({
+        requestId: "wcomp_1",
+        storeId: "store_1",
+        sequence: 0,
+        lease,
+      }),
+    ).toEqual(value);
+    const leaseChecks = mocks.requestFindFirst.mock.calls.filter(
+      ([{ where }]) => where.id === "wcomp_1",
+    );
+    expect(leaseChecks).toHaveLength(2);
+    expect(leaseChecks[0][0].where).toMatchObject({
+      status: "processing",
+      lockedBy: "worker_1",
+      leaseVersion: 4,
+    });
+  });
+
+  it("withholds a checkpoint when the lease is lost during retrieval", async () => {
+    const ciphertext = 'enc:{"format":"review_media_files_v1"}';
+    mocks.artifactFindUnique.mockResolvedValue({
+      storeId: "store_1",
+      deletedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      byteSize: BigInt(ciphertext.length),
+      storageKey: "checkpoint.enc",
+      contentSha256: createHash("sha256").update(ciphertext).digest("hex"),
+    });
+    mocks.signedDownload.mockResolvedValue("https://storage.test/checkpoint");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => {
+        mocks.requestFindFirst.mockResolvedValue(null);
+        return new Response(ciphertext);
+      }),
+    );
+    await expect(
+      readComplianceMediaCheckpoint({
+        requestId: "wcomp_1",
+        storeId: "store_1",
+        sequence: 0,
+        lease: { workerId: "old", leaseVersion: 1 },
+      }),
+    ).rejects.toThrow("lease is no longer valid");
+  });
+
+  it("does not trust a false stored size to allow an oversized checkpoint body", async () => {
+    mocks.artifactFindUnique.mockResolvedValue({
+      storeId: "store_1",
+      deletedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      byteSize: BigInt(1),
+      storageKey: "checkpoint.enc",
+      contentSha256: "a".repeat(64),
+    });
+    mocks.signedDownload.mockResolvedValue("https://storage.test/checkpoint");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("x".repeat(4 * 1024 * 1024 + 1))),
+    );
+    await expect(
+      readComplianceMediaCheckpoint({
+        requestId: "wcomp_1",
+        storeId: "store_1",
+        sequence: 0,
+        lease: { workerId: "worker", leaseVersion: 1 },
+      }),
+    ).rejects.toThrow("exceeds recovery bound");
   });
 
   it("supports bounded immediate artifact erasure during shop redaction", async () => {
@@ -1617,6 +1709,69 @@ describe("encrypted compliance artifact lifecycle", () => {
     await expect(new Response(download!.body).json()).resolves.toEqual(
       expect.objectContaining({ requestId: "wcomp_unrelated_owner" }),
     );
+  });
+
+  it("withholds plaintext when revocation happens during the remote chunk read", async () => {
+    const token = "stable-private-token-value-12345678901234567890";
+    const ciphertext = 'enc:{"photo":"private-photo-bytes"}';
+    const expiresAt = new Date(Date.now() + 60_000);
+    const request = {
+      id: "wcomp_race",
+      storeId: "store_1",
+      subjectKind: null,
+      subjectKeyId: null,
+      subjectDigest: null,
+      progress: { ownerShopperId: "shopper_export" },
+      phase: "completed",
+      store: { complianceState: "active" },
+    };
+    mocks.artifactFindUnique.mockResolvedValue({
+      id: "manifest_race",
+      requestId: request.id,
+      downloadTokenHash: createHash("sha256").update(token).digest("hex"),
+      downloadTokenExpiresAt: expiresAt,
+      expiresAt,
+      deletedAt: null,
+      request,
+    });
+    mocks.requestFindFirst.mockResolvedValue(null);
+    mocks.requestFindMany.mockResolvedValue([]);
+    mocks.requestFindUnique.mockImplementation(async () => ({ ...request }));
+    mocks.artifactFindMany.mockResolvedValue([
+      {
+        id: "artifact_photo",
+        kind: "review_media",
+        sequence: 0,
+        storageKey: "photo.enc",
+        contentSha256: createHash("sha256").update(ciphertext).digest("hex"),
+      },
+    ]);
+    mocks.signedDownload.mockResolvedValue("https://storage.test/signed");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => {
+        request.phase = "superseded_by_customer_redact:privacy-race";
+        return new Response(ciphertext);
+      }),
+    );
+    const download = await createComplianceExportDownload({
+      requestId: request.id,
+      token,
+    });
+    expect(download).not.toBeNull();
+    const reader = download!.body.getReader();
+    const emitted: string[] = [];
+    await expect(
+      (async () => {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          emitted.push(new TextDecoder().decode(value));
+        }
+      })(),
+    ).rejects.toThrow("access has been revoked");
+    expect(emitted.join("")).not.toContain("private-photo-bytes");
+    expect(mocks.artifactUpdate).not.toHaveBeenCalled();
   });
 
   it("rechecks revocation before fetching each encrypted stream chunk", async () => {

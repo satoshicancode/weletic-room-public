@@ -135,6 +135,85 @@ class StorageClient {
    * domains. A null result is not proof that an earlier PUT cannot still finish.
    */
   async headPrivateR2Object(key: string) {
+    const url = this.privateR2ObjectUrl(key);
+    const client = this.client;
+    client.retries = 0;
+    const response = await client.fetch(url, {
+      method: "HEAD",
+      redirect: "error",
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (response.status === 404) return null;
+    if (response.status !== 200)
+      throw new Error("Private R2 metadata is unavailable");
+    const length = response.headers.get("content-length");
+    const type = response.headers.get("content-type");
+    const proof = response.headers.get("x-amz-meta-weletic-upload-proof");
+    if (
+      !length ||
+      !/^(?:0|[1-9][0-9]{0,9})$/.test(length) ||
+      !type ||
+      type.length > 128
+    )
+      throw new Error("Private R2 metadata is invalid");
+    return {
+      sizeBytes: Number(length),
+      contentType: type,
+      uploadProof: proof && /^[0-9a-f]{64}$/.test(proof) ? proof : null,
+    };
+  }
+
+  /** Internal byte retrieval. Caller must prove ownership and recheck privacy
+   * before delivering bytes. Never returns a transferable storage capability.
+   */
+  async readPrivateR2Object(key: string, expectedBytes: number) {
+    if (
+      !Number.isInteger(expectedBytes) ||
+      expectedBytes < 1 ||
+      expectedBytes > 2 * 1024 * 1024
+    )
+      throw new Error("Private object size is invalid");
+    const url = this.privateR2ObjectUrl(key);
+    const client = this.client;
+    client.retries = 0;
+    const response = await client.fetch(url, {
+      method: "GET",
+      redirect: "error",
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (
+      response.status !== 200 ||
+      response.headers.get("content-type") !== "image/webp" ||
+      response.headers.get("content-length") !== String(expectedBytes) ||
+      !response.body
+    ) {
+      await response.body?.cancel();
+      throw new Error("Private object response is invalid");
+    }
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let length = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        length += value.byteLength;
+        if (length > expectedBytes)
+          throw new Error("Private object exceeds its declared size");
+        chunks.push(Buffer.from(value));
+      }
+      if (length !== expectedBytes)
+        throw new Error("Private object was truncated");
+      return Buffer.concat(chunks, length);
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+  }
+
+  private privateR2ObjectUrl(key: string) {
     const endpoint = new URL(
       process.env.STORAGE_ENDPOINT || "https://invalid.invalid",
     );
@@ -158,35 +237,7 @@ class StorageClient {
       throw new Error(
         "Direct private R2 storage is not configured for reconciliation",
       );
-    const client = this.client;
-    client.retries = 0;
-    const response = await client.fetch(
-      `${endpoint.origin}/${bucket}/${key.split("/").map(encodeURIComponent).join("/")}`,
-      {
-        method: "HEAD",
-        redirect: "error",
-        cache: "no-store",
-        signal: AbortSignal.timeout(10_000),
-      },
-    );
-    if (response.status === 404) return null;
-    if (response.status !== 200)
-      throw new Error("Private R2 metadata is unavailable");
-    const length = response.headers.get("content-length");
-    const type = response.headers.get("content-type");
-    const proof = response.headers.get("x-amz-meta-weletic-upload-proof");
-    if (
-      !length ||
-      !/^(?:0|[1-9][0-9]{0,9})$/.test(length) ||
-      !type ||
-      type.length > 128
-    )
-      throw new Error("Private R2 metadata is invalid");
-    return {
-      sizeBytes: Number(length),
-      contentType: type,
-      uploadProof: proof && /^[0-9a-f]{64}$/.test(proof) ? proof : null,
-    };
+    return `${endpoint.origin}/${bucket}/${key.split("/").map(encodeURIComponent).join("/")}`;
   }
 
   async delete({

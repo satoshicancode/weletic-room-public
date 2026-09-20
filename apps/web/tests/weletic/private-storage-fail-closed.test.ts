@@ -56,6 +56,77 @@ describe("private storage configuration", () => {
     );
     expect(request.headers.has("authorization")).toBe(true);
   });
+  it("reads bounded private bytes without issuing a storage bearer URL", async () => {
+    configureR2();
+    const fetch = vi.fn().mockResolvedValue(
+      new Response("photo", {
+        headers: { "content-length": "5", "content-type": "image/webp" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+    expect(await storage.readPrivateR2Object("reviews/photo.webp", 5)).toEqual(
+      Buffer.from("photo"),
+    );
+    const request = fetch.mock.calls[0][0] as Request;
+    expect(request.method).toBe("GET");
+    expect(request.redirect).toBe("error");
+    expect(request.cache).toBe("no-store");
+    expect(request.headers.has("authorization")).toBe(true);
+    expect(new URL(request.url).search).toBe("");
+  });
+  it.each([0, -1, 1.5, 2 * 1024 * 1024 + 1, NaN])(
+    "rejects invalid read bound %s before network",
+    async (size) => {
+      configureR2();
+      const fetch = vi.fn();
+      vi.stubGlobal("fetch", fetch);
+      await expect(
+        storage.readPrivateR2Object("reviews/photo.webp", size),
+      ).rejects.toThrow("size is invalid");
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+  it.each([403, 404, 307, 503])(
+    "fails a private read closed at HTTP %s without retry",
+    async (status) => {
+      configureR2();
+      const fetch = vi.fn().mockResolvedValue(new Response(null, { status }));
+      vi.stubGlobal("fetch", fetch);
+      await expect(
+        storage.readPrivateR2Object("reviews/photo.webp", 5),
+      ).rejects.toThrow("response is invalid");
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(["tiny", "toolong"])(
+    "rejects streamed length mismatch: %s",
+    async (body) => {
+      configureR2();
+      const fetch = vi.fn().mockResolvedValue(
+        new Response(body, {
+          headers: { "content-length": "5", "content-type": "image/webp" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetch);
+      await expect(
+        storage.readPrivateR2Object("reviews/photo.webp", 5),
+      ).rejects.toThrow(/truncated|exceeds/);
+    },
+  );
+  it("rejects content-type mismatch without releasing bytes", async () => {
+    configureR2();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("photo", {
+          headers: { "content-length": "5", "content-type": "text/html" },
+        }),
+      ),
+    );
+    await expect(
+      storage.readPrivateR2Object("reviews/photo.webp", 5),
+    ).rejects.toThrow("response is invalid");
+  });
   it.each([
     "https://cdn.example.test",
     "http://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.r2.cloudflarestorage.com",
