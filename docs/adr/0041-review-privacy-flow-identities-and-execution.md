@@ -1,4 +1,4 @@
-# ADR 0041: Review privacy, Flow identities and execution authority
+# ADR 0041: Review privacy, Flow grant arithmetic and execution
 
 - Date: 2026-09-20
 - Status: Accepted
@@ -12,7 +12,8 @@ cannot make counts, cursors or summaries correct. The growing review surface
 needs a consistent store-scoped eligibility predicate.
 
 The Flow action's isolated SQL tests exposed Prisma's signed integer boundary
-for Shopify identifiers. Rounding identifiers or restricting valid unsigned
+for nonnegative grant limits, budgets and usage, including the absolute value
+of the minimum signed ledger amount. Rounding or restricting valid absolute
 values is not acceptable. Separately, path-filtered CI reports skipped jobs even
 when a full workflow on the identical commit succeeds; the previous strict
 merge rule treated those skips as a blocker.
@@ -29,12 +30,14 @@ tests. Missing coverage fails closed. Do not publish raw identities, digests or
 private owner mappings. Apply the same eligibility predicate to public rows,
 counts, summaries and pagination before enabling affected surfaces.
 
-Use `DECIMAL(20,0)` for the affected Flow Shopify identity persistence, with
-canonical decimal strings and BigInt validation at boundaries. Preserve the
-provider's valid identifier range and reject fractional or noncanonical input.
-Do not convert identifiers through JavaScript Number or change financial ledger
-arithmetic. Rehearse additive reader-before-writer migration locally; shared
-schema application remains separately gated.
+Use `DECIMAL(20,0)` for `maxAbsolutePointsPerAction`, `absolutePointsBudget`
+and `absolutePointsUsed`, with canonical decimal strings and BigInt validation
+at boundaries. Preserve the approved nonnegative range and reject fractional
+or noncanonical input. Keep Shopify identifiers as strings and financial ledger
+amounts signed integers; never convert these values through JavaScript Number.
+Rehearse reader-before-writer migration locally; shared schema application
+remains separately gated. The initial chat shorthand incorrectly called these
+Flow IDs; source and failing SQL evidence identify grant quantities, not IDs.
 
 For this completion plan, path-filtered skips may be accepted only when all jobs
 of a separate full run succeed on the exact current PR head, required branch
@@ -60,13 +63,13 @@ and orders, publication/submission and production activation retain scoped gates
 
 ### Positive
 
-- Consistent privacy eligibility and exact Flow identifiers.
+- Consistent privacy eligibility and exact Flow grant arithmetic.
 - Technical work can proceed without repeated routine approvals.
 
 ### Negative / trade-offs accepted
 
 - Projection maintenance, backfill and key rotation add operational complexity.
-- Decimal identity migration requires compatibility and range tests.
+- Decimal grant migration requires compatibility and range tests.
 - Full workflow evidence must remain bound to the actual commit being merged.
 
 ### Follow-ups
