@@ -580,3 +580,18 @@ routes in the Next app-paths manifest. Existing CSS/framework and unconfigured
 build-provider warnings were non-fatal; this was a local build, not a deployment
 or provider-compatibility test. Final formatting/lint checks passed. The broader
 unit suite remains running; local commit checkpoint only, no PR publication yet.
+
+### September 20 — full-suite disposition
+
+The broad web run completed in 595 seconds: **9,006 passed, 30 failed, 6 skipped**
+across 557 files (six failed files). Reproducing those six files without an app
+fixture reproduced all 30 failures. They entered existing Shopify session
+coordination with no `SHOPIFY_API_KEY` and failed `invalid_scope` (or assertions
+downstream of that rejection). These were not failures in the new Flow suites.
+
+Reran all six files with `SHOPIFY_API_KEY=quality-gate-client-id`, the same
+non-secret app fixture already declared by the checked-in quality workflow:
+**133 passed, zero failed**. No application/authentication changes were needed.
+Do not describe the original broad invocation as green; its failure and the
+configured rerun are separate evidence. The forthcoming PR must still pass the
+complete applicable CI checks on its exact head before merge.
