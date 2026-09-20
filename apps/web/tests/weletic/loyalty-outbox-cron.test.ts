@@ -15,6 +15,7 @@ const points = vi.fn();
 const tiers = vi.fn();
 const rewards = vi.fn();
 const retention = vi.fn();
+const reviewRecovery = vi.fn();
 const processJobs = vi.fn();
 vi.mock("@/lib/weletic/loyalty/points-expiry-scheduler", () => ({
   enqueuePointsExpiryLifecycleJobs: points,
@@ -31,6 +32,9 @@ vi.mock("@/lib/weletic/loyalty/outbox", () => ({
 vi.mock("@/lib/weletic/reviews/delivery-retention", () => ({
   clearExpiredReviewDeliveryEvidence: retention,
 }));
+vi.mock("@/lib/weletic/reviews/points-recovery-sweep", () => ({
+  enqueueReviewPointsRecoverySweep: reviewRecovery,
+}));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -40,6 +44,7 @@ beforeEach(() => {
   tiers.mockResolvedValue({ tiers: true });
   rewards.mockResolvedValue({ rewards: true });
   retention.mockResolvedValue({ scanned: 0, cleared: 0 });
+  reviewRecovery.mockResolvedValue({ scanned: 0, enqueued: 0, deferred: 0 });
   processJobs.mockResolvedValue({ processed: 0 });
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -68,7 +73,14 @@ test.each(["GET", "POST"])(
     expect((await run("", false, method)).status).toBe(
       method === "GET" ? 401 : 400,
     );
-    for (const work of [points, tiers, rewards, retention, processJobs]) {
+    for (const work of [
+      points,
+      tiers,
+      rewards,
+      retention,
+      reviewRecovery,
+      processJobs,
+    ]) {
       expect(work).not.toHaveBeenCalled();
     }
   },
@@ -84,7 +96,7 @@ test.each([
   "runs all sweeps before dispatch with bounded input %s",
   async (query, size) => {
     processJobs.mockImplementation(async () => {
-      for (const sweep of [points, tiers, rewards, retention]) {
+      for (const sweep of [points, tiers, rewards, retention, reviewRecovery]) {
         expect(sweep).toHaveBeenCalledWith({ batchSize: size });
       }
       return { processed: 0 };
@@ -96,6 +108,7 @@ test.each([
       tierSweep: { tiers: true },
       rewardExpirySweep: { rewards: true },
       reviewRetention: { scanned: 0, cleared: 0 },
+      reviewPointsRecovery: { scanned: 0, enqueued: 0, deferred: 0 },
       outbox: { processed: 0 },
     });
     expect(processJobs).toHaveBeenCalledWith({

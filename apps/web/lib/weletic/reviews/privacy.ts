@@ -3,6 +3,7 @@ import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { DIRECT_REVIEW_REWARD_SOURCE } from "@/lib/weletic/loyalty/reward-ownership";
 import { Prisma } from "@prisma/client";
 import { cleanupReviewPhoto } from "./media";
+import { reviewPointsRecoveryKey } from "./points-recovery-contract";
 
 const PAGE_SIZE = 20;
 
@@ -68,6 +69,15 @@ export async function redactNativeReviewsBatch(
     });
     const redactedAt = new Date();
     for (const claim of claims) {
+      await tx.weleticLoyaltyOutboxJob.updateMany({
+        where: {
+          storeId,
+          jobType: "REVIEW_POINTS_RECOVERY",
+          idempotencyKey: reviewPointsRecoveryKey(claim.id),
+          status: { in: ["pending", "processing", "failed"] },
+        },
+        data: { status: "cancelled", lockedAt: null, lockedBy: null },
+      });
       // Preserve the order-wide financial marker and promised award. Privacy is
       // not fraud, and cannot create a second incentive or a points reversal.
       await tx.weleticReviewIncentiveClaim.update({
