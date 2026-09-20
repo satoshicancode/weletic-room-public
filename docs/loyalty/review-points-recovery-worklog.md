@@ -218,3 +218,12 @@ The full Next production build subsequently passed, including all 353 static
 pages, at local integration commit `234e10dfa0`. Existing CSS, route-revalidation
 and unset build-only provider warnings were nonfatal. This is local build
 evidence, not a deployed provider or authenticated acceptance result.
+
+After PR #96 merged, integrated public main `ec11263d9d` without conflicts at
+`923cbf3a9c`. The expanded recovery/Flow/privacy/migration selection passed
+**365/365 tests in 16 files**, and web type-check passed with the combined Prisma
+client. Recovery SQL logic is unchanged from the 154-case isolated run above;
+that run predates this separate Flow schema addition and is not represented as
+a combined-schema SQL rehearsal. Fresh full build and CI remain required.
+Deployments must satisfy both recovery and Flow schema-first gates, even if the
+Flow action stays disabled; see [Flow acceptance](flow-points-action-acceptance.md).
