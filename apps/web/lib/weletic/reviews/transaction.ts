@@ -27,7 +27,11 @@ export async function withReviewMutation<T>(
         !(
           error instanceof OptimisticConcurrencyError ||
           (error instanceof Prisma.PrismaClientKnownRequestError &&
-            error.code === "P2034")
+            (error.code === "P2034" ||
+              // Raw SQL store/review locks surface MySQL's transaction-wide
+              // deadlock rollback as P2010/1213 rather than P2034. Do not
+              // broaden this to lock timeouts or ambiguous connection errors.
+              (error.code === "P2010" && error.meta?.code === "1213")))
         )
       )
         throw error;
