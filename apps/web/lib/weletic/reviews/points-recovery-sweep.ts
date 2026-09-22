@@ -29,7 +29,7 @@ export async function enqueueReviewPointsRecoverySweep({
       AND p.status = 'active' AND p.killSwitchActive = FALSE
     JOIN WeleticLoyaltyAccount a ON a.storeId = c.storeId
       AND a.shopperId = c.shopperId AND a.status = 'active'
-    WHERE c.status = 'reserved' AND c.subjectType = 'product'
+    WHERE c.status = 'reserved' AND c.subjectType IN ('product', 'store')
       AND s.complianceState = 'active' AND s.storeAccessState = 'active'
       AND s.installationGeneration IS NOT NULL
       AND JSON_UNQUOTE(JSON_EXTRACT(c.awardSnapshot, '$.kind')) = 'points'
@@ -56,7 +56,7 @@ export async function enqueueReviewPointsRecoverySweep({
           storeId: candidate.storeId,
           shopperId: candidate.shopperId,
           status: "reserved",
-          subjectType: "product",
+          subjectType: { in: ["product", "store"] },
           recoveryDiscoveryCheckedAt: candidate.recoveryDiscoveryCheckedAt,
           validationSnapshot: {
             path: "$.installationGeneration",

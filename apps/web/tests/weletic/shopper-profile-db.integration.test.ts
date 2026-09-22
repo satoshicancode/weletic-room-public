@@ -119,6 +119,11 @@ describe("shopper profile production queries on isolated MySQL", () => {
       await database.weleticReviewMedia.deleteMany({ where });
       await database.weleticReviewModerationAudit.deleteMany({ where });
       await database.weleticProductReview.deleteMany({ where });
+      await database.weleticStoreReviewModerationAudit.deleteMany({ where });
+      await database.weleticStoreReview.deleteMany({ where });
+      await database.weleticStoreReviewRequestLine.deleteMany({ where });
+      await database.weleticStoreReviewRequest.deleteMany({ where });
+      await database.weleticStoreReviewSettings.deleteMany({ where });
       await database.weleticReviewRequestLine.deleteMany({
         where: { request: where },
       });
@@ -145,6 +150,8 @@ describe("shopper profile production queries on isolated MySQL", () => {
         where: { program: { storeId: { in: stores } } },
       });
       await database.weleticLoyaltyProgram.deleteMany({ where });
+      await database.weleticReviewOwnerPrivacyIdentity.deleteMany({ where });
+      await database.weleticReviewOwnerPrivacyCoverage.deleteMany({ where });
       await database.weleticShopper.deleteMany({ where });
       await database.weleticShopifyInstallationCredential.deleteMany({ where });
       await database.weleticShopifyPendingInstallation.deleteMany({
@@ -397,6 +404,665 @@ describe("shopper profile production queries on isolated MySQL", () => {
     };
     return { ...fixture, orderId, policy, addReview, reserve };
   }
+
+  async function addStoreParticipation(
+    fixture: Awaited<ReturnType<typeof incentiveFixture>>,
+  ) {
+    const product = await fixture.addReview();
+    const productRequest =
+      await database.weleticReviewRequest.findUniqueOrThrow({
+        where: { id: product.requestId },
+        include: { lines: true },
+      });
+    await database.weleticStoreReviewSettings.upsert({
+      where: { storeId: fixture.storeId },
+      create: {
+        id: `store-settings-${randomUUID()}`,
+        storeId: fixture.storeId,
+        enabled: true,
+      },
+      update: { enabled: true },
+    });
+    const request = await database.weleticStoreReviewRequest.create({
+      data: {
+        id: `store-request-${randomUUID()}`,
+        settingsRevision: 1,
+        storeId: fixture.storeId,
+        orderId: fixture.orderId,
+        shopperId: fixture.shopperId,
+        installationGeneration: "g1",
+        incentivePolicyId: fixture.policy.id,
+        status: "submitted",
+        fulfilledAt: new Date(),
+        sendAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+        lines: {
+          create: productRequest.lines.map((line) => ({
+            id: `store-line-${randomUUID()}`,
+            orderLineId: line.orderLineId,
+            purchasedQuantity: line.purchasedQuantity,
+          })),
+        },
+      },
+    });
+    const review = await database.weleticStoreReview.create({
+      data: {
+        id: `store-review-${randomUUID()}`,
+        storeId: fixture.storeId,
+        shopperId: fixture.shopperId,
+        requestId: request.id,
+        source: "invitation",
+        locale: "en",
+        verifiedPurchase: true,
+        rating: 1,
+        title: "Honest store feedback",
+        body: "The service could improve.",
+        displayName: "Controlled shopper",
+      },
+    });
+    const { storeReviewParticipationContentDigest } = await import(
+      "../../lib/weletic/reviews/incentive-evidence"
+    );
+    await database.weleticStoreReview.update({
+      where: { id: review.id },
+      data: {
+        participationStatus: "validated",
+        participationValidatedAt: new Date(),
+        participationValidationRevision: "store_purchase_abuse_v1",
+        participationContentDigest:
+          storeReviewParticipationContentDigest(review),
+      },
+    });
+    const reserve = async () => {
+      const { withReviewMutation } = await import(
+        "../../lib/weletic/reviews/transaction"
+      );
+      const { reserveStoreReviewIncentiveInTransaction } = await import(
+        "../../lib/weletic/reviews/store-incentive-claims"
+      );
+      return withReviewMutation(
+        fixture.storeId,
+        (tx, generation) => {
+          if (!generation) throw new Error("Expected generation");
+          return reserveStoreReviewIncentiveInTransaction({
+            tx,
+            storeId: fixture.storeId,
+            reviewId: review.id,
+            generation,
+          });
+        },
+        "g1",
+      );
+    };
+    return { review, product, reserve };
+  }
+
+  it.each([false, true])(
+    "store review incentive: product/store competition retains one promise (coupon=%s)",
+    async (coupon) => {
+      const fixture = await incentiveFixture(coupon);
+      if (!coupon) await enrollPointsAccount(fixture);
+      const store = await addStoreParticipation(fixture);
+      await Promise.all([
+        store.reserve(),
+        fixture.reserve(store.product.id),
+        store.reserve(),
+      ]);
+      const claims = await database.weleticReviewIncentiveClaim.findMany({
+        where: { storeId: fixture.storeId },
+      });
+      expect(claims).toHaveLength(1);
+      expect(claims[0].awardSnapshot).toMatchObject({
+        kind: coupon ? "coupon" : "points",
+      });
+      expect(
+        await database.weleticPointsLedgerEntry.count({
+          where: { storeId: fixture.storeId },
+        }),
+      ).toBe(coupon ? 0 : 1);
+      expect(
+        await database.weleticRewardRedemption.count({
+          where: { storeId: fixture.storeId },
+        }),
+      ).toBe(coupon ? 1 : 0);
+      expect(
+        await database.weleticLoyaltyAccount.count({
+          where: { storeId: fixture.storeId },
+        }),
+      ).toBe(coupon ? 0 : 1);
+    },
+  );
+
+  it("store review incentive: preserves delayed points through refunds, replays and confirmed invalidation", async () => {
+    const fixture = await incentiveFixture(false, "9007199254740993");
+    const store = await addStoreParticipation(fixture);
+    const reserved = await store.reserve();
+    if (!reserved.claim) throw new Error("Expected store claim");
+    expect(reserved.claim).toMatchObject({
+      subjectType: "store",
+      status: "reserved",
+    });
+    await database.weleticCommerceOrder.update({
+      where: { id: fixture.orderId },
+      data: { status: "refunded" },
+    });
+    await enrollPointsAccount(fixture);
+    const { fulfillProductReviewPointsIncentive } = await import(
+      "../../lib/weletic/reviews/incentive-points"
+    );
+    const fulfill = () =>
+      fulfillProductReviewPointsIncentive({
+        storeId: fixture.storeId,
+        claimId: reserved.claim!.id,
+        expectedInstallationGeneration: "g1",
+      });
+    await Promise.all([fulfill(), fulfill()]);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toBe(1);
+    const decision = invalidationDecision();
+    await Promise.all([
+      invalidateClaim({ ...fixture, claim: reserved.claim }, decision),
+      invalidateClaim({ ...fixture, claim: reserved.claim }, decision),
+    ]);
+    const entries = await database.weleticPointsLedgerEntry.findMany({
+      where: { storeId: fixture.storeId },
+      orderBy: { sequenceNumber: "asc" },
+    });
+    expect(entries.map((entry) => entry.pointsDelta.toString())).toEqual([
+      "9007199254740993",
+      "-9007199254740993",
+    ]);
+    expect(
+      await database.weleticLoyaltyAccount.findUnique({
+        where: { id: fixture.accountId },
+      }),
+    ).toMatchObject({ cachedPointsBalance: BigInt(0) });
+    expect(
+      await database.weleticStoreReview.findUnique({
+        where: { id: store.review.id },
+      }),
+    ).toMatchObject({
+      participationStatus: "invalidated",
+      rewardStatus: "reversed",
+    });
+    expect(
+      await database.weleticReviewIncentiveInvalidation.findFirst({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toMatchObject({
+      decisionSnapshot: { revision: "store_review_invalidation_v1" },
+    });
+  });
+
+  it("store review incentive: coupon adopts an ambiguous create once and refuses changed evidence before I/O", async () => {
+    const fixture = await couponFixture(false, true);
+    await database.weleticStoreReview.update({
+      where: { id: fixture.review.id },
+      data: { body: "Modified content" },
+    });
+    await expect(fixture.provision()).rejects.toThrow(
+      "requires reconciliation",
+    );
+    expect(couponTransport.credentials).not.toHaveBeenCalled();
+    await database.weleticStoreReview.update({
+      where: { id: fixture.review.id },
+      data: { body: fixture.review.body },
+    });
+    couponTransport.lookup
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(fixture.remote);
+    couponTransport.create.mockRejectedValueOnce(
+      new Error("Synthetic lost store coupon response"),
+    );
+    await expect(fixture.provision()).rejects.toThrow(
+      "lost store coupon response",
+    );
+    expect(await fixture.provision()).toEqual({ status: "issued" });
+    expect(await fixture.provision()).toEqual({ status: "already_issued" });
+    expect(couponTransport.create).toHaveBeenCalledTimes(1);
+    expect(
+      await database.weleticStoreReview.findUnique({
+        where: { id: fixture.review.id },
+      }),
+    ).toMatchObject({ rewardStatus: "awarded", rating: 1, status: "pending" });
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toBe(0);
+  });
+
+  it.each(["id", "email"] as const)(
+    "store review incentive: suppresses deferred points for retained %s identity",
+    async (kind) => {
+      const fixture = await incentiveFixture();
+      const store = await addStoreParticipation(fixture);
+      const result = await store.reserve();
+      if (!result.claim) throw new Error("Expected claim");
+      await enrollPointsAccount(fixture);
+      await addIdentityOnlyReviewSuppression(fixture, kind);
+      const { fulfillProductReviewPointsIncentive } = await import(
+        "../../lib/weletic/reviews/incentive-points"
+      );
+      await expect(
+        fulfillProductReviewPointsIncentive({
+          storeId: fixture.storeId,
+          claimId: result.claim.id,
+          expectedInstallationGeneration: "g1",
+        }),
+      ).rejects.toThrow("Review request unavailable");
+      expect(
+        await database.weleticPointsLedgerEntry.count({
+          where: { storeId: fixture.storeId },
+        }),
+      ).toBe(0);
+    },
+  );
+
+  it("store review incentive: completes coupon invalidity cleanup without rewriting product history", async () => {
+    const fixture = await couponFixture(false, true);
+    const productBefore = await database.weleticProductReview.findMany({
+      where: { storeId: fixture.storeId },
+    });
+    const result = await invalidateClaim(fixture);
+    couponTransport.lookup.mockResolvedValue(null);
+    await runInvalidatedCouponCleanup(fixture);
+    await runInvalidatedCouponCleanup(fixture);
+    expect(
+      await database.weleticReviewIncentiveInvalidation.findUnique({
+        where: { id: result.invalidationId },
+      }),
+    ).toMatchObject({
+      outcome: "coupon_absent",
+      completedAt: expect.any(Date),
+      decisionSnapshot: { revision: "store_review_invalidation_v1" },
+    });
+    expect(
+      await database.weleticStoreReview.findUnique({
+        where: { id: fixture.review.id },
+      }),
+    ).toMatchObject({
+      participationStatus: "invalidated",
+      rewardStatus: "invalidated",
+    });
+    expect(
+      await database.weleticProductReview.findMany({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toEqual(productBefore);
+    await expect(fixture.provision()).rejects.toThrow("not eligible");
+    expect(couponTransport.create).not.toHaveBeenCalled();
+  });
+
+  async function storeSubmissionFixture() {
+    const fixture = await incentiveFixture();
+    const store = await addStoreParticipation(fixture);
+    await database.weleticStoreReview.delete({
+      where: { id: store.review.id },
+    });
+    await database.weleticStoreReviewRequest.update({
+      where: { id: store.review.requestId! },
+      data: { status: "sent", tokenHash: randomBytes(32).toString("hex") },
+    });
+    const input = {
+      requestId: store.review.requestId!,
+      rating: 1,
+      title: "Honest service feedback",
+      body: "The delivery took longer than expected.",
+      displayName: "Controlled shopper",
+      locale: "en" as "en" | "ja" | "vi",
+      publishConsent: true,
+    };
+    const { submitAuthenticatedStoreReview } = await import(
+      "../../lib/weletic/reviews/store-service"
+    );
+    const submit = (
+      patch: Record<string, unknown> = {},
+      owner = fixture.shopperId,
+      generation = "g1",
+    ) =>
+      submitAuthenticatedStoreReview({
+        storeId: fixture.storeId,
+        shopperId: owner,
+        expectedInstallationGeneration: generation,
+        input: { ...input, ...patch },
+      });
+    return { ...fixture, input, submit };
+  }
+
+  it.each(["en", "ja", "vi"] as const)(
+    "store review submission: %s replay is atomic, authenticated and rating-independent",
+    async (locale) => {
+      const fixture = await storeSubmissionFixture();
+      await enrollPointsAccount(fixture);
+      const results = await Promise.all([
+        fixture.submit({ locale }),
+        fixture.submit({ locale }),
+      ]);
+      expect(results.map((result) => result.duplicate).sort()).toEqual([
+        false,
+        true,
+      ]);
+      await expect(fixture.submit({ locale, rating: 5 })).rejects.toThrow(
+        "differs from this retry",
+      );
+      await expect(
+        fixture.submit({ locale }, "foreign-shopper"),
+      ).rejects.toThrow("unavailable");
+      await expect(
+        fixture.submit({ locale }, fixture.shopperId, "retired"),
+      ).rejects.toThrow();
+      expect(
+        await database.weleticStoreReview.count({
+          where: { storeId: fixture.storeId },
+        }),
+      ).toBe(1);
+      expect(
+        await database.weleticPointsLedgerEntry.count({
+          where: { storeId: fixture.storeId },
+        }),
+      ).toBe(1);
+      expect(
+        await database.weleticStoreReview.findFirst({
+          where: { storeId: fixture.storeId },
+        }),
+      ).toMatchObject({
+        locale,
+        rating: 1,
+        status: "pending",
+        rewardStatus: "awarded",
+      });
+      expect(
+        await database.weleticStoreReviewRequest.findUnique({
+          where: { id: fixture.input.requestId },
+        }),
+      ).toMatchObject({ status: "submitted", tokenHash: null });
+      expect(
+        await database.weleticReviewOwnerPrivacyCoverage.findFirst({
+          where: { storeId: fixture.storeId, shopperId: fixture.shopperId },
+        }),
+      ).toMatchObject({ state: "active" });
+    },
+  );
+
+  it("store review submission: SQL failure rolls back consumption, content, claim, ledger and projection", async () => {
+    const fixture = await storeSubmissionFixture();
+    await enrollPointsAccount(fixture);
+    const requestBefore = await database.weleticStoreReviewRequest.findUnique({
+      where: { id: fixture.input.requestId },
+    });
+    const coverageBefore =
+      await database.weleticReviewOwnerPrivacyCoverage.findMany({
+        where: { storeId: fixture.storeId },
+      });
+    beforeDatabaseCommit = async (tx) => {
+      const row = await tx.weleticStoreReviewSettings.findUniqueOrThrow({
+        where: { storeId: fixture.storeId },
+      });
+      await tx.weleticStoreReviewSettings.create({ data: row });
+    };
+    try {
+      await expect(fixture.submit()).rejects.toMatchObject({ code: "P2002" });
+    } finally {
+      beforeDatabaseCommit = null;
+    }
+    expect(
+      await database.weleticStoreReviewRequest.findUnique({
+        where: { id: fixture.input.requestId },
+      }),
+    ).toEqual(requestBefore);
+    expect(
+      await database.weleticStoreReview.count({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toBe(0);
+    expect(
+      await database.weleticReviewIncentiveClaim.count({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toBe(0);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toBe(0);
+    expect(
+      await database.weleticReviewOwnerPrivacyCoverage.findMany({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toEqual(coverageBefore);
+    expect(await fixture.submit()).toEqual({
+      status: "received",
+      duplicate: false,
+    });
+  });
+
+  it("store review moderation: audited optimistic replies/hiding preserve the earned promise", async () => {
+    const fixture = await storeSubmissionFixture();
+    await enrollPointsAccount(fixture);
+    await fixture.submit();
+    const review = await database.weleticStoreReview.findFirstOrThrow({
+      where: { storeId: fixture.storeId },
+    });
+    const financialBefore = await database.weleticPointsLedgerEntry.findMany({
+      where: { storeId: fixture.storeId },
+    });
+    const { withReviewMutation } = await import(
+      "../../lib/weletic/reviews/transaction"
+    );
+    const { moderateStoreReviewWithAuditInTransaction } = await import(
+      "../../lib/weletic/reviews/store-service"
+    );
+    const moderate = (version: number, status: "published" | "hidden") =>
+      withReviewMutation(
+        fixture.storeId,
+        (tx, generation) =>
+          moderateStoreReviewWithAuditInTransaction({
+            tx,
+            storeId: fixture.storeId,
+            generation: generation!,
+            actor: { kind: "workspace", userId: "controlled-owner" },
+            input: {
+              reviewId: review.id,
+              version,
+              status,
+              merchantReply: "Thank you for the feedback.",
+              reason: "approved",
+            },
+          }),
+        "g1",
+      );
+    expect(await moderate(1, "published")).toMatchObject({
+      version: 2,
+      status: "published",
+    });
+    await expect(moderate(1, "hidden")).rejects.toThrow("changed");
+    expect(await moderate(2, "hidden")).toMatchObject({
+      version: 3,
+      status: "hidden",
+    });
+    expect(
+      await database.weleticStoreReviewModerationAudit.count({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toBe(2);
+    expect(
+      await database.weleticPointsLedgerEntry.findMany({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toEqual(financialBefore);
+  });
+
+  it("store review submission: expiry blocks first submission but preserves exact committed retry", async () => {
+    const expired = await storeSubmissionFixture();
+    await database.weleticStoreReviewRequest.update({
+      where: { id: expired.input.requestId },
+      data: { expiresAt: new Date(0) },
+    });
+    await expect(expired.submit()).rejects.toThrow("unavailable");
+    expect(
+      await database.weleticStoreReview.count({
+        where: { storeId: expired.storeId },
+      }),
+    ).toBe(0);
+    const accepted = await storeSubmissionFixture();
+    await accepted.submit();
+    await database.weleticStoreReviewRequest.update({
+      where: { id: accepted.input.requestId },
+      data: { expiresAt: new Date(0) },
+    });
+    expect(await accepted.submit()).toEqual({
+      status: "received",
+      duplicate: true,
+    });
+  });
+
+  it.each([false, true])(
+    "store review submission: retained identity suppression blocks first attempt/replay (submitted=%s)",
+    async (submitted) => {
+      const fixture = await storeSubmissionFixture();
+      if (submitted) await fixture.submit();
+      const before = await database.weleticStoreReview.findMany({
+        where: { storeId: fixture.storeId },
+      });
+      await addIdentityOnlyReviewSuppression(fixture, "email");
+      await expect(fixture.submit()).rejects.toThrow(
+        "Review request unavailable",
+      );
+      expect(
+        await database.weleticStoreReview.findMany({
+          where: { storeId: fixture.storeId },
+        }),
+      ).toEqual(before);
+      if (submitted) {
+        const { withReviewMutation } = await import(
+          "../../lib/weletic/reviews/transaction"
+        );
+        const { moderateStoreReviewWithAuditInTransaction } = await import(
+          "../../lib/weletic/reviews/store-service"
+        );
+        await expect(
+          withReviewMutation(
+            fixture.storeId,
+            (tx, generation) =>
+              moderateStoreReviewWithAuditInTransaction({
+                tx,
+                storeId: fixture.storeId,
+                generation: generation!,
+                actor: { kind: "workspace", userId: "controlled-owner" },
+                input: {
+                  reviewId: before[0].id,
+                  version: 1,
+                  status: "published",
+                  reason: "approved",
+                },
+              }),
+            "g1",
+          ),
+        ).rejects.toThrow("Review request unavailable");
+        expect(
+          await database.weleticStoreReviewModerationAudit.count({
+            where: { storeId: fixture.storeId },
+          }),
+        ).toBe(0);
+      }
+    },
+  );
+
+  it("store review moderation: real audit constraint failure rolls back publication and reply", async () => {
+    const fixture = await storeSubmissionFixture();
+    await fixture.submit();
+    const review = await database.weleticStoreReview.findFirstOrThrow({
+      where: { storeId: fixture.storeId },
+    });
+    const { withReviewMutation } = await import(
+      "../../lib/weletic/reviews/transaction"
+    );
+    const { moderateStoreReviewWithAuditInTransaction } = await import(
+      "../../lib/weletic/reviews/store-service"
+    );
+    beforeDatabaseCommit = async (tx) => {
+      const audit = await tx.weleticStoreReviewModerationAudit.findFirstOrThrow(
+        { where: { storeId: fixture.storeId } },
+      );
+      await tx.weleticStoreReviewModerationAudit.create({ data: audit });
+    };
+    try {
+      await expect(
+        withReviewMutation(
+          fixture.storeId,
+          (tx, generation) =>
+            moderateStoreReviewWithAuditInTransaction({
+              tx,
+              storeId: fixture.storeId,
+              generation: generation!,
+              actor: { kind: "workspace", userId: "controlled-owner" },
+              input: {
+                reviewId: review.id,
+                version: 1,
+                status: "published",
+                merchantReply: "Thank you",
+                reason: "approved",
+              },
+            }),
+          "g1",
+        ),
+      ).rejects.toMatchObject({ code: "P2002" });
+    } finally {
+      beforeDatabaseCommit = null;
+    }
+    expect(
+      await database.weleticStoreReview.findUnique({
+        where: { id: review.id },
+      }),
+    ).toEqual(review);
+    expect(
+      await database.weleticStoreReviewModerationAudit.count({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toBe(0);
+  });
+
+  it("store review submission: concurrent erasure prevents surviving content without reversing earned points", async () => {
+    const fixture = await storeSubmissionFixture();
+    await enrollPointsAccount(fixture);
+    const { redactNativeReviewsBatch } = await import(
+      "../../lib/weletic/reviews/privacy"
+    );
+    const [submission, erasure] = await Promise.allSettled([
+      fixture.submit(),
+      redactNativeReviewsBatch(fixture.storeId, fixture.shopperId),
+    ]);
+    expect(erasure.status).toBe("fulfilled");
+    const reviews = await database.weleticStoreReview.findMany({
+      where: { storeId: fixture.storeId },
+    });
+    expect(reviews).toHaveLength(submission.status === "fulfilled" ? 1 : 0);
+    for (const review of reviews)
+      expect(review).toMatchObject({
+        status: "redacted",
+        title: "",
+        body: "",
+        merchantReply: null,
+      });
+    const entries = await database.weleticPointsLedgerEntry.findMany({
+      where: { storeId: fixture.storeId },
+    });
+    expect(entries).toHaveLength(submission.status === "fulfilled" ? 1 : 0);
+    for (const entry of entries)
+      expect(entry).toMatchObject({
+        entryType: "EARN_BONUS",
+        pointsDelta: BigInt(100),
+      });
+    for (const claim of await database.weleticReviewIncentiveClaim.findMany({
+      where: { storeId: fixture.storeId },
+    }))
+      expect(claim.status).toBe("privacy_redacted");
+    await expect(fixture.submit()).rejects.toThrow();
+  });
 
   async function enrollPointsAccount(
     fixture: Awaited<ReturnType<typeof incentiveFixture>>,
@@ -3120,7 +3786,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
     ).toBe(0);
   });
 
-  async function couponFixture(multiUse = false) {
+  async function couponFixture(multiUse = false, storeSubject = false) {
     couponTransport.credentials.mockReset().mockResolvedValue({
       shopDomain: "synthetic.myshopify.com",
       accessToken: "synthetic-token",
@@ -3130,8 +3796,13 @@ describe("shopper profile production queries on isolated MySQL", () => {
     couponTransport.create.mockReset();
     couponTransport.deactivate.mockReset().mockResolvedValue(true);
     const fixture = await incentiveFixture(true, "100", multiUse);
-    const review = await fixture.addReview();
-    const result = await fixture.reserve(review.id);
+    const storeParticipation = storeSubject
+      ? await addStoreParticipation(fixture)
+      : null;
+    const review = storeParticipation?.review ?? (await fixture.addReview());
+    const result = storeParticipation
+      ? await storeParticipation.reserve()
+      : await fixture.reserve(review.id);
     if (!result.claim) throw new Error("Expected coupon claim");
     const redemption = await database.weleticRewardRedemption.findFirstOrThrow({
       where: {

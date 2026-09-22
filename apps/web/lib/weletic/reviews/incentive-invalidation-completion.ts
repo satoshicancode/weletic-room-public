@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import {
   reviewInvalidationAwardSchema,
+  reviewInvalidationRevision,
   reviewInvalidationSnapshotSchema,
 } from "./incentive-decision";
 import {
@@ -65,6 +66,8 @@ export async function completeReviewInvalidationFromVoucherCleanup({
     ) ||
     !claim ||
     claim.policyId !== snapshot.policyId ||
+    !["product", "store"].includes(claim.subjectType) ||
+    snapshot.revision !== reviewInvalidationRevision(claim.subjectType) ||
     claim.sourceReviewId !== snapshot.sourceReviewId ||
     claim.policy.storeId !== storeId ||
     claim.policy.contentDigest !== snapshot.policyDigest ||
@@ -125,7 +128,7 @@ export async function completeReviewInvalidationFromVoucherCleanup({
       completedAt: invalidation.completedAt ?? cleanup.completedAt,
     },
   });
-  await tx.weleticProductReview.updateMany({
+  const reviewMarker = {
     where: {
       id: snapshot.sourceReviewId,
       storeId,
@@ -138,5 +141,8 @@ export async function completeReviewInvalidationFromVoucherCleanup({
       rewardStatus: used ? "unrecoverable" : "invalidated",
       rewardReason: invalidation.reason,
     },
-  });
+  } satisfies Prisma.WeleticProductReviewUpdateManyArgs;
+  if (claim.subjectType === "store")
+    await tx.weleticStoreReview.updateMany(reviewMarker);
+  else await tx.weleticProductReview.updateMany(reviewMarker);
 }

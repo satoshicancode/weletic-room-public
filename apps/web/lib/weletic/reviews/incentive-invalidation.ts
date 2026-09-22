@@ -1,11 +1,13 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import { DIRECT_REVIEW_REWARD_SOURCE } from "@/lib/weletic/loyalty/reward-ownership";
 import { enqueueVoucherPrivacyCleanup } from "@/lib/weletic/loyalty/voucher-privacy-cleanup";
+import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { ReviewError } from "./contracts";
 import {
   reviewIncentiveDecisionSchema,
   reviewInvalidationAwardSchema,
+  reviewInvalidationRevision,
   reviewInvalidationSnapshotSchema,
 } from "./incentive-decision";
 import { reviewIncentivePointsKey } from "./incentive-points";
@@ -54,7 +56,7 @@ export function invalidateReviewIncentive({
       });
       if (
         !claim ||
-        claim.subjectType !== "product" ||
+        !["product", "store"].includes(claim.subjectType) ||
         claim.shopper.storeId !== storeId ||
         claim.order.storeId !== storeId ||
         claim.order.shopperId !== claim.shopperId ||
@@ -103,10 +105,16 @@ export function invalidateReviewIncentive({
           "conflict",
           "Claim award requires reconciliation",
         );
-      const review = await tx.weleticProductReview.findFirst({
-        where: { id: claim.sourceReviewId, storeId },
-        include: { request: true },
-      });
+      const review =
+        claim.subjectType === "store"
+          ? await tx.weleticStoreReview.findFirst({
+              where: { id: claim.sourceReviewId, storeId },
+              include: { request: true },
+            })
+          : await tx.weleticProductReview.findFirst({
+              where: { id: claim.sourceReviewId, storeId },
+              include: { request: true },
+            });
       if (
         !review ||
         !review.request ||
@@ -141,7 +149,7 @@ export function invalidateReviewIncentive({
           existing.decisionId !== decision.decisionId ||
           existing.actorUserId !== decision.actorUserId ||
           existing.reason !== decision.reason ||
-          snapshot?.revision !== "review_invalidation_v1" ||
+          snapshot.revision !== reviewInvalidationRevision(claim.subjectType) ||
           snapshot.policyId !== claim.policyId ||
           snapshot.policyDigest !== claim.policy.contentDigest ||
           snapshot.sourceReviewId !== review.id ||
@@ -335,7 +343,7 @@ export function invalidateReviewIncentive({
           installationGeneration: generation,
           outcome,
           decisionSnapshot: {
-            revision: "review_invalidation_v1",
+            revision: reviewInvalidationRevision(claim.subjectType),
             policyId: claim.policyId,
             policyDigest: claim.policy.contentDigest,
             sourceReviewId: review.id,
@@ -360,7 +368,7 @@ export function invalidateReviewIncentive({
           where: { id: claimId },
           data: { status: "invalidated" },
         });
-        await tx.weleticProductReview.update({
+        const reviewMarker = {
           where: { id: review.id },
           data: {
             participationStatus: "invalidated",
@@ -368,7 +376,10 @@ export function invalidateReviewIncentive({
               outcome === "pending" ? "recovery_pending" : "invalidated",
             rewardReason: decision.reason,
           },
-        });
+        } satisfies Prisma.WeleticProductReviewUpdateArgs;
+        if (claim.subjectType === "store")
+          await tx.weleticStoreReview.update(reviewMarker);
+        else await tx.weleticProductReview.update(reviewMarker);
       }
       if (outcome === "pending") {
         const cleanup = await enqueueVoucherPrivacyCleanup({

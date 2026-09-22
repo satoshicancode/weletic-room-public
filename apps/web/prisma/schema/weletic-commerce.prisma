@@ -147,6 +147,9 @@ model WeleticShopifyStore {
   reviewOrderCancellations     WeleticReviewOrderCancellation[]
   reviewRequests               WeleticReviewRequest[]
   nativeReviews                WeleticProductReview[]
+  storeReviewSettings          WeleticStoreReviewSettings?
+  storeReviewRequests          WeleticStoreReviewRequest[]
+  storeReviews                 WeleticStoreReview[]
   loyaltyEarnPolicyRevisions   WeleticLoyaltyEarnPolicyRevision[]
   complianceRequests           WeleticShopifyComplianceRequest[]
   complianceArtifacts          WeleticShopifyComplianceArtifact[]
@@ -556,6 +559,7 @@ model WeleticCommerceOrder {
   shopperId             String?
   reviewRequests        WeleticReviewRequest[]
   reviewIncentiveClaims WeleticReviewIncentiveClaim[]
+  storeReviewRequests  WeleticStoreReviewRequest[]
 
   @@unique([storeId, externalId])
   @@index([programId, partnerId, occurredAt])
@@ -602,6 +606,7 @@ model WeleticCommerceOrderLine {
   calculations       WeleticCommissionCalculation[]
   loyaltyLineEarns   WeleticLoyaltyOrderLineEarn[]
   reviewRequestLines WeleticReviewRequestLine[]
+  storeReviewRequestLines WeleticStoreReviewRequestLine[]
 
   @@unique([orderId, externalId])
   @@index(productId)

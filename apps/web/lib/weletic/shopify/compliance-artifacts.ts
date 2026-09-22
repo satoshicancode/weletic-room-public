@@ -745,16 +745,22 @@ async function fetchAndDecryptArtifact(
 /** Recover an immutable media checkpoint under the current worker lease, not a
  * public download token. Never resume from a new live page after publication.
  */
-export async function readComplianceMediaCheckpoint({
+export async function readComplianceReviewCheckpoint({
   requestId,
   storeId,
   sequence,
   lease,
+  kind,
 }: {
   requestId: string;
   storeId: string;
   sequence: number;
   lease: ComplianceArtifactLease;
+  kind:
+    | "review_media"
+    | "store_reviews"
+    | "store_review_requests"
+    | "store_review_audits";
 }): Promise<unknown | null> {
   await assertComplianceArtifactWriteLease({
     client: prisma,
@@ -764,7 +770,7 @@ export async function readComplianceMediaCheckpoint({
   });
   const artifact = await prisma.weleticShopifyComplianceArtifact.findUnique({
     where: {
-      requestId_kind_sequence: { requestId, kind: "review_media", sequence },
+      requestId_kind_sequence: { requestId, kind, sequence },
     },
   });
   if (!artifact) return null;
@@ -786,6 +792,12 @@ export async function readComplianceMediaCheckpoint({
     lease,
   });
   return value;
+}
+
+export function readComplianceMediaCheckpoint(
+  input: Omit<Parameters<typeof readComplianceReviewCheckpoint>[0], "kind">,
+) {
+  return readComplianceReviewCheckpoint({ ...input, kind: "review_media" });
 }
 
 async function authorizeComplianceExport({

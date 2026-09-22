@@ -186,6 +186,8 @@ model WeleticShopper {
   reviewPrivacyCoverage       WeleticReviewOwnerPrivacyCoverage?
   reviewRequests               WeleticReviewRequest[]
   nativeReviews                WeleticProductReview[]
+  storeReviewRequests          WeleticStoreReviewRequest[]
+  storeReviews                 WeleticStoreReview[]
   rewardFulfillments           WeleticRewardRedemption[]
   reviewIncentiveClaims        WeleticReviewIncentiveClaim[]
   reviewIncentiveInvalidations WeleticReviewIncentiveInvalidation[]

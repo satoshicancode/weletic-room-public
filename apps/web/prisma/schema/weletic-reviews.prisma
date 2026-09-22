@@ -89,6 +89,7 @@ model WeleticReviewIncentivePolicy {
   store          WeleticShopifyStore           @relation(fields: [storeId], references: [id], onDelete: Restrict)
   activeSettings WeleticReviewSettings[]       @relation("ActiveReviewIncentivePolicy")
   requests       WeleticReviewRequest[]
+  storeRequests  WeleticStoreReviewRequest[]
   claims         WeleticReviewIncentiveClaim[]
 
   @@unique([storeId, id])

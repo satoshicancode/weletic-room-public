@@ -24,3 +24,29 @@ export function reviewParticipationContentDigest(review: {
     )
     .digest("hex");
 }
+
+/** Separate domain/version preserves all historical product evidence bytes.
+ * Store feedback currently accepts text only; it cannot claim media bonuses.
+ */
+export function storeReviewParticipationContentDigest(review: {
+  id: string;
+  requestId: string | null;
+  body: string;
+  title: string;
+}) {
+  if (!review.requestId)
+    throw new Error(
+      "Invitation evidence is required for store review incentives",
+    );
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        "store_review_participation_v1",
+        review.id,
+        review.requestId,
+        review.body,
+        review.title,
+      ]),
+    )
+    .digest("hex");
+}

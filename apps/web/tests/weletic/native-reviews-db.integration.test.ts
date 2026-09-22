@@ -29,7 +29,10 @@ import {
 } from "@/lib/weletic/reviews/privacy-owner-contract";
 import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
 import { replaceReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-write";
-import { buildReviewPublicPrivacySql } from "@/lib/weletic/reviews/privacy-public-sql";
+import {
+  buildReviewPublicPrivacySql,
+  buildStoreReviewPublicPrivacySql,
+} from "@/lib/weletic/reviews/privacy-public-sql";
 import { inspectReviewPrivacyReaderCoverage } from "@/lib/weletic/reviews/privacy-readiness";
 import { reconcileReviewPrivacySourcePage } from "@/lib/weletic/reviews/privacy-source-reconciliation";
 import { getPublicProductReviews } from "@/lib/weletic/reviews/public";
@@ -43,6 +46,11 @@ import {
   moderateNativeReview,
   submitNativeReview,
 } from "@/lib/weletic/reviews/service";
+import {
+  purgeStoreReviewsBatch,
+  redactStoreReviewsBatch,
+} from "@/lib/weletic/reviews/store-privacy";
+import { getPublicStoreReviews } from "@/lib/weletic/reviews/store-public";
 import { syncProductReviewSummary } from "@/lib/weletic/reviews/summary-sync";
 import { withReviewMutation } from "@/lib/weletic/reviews/transaction";
 import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
@@ -453,6 +461,281 @@ describe("native reviews real MySQL production-service boundaries", () => {
   afterAll(async () => {
     if (safeDatabase) await prisma.$disconnect();
     vi.unstubAllEnvs();
+  });
+
+  it("store review privacy: discovers store-only owners and detects orphan sources", async () => {
+    const owner = `zz-store-owner-${run}-1`;
+    const reviewId = `store-only-${run}`;
+    await prisma.weleticShopper.create({
+      data: {
+        id: owner,
+        storeId,
+        shopifyCustomerId: String(++sequence),
+        email: "store-only@example.test",
+      },
+    });
+    await prisma.weleticStoreReview.create({
+      data: {
+        id: reviewId,
+        storeId,
+        shopperId: owner,
+        source: "open",
+        status: "published",
+        rating: 1,
+        title: "Store only",
+        body: "Feedback without product participation",
+        displayName: "Buyer",
+        locale: "en",
+      },
+    });
+    const checkpoint = {
+      storeId,
+      installationGeneration: "g1",
+      keySetDigest: reviewPrivacyKeySetDigest(),
+      afterShopperId: `zz-store-owner-${run}-0`,
+    };
+    const inspect = () =>
+      reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "g1",
+        checkpoint,
+        limit: 1,
+      });
+    await prisma.weleticStoreReviewSettings.create({
+      data: {
+        id: `store-settings-${run}`,
+        storeId,
+      },
+    });
+    const privacy = buildStoreReviewPublicPrivacySql({
+      storeId,
+      installationGeneration: "g1",
+    });
+    const counts = async () => {
+      const rows = await prisma.$queryRaw<
+        Array<{ eligible: bigint; unknown: bigint; suppressed: bigint }>
+      >(Prisma.sql`
+        SELECT SUM(CASE WHEN ${privacy.eligible} THEN 1 ELSE 0 END) AS eligible,
+          SUM(CASE WHEN ${privacy.unknown} THEN 1 ELSE 0 END) AS unknown,
+          SUM(CASE WHEN ${privacy.suppressed} THEN 1 ELSE 0 END) AS suppressed
+        FROM ${privacy.from} WHERE r.storeId = ${storeId}`);
+      return Object.fromEntries(
+        Object.entries(rows[0]).map(([k, v]) => [k, Number(v)]),
+      );
+    };
+    expect(await counts()).toEqual({ eligible: 0, unknown: 0, suppressed: 0 });
+    await prisma.weleticStoreReviewSettings.update({
+      where: { storeId },
+      data: { enabled: true },
+    });
+    expect(await counts()).toEqual({ eligible: 0, unknown: 1, suppressed: 0 });
+    await expect(getPublicStoreReviews(storeId, {})).rejects.toThrow(
+      "Store reviews unavailable",
+    );
+    expect((await inspect()).counts.missing).toBe(1);
+    expect(
+      await backfillReviewOwnerPrivacyPage({
+        ...checkpoint,
+        checkpoint,
+        limit: 1,
+      }),
+    ).toMatchObject({ projected: 1 });
+    expect((await inspect()).counts.matched).toBe(1);
+    expect(await counts()).toEqual({ eligible: 1, unknown: 0, suppressed: 0 });
+    const visible = await getPublicStoreReviews(storeId, {});
+    expect(visible.summary).toMatchObject({ count: 1, average: 1 });
+    expect(visible.items).toEqual([
+      expect.objectContaining({
+        id: reviewId,
+        verifiedPurchase: false,
+        incentivized: false,
+      }),
+    ]);
+    expect(visible.items[0]).not.toHaveProperty("shopperId");
+    expect(visible.items[0]).not.toHaveProperty("requestId");
+    const identity =
+      await prisma.weleticReviewOwnerPrivacyIdentity.findFirstOrThrow({
+        where: { storeId, shopperId: owner, identityKind: "customer_email" },
+      });
+    await prisma.weleticShopifyCustomerPrivacyTombstone.create({
+      data: {
+        id: `store-tombstone-${run}`,
+        storeId,
+        identityKind: identity.identityKind,
+        identityKeyId: identity.identityKeyId,
+        customerDigest: identity.customerDigest,
+        redactedAt: new Date(),
+        expiresAt: new Date("2040-01-01"),
+      },
+    });
+    expect(await counts()).toEqual({ eligible: 0, unknown: 0, suppressed: 1 });
+    expect(await getPublicStoreReviews(storeId, {})).toMatchObject({
+      summary: { count: 0, average: null },
+      items: [],
+      nextCursor: null,
+    });
+    const scan = () =>
+      reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "g1",
+      });
+    const before = (await scan()).orphanReviews!;
+    await prisma.$executeRaw`UPDATE WeleticStoreReview SET shopperId = ${`missing-${run}`} WHERE id = ${reviewId}`;
+    expect((await scan()).orphanReviews).toBe(before + 1);
+    await prisma.weleticStoreReview.delete({ where: { id: reviewId } });
+    await prisma.weleticStoreReviewSettings.update({
+      where: { storeId },
+      data: { enabled: false },
+    });
+  });
+
+  it("store review privacy: detects orphan invitations before any submitted review", async () => {
+    const { id: orderId } = await purchase();
+    const requestId = `store-orphan-invitation-${run}`;
+    await prisma.weleticStoreReviewRequest.create({
+      data: {
+        id: requestId,
+        storeId,
+        shopperId,
+        orderId,
+        installationGeneration: "g1",
+        settingsRevision: 1,
+        fulfilledAt: new Date(),
+        sendAt: new Date(),
+        expiresAt: new Date("2040-01-01"),
+      },
+    });
+    const inspect = () =>
+      reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "g1",
+      });
+    const before = (await inspect()).orphanRequests!;
+    await prisma.$executeRaw`UPDATE WeleticStoreReviewRequest SET shopperId = ${`absent-${run}`} WHERE id = ${requestId}`;
+    expect((await inspect()).orphanRequests).toBe(before + 1);
+    await prisma.weleticStoreReviewRequest.delete({ where: { id: requestId } });
+  });
+
+  it("store review privacy: pages tied timestamps and filters without leaking owner fields", async () => {
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: { id: `store-settings-${run}`, storeId, enabled: true },
+      update: { enabled: true },
+    });
+    const prefix = `store-page-${run}`;
+    const rows = [1, 2, 3].map((n) => ({
+      id: `${prefix}-${n}`,
+      storeId,
+      shopperId,
+      source: "open" as const,
+      status: "published" as const,
+      rating: n,
+      title: `Feedback ${n}`,
+      body: "Original store feedback",
+      displayName: "Buyer",
+      locale: "en",
+      createdAt: new Date("2026-01-01"),
+    }));
+    await prisma.weleticStoreReview.createMany({ data: rows });
+    const first = await getPublicStoreReviews(storeId, { limit: 1 });
+    expect(first.summary).toMatchObject({ count: 3, average: 2 });
+    expect(first.items.map((r) => r.id)).toEqual([`${prefix}-3`]);
+    const next = await getPublicStoreReviews(storeId, {
+      limit: 2,
+      cursor: first.nextCursor,
+    });
+    expect(next.items.map((r) => r.id)).toEqual([`${prefix}-2`, `${prefix}-1`]);
+    expect(next.nextCursor).toBeNull();
+    const filtered = await getPublicStoreReviews(storeId, { rating: 1 });
+    expect(filtered.items.map((r) => r.id)).toEqual([`${prefix}-1`]);
+    expect(filtered.summary.count).toBe(3);
+    await expect(
+      getPublicStoreReviews(storeId, { rating: 1, cursor: first.nextCursor }),
+    ).rejects.toThrow("Invalid store review cursor");
+    await prisma.weleticStoreReview.deleteMany({
+      where: { storeId, id: { in: rows.map((r) => r.id) } },
+    });
+    await prisma.weleticStoreReviewSettings.update({
+      where: { storeId },
+      data: { enabled: false },
+    });
+  });
+
+  it("store review privacy: rolls back source changes on SQL failure and drains bounded pages", async () => {
+    const owner = `store-erasure-${run}`;
+    await prisma.weleticShopper.create({
+      data: { id: owner, storeId, shopifyCustomerId: String(++sequence) },
+    });
+    const rows = Array.from({ length: 21 }, (_, n) => ({
+      id: `store-erasure-${run}-${String(n).padStart(2, "0")}`,
+      storeId,
+      shopperId: owner,
+      source: "open" as const,
+      rating: 2,
+      title: "Private source",
+      body: "Private store feedback before erasure",
+      displayName: "Buyer",
+      locale: "en",
+    }));
+    await prisma.weleticStoreReview.createMany({ data: rows });
+    const scope = { kind: "customer" as const, storeId, shopperId: owner };
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await redactStoreReviewsBatch(tx, scope);
+        await tx.weleticStoreReview.create({ data: rows[0] });
+      }),
+    ).rejects.toMatchObject({ code: "P2002" });
+    expect(
+      await prisma.weleticStoreReview.count({
+        where: {
+          storeId,
+          shopperId: owner,
+          redactedAt: null,
+          title: "Private source",
+          version: 1,
+        },
+      }),
+    ).toBe(21);
+    expect(
+      await prisma.$transaction((tx) => redactStoreReviewsBatch(tx, scope)),
+    ).toEqual({ hasMore: true });
+    expect(
+      await prisma.weleticStoreReview.count({
+        where: {
+          storeId,
+          shopperId: owner,
+          redactedAt: { not: null },
+          title: "",
+          body: "",
+          displayName: "Redacted customer",
+        },
+      }),
+    ).toBe(20);
+    expect(
+      await prisma.$transaction((tx) => redactStoreReviewsBatch(tx, scope)),
+    ).toEqual({ hasMore: false });
+    const after = await prisma.weleticStoreReview.findMany({
+      where: { storeId, shopperId: owner },
+      orderBy: { id: "asc" },
+    });
+    await prisma.$transaction((tx) => redactStoreReviewsBatch(tx, scope));
+    expect(
+      await prisma.weleticStoreReview.findMany({
+        where: { storeId, shopperId: owner },
+        orderBy: { id: "asc" },
+      }),
+    ).toEqual(after);
+    expect(
+      await prisma.weleticStoreReview.count({
+        where: { storeId, shopperId: owner, incentivized: true },
+      }),
+    ).toBe(0);
+    await expect(
+      prisma.$transaction((tx) => purgeStoreReviewsBatch(tx, storeId)),
+    ).rejects.toThrow("frozen store");
+    await prisma.weleticStoreReview.deleteMany({
+      where: { storeId, shopperId: owner },
+    });
   });
 
   it("review owner privacy: bounded multi-tenant query plans and public load", async () => {
@@ -1011,7 +1294,15 @@ describe("native reviews real MySQL production-service boundaries", () => {
       if (maxPages === 100) {
         expect(report.counts.suppressedPending).toBeGreaterThanOrEqual(1);
         const owners = await prisma.weleticShopper.count({
-          where: { storeId, nativeReviews: { some: { storeId } } },
+          where: {
+            storeId,
+            OR: [
+              { nativeReviews: { some: { storeId } } },
+              { reviewRequests: { some: { storeId } } },
+              { storeReviews: { some: { storeId } } },
+              { storeReviewRequests: { some: { storeId } } },
+            ],
+          },
         });
         expect(report.checked).toBe(owners);
         expect(report.pages).toBe(owners);

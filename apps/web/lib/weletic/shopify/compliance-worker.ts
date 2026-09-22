@@ -44,6 +44,7 @@ import {
   redactNativeReviewsBatch,
 } from "@/lib/weletic/reviews/privacy";
 import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
+import { exportStoreReviewPage } from "@/lib/weletic/reviews/store-export-checkpoint";
 import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
 import {
   addRetentionDays,
@@ -435,6 +436,9 @@ const EXPORT_PHASES = [
   "export_review_incentive_invalidations",
   "export_import_snapshots",
   "export_import_executions",
+  "export_store_reviews",
+  "export_store_review_requests",
+  "export_store_review_audits",
 ] as const;
 
 type ExportPhase = (typeof EXPORT_PHASES)[number];
@@ -528,6 +532,12 @@ async function fetchExportPage({
     orderBy: { id: "asc" as const },
     ...(lastId ? { cursor: { id: lastId }, skip: 1 } : {}),
   };
+  if (
+    phase === "export_store_reviews" ||
+    phase === "export_store_review_requests" ||
+    phase === "export_store_review_audits"
+  )
+    throw new Error("Store-review exports require durable checkpoints");
   if (phase === "export_import_snapshots") {
     const shopper = shopperId
       ? await prisma.weleticShopper.findUnique({
@@ -896,6 +906,40 @@ export async function processCustomerDataRequestStep(
       subject.customerId ?? null,
       subject,
     );
+    if (
+      phase === "export_store_reviews" ||
+      phase === "export_store_review_requests" ||
+      phase === "export_store_review_audits"
+    ) {
+      const sequence = Number(cursor.sequence ?? 0);
+      const result = await exportStoreReviewPage({
+        requestId: request.id,
+        storeId: request.storeId,
+        shopperId: context.shopperId,
+        kind:
+          phase === "export_store_reviews"
+            ? "store_reviews"
+            : phase === "export_store_review_requests"
+              ? "store_review_requests"
+              : "store_review_audits",
+        sequence,
+        afterId: cursor.lastId ?? null,
+        expiresAt: exportExpiry(),
+        lease,
+      });
+      return {
+        completed: false,
+        phase: result.hasMore ? phase : nextExportPhase(phase),
+        cursor: result.hasMore
+          ? { lastId: result.lastId!, sequence: sequence + 1 }
+          : Prisma.DbNull,
+        progress: {
+          ...progress,
+          chunks: Number(progress.chunks ?? 0) + (result.count ? 1 : 0),
+          records: Number(progress.records ?? 0) + result.count,
+        },
+      };
+    }
     if (phase === "export_review_media") {
       const sequence = Number(cursor.sequence ?? 0);
       const result = await exportReviewMediaPage({

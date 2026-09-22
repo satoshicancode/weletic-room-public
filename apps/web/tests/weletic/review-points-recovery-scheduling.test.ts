@@ -27,30 +27,34 @@ beforeEach(() => {
   mocks.enqueue.mockResolvedValue({ job, created: true });
 });
 describe("review recovery scheduling", () => {
-  it("creates one identity under the existing transaction fence", async () => {
-    await scheduleReviewPointsRecovery({ tx, storeId: "store", ...payload });
-    expect(mocks.find).toHaveBeenCalledWith({
-      where: {
-        id: "claim",
+  it.each(["product", "store"])(
+    "creates one %s identity under the existing transaction fence",
+    async (subjectType) => {
+      mocks.find.mockResolvedValue({ ...source, subjectType });
+      await scheduleReviewPointsRecovery({ tx, storeId: "store", ...payload });
+      expect(mocks.find).toHaveBeenCalledWith({
+        where: {
+          id: "claim",
+          storeId: "store",
+          shopperId: "shopper",
+          status: "reserved",
+        },
+        select: {
+          subjectType: true,
+          awardSnapshot: true,
+          validationSnapshot: true,
+        },
+      });
+      expect(mocks.enqueue).toHaveBeenCalledExactlyOnceWith({
+        tx,
         storeId: "store",
-        shopperId: "shopper",
-        status: "reserved",
-      },
-      select: {
-        subjectType: true,
-        awardSnapshot: true,
-        validationSnapshot: true,
-      },
-    });
-    expect(mocks.enqueue).toHaveBeenCalledExactlyOnceWith({
-      tx,
-      storeId: "store",
-      jobType: "REVIEW_POINTS_RECOVERY",
-      payload,
-      idempotencyKey: "review_points_recovery:claim",
-      priority: -5,
-    });
-  });
+        jobType: "REVIEW_POINTS_RECOVERY",
+        payload,
+        idempotencyKey: "review_points_recovery:claim",
+        priority: -5,
+      });
+    },
+  );
   it.each(["completed", "cancelled", "dead_letter", "processing"])(
     "does not reset an existing %s job",
     async (status) => {
@@ -67,7 +71,7 @@ describe("review recovery scheduling", () => {
   );
   it.each([
     null,
-    { ...source, subjectType: "store" },
+    { ...source, subjectType: "unknown" },
     { ...source, awardSnapshot: { kind: "coupon" } },
     { ...source, validationSnapshot: { installationGeneration: "retired" } },
   ])("rejects unsupported, missing or stale source %#", async (claim) => {

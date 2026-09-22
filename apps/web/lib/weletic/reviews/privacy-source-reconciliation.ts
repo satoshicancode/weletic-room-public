@@ -11,6 +11,7 @@ import {
   buildReviewPrivacyOwnerProjection,
   reviewPrivacyKeySetDigest,
 } from "./privacy-owner-contract";
+import { reviewPrivacyOwnerSources } from "./privacy-owner-sources";
 
 /** Independent read-only comparison with persisted sources, including unpublished
  * review owners. A page is one RR snapshot; a multi-page scan is NOT an atomic
@@ -73,8 +74,7 @@ export async function reconcileReviewPrivacySourcePage({
         );
       const owners = await tx.weleticShopper.findMany({
         where: {
-          storeId,
-          nativeReviews: { some: { storeId } },
+          ...reviewPrivacyOwnerSources(storeId),
           ...(checkpoint ? { id: { gt: checkpoint.afterShopperId } } : {}),
         },
         select: { id: true, shopifyCustomerId: true, email: true },
@@ -84,17 +84,37 @@ export async function reconcileReviewPrivacySourcePage({
       // One store-wide reference snapshot at the beginning of a scan. Missing
       // or cross-store owners otherwise disappear from the owner-based scan.
       let orphanReviews: number | null = null;
+      let orphanRequests: number | null = null;
       if (!checkpoint) {
-        const rows = await tx.$queryRaw<Array<{ total: bigint }>>`
-          SELECT COUNT(*) AS total FROM WeleticProductReview r
-          LEFT JOIN WeleticShopper s ON s.storeId = r.storeId AND s.id = r.shopperId
-          WHERE r.storeId = ${storeId} AND s.id IS NULL
+        const rows = await tx.$queryRaw<
+          Array<{ total: bigint; requests: bigint }>
+        >`
+          SELECT SUM(source.total) AS total, SUM(source.requests) AS requests FROM (
+            SELECT COUNT(*) AS total, 0 AS requests FROM WeleticProductReview r
+            LEFT JOIN WeleticShopper s ON s.storeId = r.storeId AND s.id = r.shopperId
+            WHERE r.storeId = ${storeId} AND s.id IS NULL
+            UNION ALL
+            SELECT COUNT(*) AS total, 0 AS requests FROM WeleticStoreReview r
+            LEFT JOIN WeleticShopper s ON s.storeId = r.storeId AND s.id = r.shopperId
+            WHERE r.storeId = ${storeId} AND s.id IS NULL
+            UNION ALL
+            SELECT 0 AS total, COUNT(*) AS requests FROM WeleticReviewRequest r
+            LEFT JOIN WeleticShopper s ON s.storeId = r.storeId AND s.id = r.shopperId
+            WHERE r.storeId = ${storeId} AND s.id IS NULL
+            UNION ALL
+            SELECT 0 AS total, COUNT(*) AS requests FROM WeleticStoreReviewRequest r
+            LEFT JOIN WeleticShopper s ON s.storeId = r.storeId AND s.id = r.shopperId
+            WHERE r.storeId = ${storeId} AND s.id IS NULL
+          ) source
         `;
         orphanReviews = Number(rows[0]?.total);
+        orphanRequests = Number(rows[0]?.requests);
         if (
           rows.length !== 1 ||
           !Number.isSafeInteger(orphanReviews) ||
-          orphanReviews < 0
+          orphanReviews < 0 ||
+          !Number.isSafeInteger(orphanRequests) ||
+          orphanRequests < 0
         )
           throw new Error("Review privacy owner reference counts unavailable");
       }
@@ -224,6 +244,7 @@ export async function reconcileReviewPrivacySourcePage({
         counts,
         checked: Math.min(owners.length, limit),
         orphanReviews,
+        orphanRequests,
         productionReady: false as const,
         checkpoint:
           owners.length > limit && last

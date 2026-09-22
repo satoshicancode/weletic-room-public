@@ -1,4 +1,7 @@
-import { buildReviewPublicPrivacySql } from "@/lib/weletic/reviews/privacy-public-sql";
+import {
+  buildReviewPublicPrivacySql,
+  buildStoreReviewPublicPrivacySql,
+} from "@/lib/weletic/reviews/privacy-public-sql";
 import { describe, expect, it } from "vitest";
 
 const key = { identityKeyId: "fixture", secret: Buffer.alloc(32, 7) };
@@ -10,6 +13,18 @@ const input = {
 };
 
 describe("shared review SQL privacy fragments", () => {
+  it("applies retained owner proofs and both module gates to store feedback", () => {
+    const sql = buildStoreReviewPublicPrivacySql(input);
+    expect(sql.from.sql).toBe("WeleticStoreReview r");
+    expect(sql.base.sql).toContain("WeleticStoreReviewSettings");
+    expect(sql.base.sql).toContain("srs.enabled = 1");
+    expect(sql.base.sql).toContain("rs.enabled = 1");
+    expect(sql.base.sql).not.toContain("r.productId");
+    expect(sql.eligible.sql).toContain("t.customerDigest = i.customerDigest");
+    expect(sql.unknown.sql).toContain("c.keySetDigest =");
+    expect(sql.eligible.values).toContain(input.storeId);
+    expect(sql.eligible.sql).not.toContain(input.storeId);
+  });
   it("parameterizes scope and private readiness proof with fixed aliases", () => {
     const sql = buildReviewPublicPrivacySql(input);
     expect(sql.from.sql).toBe("WeleticProductReview r");

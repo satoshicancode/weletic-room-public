@@ -64,7 +64,7 @@ export async function reverseReviewPointsClaimInTransaction({
   });
   if (
     !claim ||
-    claim.subjectType !== "product" ||
+    !["product", "store"].includes(claim.subjectType) ||
     !["fulfilled", "reversed"].includes(claim.status) ||
     claim.shopper.storeId !== storeId ||
     claim.shopper.privacyTombstones.length
@@ -88,10 +88,16 @@ export async function reverseReviewPointsClaimInTransaction({
       "Review incentive evidence requires reconciliation",
     );
 
-  const review = await tx.weleticProductReview.findFirst({
-    where: { id: claim.sourceReviewId, storeId },
-    include: { request: true },
-  });
+  const review =
+    claim.subjectType === "store"
+      ? await tx.weleticStoreReview.findFirst({
+          where: { id: claim.sourceReviewId, storeId },
+          include: { request: true },
+        })
+      : await tx.weleticProductReview.findFirst({
+          where: { id: claim.sourceReviewId, storeId },
+          include: { request: true },
+        });
   const award = await tx.weleticPointsLedgerEntry.findUnique({
     where: {
       storeId_idempotencyKey: {
@@ -204,14 +210,17 @@ export async function reverseReviewPointsClaimInTransaction({
     where: { id: claim.id },
     data: { status: "reversed" },
   });
-  await tx.weleticProductReview.update({
+  const reviewMarker = {
     where: { id: review.id },
     data: {
       rewardStatus: "reversed",
       rewardReason: decision.reason,
       participationStatus: "invalidated",
     },
-  });
+  } satisfies Prisma.WeleticProductReviewUpdateArgs;
+  if (claim.subjectType === "store")
+    await tx.weleticStoreReview.update(reviewMarker);
+  else await tx.weleticProductReview.update(reviewMarker);
   await scheduleTierReviewAfterQualifyingActivity({
     tx,
     storeId,

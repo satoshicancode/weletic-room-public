@@ -68,7 +68,7 @@ describe("missed review enrollment discovery", () => {
         storeId: "store",
         shopperId: "shopper",
         status: "reserved",
-        subjectType: "product",
+        subjectType: { in: ["product", "store"] },
         validationSnapshot: {
           path: "$.installationGeneration",
           equals: "generation",

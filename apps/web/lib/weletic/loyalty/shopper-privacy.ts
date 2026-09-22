@@ -13,6 +13,11 @@ import {
 } from "@/lib/weletic/reviews/open-media-export";
 import { openReviewProvenanceExportSelection } from "@/lib/weletic/reviews/open-submission-privacy";
 import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
+import {
+  storeReviewAuditExportSelect,
+  storeReviewExportSelect,
+  storeReviewRequestExportSelect,
+} from "@/lib/weletic/reviews/store-export";
 import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
 import {
   getShopifyCustomerPrivacyPseudonym,
@@ -1806,6 +1811,49 @@ export async function getShopperDataExport({
       )
     : [];
 
+  const storeReviews = shopper
+    ? await collectAllExportPages((cursor) =>
+        prisma.weleticStoreReview.findMany({
+          where: {
+            storeId,
+            shopperId: shopper.id,
+            ...(cursor ? { id: { gt: cursor } } : {}),
+          },
+          orderBy: { id: "asc" },
+          take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+          select: storeReviewExportSelect,
+        }),
+      )
+    : [];
+  const storeReviewRequests = shopper
+    ? await collectAllExportPages((cursor) =>
+        prisma.weleticStoreReviewRequest.findMany({
+          where: {
+            storeId,
+            shopperId: shopper.id,
+            ...(cursor ? { id: { gt: cursor } } : {}),
+          },
+          orderBy: { id: "asc" },
+          take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+          select: storeReviewRequestExportSelect,
+        }),
+      )
+    : [];
+
+  const storeReviewModerationAudits = shopper
+    ? await collectAllExportPages((cursor) =>
+        prisma.weleticStoreReviewModerationAudit.findMany({
+          where: {
+            storeId,
+            review: { storeId, shopperId: shopper.id },
+            ...(cursor ? { id: { gt: cursor } } : {}),
+          },
+          orderBy: { id: "asc" },
+          take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+          select: storeReviewAuditExportSelect,
+        }),
+      )
+    : [];
   const reviewIncentiveInvalidations = shopper
     ? await collectAllExportPages((cursor) =>
         prisma.weleticReviewIncentiveInvalidation.findMany({
@@ -1839,6 +1887,9 @@ export async function getShopperDataExport({
     openReviewUploads,
     reviewModerationAudits,
     reviewRequests,
+    storeReviews,
+    storeReviewRequests,
+    storeReviewModerationAudits,
     reviewIncentiveClaims,
     reviewIncentiveInvalidations,
     shopifyCustomerId: shopper?.shopifyCustomerId ?? String(shopifyCustomerId),

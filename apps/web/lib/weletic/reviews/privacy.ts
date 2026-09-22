@@ -21,6 +21,10 @@ import {
 } from "./open-submission-privacy";
 import { reviewPointsRecoveryKey } from "./points-recovery-contract";
 import {
+  purgeStoreReviewsBatch,
+  redactStoreReviewsBatch,
+} from "./store-privacy";
+import {
   purgeReviewTranslationsBatch,
   redactReviewTranslationsBatch,
   reviewTranslationRedactionWhere,
@@ -64,134 +68,149 @@ export async function redactNativeReviewsBatch(
     redactedAt: null,
     review: { storeId, ...(shopperId ? { shopperId } : {}) },
   } satisfies Prisma.WeleticReviewModerationAuditWhereInput;
-  const mediaIds = await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM WeleticShopifyStore WHERE id = ${storeId} FOR UPDATE`;
-    await redactReviewTranslationsBatch(tx, storeId, shopperId);
-    await redactOpenReviewProvenanceBatch(tx, storeId, shopperId);
-    await redactOpenReviewMediaOwnershipBatch(tx, storeId, shopperId);
-    const audits = await tx.weleticReviewModerationAudit.findMany({
-      where: auditWhere,
-      orderBy: { id: "asc" },
-      take: PAGE_SIZE,
-      select: { id: true },
-    });
-    if (audits.length)
-      await tx.weleticReviewModerationAudit.updateMany({
-        where: { ...auditWhere, id: { in: audits.map(({ id }) => id) } },
-        data: {
-          reasonDetails: null,
-          actorUserId: null,
-          merchantActionId: null,
-          redactedAt: new Date(),
-        },
-      });
-    const claims = await tx.weleticReviewIncentiveClaim.findMany({
-      where: claimWhere,
-      orderBy: { id: "asc" },
-      take: PAGE_SIZE,
-      select: { id: true, shopperId: true },
-    });
-    const redactedAt = new Date();
-    for (const claim of claims) {
-      await tx.weleticLoyaltyOutboxJob.updateMany({
-        where: {
-          storeId,
-          jobType: "REVIEW_POINTS_RECOVERY",
-          idempotencyKey: reviewPointsRecoveryKey(claim.id),
-          status: { in: ["pending", "processing", "failed"] },
-        },
-        data: { status: "cancelled", lockedAt: null, lockedBy: null },
-      });
-      // Preserve the order-wide financial marker and promised award. Privacy is
-      // not fraud, and cannot create a second incentive or a points reversal.
-      await tx.weleticReviewIncentiveClaim.update({
-        where: { id: claim.id },
-        data: {
-          status: "privacy_redacted",
-          validationSnapshot: {
-            redacted: true,
-            redactedAt: redactedAt.toISOString(),
-          },
-        },
-      });
-      const rewards = await tx.weleticRewardRedemption.findMany({
-        where: {
-          storeId,
-          shopperId: claim.shopperId,
-          accountId: null,
-          fulfillmentSource: DIRECT_REVIEW_REWARD_SOURCE,
-          fulfillmentReference: claim.id,
-        },
+  const { mediaIds, storeReviewsHaveMore } = await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT id FROM WeleticShopifyStore WHERE id = ${storeId} FOR UPDATE`;
+      const storeReviews = await redactStoreReviewsBatch(
+        tx,
+        shopperId === undefined
+          ? { kind: "frozen_store", storeId }
+          : { kind: "customer", storeId, shopperId },
+      );
+      await redactReviewTranslationsBatch(tx, storeId, shopperId);
+      await redactOpenReviewProvenanceBatch(tx, storeId, shopperId);
+      await redactOpenReviewMediaOwnershipBatch(tx, storeId, shopperId);
+      const audits = await tx.weleticReviewModerationAudit.findMany({
+        where: auditWhere,
+        orderBy: { id: "asc" },
+        take: PAGE_SIZE,
         select: { id: true },
       });
-      await tx.weleticLoyaltyOutboxJob.updateMany({
-        where: {
-          storeId,
-          jobType: "SHOPPER_REWARD_PROVISION",
-          idempotencyKey: {
-            in: rewards.map(({ id }) => `shopper_reward_provision:${id}`),
+      if (audits.length)
+        await tx.weleticReviewModerationAudit.updateMany({
+          where: { ...auditWhere, id: { in: audits.map(({ id }) => id) } },
+          data: {
+            reasonDetails: null,
+            actorUserId: null,
+            merchantActionId: null,
+            redactedAt: new Date(),
           },
-          status: { in: ["pending", "processing", "failed"] },
-        },
-        data: { status: "cancelled", lockedAt: null, lockedBy: null },
-      });
-    }
-    const requests = await tx.weleticReviewRequest.findMany({
-      where,
-      orderBy: { id: "asc" },
-      take: PAGE_SIZE,
-      include: {
-        review: true,
-        media: { where: { status: { not: "deleted" } }, select: { id: true } },
-      },
-    });
-    const ids: string[] = [];
-    for (const request of requests) {
-      await tx.weleticReviewRequest.update({
-        where: { id: request.id },
-        data: {
-          status: "cancelled",
-          cancelledAt: new Date(),
-          cancellationReason: "privacy_redaction",
-          tokenHash: null,
-          encryptedDeliveryToken: null,
-          encryptedDeliverySnapshot: null,
-          deliveryToken: null,
-          deliveryLeaseExpiresAt: null,
-          lastError: null,
-        },
-      });
-      await tx.weleticLoyaltyOutboxJob.updateMany({
-        where: {
-          storeId,
-          jobType: "REVIEW_REQUEST_EMAIL",
-          idempotencyKey: `review_request_email:${request.id}`,
-          status: { in: ["pending", "processing", "failed"] },
-        },
-        data: { status: "cancelled", lockedAt: null, lockedBy: null },
-      });
-      for (const media of request.media) {
-        await tx.weleticReviewMedia.update({
-          where: { id: media.id },
-          data: { status: "deletion_pending" },
         });
-        await enqueueOutboxJob({
-          tx,
-          storeId,
-          jobType: "REVIEW_MEDIA_CLEANUP",
-          payload: { mediaId: media.id },
-          idempotencyKey: `review_privacy_media:${media.id}`,
+      const claims = await tx.weleticReviewIncentiveClaim.findMany({
+        where: claimWhere,
+        orderBy: { id: "asc" },
+        take: PAGE_SIZE,
+        select: { id: true, shopperId: true },
+      });
+      const redactedAt = new Date();
+      for (const claim of claims) {
+        await tx.weleticLoyaltyOutboxJob.updateMany({
+          where: {
+            storeId,
+            jobType: "REVIEW_POINTS_RECOVERY",
+            idempotencyKey: reviewPointsRecoveryKey(claim.id),
+            status: { in: ["pending", "processing", "failed"] },
+          },
+          data: { status: "cancelled", lockedAt: null, lockedBy: null },
         });
-        ids.push(media.id);
+        // Preserve the order-wide financial marker and promised award. Privacy is
+        // not fraud, and cannot create a second incentive or a points reversal.
+        await tx.weleticReviewIncentiveClaim.update({
+          where: { id: claim.id },
+          data: {
+            status: "privacy_redacted",
+            validationSnapshot: {
+              redacted: true,
+              redactedAt: redactedAt.toISOString(),
+            },
+          },
+        });
+        const rewards = await tx.weleticRewardRedemption.findMany({
+          where: {
+            storeId,
+            shopperId: claim.shopperId,
+            accountId: null,
+            fulfillmentSource: DIRECT_REVIEW_REWARD_SOURCE,
+            fulfillmentReference: claim.id,
+          },
+          select: { id: true },
+        });
+        await tx.weleticLoyaltyOutboxJob.updateMany({
+          where: {
+            storeId,
+            jobType: "SHOPPER_REWARD_PROVISION",
+            idempotencyKey: {
+              in: rewards.map(({ id }) => `shopper_reward_provision:${id}`),
+            },
+            status: { in: ["pending", "processing", "failed"] },
+          },
+          data: { status: "cancelled", lockedAt: null, lockedBy: null },
+        });
       }
-    }
-    await redactReviewContentBatch(tx, storeId, shopperId);
-    ids.push(...(await redactReviewOwnedMediaBatch(tx, storeId, shopperId)));
-    return [...new Set(ids)];
-  });
+      const requests = await tx.weleticReviewRequest.findMany({
+        where,
+        orderBy: { id: "asc" },
+        take: PAGE_SIZE,
+        include: {
+          review: true,
+          media: {
+            where: { status: { not: "deleted" } },
+            select: { id: true },
+          },
+        },
+      });
+      const ids: string[] = [];
+      for (const request of requests) {
+        await tx.weleticReviewRequest.update({
+          where: { id: request.id },
+          data: {
+            status: "cancelled",
+            cancelledAt: new Date(),
+            cancellationReason: "privacy_redaction",
+            tokenHash: null,
+            encryptedDeliveryToken: null,
+            encryptedDeliverySnapshot: null,
+            deliveryToken: null,
+            deliveryLeaseExpiresAt: null,
+            lastError: null,
+          },
+        });
+        await tx.weleticLoyaltyOutboxJob.updateMany({
+          where: {
+            storeId,
+            jobType: "REVIEW_REQUEST_EMAIL",
+            idempotencyKey: `review_request_email:${request.id}`,
+            status: { in: ["pending", "processing", "failed"] },
+          },
+          data: { status: "cancelled", lockedAt: null, lockedBy: null },
+        });
+        for (const media of request.media) {
+          await tx.weleticReviewMedia.update({
+            where: { id: media.id },
+            data: { status: "deletion_pending" },
+          });
+          await enqueueOutboxJob({
+            tx,
+            storeId,
+            jobType: "REVIEW_MEDIA_CLEANUP",
+            payload: { mediaId: media.id },
+            idempotencyKey: `review_privacy_media:${media.id}`,
+          });
+          ids.push(media.id);
+        }
+      }
+      await redactReviewContentBatch(tx, storeId, shopperId);
+      ids.push(...(await redactReviewOwnedMediaBatch(tx, storeId, shopperId)));
+      return {
+        mediaIds: [...new Set(ids)],
+        storeReviewsHaveMore: storeReviews.hasMore,
+      };
+    },
+  );
   for (const id of mediaIds) await cleanupReviewPhoto(storeId, id);
   return {
     hasMore:
+      storeReviewsHaveMore ||
       (await prisma.weleticOpenReviewMediaOwnership.count({
         where: openReviewMediaIncompleteWhere(storeId, shopperId),
       })) > 0 ||
@@ -227,6 +246,8 @@ export async function purgeNativeReviewsBatch(storeId: string) {
       !["frozen", "redacted"].includes(stores[0].complianceState)
     )
       throw new Error("Review purge requires a frozen store");
+    if ((await purgeStoreReviewsBatch(tx, storeId)).hasMore)
+      return { hasMore: true };
     if (await purgeReviewTranslationsBatch(tx, storeId))
       return { hasMore: true };
     if (await purgeOpenReviewProvenanceBatch(tx, storeId))
