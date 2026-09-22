@@ -311,3 +311,10 @@ The exact fixture database/account were removed and the retained ledger remained
 Independent final review found no additional blocker. Five-table schema ordering
 and compatible compliance-worker rollout/recovery remain mandatory. The scoped
 foundation is ready for draft PR/CI; it does not complete the store-review slice.
+
+## September 22 — delivery policy approved
+
+Hiro selected the shared per-store Loyalty + Reviews delivery policy (Option A).
+[ADR 0042](../adr/0042-shared-shopper-delivery-policy.md) records this approval and
+supersedes the unresolved decision noted above. Implementation and verification
+continue; no migration or send is authorized by this architectural choice alone.
