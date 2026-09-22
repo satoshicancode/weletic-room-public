@@ -1,6 +1,6 @@
 # Company-store loyalty and reviews — completion checklist
 
-Reconciled September 22, 2026 against public main
+Reconciled September 23, 2026 against public main
 `956bd0a7b02ff2cb3bc3acf425eeb34f1e5d882e` (PR #100). Its post-merge Fast Quality
 Gate passed. This document is the current combined scope, task and status
 authority under [ADR 0040](../adr/0040-company-store-loyalty-and-reviews-completion.md).
@@ -20,7 +20,9 @@ Shipped: public-main implementations through PR #100; its post-merge CI passed.
 Live accepted: only the bounded journeys below. Hiro approved finishing the
 active store-review slice first on September 22, then prioritizing Loyalty
 acceptance. Store-review persistence, privacy/export, public reads, shared incentives and
-internal authenticated submission/moderation remain an unpublished draft; see the [current worklog](store-review-core-worklog.md).
+internal authenticated submission/moderation are in unmerged [draft PR #101](https://github.com/satoshicancode/weletic-room-public/pull/101); see the [current worklog](store-review-core-worklog.md).
+Hiro approved a shared Loyalty + Reviews delivery policy in [ADR 0042](../adr/0042-shared-shopper-delivery-policy.md).
+Its scheduling foundation is locally verified; [durable admission and producer integration](shared-shopper-delivery-policy.md) remain open, including the anonymous-recipient identity decision.
 External execution remains gated where approval/resources are absent.
 
 | Evidence ID | Status           | Exact accepted boundary                                                                                                                                                                                                           | Still open                                                                                                           |
