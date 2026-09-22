@@ -26,7 +26,13 @@ const MINUTE_MS = 60_000;
 
 export type ShopperDeliveryDecision =
   | { status: "eligible" }
-  | { status: "blocked"; reason: "paused" | "configuration_unavailable" }
+  | {
+      status: "blocked";
+      reason:
+        | "paused"
+        | "configuration_unavailable"
+        | "no_window_before_expiry";
+    }
   | { status: "expired" }
   | { status: "deferred"; retryAt: Date };
 
@@ -104,7 +110,10 @@ export function evaluateShopperDelivery({
         active[active.length - maxMessagesPer24Hours] +
         SHOPPER_DELIVERY_WINDOW_MS;
   }
-  if (candidate >= expiry) return { status: "expired" };
+  // A later policy revision may reopen a window before the original expiry.
+  // Do not tell a worker to expire a still-live source prematurely.
+  if (candidate >= expiry)
+    return { status: "blocked", reason: "no_window_before_expiry" };
   if (!Number.isFinite(new Date(candidate).getTime()))
     return { status: "blocked", reason: "configuration_unavailable" };
   if (quietHours) {
@@ -120,7 +129,8 @@ export function evaluateShopperDelivery({
     const limit = candidate + 3 * SHOPPER_DELIVERY_WINDOW_MS;
     while (isQuiet(localMinute(formatter, candidate), quietHours)) {
       candidate = Math.floor(candidate / MINUTE_MS) * MINUTE_MS + MINUTE_MS;
-      if (candidate >= expiry) return { status: "expired" };
+      if (candidate >= expiry)
+        return { status: "blocked", reason: "no_window_before_expiry" };
       if (candidate > limit || !Number.isFinite(new Date(candidate).getTime()))
         return { status: "blocked", reason: "configuration_unavailable" };
     }

@@ -179,7 +179,11 @@ describe("shared shopper delivery scheduling", () => {
           policy: { ...policy, maxMessagesPer24Hours: 1 },
           countedReservationTimes: [new Date("2026-09-21T13:00:00Z")],
         }),
-      ).toEqual({ status: "expired" });
+      ).toEqual(
+        expiresAt === "2026-09-22T12:00:00Z"
+          ? { status: "expired" }
+          : { status: "blocked", reason: "no_window_before_expiry" },
+      );
     },
   );
 
@@ -189,7 +193,15 @@ describe("shared shopper delivery scheduling", () => {
         now: new Date("2026-09-22T23:00:00Z"),
         expiresAt: new Date("2026-09-23T08:00:00Z"),
       }),
-    ).toEqual({ status: "expired" });
+    ).toEqual({ status: "blocked", reason: "no_window_before_expiry" });
+    // A merchant shortening quiet hours can reopen the still-live source.
+    expect(
+      evaluate({
+        policy: { ...policy, quietHours: null },
+        now: new Date("2026-09-22T23:00:00Z"),
+        expiresAt: new Date("2026-09-23T08:00:00Z"),
+      }),
+    ).toEqual({ status: "eligible" });
   });
 
   it("preserves distinct reservations at equal timestamps and millisecond release", () => {

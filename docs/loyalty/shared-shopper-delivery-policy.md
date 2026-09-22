@@ -17,6 +17,8 @@ database or activation side effects and is not yet exposed by merchant settings.
   and non-hour timezone offsets. Capacity release is evaluated before quiet hours.
 - Original message expiry is never extended. An unavailable configuration blocks
   scheduling; explicit null means unconfigured. Pause remains a separate block.
+  If current policy leaves no window before a future expiry, the source is
+  blocked, not prematurely expired: a later policy revision can reopen a window.
 
 This calculation does not grant consent, reserve capacity, fence a worker, prove
 transport delivery, or authorize retries. Every producer must still enforce those
