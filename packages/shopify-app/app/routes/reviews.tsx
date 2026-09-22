@@ -28,10 +28,13 @@ import {
 } from "../../../../apps/web/lib/weletic/reviews/merchant-contract";
 import type { AuditedReviewModerationInput } from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
 import { OpenReviewPolicyPanel } from "../components/OpenReviewPolicyPanel";
+import { ReviewCollectionPanel } from "../components/ReviewCollectionPanel";
+import { ReviewDeliveryHistory } from "../components/ReviewDeliveryHistory";
 import { ReviewIncentivesPanel } from "../components/ReviewIncentivesPanel";
 import { ReviewModerationForm } from "../components/ReviewModerationForm";
 import { ReviewTranslationsPanel } from "../components/ReviewTranslationsPanel";
 import { createMerchantOpenReviewPolicyClient } from "../merchant-open-review-policy-client";
+import { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { createMerchantReviewModerationClient } from "../merchant-review-moderation-client";
 import { createMerchantReviewTranslationsClient } from "../merchant-review-translations-client";
@@ -84,6 +87,10 @@ export default function ReviewsPage() {
   );
   const translationClient = useMemo(
     () => createMerchantReviewTranslationsClient(() => shopify.idToken()),
+    [shopify],
+  );
+  const collectionClient = useMemo(
+    () => createMerchantReviewCollectionClient(() => shopify.idToken()),
     [shopify],
   );
   const copy = merchantReviewsCopy[locale];
@@ -255,6 +262,10 @@ export default function ReviewsPage() {
             <Text as="p">{copy.description}</Text>
             <Card>
               <ReviewIncentivesPanel client={incentiveClient} locale={locale} />
+              <ReviewCollectionPanel
+                client={collectionClient}
+                locale={locale}
+              />
             </Card>
             <Card>
               <OpenReviewPolicyPanel
@@ -450,6 +461,10 @@ export default function ReviewsPage() {
                             {copy.attempts}: {row.deliveryAttempts}
                           </p>
                           {row.hasDeliveryError && <p>{copy.deliveryError}</p>}
+                          <ReviewDeliveryHistory
+                            history={row.deliveryHistory}
+                            locale={locale}
+                          />
                         </>
                       )}
                     </BlockStack>

@@ -1,5 +1,9 @@
 import { json } from "@remix-run/node";
 import {
+  reviewCollectionReadInputSchema,
+  reviewCollectionWriteInputSchema,
+} from "../../../apps/web/lib/weletic/reviews/collection-contract";
+import {
   merchantReviewCouponListInputSchema,
   merchantReviewIncentiveActivationInputSchema,
   merchantReviewIncentiveDraftInputSchema,
@@ -45,6 +49,14 @@ const operations = {
   "review-translations-write": {
     schema: manualReviewTranslationInputSchema,
     path: "reviews/translations/write",
+  },
+  "review-collection-read": {
+    schema: reviewCollectionReadInputSchema,
+    path: "reviews/collection/read",
+  },
+  "review-collection-write": {
+    schema: reviewCollectionWriteInputSchema,
+    path: "reviews/collection/write",
   },
   "review-incentives-activate": {
     schema: merchantReviewIncentiveActivationInputSchema,

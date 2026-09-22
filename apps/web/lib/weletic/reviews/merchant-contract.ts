@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { reviewDeliveryHistorySchema } from "./delivery-history";
 
 export const merchantReviewStatusSchema = z.enum([
   "pending",
@@ -98,6 +99,10 @@ export const merchantReviewListResponseSchema = z.discriminatedUnion("view", [
               submittedAt: z.string().datetime().nullable(),
               deliveryAttempts: z.number().int().nonnegative(),
               hasDeliveryError: z.boolean(),
+              // Null denotes an older reader with no history projection.
+              deliveryHistory: reviewDeliveryHistorySchema
+                .nullable()
+                .default(null),
             })
             .strict(),
         )

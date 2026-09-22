@@ -11,6 +11,8 @@ import {
   assertReviewPurchaseNotSuppressed,
   reviewRequestInclude,
 } from "./purchase";
+import { eraseReviewReminderMaterialInTransaction } from "./reminder-retention";
+import { snapshotReviewReminderSchedule } from "./reminder-schedule";
 import { withReviewMutation } from "./transaction";
 
 /** Called only with an authenticated orders/fulfilled event. Missing paid-order
@@ -35,7 +37,7 @@ export async function createFulfilledReviewRequests({
         where: { storeId },
       });
       if (!settings?.enabled || !settings.requestEmailEnabled) return [];
-      // Never backfill review email sends merely by enabling the module.
+      // Never backfill review email sends by enabling the module or collection.
       if (!settings.activatedAt || fulfilledAt < settings.activatedAt)
         return [];
       if (
@@ -129,6 +131,17 @@ export async function createFulfilledReviewRequests({
             fulfilledAt,
             sendAt,
             expiresAt,
+            reminderSnapshot: snapshotReviewReminderSchedule(
+              {
+                sendAfterDays: settings.sendAfterDays,
+                expiresAfterDays: settings.expiresAfterDays,
+                autoPublish: settings.autoPublish,
+                photoUploadsEnabled: settings.photoUploadsEnabled,
+                requestEmailEnabled: settings.requestEmailEnabled,
+                reminderAfterDays: settings.reminderAfterDays ?? [],
+              },
+              settings.collectionRevision ?? 0,
+            ),
             lines: {
               create: lines.map((line) => ({
                 id: createWeleticId("wrevline_"),
@@ -292,6 +305,12 @@ async function cancelReviewRequestsInTransaction(
       },
       data: { status: "cancelled", lockedAt: null, lockedBy: null },
     });
+    if (request.reminderSnapshot || request.encryptedReminderToken)
+      await eraseReviewReminderMaterialInTransaction(tx, {
+        storeId,
+        requestIds: [request.id],
+        reason: "purchase_ineligible",
+      });
   }
 }
 

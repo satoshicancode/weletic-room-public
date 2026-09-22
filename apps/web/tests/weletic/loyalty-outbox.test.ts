@@ -31,6 +31,11 @@ import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates"
 import { recoverReviewPoints } from "@/lib/weletic/reviews/points-recovery";
 import { ReviewPointsRecoveryPendingError } from "@/lib/weletic/reviews/points-recovery-contract";
 import {
+  ReviewReminderDeferredError,
+  ReviewReminderReconciliationError,
+} from "@/lib/weletic/reviews/reminder-errors";
+import { ShopifyStoreOperationalWritesBlockedError } from "@/lib/weletic/shopify/store-compliance-state";
+import {
   Prisma,
   WeleticLoyaltyOutboxJobStatus,
   WeleticLoyaltyOutboxJobType,
@@ -38,6 +43,10 @@ import {
   WeleticRedemptionStatus,
 } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+const reviewJob = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/weletic/reviews/worker", () => ({
+  executeNativeReviewJob: reviewJob,
+}));
 
 // Mock prisma client for isolation
 vi.mock("@/lib/prisma", () => ({
@@ -216,6 +225,23 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
   // 1. Transactional Enqueueing & Atomicity
   // =========================================================================
   describe("1. Transactional Enqueueing & Atomicity", () => {
+    it("never rebinds reminder work to a replacement installation", async () => {
+      vi.mocked(prisma.weleticLoyaltyOutboxJob.findUnique).mockResolvedValue(
+        null,
+      );
+      await expect(
+        enqueueOutboxJob({
+          storeId: TEST_STORE_ID,
+          jobType: "REVIEW_REQUEST_EMAIL",
+          payload: {
+            requestId: "request",
+            reminderId: `wrevrem_${"x".repeat(20)}`,
+            installationGeneration: "retired",
+          },
+        }),
+      ).rejects.toThrow("Review reminder installation changed");
+      expect(prisma.weleticLoyaltyOutboxJob.create).not.toHaveBeenCalled();
+    });
     it("preserves omitted tier grace and accepts zero without defaulting it", () => {
       expect(
         TierReviewPayloadSchema.parse({ accountId: TEST_ACCOUNT_ID }),
@@ -610,6 +636,111 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
           (transition!.data.nextRetryAt as Date).getTime(),
         ).toBeGreaterThanOrEqual(before + 300000);
         expect(transition!.data).not.toHaveProperty("errorLog");
+      },
+    );
+    it.each([
+      "suspended",
+      "stale_installation_generation",
+      "redacted",
+      "access_unavailable",
+    ])(
+      "does not falsely complete reminder work blocked by %s",
+      async (complianceState) => {
+        reviewJob.mockRejectedValueOnce(
+          new ShopifyStoreOperationalWritesBlockedError({
+            action: "native_reviews",
+            storeId: TEST_STORE_ID,
+            complianceState,
+          }),
+        );
+        await expect(
+          executeOutboxJob({
+            storeId: TEST_STORE_ID,
+            jobType: "REVIEW_REQUEST_EMAIL",
+            payload: {
+              requestId: "request",
+              reminderId: `wrevrem_${"x".repeat(20)}`,
+              installationGeneration: "sgen_outbox_two",
+            },
+          } as never),
+        ).rejects.toBeInstanceOf(
+          complianceState === "suspended"
+            ? ReviewReminderDeferredError
+            : ReviewReminderReconciliationError,
+        );
+        expect(reviewJob).toHaveBeenCalledOnce();
+      },
+    );
+    it.each(["deferred", "reconciliation", "sent"])(
+      "handles reminder %s without falsely completing a deferred send",
+      async (outcome) => {
+        const retryAt = new Date(Date.now() + 600_000);
+        const job = {
+          id: "reminder_batch",
+          storeId: TEST_STORE_ID,
+          jobType: "REVIEW_REQUEST_EMAIL" as const,
+          status: "pending" as const,
+          payload: {
+            requestId: "request",
+            reminderId: `wrevrem_${"x".repeat(20)}`,
+            installationGeneration: "sgen_outbox_two",
+          },
+          attempts: 0,
+          maxAttempts: 5,
+          scheduledFor: new Date(0),
+          nextRetryAt: null,
+          lockedAt: null,
+          lockedBy: null,
+          errorLog: [],
+        };
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.findMany)
+          .mockResolvedValueOnce([job as never])
+          .mockResolvedValueOnce([]);
+        vi.mocked(prisma.weleticLoyaltyOutboxJob.updateMany).mockResolvedValue({
+          count: 1,
+        });
+        reviewJob.mockImplementationOnce(async () => {
+          if (outcome === "deferred")
+            throw new ReviewReminderDeferredError(retryAt);
+          if (outcome === "reconciliation")
+            throw new ReviewReminderReconciliationError();
+        });
+        const result = await processOutboxJobsBatch({
+          storeId: TEST_STORE_ID,
+          jobIds: [job.id],
+        });
+        expect(reviewJob).toHaveBeenCalledOnce();
+        expect(result).toMatchObject(
+          outcome === "deferred"
+            ? { processed: 0, skipped: 1, deadLettered: 0 }
+            : outcome === "reconciliation"
+              ? { processed: 1, deadLettered: 1, succeeded: 0 }
+              : { succeeded: 1 },
+        );
+        expect(
+          vi
+            .mocked(prisma.weleticLoyaltyOutboxJob.updateMany)
+            .mock.calls.map(([args]) => args),
+        ).toContainEqual(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              id: job.id,
+              status: "processing",
+              attempts: 1,
+              lockedBy: expect.any(String),
+            }),
+            data: expect.objectContaining(
+              outcome === "deferred"
+                ? { status: "pending", attempts: 0, nextRetryAt: retryAt }
+                : {
+                    status:
+                      outcome === "reconciliation"
+                        ? "dead_letter"
+                        : "completed",
+                  },
+            ),
+          }),
+        );
       },
     );
     it.each(["pause", "reconcile", "success"])(

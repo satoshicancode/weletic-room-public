@@ -1,16 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
+import { reviewCollectionFields } from "./collection-contract";
 
 export const REVIEW_MAX_PHOTOS = 5;
 export const REVIEW_MAX_PHOTO_BYTES = 2 * 1024 * 1024;
 export const reviewSettingsSchema = z
   .object({
     enabled: z.boolean(),
-    sendAfterDays: z.number().int().min(0).max(60),
-    expiresAfterDays: z.number().int().min(1).max(90),
-    autoPublish: z.boolean(),
-    photoUploadsEnabled: z.boolean(),
-    requestEmailEnabled: z.boolean(),
+    ...reviewCollectionFields,
   })
   .strict();
 export const reviewSubmissionBaseSchema = z

@@ -149,8 +149,22 @@ export async function listAdminReviews(
             sentAt: true,
             submittedAt: true,
             deliveryAttempts: true,
+            deliveryLeaseExpiresAt: true,
             lastError: true,
             cancellationReason: true,
+            reminders: {
+              where: { storeId },
+              orderBy: { sequence: "asc" },
+              take: 4, // Detect corrupt/unbounded schedules, never silently truncate.
+              select: {
+                sequence: true,
+                status: true,
+                attempts: true,
+                scheduledFor: true,
+                sentAt: true,
+                leaseExpiresAt: true,
+              },
+            },
             product: { select: { title: true, externalId: true } },
           },
         });

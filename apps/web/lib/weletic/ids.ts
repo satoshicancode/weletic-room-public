@@ -38,6 +38,7 @@ export type WeleticIdPrefix =
   | "wstoreaudit_"
   | "wreview_"
   | "wrevreq_"
+  | "wrevrem_"
   | "wrevline_"
   | "wrevmedia_"
   | "wrevmediaown_"

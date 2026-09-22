@@ -1,5 +1,6 @@
 import { listAdminReviews } from "@/lib/weletic/reviews/admin";
 import { ReviewError } from "@/lib/weletic/reviews/contracts";
+import { reviewDeliveryOutcome } from "@/lib/weletic/reviews/delivery-history";
 import {
   merchantReviewListInputSchema,
   merchantReviewListResponseSchema,
@@ -68,6 +69,7 @@ export async function listShopifyMerchantReviewsInTransaction({
     : null;
   // Explicit merchant projection: no delivery tokens, private media keys,
   // shopper identity, provider error strings or arbitrary metadata.
+  const observedAt = new Date();
   const items = result.items.map((row) => {
     const common = {
       id: row.id,
@@ -97,6 +99,31 @@ export async function listShopifyMerchantReviewsInTransaction({
           submittedAt: row.submittedAt?.toISOString() ?? null,
           deliveryAttempts: row.deliveryAttempts,
           hasDeliveryError: Boolean(row.lastError),
+          deliveryHistory: row.reminders
+            ? {
+                initial: {
+                  outcome: reviewDeliveryOutcome(
+                    {
+                      status: row.status,
+                      attempts: row.deliveryAttempts,
+                      sentAt: row.sentAt,
+                      leaseExpiresAt: row.deliveryLeaseExpiresAt,
+                    },
+                    observedAt,
+                  ),
+                  attempts: row.deliveryAttempts,
+                  scheduledFor: row.sendAt.toISOString(),
+                  confirmedAt: row.sentAt?.toISOString() ?? null,
+                },
+                reminders: row.reminders.map((reminder) => ({
+                  sequence: reminder.sequence,
+                  outcome: reviewDeliveryOutcome(reminder, observedAt),
+                  attempts: reminder.attempts,
+                  scheduledFor: reminder.scheduledFor.toISOString(),
+                  confirmedAt: reminder.sentAt?.toISOString() ?? null,
+                })),
+              }
+            : null,
         };
   });
   return merchantReviewListResponseSchema.parse({

@@ -757,6 +757,7 @@ export async function readComplianceReviewCheckpoint({
   sequence: number;
   lease: ComplianceArtifactLease;
   kind:
+    | "review_reminders"
     | "review_media"
     | "store_reviews"
     | "store_review_requests"

@@ -80,6 +80,10 @@ import {
   ReviewPointsRecoveryPendingError,
   ReviewPointsRecoveryReconciliationError,
 } from "@/lib/weletic/reviews/points-recovery-contract";
+import {
+  ReviewReminderDeferredError,
+  ReviewReminderReconciliationError,
+} from "@/lib/weletic/reviews/reminder-errors";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import {
   assertShopifyStoreAcceptsOperationalWrites,
@@ -1420,6 +1424,20 @@ export async function processOutboxJobsBatch(
         summary.skipped++;
         continue;
       }
+      if (
+        candidate.jobType === "REVIEW_REQUEST_EMAIL" &&
+        error instanceof ReviewReminderDeferredError
+      ) {
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: new Date(),
+          retryAt: error.retryAt,
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
       const errorMessage = error?.message || String(error);
       const failedAt = new Date();
       // Once reconciliation reports an indeterminate lookup, always preserve
@@ -1432,6 +1450,7 @@ export async function processOutboxJobsBatch(
         error instanceof VoucherCleanupRetryableError;
       const terminalOutboxFailure =
         error instanceof ReviewPointsRecoveryReconciliationError ||
+        error instanceof ReviewReminderReconciliationError ||
         (error instanceof ShopifyFlowDispatchError && !error.retryable) ||
         error instanceof HistoricalImportExecutionContainedError ||
         error instanceof ExpiryDeliveryReconciliationRequiredError ||
@@ -1637,6 +1656,37 @@ export async function executeOutboxJob(
       payload?.handle === REVIEW_FLOW_HANDLES.PUBLISHED)
   ) {
     await handleFlowTrigger(job.storeId, job.payload, loyaltyMaintenancePermit);
+    return;
+  }
+  if (
+    job.jobType === "REVIEW_REQUEST_EMAIL" &&
+    payload?.reminderId !== undefined
+  ) {
+    // Reminder work must never inherit the legacy blocked-store success no-op.
+    // Its dispatcher checks the same store/program fence under the customer lock.
+    const { executeNativeReviewJob } = await import(
+      "@/lib/weletic/reviews/worker"
+    );
+    try {
+      await executeNativeReviewJob(job);
+    } catch (error) {
+      if (isShopifyStoreOperationalWritesBlocked(error)) {
+        if (
+          !error.complianceState ||
+          ![
+            "suspended",
+            "pending_approval",
+            "frozen",
+            "currency_unverified",
+          ].includes(error.complianceState)
+        )
+          throw new ReviewReminderReconciliationError();
+        throw new ReviewReminderDeferredError(
+          new Date(Date.now() + 5 * 60_000),
+        );
+      }
+      throw error;
+    }
     return;
   }
   const operationalJob =

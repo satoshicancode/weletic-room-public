@@ -447,3 +447,33 @@ reminder implementation with current privacy, recovery and shared admission;
 then complete store-review gateways/UI and the named installed acceptance packet.
 No shared migration, live settings, sends/orders, spending, deployment or module
 activation occurred.
+
+## September 23: retained collection/reminder reconciliation
+
+Integrated the retained collection/reminder draft without modifying its source
+worktree. Signed collection settings and EN/JA/VI delivery history now accompany
+prospective reminder scheduling, immutable provider retries and cancellation.
+Reminders share the approved email/customer delivery budget. Source evidence and
+budget admission commit atomically; known terminal failures settle source state
+and erase the last parent invitation token. Re-enabling collection advances the
+invitation cutoff, excluding delayed pre-enable fulfillment events.
+
+Customer exports include private reminder history with durable page recovery.
+Whole-store erasure drains orphaned reminders independently of parent pointers.
+The additive collection migration is a reader prerequisite; retain compatible
+workers for the appended `export_review_reminders` phase and drain old exports
+before writer activation.
+
+Evidence: full web units 10,261 passed / six skipped / 632 files; full native
+Reviews SQL 107 passed plus two additional focused SQL regressions for shared
+anonymous/authenticated capacity and collection activation cutoff. Exact migration
+rehearsal and disposable cleanup passed with retained ledger count 16 unchanged.
+EN/JA/VI 375px local browser controls, keyboard save and failed-save/reload passed.
+See `review-collection-reminders-worklog.md` for recovery and privacy details.
+
+PR #101 remains draft. Collection/reminder implementation is now reconciled;
+remaining M1 work is signed store-review gateways, merchant/shopper/storefront
+surfaces and the installed yamaxdev invitation/acceptance journey. The separate
+collection acceptance packet is updated for the approved shared budget and remains
+unexecuted. No shared migration, real provider sends/orders, spending, deployment,
+publication or module activation occurred.

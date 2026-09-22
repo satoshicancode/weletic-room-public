@@ -304,9 +304,19 @@ export type LoyaltyOutboxPayloadMap = {
 export const ReviewRequestEmailPayloadSchema = z
   .object({
     requestId: z.string().min(1),
+    reminderId: z
+      .string()
+      .regex(/^wrevrem_[A-Za-z0-9_-]{20}$/)
+      .optional(),
     installationGeneration: z.string().min(1).max(64).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (payload) => !payload.reminderId || !!payload.installationGeneration,
+    {
+      message: "Reminders require an explicit installation generation",
+    },
+  );
 export const ReviewSummarySyncPayloadSchema = z
   .object({
     productId: z.string().min(1),
@@ -499,6 +509,10 @@ async function bindOperationalJobToInstallationGeneration({
       jobType !== "HISTORICAL_IMPORT_COMMIT" &&
       jobType !== "HISTORICAL_IMPORT_ROLLBACK" &&
       jobType !== "REVIEW_POINTS_RECOVERY" &&
+      !(
+        jobType === "REVIEW_REQUEST_EMAIL" &&
+        (payload as Record<string, unknown>).reminderId
+      ) &&
       jobType !== "LOYALTY_COMMUNICATION"
     ) {
       return {
@@ -548,6 +562,13 @@ async function bindOperationalJobToInstallationGeneration({
     store.installationGeneration !== payload.installationGeneration
   )
     throw new Error("Review Flow installation changed");
+  if (
+    jobType === "REVIEW_REQUEST_EMAIL" &&
+    (payload as Record<string, unknown>).reminderId &&
+    store.installationGeneration !==
+      (payload as Record<string, unknown>).installationGeneration
+  )
+    throw new Error("Review reminder installation changed");
   return {
     ...payload,
     installationGeneration: store.installationGeneration ?? null,

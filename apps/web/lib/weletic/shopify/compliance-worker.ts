@@ -458,6 +458,7 @@ const EXPORT_PHASES = [
   "export_store_review_requests",
   "export_store_review_audits",
   "export_shopper_delivery",
+  "export_review_reminders",
 ] as const;
 
 type ExportPhase = (typeof EXPORT_PHASES)[number];
@@ -552,6 +553,7 @@ async function fetchExportPage({
     ...(lastId ? { cursor: { id: lastId }, skip: 1 } : {}),
   };
   if (
+    phase === "export_review_reminders" ||
     phase === "export_shopper_delivery" ||
     phase === "export_store_reviews" ||
     phase === "export_store_review_requests" ||
@@ -966,6 +968,7 @@ export async function processCustomerDataRequestStep(
       };
     }
     if (
+      phase === "export_review_reminders" ||
       phase === "export_store_reviews" ||
       phase === "export_store_review_requests" ||
       phase === "export_store_review_audits"
@@ -976,11 +979,13 @@ export async function processCustomerDataRequestStep(
         storeId: request.storeId,
         shopperId: context.shopperId,
         kind:
-          phase === "export_store_reviews"
-            ? "store_reviews"
-            : phase === "export_store_review_requests"
-              ? "store_review_requests"
-              : "store_review_audits",
+          phase === "export_review_reminders"
+            ? "review_reminders"
+            : phase === "export_store_reviews"
+              ? "store_reviews"
+              : phase === "export_store_review_requests"
+                ? "store_review_requests"
+                : "store_review_audits",
         sequence,
         afterId: cursor.lastId ?? null,
         expiresAt: exportExpiry(),

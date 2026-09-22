@@ -32,6 +32,7 @@ vi.mock("@/lib/prisma", () => ({
     },
     weleticProductReview: { findMany: vi.fn().mockResolvedValue([]) },
     weleticReviewModerationAudit: { findMany: vi.fn().mockResolvedValue([]) },
+    weleticReviewReminder: { findMany: vi.fn().mockResolvedValue([]) },
     weleticReviewRequest: { findMany: vi.fn().mockResolvedValue([]) },
     weleticStoreReview: { findMany: vi.fn().mockResolvedValue([]) },
     weleticStoreReviewRequest: { findMany: vi.fn().mockResolvedValue([]) },

@@ -21,6 +21,12 @@ const contextSchema = z
     // Recomputed from current provider configuration by the caller; never taken
     // from stored evidence as authority for a retry on another provider account.
     transportIdentity: z.string().regex(/^[a-f0-9]{64}$/),
+    // Optional only for backward-compatible initial invitation evidence.
+    // A reminder binds both its original invitation and distinct delivery row.
+    reminderId: z
+      .string()
+      .regex(/^wrevrem_[A-Za-z0-9_-]{20}$/)
+      .optional(),
   })
   .strict();
 
@@ -55,8 +61,13 @@ export type ReviewDeliveryProvider = "resend" | "smtp";
 
 const unavailable = () =>
   new ReviewError("unavailable", "Review delivery evidence is unavailable");
-export const reviewDeliveryProviderKey = (requestId: string) =>
-  `native-review-request:${requestId}`;
+export const reviewDeliveryProviderKey = (
+  requestId: string,
+  reminderId?: string,
+) =>
+  reminderId
+    ? `native-review-reminder:${reminderId}`
+    : `native-review-request:${requestId}`;
 const MAX_CIPHERTEXT = 1_000_000;
 // Match the existing communications worker's conservative deduplication horizon.
 const RETRY_WINDOW_MS = 23 * 60 * 60 * 1000;
@@ -72,7 +83,10 @@ export function sealReviewDeliverySnapshot(input: {
       version: 1,
       context: input.context,
       provider: input.provider,
-      providerKey: reviewDeliveryProviderKey(input.context.requestId),
+      providerKey: reviewDeliveryProviderKey(
+        input.context.requestId,
+        input.context.reminderId,
+      ),
       preparedAt: input.now.toISOString(),
       content: input.content,
     });
@@ -107,7 +121,8 @@ export function openReviewDeliverySnapshot(input: {
       JSON.stringify(evidence.context) !== JSON.stringify(expected) ||
       evidence.content.to !== expected.recipient ||
       evidence.provider !== input.provider ||
-      evidence.providerKey !== reviewDeliveryProviderKey(expected.requestId)
+      evidence.providerKey !==
+        reviewDeliveryProviderKey(expected.requestId, expected.reminderId)
     )
       throw unavailable();
     const age = input.now.getTime() - new Date(evidence.preparedAt).getTime();

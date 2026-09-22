@@ -17,6 +17,7 @@ import {
 } from "@/lib/weletic/reviews/open-media-export";
 import { openReviewProvenanceExportSelection } from "@/lib/weletic/reviews/open-submission-privacy";
 import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
+import { reviewReminderExportSelect } from "@/lib/weletic/reviews/reminder-export";
 import {
   storeReviewAuditExportSelect,
   storeReviewExportSelect,
@@ -1816,6 +1817,21 @@ export async function getShopperDataExport({
       )
     : [];
 
+  const reviewReminders = shopper
+    ? await collectAllExportPages((cursor) =>
+        prisma.weleticReviewReminder.findMany({
+          where: {
+            storeId,
+            request: { storeId, shopperId: shopper.id },
+            ...(cursor ? { id: { gt: cursor } } : {}),
+          },
+          orderBy: { id: "asc" },
+          take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+          select: reviewReminderExportSelect,
+        }),
+      )
+    : [];
+
   const storeReviews = shopper
     ? await collectAllExportPages((cursor) =>
         prisma.weleticStoreReview.findMany({
@@ -1909,6 +1925,7 @@ export async function getShopperDataExport({
     openReviewUploads,
     reviewModerationAudits,
     reviewRequests,
+    reviewReminders,
     storeReviews,
     storeReviewRequests,
     storeReviewModerationAudits,

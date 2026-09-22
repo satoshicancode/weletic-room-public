@@ -54,6 +54,22 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("prepared review provider boundary (mocked transports)", () => {
+  it("uses a distinct stable provider identity for each reminder", async () => {
+    const prepared = await prepareReviewEmail(draft);
+    const reminderKey = `native-review-reminder:wrevrem_${"x".repeat(20)}`;
+    await dispatchPreparedReviewEmail({
+      ...prepared,
+      providerKey: reminderKey,
+    });
+    await dispatchPreparedReviewEmail({
+      ...prepared,
+      providerKey: reminderKey,
+    });
+    expect(transport.send.mock.calls).toEqual([
+      [[prepared.content], { idempotencyKey: reminderKey }],
+      [[prepared.content], { idempotencyKey: reminderKey }],
+    ]);
+  });
   it("refuses preparation if the environment no longer matches the constructed client", async () => {
     vi.stubEnv("RESEND_API_KEY", "changed-before-preparation");
     await expect(prepareReviewEmail(draft)).rejects.toThrow(

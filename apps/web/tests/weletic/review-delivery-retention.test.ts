@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   tx: {
     $queryRaw: vi.fn(),
     weleticReviewRequest: { findFirst: vi.fn(), updateMany: vi.fn() },
+    weleticReviewReminder: { updateMany: vi.fn() },
     weleticLoyaltyOutboxJob: { updateMany: vi.fn() },
   },
 }));
@@ -81,6 +82,25 @@ describe("bounded review delivery erasure", () => {
       deliveryToken: null,
     });
     expect(data).not.toHaveProperty("deliveryAttempts");
+    expect(mocks.tx.weleticReviewReminder.updateMany).toHaveBeenNthCalledWith(
+      1,
+      {
+        where: {
+          storeId: "store",
+          requestId: { in: ["invitation"] },
+          request: { storeId: "store", id: { in: ["invitation"] } },
+          attempts: 0,
+          status: { in: ["queued", "sending", "failed"] },
+        },
+        data: {
+          status: "cancelled",
+          settledAt: expect.any(Date),
+          outcomeReason: "expired",
+          leaseToken: null,
+          leaseExpiresAt: null,
+        },
+      },
+    );
     expect(mocks.tx.weleticLoyaltyOutboxJob.updateMany).toHaveBeenCalledWith({
       where: {
         storeId: "store",

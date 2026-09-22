@@ -115,7 +115,12 @@ export async function dispatchPreparedReviewEmail(input: {
     const content = reviewDeliveryContentSchema.parse(input.content);
     if (input.transportIdentity !== reviewTransportIdentity(input.provider))
       throw unavailable();
-    if (!/^native-review-request:[A-Za-z0-9_-]{1,191}$/.test(input.providerKey))
+    if (
+      !/^native-review-request:[A-Za-z0-9_-]{1,191}$/.test(input.providerKey) &&
+      !/^native-review-reminder:wrevrem_[A-Za-z0-9_-]{20}$/.test(
+        input.providerKey,
+      )
+    )
       throw unavailable();
     if (input.provider === "resend") {
       const result = await sendPreparedResendEmail(content, input.providerKey);

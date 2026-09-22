@@ -20,6 +20,7 @@ import {
   redactOpenReviewProvenanceBatch,
 } from "./open-submission-privacy";
 import { reviewPointsRecoveryKey } from "./points-recovery-contract";
+import { eraseReviewReminderMaterialInTransaction } from "./reminder-retention";
 import {
   purgeStoreReviewsBatch,
   redactStoreReviewsBatch,
@@ -45,6 +46,17 @@ export async function redactNativeReviewsBatch(
     OR: [
       { encryptedDeliverySnapshot: { not: null } },
       { encryptedDeliveryToken: { not: null } },
+      { encryptedReminderToken: { not: null } },
+      {
+        reminders: {
+          some: {
+            OR: [
+              { encryptedDeliverySnapshot: { not: null } },
+              { status: { in: ["queued", "sending", "failed"] } },
+            ],
+          },
+        },
+      },
       { status: { not: "cancelled" } },
       {
         review: {
@@ -159,6 +171,12 @@ export async function redactNativeReviewsBatch(
           },
         },
       });
+      if (requests.length)
+        await eraseReviewReminderMaterialInTransaction(tx, {
+          storeId,
+          requestIds: requests.map(({ id }) => id),
+          reason: "privacy",
+        });
       const ids: string[] = [];
       for (const request of requests) {
         await tx.weleticReviewRequest.update({
@@ -350,6 +368,20 @@ export async function purgeNativeReviewsBatch(storeId: string) {
       });
       return { hasMore: true };
     }
+    // Drain by store independently of parent pointers so orphaned private
+    // reminder payloads cannot survive whole-store erasure.
+    const reminders = await tx.weleticReviewReminder.findMany({
+      where: { storeId },
+      orderBy: { id: "asc" },
+      take: PAGE_SIZE,
+      select: { id: true },
+    });
+    if (reminders.length) {
+      await tx.weleticReviewReminder.deleteMany({
+        where: { storeId, id: { in: reminders.map(({ id }) => id) } },
+      });
+      return { hasMore: true };
+    }
     const requests = await tx.weleticReviewRequest.findMany({
       where: { storeId },
       orderBy: { id: "asc" },
@@ -371,6 +403,9 @@ export async function purgeNativeReviewsBatch(storeId: string) {
     });
     await tx.weleticReviewRequestLine.deleteMany({
       where: { requestId: { in: ids }, request: { storeId } },
+    });
+    await tx.weleticReviewReminder.deleteMany({
+      where: { storeId, requestId: { in: ids }, request: { storeId } },
     });
     await tx.weleticReviewRequest.deleteMany({
       where: { storeId, id: { in: ids } },

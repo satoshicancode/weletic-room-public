@@ -5,6 +5,7 @@ import {
   type ComplianceArtifactLease,
 } from "@/lib/weletic/shopify/compliance-artifacts";
 import { z } from "zod";
+import { reviewReminderExportSelect } from "./reminder-export";
 import {
   storeReviewAuditExportSelect,
   storeReviewExportSelect,
@@ -16,6 +17,7 @@ const checkpointSchema = z
   .object({
     format: z.literal("store_review_rows_v1"),
     kind: z.enum([
+      "review_reminders",
       "store_reviews",
       "store_review_requests",
       "store_review_audits",
@@ -38,7 +40,11 @@ export async function exportStoreReviewPage(input: {
   requestId: string;
   storeId: string;
   shopperId: string | null;
-  kind: "store_reviews" | "store_review_requests" | "store_review_audits";
+  kind:
+    | "store_reviews"
+    | "store_review_requests"
+    | "store_review_audits"
+    | "review_reminders";
   sequence: number;
   afterId: string | null;
   expiresAt: Date;
@@ -83,25 +89,35 @@ export async function exportStoreReviewPage(input: {
     take: PAGE_SIZE + 1,
   };
   const rows =
-    input.kind === "store_reviews"
-      ? await prisma.weleticStoreReview.findMany({
+    input.kind === "review_reminders"
+      ? await prisma.weleticReviewReminder.findMany({
           ...page,
-          select: storeReviewExportSelect,
+          where: {
+            storeId: input.storeId,
+            request: { storeId: input.storeId, shopperId: input.shopperId },
+            ...(input.afterId ? { id: { gt: input.afterId } } : {}),
+          },
+          select: reviewReminderExportSelect,
         })
-      : input.kind === "store_review_requests"
-        ? await prisma.weleticStoreReviewRequest.findMany({
+      : input.kind === "store_reviews"
+        ? await prisma.weleticStoreReview.findMany({
             ...page,
-            select: storeReviewRequestExportSelect,
+            select: storeReviewExportSelect,
           })
-        : await prisma.weleticStoreReviewModerationAudit.findMany({
-            ...page,
-            where: {
-              storeId: input.storeId,
-              review: { storeId: input.storeId, shopperId: input.shopperId },
-              ...(input.afterId ? { id: { gt: input.afterId } } : {}),
-            },
-            select: storeReviewAuditExportSelect,
-          });
+        : input.kind === "store_review_requests"
+          ? await prisma.weleticStoreReviewRequest.findMany({
+              ...page,
+              select: storeReviewRequestExportSelect,
+            })
+          : await prisma.weleticStoreReviewModerationAudit.findMany({
+              ...page,
+              where: {
+                storeId: input.storeId,
+                review: { storeId: input.storeId, shopperId: input.shopperId },
+                ...(input.afterId ? { id: { gt: input.afterId } } : {}),
+              },
+              select: storeReviewAuditExportSelect,
+            });
   if (!rows.length) return { lastId: null, count: 0, hasMore: false };
   await storeEncryptedComplianceArtifact({
     ...input,

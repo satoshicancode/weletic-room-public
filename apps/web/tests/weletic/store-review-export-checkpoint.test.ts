@@ -3,12 +3,14 @@ import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   read: vi.fn(),
   store: vi.fn(),
+  reminders: vi.fn(),
   reviews: vi.fn(),
   requests: vi.fn(),
   audits: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    weleticReviewReminder: { findMany: mocks.reminders },
     weleticStoreReview: { findMany: mocks.reviews },
     weleticStoreReviewRequest: { findMany: mocks.requests },
     weleticStoreReviewModerationAudit: { findMany: mocks.audits },
@@ -40,11 +42,13 @@ const saved = {
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.read.mockResolvedValue(null);
+  mocks.reminders.mockResolvedValue([]);
   mocks.reviews.mockResolvedValue([]);
   mocks.requests.mockResolvedValue([]);
   mocks.audits.mockResolvedValue([]);
 });
 it.each([
+  "review_reminders",
   "store_reviews",
   "store_review_requests",
   "store_review_audits",
@@ -52,11 +56,13 @@ it.each([
   "recovers %s after lost publication acknowledgement despite changed membership",
   async (kind) => {
     const query =
-      kind === "store_reviews"
-        ? mocks.reviews
-        : kind === "store_review_requests"
-          ? mocks.requests
-          : mocks.audits;
+      kind === "review_reminders"
+        ? mocks.reminders
+        : kind === "store_reviews"
+          ? mocks.reviews
+          : kind === "store_review_requests"
+            ? mocks.requests
+            : mocks.audits;
     let published: unknown = null;
     mocks.read.mockImplementation(async () => published);
     mocks.store.mockImplementation(async ({ value }) => {
@@ -144,3 +150,31 @@ it.each([-1, NaN, 1.5, 2147483647, Number.MAX_SAFE_INTEGER])(
     expect(mocks.read).not.toHaveBeenCalled();
   },
 );
+
+it("exports reminders only through same-store customer-owned requests without private transport material", async () => {
+  await exportStoreReviewPage({
+    ...input,
+    kind: "review_reminders",
+    afterId: "prior",
+  });
+  const query = mocks.reminders.mock.calls[0][0];
+  expect(query.where).toEqual({
+    storeId: "store",
+    request: { storeId: "store", shopperId: "shopper" },
+    id: { gt: "prior" },
+  });
+  expect(query.take).toBe(21);
+  expect(Object.keys(query.select).sort()).toEqual(
+    [
+      "id",
+      "requestId",
+      "sequence",
+      "scheduledFor",
+      "status",
+      "sentAt",
+      "settledAt",
+      "outcomeReason",
+      "createdAt",
+    ].sort(),
+  );
+});

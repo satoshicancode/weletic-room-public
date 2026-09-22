@@ -156,6 +156,7 @@ vi.mock("@/lib/prisma", () => ({
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
     },
+    weleticReviewReminder: { findMany: vi.fn().mockResolvedValue([]) },
     weleticReviewRequest: {
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),

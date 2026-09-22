@@ -14,6 +14,7 @@ import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/custom
 import { resend } from "@dub/email/resend";
 import { randomUUID } from "node:crypto";
 import { generateReviewToken, hashReviewToken, ReviewError } from "./contracts";
+import { finalizeReviewDeliveryInTransaction } from "./delivery-finalization";
 import {
   openReviewDeliverySnapshot,
   reviewDeliveryProviderKey,
@@ -261,6 +262,8 @@ async function deliverReviewRequestLocked(
         providerKey: reviewDeliveryProviderKey(requestId),
         deliveryIdentity,
         alreadySent: admission.status === "sent",
+        invitationToken: token,
+        installationGeneration: generation,
       };
     },
     expectedGeneration,
@@ -306,29 +309,13 @@ async function deliverReviewRequestLocked(
       throw new ReviewError("conflict", "Review delivery lease lost");
     if (!claimed.alreadySent) await dispatchPreparedReviewEmail(claimed);
     await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM WeleticShopifyStore WHERE id = ${storeId} FOR UPDATE`;
-      const finalized = await tx.weleticReviewRequest.updateMany({
-        where: {
-          id: requestId,
-          storeId,
-          status: "sending",
-          deliveryToken: leaseToken,
-        },
-        data: {
-          status: "sent",
-          sentAt: new Date(),
-          deliveryToken: null,
-          deliveryLeaseExpiresAt: null,
-          encryptedDeliveryToken: null,
-          encryptedDeliverySnapshot: null,
-          lastError: null,
-        },
+      await finalizeReviewDeliveryInTransaction(tx, {
+        storeId,
+        requestId,
+        leaseToken,
+        installationGeneration: claimed.installationGeneration,
+        invitationToken: claimed.invitationToken,
       });
-      if (finalized.count !== 1)
-        throw new ReviewError(
-          "conflict",
-          "Review delivery lease lost before finalization",
-        );
       await confirmShopperDeliveryInTransaction(tx, claimed.deliveryIdentity);
     });
   } catch (error) {

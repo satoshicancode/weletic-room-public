@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   nativeReviewFindMany: vi.fn(),
   storeReviewFindMany: vi.fn(),
   storeReviewRequestFindMany: vi.fn(),
+  reviewReminderFindMany: vi.fn(),
   storeReviewAuditFindMany: vi.fn(),
   nativeRequestFindMany: vi.fn(),
   nativeMediaFindMany: vi.fn(),
@@ -175,6 +176,7 @@ vi.mock("@/lib/prisma", () => ({
     weleticProductReview: { findMany: mocks.nativeReviewFindMany },
     weleticStoreReview: { findMany: mocks.storeReviewFindMany },
     weleticStoreReviewRequest: { findMany: mocks.storeReviewRequestFindMany },
+    weleticReviewReminder: { findMany: mocks.reviewReminderFindMany },
     weleticStoreReviewModerationAudit: {
       findMany: mocks.storeReviewAuditFindMany,
     },
@@ -435,6 +437,7 @@ describe("durable compliance worker boundaries", () => {
     mocks.nativeReviewFindMany.mockResolvedValue([]);
     mocks.storeReviewFindMany.mockResolvedValue([]);
     mocks.storeReviewRequestFindMany.mockResolvedValue([]);
+    mocks.reviewReminderFindMany.mockResolvedValue([]);
     mocks.storeReviewAuditFindMany.mockResolvedValue([]);
     mocks.nativeRequestFindMany.mockResolvedValue([]);
     mocks.nativeMediaFindMany.mockResolvedValue([]);
@@ -514,6 +517,7 @@ describe("durable compliance worker boundaries", () => {
         if (
           [
             "review_media",
+            "review_reminders",
             "store_reviews",
             "store_review_requests",
             "store_review_audits",
@@ -1335,6 +1339,7 @@ describe("durable compliance worker boundaries", () => {
   });
 
   describe.each([
+    ["export_review_reminders", "export_manifest", "reviewReminderFindMany"],
     [
       "export_store_reviews",
       "export_store_review_requests",
@@ -1374,9 +1379,11 @@ describe("durable compliance worker boundaries", () => {
         expect.objectContaining({
           where: {
             storeId: "store_1",
-            ...(phase === "export_store_review_audits"
-              ? { review: { storeId: "store_1", shopperId: "shopper_42" } }
-              : { shopperId: "shopper_42" }),
+            ...(phase === "export_review_reminders"
+              ? { request: { storeId: "store_1", shopperId: "shopper_42" } }
+              : phase === "export_store_review_audits"
+                ? { review: { storeId: "store_1", shopperId: "shopper_42" } }
+                : { shopperId: "shopper_42" }),
             id: { gt: "prior" },
           },
           take: 21,
