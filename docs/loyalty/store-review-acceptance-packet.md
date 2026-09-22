@@ -1,6 +1,6 @@
 # Store-review acceptance packet
 
-Status: implementation preparation, September 22, 2026. Not live execution
+Status: implementation preparation, September 23, 2026. Not live execution
 approval and not a completed Reviews release gate.
 
 ## Required before scheduling yamaxdev execution
@@ -8,15 +8,21 @@ approval and not a completed Reviews release gate.
 1. Complete the signed customer/merchant gateways, settings, prospective
    collection/reminders and EN/JA/VI interfaces. The current internal services
    cannot establish installed authentication or delivery acceptance by themselves.
-2. Resolve the shared versus per-module communication quiet-hours/frequency
-   policy recorded in the collection worklog. Never derive timezone from locale
-   or currency, and never schedule historical invitations automatically.
+2. Complete signed controls and prospective collector integration for the approved
+   shared policy (ADRs 0042/0043). Anonymous and authenticated messages share email
+   capacity; customer limits also apply. Never infer timezone from locale/currency
+   or schedule historical invitations automatically.
 3. Review and explicitly approve the target migration/runtime bundle. All five
    tables in `20260922_store_review_core.sql` must exist before deploying these
    privacy readers, even with collection disabled. Retain a compatible worker
    for persisted `export_store_reviews`, `export_store_review_requests` and
    `export_store_review_audits` phases. Do not roll workers back to an incompatible
-   binary or remove tables while export/privacy work remains.
+   binary or remove tables while export/privacy work remains. Also apply the two
+   delivery tables, settings JSON and appended job enum in
+   `20260923_shopper_delivery_budget.sql`. Retain workers for
+   `export_shopper_delivery`, `scrub_customer_delivery`, `purge_shopper_delivery`
+   and `ANONYMOUS_REFERRAL_EMAIL`. Drain/reconcile old exports without saved
+   delivery identities and uncertain sends without a matching reservation.
 4. Identify the installation generation, staff identities/permissions, controlled
    shopper/recipient, provider connection, eligible test orders and exact spend /
    live-send limits. Obtain the existing scoped live-order/send approval.
@@ -32,6 +38,15 @@ approval and not a completed Reviews release gate.
 | SR-05: collection and reminders      | New qualifying fulfillment creates only the prospective invitation(s). Shared order policy remains fixed. Actual provider submission, delivery history and controlled inbox arrival are recorded separately. Historical orders remain unsent.                                                |
 | SR-06: privacy and recovery          | Erasure wins safely against submission/fulfillment. Content, replies, delivery envelopes and identity projections are suppressed; provider cleanup completes. Winning encrypted exports resume after interruption without page loss or token leakage. Financial history remains append-only. |
 | SR-07: installed UI and operations   | 375px layouts, keyboard navigation, EN/JA/VI, loading/failure/retry states; installed ownership/grants, process restart, supervision, alerts and restore evidence.                                                                                                                           |
+
+Shared-delivery acceptance must also prove: an anonymous confirmation consumes
+capacity for a later authenticated message to the same mailbox; distinct customers
+sharing that mailbox share capacity without sharing export access; changing an
+email does not reset the customer limit; quiet hours use the configured timezone;
+policy deferral preserves worker attempts; retries retain bytes and deadlines;
+and privacy erasure/worker restart do not restore deleted recipient evidence.
+Run these only after policy controls are available and the controlled recipients
+and live-send limits are approved.
 
 Record each journey with date, application commit/image, installation generation,
 controlled object IDs, expected/actual result, independent evidence location and
