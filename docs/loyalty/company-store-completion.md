@@ -3,8 +3,9 @@
 **September 23 draft update:** ADR 0043 accepts shared anonymous/authenticated
 email capacity while retaining independent customer limits. PR #101 now includes
 durable HMAC reservations, existing sender integration, deferred anonymous job
-recovery and privacy/export cleanup. Merchant policy controls, collection/reminder
-reconciliation and installed acceptance remain open. See the
+recovery, privacy/export cleanup and locally verified EN/JA/VI merchant policy
+controls. Collection/reminder reconciliation and installed acceptance remain
+open. See the
 [delivery implementation record](shared-shopper-delivery-policy.md). This is not
 merged or activated and does not change any module's release status.
 
@@ -30,7 +31,7 @@ active store-review slice first on September 22, then prioritizing Loyalty
 acceptance. Store-review persistence, privacy/export, public reads, shared incentives and
 internal authenticated submission/moderation are in unmerged [draft PR #101](https://github.com/satoshicancode/weletic-room-public/pull/101); see the [current worklog](store-review-core-worklog.md).
 Hiro approved a shared Loyalty + Reviews delivery policy in [ADR 0042](../adr/0042-shared-shopper-delivery-policy.md).
-Its scheduling foundation is locally verified; [durable admission and producer integration](shared-shopper-delivery-policy.md) remain open, including the anonymous-recipient identity decision.
+Its scheduling, [durable admission, existing producer integration and merchant controls](shared-shopper-delivery-policy.md) are locally verified in the draft. ADR 0043 resolves anonymous-recipient identity; prospective collector integration and installed acceptance remain open.
 External execution remains gated where approval/resources are absent.
 
 | Evidence ID | Status           | Exact accepted boundary                                                                                                                                                                                                           | Still open                                                                                                           |

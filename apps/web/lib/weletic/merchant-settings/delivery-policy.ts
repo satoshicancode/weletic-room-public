@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { merchantTimeZoneSchema } from "./contracts";
+import { merchantTimeZoneSchema } from "./time-zone";
 
 const minuteOfDay = z.number().int().min(0).max(1439);
 
@@ -18,6 +18,22 @@ export const shopperDeliveryPolicySchema = z
     maxMessagesPer24Hours: z.number().int().min(1).max(100).nullable(),
   })
   .strict();
+
+/** Validate the resulting settings, not a partial patch: a timezone cannot be
+ * cleared while a configured delivery policy survives. */
+export const merchantDeliveryConfigurationSchema = z
+  .object({
+    timeZone: merchantTimeZoneSchema.nullable(),
+    shopperDeliveryPolicy: shopperDeliveryPolicySchema.nullable(),
+  })
+  .superRefine((value, context) => {
+    if (value.shopperDeliveryPolicy !== null && value.timeZone === null)
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["timeZone"],
+        message: "A configured delivery policy requires an explicit timezone",
+      });
+  });
 
 export type ShopperDeliveryPolicy = z.infer<typeof shopperDeliveryPolicySchema>;
 

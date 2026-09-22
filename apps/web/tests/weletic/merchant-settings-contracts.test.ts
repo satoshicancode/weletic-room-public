@@ -83,6 +83,7 @@ describe("shared merchant settings contract", () => {
     ["not_found", 404],
     ["conflict", 409],
     ["forbidden", 403],
+    ["bad_request", 400],
   ] as const)("returns private %s errors", async (code, status) => {
     const response = merchantSettingsHttpError(new MerchantSettingsError(code));
     expect(response.status).toBe(status);

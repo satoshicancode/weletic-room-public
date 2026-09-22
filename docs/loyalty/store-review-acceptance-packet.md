@@ -8,8 +8,9 @@ approval and not a completed Reviews release gate.
 1. Complete the signed customer/merchant gateways, settings, prospective
    collection/reminders and EN/JA/VI interfaces. The current internal services
    cannot establish installed authentication or delivery acceptance by themselves.
-2. Complete signed controls and prospective collector integration for the approved
-   shared policy (ADRs 0042/0043). Anonymous and authenticated messages share email
+2. Complete prospective collector integration and installed acceptance of the
+   locally verified signed controls for the shared policy (ADRs 0042/0043).
+   Anonymous and authenticated messages share email
    capacity; customer limits also apply. Never infer timezone from locale/currency
    or schedule historical invitations automatically.
 3. Review and explicitly approve the target migration/runtime bundle. All five
@@ -45,8 +46,10 @@ sharing that mailbox share capacity without sharing export access; changing an
 email does not reset the customer limit; quiet hours use the configured timezone;
 policy deferral preserves worker attempts; retries retain bytes and deadlines;
 and privacy erasure/worker restart do not restore deleted recipient evidence.
-Run these only after policy controls are available and the controlled recipients
-and live-send limits are approved.
+Run these only after the policy controls are installed and the controlled
+recipients and live-send limits are approved. Verify that a policy save preserves
+prior capacity, cannot clear its timezone alone, and never activates modules or
+creates historical invitations.
 
 Record each journey with date, application commit/image, installation generation,
 controlled object IDs, expected/actual result, independent evidence location and

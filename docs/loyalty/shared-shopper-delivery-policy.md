@@ -6,8 +6,9 @@ Date: 2026-09-23. Decisions: [ADR 0042](../adr/0042-shared-shopper-delivery-poli
 
 `apps/web/lib/weletic/merchant-settings/delivery-policy.ts` provides an internal
 strict versioned contract and pure scheduling evaluator. The durable admission
-layer now connects existing producers; policy controls are not yet exposed by
-merchant settings. This remains draft implementation, not installed acceptance.
+layer connects existing producers. Revision-fenced settings and EN/JA/VI controls
+now expose the policy through the existing signed Shopify settings gateway and
+owner workspace gateway. This remains draft implementation, not installed acceptance.
 
 - One optional local quiet window, with inclusive start and exclusive end.
   Equal endpoints are rejected so they cannot mean either all day or no window.
@@ -57,6 +58,29 @@ attempt is recorded, the original deadline never moves. Coupon expiry never
 moves. Paused anonymous work is excluded from the bounded poll page so it cannot
 starve financial/cleanup work. No historical confirmations are collected.
 
+## Merchant controls
+
+Settings save the whole versioned policy or explicit SQL NULL under the existing
+store/installation/revision fence. Effective settings must contain a confirmed
+IANA timezone whenever a policy is configured, including frequency-only policies.
+Clearing a timezone requires clearing the policy in the same write. Neither a
+locale-derived timezone nor a default cap/quiet window is supplied.
+
+Shopify staff need `settings.configure`; appearance-only authority cannot read or
+modify the policy. The browser compares validated JSON values in acknowledgments
+and requires an explicit fresh read after a failed/uncertain save. Native labeled
+controls support optional overnight quiet hours and a rolling limit of 1–100.
+The separate email pause remains unchanged when the policy is removed.
+
+A save affects the next admission check, including pending messages, without
+resetting prior capacity, creating historical invitations or extending original
+expiry/retry deadlines. Already in-flight provider requests may finish.
+Malformed stored policy fails closed in browser reads and delivery admission.
+Recovery requires an authorized API operation using the current installation and
+revision, explicitly replacing/clearing the policy (and optionally setting pause).
+When the screen cannot load, an operator must establish that revision before
+repair; an unrelated edit cannot silently turn malformed data into no limits.
+
 ## Privacy and rollout
 
 Delivery exports project explicit operational fields, excluding HMAC aliases,
@@ -88,9 +112,6 @@ Before enabling writers:
 
 ## Remaining work
 
-- Revision-fenced merchant settings, signed EN/JA/VI controls and prospective
-  activation boundary. Unconfigured policy is explicit null; no default timezone
-  or cap is inferred.
 - Reconcile the retained collection/reminder draft and store-review invitations
   with the same admission boundary before enabling those writers.
 - Complete UI, installed yamaxdev/provider journeys and operational release gates.
@@ -98,7 +119,9 @@ Before enabling writers:
 
 ## Local verification
 
-- Full web units: 10,044 passed, six existing skips, 618 files.
+- Latest controls verification: full web units 10,054 passed, six existing skips,
+  618 files; final validation/error-mapping focus 109 passed. Settings SQL: 23
+  passed; signed staff/settings SQL: five passed (56 unrelated not selected).
 - Complete shopper SQL suite: 187 passed, including 16 shared admission cases
   covering competing identities, old transaction
   snapshots, key rotation, shared-mailbox erasure and clock-boundary lock waits.

@@ -82,8 +82,9 @@ export function createMerchantSettingsClient(
         result.data.revision !== input.data.input.expectedRevision + 1 ||
         Object.entries(input.data.input.settings).some(
           ([key, value]) =>
-            result.data.settings[key as keyof typeof result.data.settings] !==
-            value,
+            JSON.stringify(
+              result.data.settings[key as keyof typeof result.data.settings],
+            ) !== JSON.stringify(value),
         ))
     )
       throw new StaffAccessClientError("unavailable");

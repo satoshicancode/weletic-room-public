@@ -8,6 +8,7 @@ import {
   merchantSettingsUpdateSchema,
   type MerchantSettingsUpdate,
 } from "../../../lib/weletic/merchant-settings/contracts";
+import { merchantDeliveryConfigurationSchema } from "../../../lib/weletic/merchant-settings/delivery-policy";
 import type {
   MerchantAppearanceView,
   MerchantSettingsView as MerchantSettings,
@@ -31,7 +32,7 @@ const control =
   "w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm disabled:opacity-50";
 const button =
   "rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm focus-visible:outline focus-visible:outline-2 disabled:opacity-50";
-type Notice = "saved" | "error" | "invalid" | null;
+type Notice = "saved" | "error" | "invalid" | "deliveryInvalid" | null;
 
 export function MerchantSettingsSession(
   props: React.ComponentProps<typeof MerchantSettingsScreen>,
@@ -175,6 +176,40 @@ function SettingsEditor({
   const text = merchantSettingsCopy[locale];
   const saved: Partial<MerchantSettings["settings"]> = data.settings;
   const [draft, setDraft] = React.useState(saved);
+  const savedPolicy = saved.shopperDeliveryPolicy ?? null;
+  const [deliveryEnabled, setDeliveryEnabled] = React.useState(
+    savedPolicy !== null,
+  );
+  const [quietEnabled, setQuietEnabled] = React.useState(
+    savedPolicy?.quietHours != null,
+  );
+  const asTime = (minute: number | undefined) =>
+    minute === undefined
+      ? ""
+      : `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
+  const [quietStart, setQuietStart] = React.useState(
+    asTime(savedPolicy?.quietHours?.startMinute),
+  );
+  const [quietEnd, setQuietEnd] = React.useState(
+    asTime(savedPolicy?.quietHours?.endMinute),
+  );
+  const [messageLimit, setMessageLimit] = React.useState(
+    savedPolicy?.maxMessagesPer24Hours?.toString() ?? "",
+  );
+  const asMinute = (time: string) =>
+    /^([01]\d|2[0-3]):[0-5]\d$/.test(time)
+      ? Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
+      : NaN;
+  const deliveryPolicy = deliveryEnabled
+    ? {
+        version: 1 as const,
+        quietHours: quietEnabled
+          ? { startMinute: asMinute(quietStart), endMinute: asMinute(quietEnd) }
+          : null,
+        maxMessagesPer24Hours:
+          messageLimit === "" ? null : Number(messageLimit),
+      }
+    : null;
   const fallback = canEdit && !transport.staffScoped;
   const permissions = ("capabilities" in data
     ? data.capabilities
@@ -191,6 +226,11 @@ function SettingsEditor({
       ([key, value]) => value !== saved[key as keyof typeof draft],
     ),
   );
+  if (
+    !transport.appearanceOnly &&
+    JSON.stringify(deliveryPolicy) !== JSON.stringify(savedPolicy)
+  )
+    patch.shopperDeliveryPolicy = deliveryPolicy;
   const changed = Object.keys(patch).length > 0;
   async function perform(
     operation: () => Promise<unknown>,
@@ -200,6 +240,16 @@ function SettingsEditor({
   }
   function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (
+      !transport.appearanceOnly &&
+      !merchantDeliveryConfigurationSchema.safeParse({
+        timeZone: draft.timeZone ?? null,
+        shopperDeliveryPolicy: deliveryPolicy,
+      }).success
+    ) {
+      setNotice("deliveryInvalid");
+      return;
+    }
     const input = (
       transport.appearanceOnly
         ? merchantAppearanceUpdateSchema
@@ -302,6 +352,77 @@ function SettingsEditor({
             <p className="text-sm text-neutral-600">{text.timezoneNote}</p>
             <p className="text-sm text-neutral-600">{text.pauseNote}</p>
           </>
+        )}
+        {!transport.appearanceOnly && (
+          <fieldset
+            disabled={!allowed("settings") || busy}
+            className="min-w-0 space-y-4 rounded-lg border border-neutral-200 p-4"
+          >
+            <legend className="px-1 font-semibold">{text.deliveryTitle}</legend>
+            <p className="text-sm text-neutral-600">{text.deliveryNote}</p>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={deliveryEnabled}
+                onChange={(event) => setDeliveryEnabled(event.target.checked)}
+              />
+              {text.deliveryEnabled}
+            </label>
+            {deliveryEnabled && (
+              <>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={quietEnabled}
+                    onChange={(event) => setQuietEnabled(event.target.checked)}
+                  />
+                  {text.quietEnabled}
+                </label>
+                {quietEnabled && (
+                  <div className="grid min-w-0 gap-4 md:grid-cols-2">
+                    <label className="min-w-0 space-y-1 text-sm">
+                      {text.quietStart}
+                      <input
+                        className={`${control} min-w-0`}
+                        type="time"
+                        step="60"
+                        required
+                        value={quietStart}
+                        onChange={(event) => setQuietStart(event.target.value)}
+                      />
+                    </label>
+                    <label className="min-w-0 space-y-1 text-sm">
+                      {text.quietEnd}
+                      <input
+                        className={`${control} min-w-0`}
+                        type="time"
+                        step="60"
+                        required
+                        value={quietEnd}
+                        onChange={(event) => setQuietEnd(event.target.value)}
+                      />
+                    </label>
+                  </div>
+                )}
+                <label className="block space-y-1 text-sm">
+                  {text.messageLimit}
+                  <input
+                    className={control}
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={messageLimit}
+                    onChange={(event) => setMessageLimit(event.target.value)}
+                  />
+                </label>
+                <p className="text-sm text-neutral-600">{text.limitNote}</p>
+              </>
+            )}
+            <p className="text-sm text-neutral-600">
+              {text.deliveryProspective}
+            </p>
+          </fieldset>
         )}
         <div
           aria-label={text.preview}

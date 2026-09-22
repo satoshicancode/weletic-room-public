@@ -7,6 +7,10 @@ import {
   merchantSettingsUpdateSchema,
   type MerchantSettingsUpdate,
 } from "./contracts";
+import {
+  merchantDeliveryConfigurationSchema,
+  shopperDeliveryPolicySchema,
+} from "./delivery-policy";
 
 const storeProjection = {
   id: true,
@@ -22,7 +26,7 @@ const storeProjection = {
   },
 } satisfies Prisma.WeleticShopifyStoreSelect;
 
-export async function readMerchantSettingsInTransaction(
+async function readMerchantStoreInTransaction(
   tx: Prisma.TransactionClient,
   workspaceId: string,
 ) {
@@ -36,6 +40,14 @@ export async function readMerchantSettingsInTransaction(
   });
   if (!store?.installationGeneration)
     throw new MerchantSettingsError("not_found");
+  return { ...store, installationGeneration: store.installationGeneration };
+}
+
+export async function readMerchantSettingsInTransaction(
+  tx: Prisma.TransactionClient,
+  workspaceId: string,
+) {
+  const store = await readMerchantStoreInTransaction(tx, workspaceId);
   const settings = store.merchantSettings;
   return {
     storeId: store.id,
@@ -48,6 +60,10 @@ export async function readMerchantSettingsInTransaction(
       defaultLocale: store.defaultLocale,
       timeZone: settings?.timeZone ?? null,
       shopperEmailPaused: settings?.shopperEmailPaused ?? false,
+      shopperDeliveryPolicy:
+        settings?.shopperDeliveryPolicy == null
+          ? null
+          : shopperDeliveryPolicySchema.parse(settings.shopperDeliveryPolicy),
     },
     branding: {
       name: settings?.brandName ?? store.loyaltyProgram?.name ?? "Weletic",
@@ -83,11 +99,37 @@ async function applySettings(
   workspaceId: string,
   data: MerchantSettingsUpdate,
 ) {
-  const current = await readMerchantSettingsInTransaction(tx, workspaceId);
-  if (current.storeId !== storeId) throw new MerchantSettingsError("not_found");
+  const store = await readMerchantStoreInTransaction(tx, workspaceId);
+  const current = {
+    revision: store.merchantSettings?.revision ?? 0,
+    settings: store.merchantSettings,
+  };
+  if (store.id !== storeId) throw new MerchantSettingsError("not_found");
   if (current.revision !== data.expectedRevision)
     throw new MerchantSettingsError("conflict");
-  const { defaultLocale, ...settings } = data.settings;
+  const configuration = merchantDeliveryConfigurationSchema.safeParse({
+    timeZone:
+      data.settings.timeZone !== undefined
+        ? data.settings.timeZone
+        : current.settings?.timeZone ?? null,
+    shopperDeliveryPolicy:
+      data.settings.shopperDeliveryPolicy !== undefined
+        ? data.settings.shopperDeliveryPolicy
+        : current.settings?.shopperDeliveryPolicy ?? null,
+  });
+  if (!configuration.success) throw new MerchantSettingsError("bad_request");
+  const { defaultLocale, shopperDeliveryPolicy, ...fields } = data.settings;
+  const settings = {
+    ...fields,
+    ...(shopperDeliveryPolicy === undefined
+      ? {}
+      : {
+          shopperDeliveryPolicy:
+            shopperDeliveryPolicy === null
+              ? Prisma.DbNull
+              : shopperDeliveryPolicy,
+        }),
+  };
   if (current.revision === 0) {
     await tx.weleticMerchantSettings.create({
       data: { storeId, revision: 1, ...settings },

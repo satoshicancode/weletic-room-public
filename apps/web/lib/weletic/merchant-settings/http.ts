@@ -16,7 +16,9 @@ export function merchantSettingsHttpError(error: unknown) {
   if (error instanceof MerchantSettingsError)
     return merchantSettingsJson(
       { error: { code: error.code, message: error.message } },
-      { not_found: 404, conflict: 409, forbidden: 403 }[error.code],
+      { not_found: 404, conflict: 409, forbidden: 403, bad_request: 400 }[
+        error.code
+      ],
     );
   if (error instanceof ZodError || error instanceof SyntaxError)
     return merchantSettingsJson(

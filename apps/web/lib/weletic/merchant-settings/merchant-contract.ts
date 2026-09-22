@@ -5,6 +5,7 @@ import {
   merchantAppearanceUpdateSchema,
   merchantSettingsUpdateSchema,
 } from "./contracts";
+import { shopperDeliveryPolicySchema } from "./delivery-policy";
 
 export const merchantSettingsReadInputSchema = z.object({}).strict();
 export const shopifyMerchantSettingsInputSchema = z.discriminatedUnion(
@@ -75,6 +76,7 @@ export const merchantSettingsResponseSchema = z
         defaultLocale: z.string().min(1).max(191),
         timeZone: z.string().max(100).nullable(),
         shopperEmailPaused: z.boolean(),
+        shopperDeliveryPolicy: shopperDeliveryPolicySchema.nullable(),
       })
       .strict(),
     branding: z

@@ -394,3 +394,56 @@ Merchant settings controls, retained collection/reminder reconciliation, store
 review gateways/UI and installed yamaxdev acceptance remain open. PR #101 remains
 **draft, unmerged and undeployed**. No shared schema application, live sends/orders,
 spending, publication or module activation occurred.
+
+## September 23 — merchant delivery-policy controls
+
+The approved shared policy now has revision-fenced merchant settings and signed
+EN/JA/VI controls. The existing `settings.configure` grant governs Shopify staff;
+appearance-only operations cannot expose or change delivery policy. Workspace
+writes retain owner authorization. No new schema is introduced by this increment.
+
+A configured policy requires an explicit IANA timezone. Effective-state validation
+prevents clearing a timezone while retaining a policy, including concurrent edits.
+The UI supports optional overnight quiet hours and a 1–100 rolling cap without
+invented defaults; clearing the policy preserves the separate email pause.
+Settings edits retain existing delivery capacity and do not create historical
+invitations, activate modules or extend immutable message deadlines.
+
+Self-review and independent adversarial review resolved malformed-policy repair:
+strict browser projections still reject corrupt stored JSON, while an authorized,
+revision-fenced API replacement/clear can repair it and pause email atomically.
+An operator must establish the current revision when the screen cannot load.
+The signed route maps invalid effective settings to HTTP 400 and rolls back the
+authorization receipt. Browser acknowledgments compare validated JSON values,
+not object references; failed/uncertain saves require explicit reload.
+
+Verification with synthetic configuration and no provider sends:
+
+- Full web unit suite: **10,054 passed**, six existing skips, 618 files. The final
+  validation/error-mapping focus passed **109 tests in five files**. The controls
+  and browser-client selection passed **41 tests**, including all three locales.
+- Real MySQL merchant settings: **23 passed**. Includes concurrent timezone-clear
+  versus policy activation, caller rollback, SQL NULL clearing, retained capacity,
+  malformed-policy repair and ownership/installation fences.
+- Signed staff/settings MySQL selection: **five passed**, 56 unrelated cases not
+  selected. Covers grants, failed-write receipt rollback, replay, revocation,
+  appearance isolation and competing revisions. The initial new test exposed a
+  missing HTTP validation mapping; the corrected rerun passed.
+- Both SQL harnesses rehearsed exact store-review/shared-delivery migrations in
+  fresh restricted databases. Exact cleanup passed; retained ledger count stayed 16. This is a containment count guard, not financial reconciliation evidence.
+- Root lint, web and Shopify typechecks, Shopify production build and diff checks
+  passed. Independent reviewer found no remaining blocker in this increment.
+- Chromium on loopback used the real editor and Shopify CSS with a synthetic
+  transport. EN/JA/VI at 375px had no horizontal overflow; keyboard save and the
+  uncertain-save/reload path passed. Screenshots are local under
+  `output/playwright/delivery-controls-*.png`. Only a missing fixture favicon was
+  reported; this does not establish installed Shopify authentication.
+
+The normal full web production build passed with disposable SQL and loopback
+provider placeholders; exact database/account cleanup left retained ledger count
+16 unchanged. Updated-head CI is tracked in PR #101 after push.
+PR #101 remains draft. Next: reconcile the retained prospective collection and
+reminder implementation with current privacy, recovery and shared admission;
+then complete store-review gateways/UI and the named installed acceptance packet.
+No shared migration, live settings, sends/orders, spending, deployment or module
+activation occurred.

@@ -86,11 +86,13 @@ export async function POST(request: Request) {
     if (error instanceof MerchantSettingsError)
       return reply(
         { error: error.code },
-        error.code === "not_found"
-          ? 404
-          : error.code === "conflict"
-            ? 409
-            : 403,
+        error.code === "bad_request"
+          ? 400
+          : error.code === "not_found"
+            ? 404
+            : error.code === "conflict"
+              ? 409
+              : 403,
       );
     if (error instanceof ReviewError && error.code === "conflict")
       return reply({ error: "state_changed" }, 409);
