@@ -14,13 +14,10 @@ import {
   type PointsExpiryPolicy,
 } from "@/lib/weletic/loyalty/points-expiry-policy";
 import { enqueuePointsExpiryLifecycleJobs } from "@/lib/weletic/loyalty/points-expiry-scheduler";
-import {
-  prepareResendEmail,
-  sendBatchEmail,
-  sendPreparedResendEmail,
-} from "@dub/email";
+import { prepareResendEmail, sendPreparedResendEmail } from "@dub/email";
 import { Prisma, WeleticPointsLedgerEntryType } from "@prisma/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sendClaimedExpiryNotification } from "./claimed-expiry-notification-fixture";
 
 const { mockPrisma } = vi.hoisted(() => {
   const mockProgram = {
@@ -59,6 +56,18 @@ const { mockPrisma } = vi.hoisted(() => {
   };
 });
 
+vi.mock("@/lib/weletic/loyalty/delivery-admission", () => ({
+  admitRetainedLoyaltyDelivery: vi.fn(),
+}));
+vi.mock(
+  "@/lib/weletic/merchant-settings/delivery-reservations",
+  async (original) => ({
+    ...(await original<
+      typeof import("@/lib/weletic/merchant-settings/delivery-reservations")
+    >()),
+    confirmShopperDeliveryInTransaction: vi.fn(),
+  }),
+);
 vi.mock("@/lib/prisma", () => ({
   prisma: mockPrisma,
 }));
@@ -82,7 +91,6 @@ vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
 }));
 
 vi.mock("@dub/email", () => ({
-  sendBatchEmail: vi.fn(),
   prepareResendEmail: vi.fn(),
   sendPreparedResendEmail: vi.fn(),
 }));
@@ -106,8 +114,26 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
   afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useRealTimers();
-    vi.mocked(sendBatchEmail).mockResolvedValue({
+    vi.stubEnv("ENCRYPTION_KEY", "test-only-expiry-matrix");
+    vi.mocked(withActiveStoreLoyaltyMutation).mockImplementation(
+      async ({ operation }: any) => operation(mockPrisma.mockTx),
+    );
+    mockPrisma.mockTx.weleticLoyaltyOutboxJob.findFirst.mockResolvedValue({
+      id: "job",
+      updatedAt: new Date(),
+    });
+    mockPrisma.mockTx.weleticLoyaltyOutboxJob.updateMany.mockResolvedValue({
+      count: 1,
+    });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-01T00:00:00Z"));
+    vi.mocked(prepareResendEmail).mockImplementation(async (email) => ({
+      to: email.to,
+      from: email.from ?? "test@example.com",
+      subject: email.subject ?? "Synthetic",
+      html: `<p>${email.subject}</p>`,
+    }));
+    vi.mocked(sendPreparedResendEmail).mockResolvedValue({
       data: { data: [{ id: "email_expiry_test" }] },
       error: null,
     } as any);
@@ -181,9 +207,11 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       mockPrisma.weleticLoyaltyAccount.findFirst.mockResolvedValue(account);
       const args = {
         storeId: "store",
+        expectedInstallationGeneration: "g1",
         now: new Date("2026-09-02T00:00:00.000Z"),
         payload: {
           accountId: "account",
+          installationGeneration: "g1",
           lastActivityAt: "2025-10-01T00:00:00.000Z",
           expiryMonths: 12,
           expiryAt,
@@ -282,7 +310,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       const { args, policy } = fixture();
       policy.enabled = false;
       expect(await sendPointsExpiryNotification(args)).toBe("ineligible");
-      expect(sendBatchEmail).not.toHaveBeenCalled();
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
     });
     it.each(["storeId", "programId"] as const)(
       "rejects foreign snapshot %s",
@@ -292,14 +320,14 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
         await expect(sendPointsExpiryNotification(args)).rejects.toThrow(
           "ownership mismatch",
         );
-        expect(sendBatchEmail).not.toHaveBeenCalled();
+        expect(sendPreparedResendEmail).not.toHaveBeenCalled();
       },
     );
     it("does not bypass revoked consent", async () => {
       const { args, account } = fixture();
       account.shopper.acceptsMarketing = false;
       expect(await sendPointsExpiryNotification(args)).toBe("ineligible");
-      expect(sendBatchEmail).not.toHaveBeenCalled();
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
     });
   });
 
@@ -341,7 +369,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
         store: { shopDomain: "yamaxdev.myshopify.com" },
       });
 
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "wstore_1",
         payload: {
           accountId: "wlacc_member_1",
@@ -355,8 +383,11 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
 
       expect(outcome).toBe("sent");
-      expect(sendBatchEmail).toHaveBeenCalledOnce();
-      const [batch, opts] = vi.mocked(sendBatchEmail).mock.calls[0];
+      expect(sendPreparedResendEmail).toHaveBeenCalledOnce();
+      const batch = [vi.mocked(prepareResendEmail).mock.calls[0][0]];
+      const opts = {
+        idempotencyKey: vi.mocked(sendPreparedResendEmail).mock.calls[0][1],
+      };
       expect(batch[0]).toMatchObject({
         to: "consented@example.com",
         subject: "1250 Pointsの有効期限は2026年10月1日です",
@@ -390,7 +421,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
         store: { shopDomain: "yamaxdev.myshopify.com" },
       });
 
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "wstore_1",
         payload: {
           accountId: "wlacc_unconsented",
@@ -404,7 +435,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
 
       expect(outcome).toBe("ineligible");
-      expect(sendBatchEmail).not.toHaveBeenCalled();
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
     });
 
     it("returns 'stale' and suppresses email when account balance is zero or negative", async () => {
@@ -428,7 +459,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
         store: { shopDomain: "yamaxdev.myshopify.com" },
       });
 
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "wstore_1",
         payload: {
           accountId: "wlacc_zero_balance",
@@ -442,7 +473,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
 
       expect(outcome).toBe("stale");
-      expect(sendBatchEmail).not.toHaveBeenCalled();
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
     });
 
     it("enforces explicit participation gate: unparticipated imported shopper is ineligible", async () => {
@@ -468,7 +499,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
       mockPrisma.weleticPointsLedgerEntry.findFirst.mockResolvedValue(null);
 
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "wstore_1",
         payload: {
           accountId: "wlacc_imported",
@@ -482,7 +513,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
 
       expect(outcome).toBe("ineligible");
-      expect(sendBatchEmail).not.toHaveBeenCalled();
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
       expect(
         mockPrisma.weleticPointsLedgerEntry.findFirst,
       ).toHaveBeenCalledWith(
@@ -528,7 +559,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
         id: "wledger_bonus_1",
       });
 
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "wstore_1",
         payload: {
           accountId: "wlacc_bonus_member",
@@ -542,7 +573,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
 
       expect(outcome).toBe("sent");
-      expect(sendBatchEmail).toHaveBeenCalledOnce();
+      expect(sendPreparedResendEmail).toHaveBeenCalledOnce();
     });
 
     it("throws error on premature execution attempt before warning threshold", async () => {
@@ -562,7 +593,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
 
       // Attempting to run on 2026-08-15 (17 days before the 30-day warning date 2026-09-01)
       await expect(
-        sendPointsExpiryNotification({
+        sendClaimedExpiryNotification({
           storeId: "wstore_1",
           payload: {
             accountId: "wlacc_premature",
@@ -595,7 +626,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
         store: { shopDomain: "yamaxdev.myshopify.com" },
       });
 
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "wstore_1",
         payload: {
           accountId: "wlacc_disabled_warning",
@@ -609,7 +640,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
 
       expect(outcome).toBe("stale");
-      expect(sendBatchEmail).not.toHaveBeenCalled();
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
     });
   });
 
@@ -659,7 +690,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
         store: { shopDomain: "yamaxdev.myshopify.com" },
       });
 
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "wstore_1",
         payload: {
           accountId: "wlacc_urgent_1",
@@ -673,8 +704,11 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
 
       expect(outcome).toBe("sent");
-      expect(sendBatchEmail).toHaveBeenCalledOnce();
-      const [batch, opts] = vi.mocked(sendBatchEmail).mock.calls[0];
+      expect(sendPreparedResendEmail).toHaveBeenCalledOnce();
+      const batch = [vi.mocked(prepareResendEmail).mock.calls[0][0]];
+      const opts = {
+        idempotencyKey: vi.mocked(sendPreparedResendEmail).mock.calls[0][1],
+      };
       expect(batch[0].subject).toBe(
         "Last chance: 800 Points expire on October 1, 2026",
       );
@@ -1380,7 +1414,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
 
       // Stale outbox notification job carries v2
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "wstore_fence",
         payload: {
           accountId: "wlacc_notif_stale",
@@ -1394,7 +1428,7 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       });
 
       expect(outcome).toBe("stale");
-      expect(sendBatchEmail).not.toHaveBeenCalled();
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
     });
 
     it.each([true, false, null])(
@@ -1534,4 +1568,9 @@ describe("Weletic Loyalty Points Expiry Lifecycle Matrix (Requirement R1 / Nhóm
       },
     );
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
 });

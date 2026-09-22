@@ -1,6 +1,10 @@
 import { linkCache } from "@/lib/api/links/cache";
 import { prisma } from "@/lib/prisma";
 import {
+  deliveryExportSelect,
+  deliveryExportWhere,
+} from "@/lib/weletic/merchant-settings/delivery-privacy";
+import {
   attachReviewIncentivePolicyExports,
   reviewIncentiveClaimExportSelect,
   reviewIncentiveInvalidationExportSelect,
@@ -20,6 +24,7 @@ import {
 } from "@/lib/weletic/reviews/store-export";
 import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
 import {
+  deriveAllShopifyCustomerPrivacyIdentities,
   getShopifyCustomerPrivacyPseudonym,
   hasShopifyCustomerPrivacyTombstone,
 } from "@/lib/weletic/shopify/privacy-identity";
@@ -1881,8 +1886,25 @@ export async function getShopperDataExport({
       )
     : [];
 
+  const deliveryIdentities = deriveAllShopifyCustomerPrivacyIdentities({
+    storeId,
+    shopifyCustomerId,
+    email: shopper?.email,
+  });
+  const shopperDeliveries = await collectAllExportPages((cursor) =>
+    prisma.weleticShopperDeliveryReservation.findMany({
+      where: {
+        ...deliveryExportWhere(storeId, deliveryIdentities),
+        ...(cursor ? { id: { gt: cursor } } : {}),
+      },
+      orderBy: { id: "asc" },
+      take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+      select: deliveryExportSelect,
+    }),
+  );
   return {
     shopperId: shopper?.id ?? null,
+    shopperDeliveries,
     nativeReviews,
     openReviewUploads,
     reviewModerationAudits,

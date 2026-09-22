@@ -1,6 +1,14 @@
 import { decrypt, encrypt } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 import {
+  admitShopperDeliveryInTransaction,
+  confirmShopperDeliveryInTransaction,
+  shopperDeliveryContentDigest,
+  ShopperDeliveryDeferredError,
+  ShopperDeliveryReconciliationRequiredError,
+  type ShopperDeliveryIdentity,
+} from "@/lib/weletic/merchant-settings/delivery-reservations";
+import {
   createAllShopifyDerivedPrivacyDigests,
   hasShopifyCustomerPrivacyTombstone,
 } from "@/lib/weletic/shopify/privacy-identity";
@@ -9,7 +17,11 @@ import { sendPreparedResendEmail } from "@dub/email";
 import { Prisma, type WeleticLoyaltyReferral } from "@prisma/client";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
+import { anonymousConfirmationJobSchema } from "./anonymous-confirmation-contract";
 import { communicationDeliveryRequestSchema } from "./communication-delivery-snapshot";
+import type { ExpiryDeliveryClaim } from "./expiry-delivery-snapshot";
+import { isLoyaltyMaintenanceBlockedError } from "./maintenance-write-fence";
+import { enqueueOutboxJobFromProgramTransaction } from "./outbox";
 import { lockLoyaltyProgramRow } from "./program-write-fence";
 import { readReferralPrivacySnapshot } from "./referral-privacy-snapshot";
 import { hasShopifyCustomerRedactionTombstone } from "./shopper-privacy";
@@ -83,6 +95,7 @@ async function authorize(
   referralId: string,
   email: string,
   expectedOrigin: Origin,
+  allowPausedPreparation = false,
 ) {
   await assertShopifyStoreAcceptsOperationalWrites({
     tx,
@@ -157,10 +170,14 @@ async function authorize(
     hasShopifyCustomerRedactionTombstone(advocate.metadata) ||
     (row.refereeAccountId &&
       (!referee || hasShopifyCustomerRedactionTombstone(referee.metadata))) ||
-    settings?.shopperEmailPaused ||
     (row.friendRewardExpiresAt && row.friendRewardExpiresAt <= new Date())
   )
     throw unavailable();
+  if (!allowPausedPreparation && settings?.shopperEmailPaused)
+    throw new ShopperDeliveryDeferredError(
+      new Date(Date.now() + 60_000),
+      "paused",
+    );
   return { row, metadata, origin };
 }
 
@@ -168,6 +185,7 @@ function readRequest(
   row: WeleticLoyaltyReferral,
   origin: Origin,
   email: string,
+  allowUnattempted = false,
 ) {
   const saved = retainedSchema.parse(
     metadataOf(row.metadata).anonymousConfirmationDelivery,
@@ -180,7 +198,12 @@ function readRequest(
     saved.providerKey !== `loyalty-referral-friend-${row.id}` ||
     preparedAt > Date.now() ||
     expiresAt !== preparedAt + ANONYMOUS_CONFIRMATION_WINDOW_MS ||
-    Date.now() >= expiresAt ||
+    (!(
+      allowUnattempted &&
+      row.friendEmailDeliveryAttempts === 0 &&
+      metadataOf(row.metadata).anonymousConfirmationQueued === true
+    ) &&
+      Date.now() >= expiresAt) ||
     (row.friendRewardExpiresAt &&
       row.friendRewardExpiresAt.getTime() <= Date.now())
   )
@@ -207,10 +230,12 @@ export async function sendAnonymousReferralConfirmation({
   referralId,
   email,
   prepare,
+  deliveryClaim,
 }: {
   storeId: string;
   referralId: string;
   email: string;
+  deliveryClaim?: ExpiryDeliveryClaim;
   prepare: (
     locale: Origin["locale"],
     source: {
@@ -239,13 +264,37 @@ export async function sendAnonymousReferralConfirmation({
           referralId,
           email,
           origin,
+          true,
         );
+        if (deliveryClaim) {
+          const job = deliveryClaim.candidate;
+          const payload = anonymousConfirmationJobSchema.parse(job.payload);
+          const owned = await tx.weleticLoyaltyOutboxJob.findFirst({
+            where: {
+              id: job.id,
+              storeId,
+              jobType: "ANONYMOUS_REFERRAL_EMAIL",
+              status: "processing",
+              lockedBy: deliveryClaim.ownerToken,
+              lockedAt: deliveryClaim.claimedAt,
+              attempts: deliveryClaim.attempt,
+              payload: { equals: job.payload as Prisma.InputJsonValue },
+            },
+            select: { id: true },
+          });
+          if (
+            !owned ||
+            payload.referralId !== referralId ||
+            payload.installationGeneration !== origin.installationGeneration
+          )
+            throw unavailable();
+        }
         if (row.friendRewardEmailedAt) return "sent" as const;
         if (metadata.anonymousConfirmationTerminal)
           return "unavailable" as const;
         if (row.friendEmailLeaseExpiresAt > new Date()) return "busy" as const;
         let retained = metadata.anonymousConfirmationDelivery;
-        if (retained !== undefined) readRequest(row, origin, email);
+        if (retained !== undefined) readRequest(row, origin, email, true);
         else {
           // Missing prepared bytes after an attempted send must never be recreated.
           if (row.friendEmailDeliveryAttempts > 0) throw unavailable();
@@ -288,27 +337,103 @@ export async function sendAnonymousReferralConfirmation({
             ciphertext: encrypt(JSON.stringify(envelope)),
           });
         }
+        let envelope = readRequest(
+          {
+            ...row,
+            metadata: {
+              ...metadata,
+              anonymousConfirmationQueued: true,
+              anonymousConfirmationDelivery: retained,
+            } as Prisma.JsonObject,
+          },
+          origin,
+          email,
+          true,
+        );
+        if (row.friendEmailDeliveryAttempts === 0) {
+          // Proven-unsent preparation may wait beyond a provider retry window.
+          // Anchor the transport deadline only when first attempting admission;
+          // retain exact rendered bytes and the original coupon expiry.
+          const preparedAt = new Date().toISOString();
+          const { ciphertext: _ciphertext, ...binding } = envelope.saved;
+          const next = {
+            ...binding,
+            preparedAt,
+            expiresAt: new Date(
+              new Date(preparedAt).getTime() + ANONYMOUS_CONFIRMATION_WINDOW_MS,
+            ).toISOString(),
+            request: envelope.request,
+          };
+          retained = {
+            ...binding,
+            preparedAt: next.preparedAt,
+            expiresAt: next.expiresAt,
+            ciphertext: encrypt(JSON.stringify(next)),
+          };
+          envelope = {
+            saved: retainedSchema.parse(retained),
+            request: envelope.request,
+          };
+        }
+        const delivery = confirmationDeliveryIdentity(
+          storeId,
+          origin,
+          row,
+          envelope,
+        );
+        let deferred: ShopperDeliveryDeferredError | undefined;
+        try {
+          const admitted = await admitShopperDeliveryInTransaction({
+            tx,
+            input: delivery,
+            priorAttempt: row.friendEmailDeliveryAttempts > 0,
+          });
+          if (admitted.status === "sent") return "sent" as const;
+        } catch (error) {
+          if (!(error instanceof ShopperDeliveryDeferredError)) throw error;
+          deferred = error;
+        }
+        await enqueueOutboxJobFromProgramTransaction({
+          tx,
+          storeId,
+          jobType: "ANONYMOUS_REFERRAL_EMAIL",
+          payload: {
+            version: 1,
+            referralId,
+            installationGeneration: origin.installationGeneration,
+          },
+          idempotencyKey: `anonymous-referral-email:${referralId}:${origin.installationGeneration}`,
+          scheduledFor: deferred?.retryAt ?? new Date(),
+        });
         await tx.weleticLoyaltyReferral.update({
           where: { id: row.id },
           data: {
             metadata: {
               ...metadata,
+              anonymousConfirmationQueued: true,
               anonymousConfirmationDelivery: retained,
             } as Prisma.InputJsonObject,
-            friendEmailLeaseToken: owner,
-            friendEmailLeaseReservedAt: new Date(),
-            friendEmailLeaseExpiresAt: new Date(Date.now() + 60_000),
-            friendEmailDeliveryAttempts: { increment: 1 },
+            ...(deferred
+              ? {}
+              : {
+                  friendEmailLeaseToken: owner,
+                  friendEmailLeaseReservedAt: new Date(),
+                  friendEmailLeaseExpiresAt: new Date(Date.now() + 60_000),
+                  friendEmailDeliveryAttempts: { increment: 1 },
+                }),
             friendEmailLastError: null,
           },
         });
-        return "acquired" as const;
+        return deferred
+          ? { state: "deferred" as const, retryAt: deferred.retryAt }
+          : ("acquired" as const);
       },
       {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         timeout: 15_000,
       },
     );
+    if (typeof acquired === "object") return { emailSent: false, ...acquired };
     if (acquired !== "acquired")
       return { emailSent: acquired === "sent", state: acquired };
     return await prisma.$transaction(
@@ -327,6 +452,15 @@ export async function sendAnonymousReferralConfirmation({
         )
           throw unavailable();
         const { saved, request } = readRequest(row, origin, email);
+        const delivery = confirmationDeliveryIdentity(storeId, origin, row, {
+          saved,
+          request,
+        });
+        await admitShopperDeliveryInTransaction({
+          tx,
+          input: delivery,
+          priorAttempt: true,
+        });
         // A timeout is ambiguous, not cancellation of a provider-accepted email.
         // Retain the exact request/key; never retry this transaction callback.
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -368,6 +502,7 @@ export async function sendAnonymousReferralConfirmation({
           },
         });
         if (finalized.count !== 1) throw unavailable();
+        await confirmShopperDeliveryInTransaction(tx, delivery);
         return { emailSent: true, state: "sent" as const };
       },
       {
@@ -375,7 +510,7 @@ export async function sendAnonymousReferralConfirmation({
         timeout: 15_000,
       },
     );
-  } catch {
+  } catch (error) {
     // A transport failure may be ambiguous. Keep original bytes/key, but never
     // mutate a new owner's lease or repopulate metadata removed by erasure.
     await prisma.$executeRaw`
@@ -387,6 +522,86 @@ export async function sendAnonymousReferralConfirmation({
       WHERE id = ${referralId} AND storeId = ${storeId}
         AND friendEmailLeaseToken = ${owner} AND friendRewardEmailedAt IS NULL
     `;
+    if (error instanceof ShopperDeliveryDeferredError)
+      return {
+        emailSent: false,
+        state: "deferred" as const,
+        retryAt: error.retryAt,
+      };
+    if (
+      deliveryClaim &&
+      (error instanceof ShopperDeliveryReconciliationRequiredError ||
+        isLoyaltyMaintenanceBlockedError(error))
+    )
+      throw error;
     return { emailSent: false, state: "unavailable" as const };
   }
+}
+
+function confirmationDeliveryIdentity(
+  storeId: string,
+  origin: Origin,
+  row: WeleticLoyaltyReferral,
+  envelope: ReturnType<typeof readRequest>,
+): ShopperDeliveryIdentity {
+  return {
+    storeId,
+    installationGeneration: origin.installationGeneration,
+    producer: "referral_confirmation",
+    sourceKey: envelope.saved.providerKey,
+    provider: "resend",
+    contentDigest: shopperDeliveryContentDigest(envelope.request),
+    email: envelope.request.to,
+    shopifyCustomerId: null,
+    expiresAt: row.friendRewardExpiresAt,
+    retryUntil: new Date(envelope.saved.expiresAt),
+  };
+}
+
+/** Resume only a persisted user-requested confirmation; never collect history. */
+export async function resumeAnonymousReferralConfirmation(
+  claim: ExpiryDeliveryClaim,
+) {
+  const parsed = anonymousConfirmationJobSchema.safeParse(
+    claim.candidate.payload,
+  );
+  if (!parsed.success || claim.candidate.jobType !== "ANONYMOUS_REFERRAL_EMAIL")
+    throw new ShopperDeliveryReconciliationRequiredError();
+  const row = await prisma.weleticLoyaltyReferral.findFirst({
+    where: { id: parsed.data.referralId, storeId: claim.candidate.storeId },
+  });
+  if (!row || row.friendRewardEmailedAt) return;
+  const metadata = metadataOf(row.metadata);
+  const origin = originSchema.safeParse(metadata.anonymousConfirmationOrigin);
+  if (!origin.success || metadata.anonymousConfirmationTerminal) return;
+  if (origin.data.installationGeneration !== parsed.data.installationGeneration)
+    throw new ShopperDeliveryReconciliationRequiredError();
+  let email: string;
+  try {
+    const retained = retainedSchema.parse(
+      metadata.anonymousConfirmationDelivery,
+    );
+    email = envelopeSchema.parse(JSON.parse(decrypt(retained.ciphertext)))
+      .request.to;
+    readRequest(row, origin.data, email, true);
+  } catch {
+    throw new ShopperDeliveryReconciliationRequiredError();
+  }
+  const result = await sendAnonymousReferralConfirmation({
+    storeId: row.storeId,
+    referralId: row.id,
+    email,
+    deliveryClaim: claim,
+    prepare: async () => {
+      throw new ShopperDeliveryReconciliationRequiredError();
+    },
+  });
+  if (result.state === "deferred")
+    throw new ShopperDeliveryDeferredError(result.retryAt, "policy_window");
+  if (result.state === "busy")
+    throw new ShopperDeliveryDeferredError(
+      new Date(Date.now() + 60_000),
+      "source_lease",
+    );
+  if (!result.emailSent) throw unavailable();
 }

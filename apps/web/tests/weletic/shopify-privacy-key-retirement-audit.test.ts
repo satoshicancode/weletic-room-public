@@ -22,10 +22,14 @@ const mocks = vi.hoisted(() => ({
   webhookEventFindMany: vi.fn(),
   pendingInstallationFindMany: vi.fn(),
   reviewIdentityFindMany: vi.fn(),
+  deliveryIdentityFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    weleticShopperDeliveryIdentity: {
+      findMany: mocks.deliveryIdentityFindMany,
+    },
     weleticReviewOwnerPrivacyIdentity: {
       findMany: mocks.reviewIdentityFindMany,
     },
@@ -61,6 +65,18 @@ function encodedKey(byte: number) {
 const ALL_FIND_MANY_MOCKS = Object.values(mocks);
 
 describe("Shopify privacy HMAC key-retirement audit", () => {
+  it("retains keys referenced by delivery aliases, including orphan aliases", async () => {
+    mocks.deliveryIdentityFindMany.mockResolvedValueOnce([
+      { id: "orphan-delivery-alias", identityKeyId: "previous-2025" },
+    ]);
+    const result = await auditShopifyPrivacyKeyRetirementBatch({
+      retiringKeyIds: ["previous-2025"],
+      cursor: { sourceIndex: 13 },
+      batchSize: 20,
+    });
+    expect(JSON.stringify(result)).toContain("delivery_budget_identities");
+    expect(JSON.stringify(result)).toContain("orphan-delivery-alias");
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv(

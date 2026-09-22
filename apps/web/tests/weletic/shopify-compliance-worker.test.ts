@@ -1347,7 +1347,7 @@ describe("durable compliance worker boundaries", () => {
     ],
     [
       "export_store_review_audits",
-      "export_manifest",
+      "export_shopper_delivery",
       "storeReviewAuditFindMany",
     ],
   ] as const)("private store-review export: %s", (phase, next, mockName) => {
@@ -1681,6 +1681,53 @@ describe("durable compliance worker boundaries", () => {
     expect(mocks.backfillSnapshotFindMany).not.toHaveBeenCalled();
     expect(mocks.backfillPreviewFindMany).not.toHaveBeenCalled();
     expect(mocks.artifactStore).not.toHaveBeenCalled();
+  });
+
+  it("retains the same-store mailbox for ID-only delivery export and erasure", async () => {
+    mocks.shopperFindUnique.mockResolvedValue({
+      id: "shopper-id",
+      email: "current@example.test",
+      loyaltyAccount: { id: "account-id" },
+    });
+    const request = {
+      id: "id-only",
+      storeId: "store_1",
+      phase: "received",
+      cursor: null,
+      progress: null,
+      lockedBy: "worker",
+      leaseVersion: 1,
+      store: { projectId: "workspace_1" },
+      payloadCiphertext: JSON.stringify({
+        shopDomain: "target.myshopify.com",
+        customerId: "123",
+        orderExternalIds: [],
+      }),
+    };
+    const exported = await processCustomerDataRequestStep(request);
+    expect(mocks.deriveCustomerIdentities).toHaveBeenCalledWith({
+      storeId: "store_1",
+      shopifyCustomerId: "123",
+      email: "current@example.test",
+    });
+    expect(exported.payloadCiphertext).not.toContain("current@example.test");
+    expect(JSON.parse(exported.payloadCiphertext as string)).toHaveProperty(
+      "deliveryPrivacyIdentities",
+    );
+    const erased = await processCustomerRedactStep(request);
+    expect(JSON.parse(erased.payloadCiphertext as string)).toMatchObject({
+      customerId: "123",
+      customerEmail: "current@example.test",
+    });
+    expect(mocks.shopperFindUnique).toHaveBeenCalledWith({
+      where: {
+        storeId_shopifyCustomerId: {
+          storeId: "store_1",
+          shopifyCustomerId: "123",
+        },
+      },
+      select: { email: true },
+    });
   });
 
   it("exports anonymous friend claims through a rotation-aware email digest without retaining raw email", async () => {

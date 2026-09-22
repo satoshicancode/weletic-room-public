@@ -1,8 +1,10 @@
 import { decrypt, encrypt } from "@/lib/encryption";
 import { ShopperEmailPausedError } from "@/lib/weletic/merchant-settings/communications";
+import { isShopperDeliveryError } from "@/lib/weletic/merchant-settings/delivery-reservations";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { snapshotLoyaltyCommunicationPolicy } from "./communications-service";
+import { admitRetainedLoyaltyDelivery } from "./delivery-admission";
 import type { ExpiryDeliveryClaim } from "./expiry-delivery-snapshot";
 import type { LoyaltyMaintenancePermit } from "./maintenance-write-fence";
 import {
@@ -211,6 +213,28 @@ export async function retainCommunicationDeliveryRequest({
         select: { id: true, updatedAt: true },
       });
       if (!current) throw unavailable();
+      const admit = (
+        request: { to: string },
+        preparedAt: Date,
+        priorAttempt: boolean,
+      ) =>
+        admitRetainedLoyaltyDelivery({
+          tx,
+          storeId: job.storeId,
+          installationGeneration: expectedInstallationGeneration,
+          accountId,
+          sourceKey: idempotencyKey,
+          producer: "loyalty_communication",
+          request,
+          preparedAt,
+          expiresAt:
+            parsed.data.source === "reward_expiry_due"
+              ? new Date(parsed.data.expiresAt)
+              : null,
+          now: suppliedWallClockNow,
+          priorAttempt,
+          loyaltyMaintenancePermit,
+        });
       if (parsed.data.communicationDeliverySnapshot !== undefined) {
         try {
           const evidence = evidenceSchema.parse(
@@ -232,8 +256,10 @@ export async function retainCommunicationDeliveryRequest({
             wallClockNow.getTime() - new Date(evidence.preparedAt).getTime();
           if (age < 0 || age >= SAFE_RETRY_WINDOW_MS)
             throw new CommunicationDeliveryReconciliationRequiredError();
+          await admit(evidence.request, new Date(evidence.preparedAt), true);
           return { request: evidence.request, payload };
         } catch (error) {
+          if (isShopperDeliveryError(error)) throw error;
           if (
             error instanceof CommunicationDeliveryRecipientChangedError ||
             error instanceof CommunicationDeliveryReconciliationRequiredError
@@ -280,6 +306,7 @@ export async function retainCommunicationDeliveryRequest({
         data: { payload: nextPayload as Prisma.InputJsonObject },
       });
       if (updated.count !== 1) throw unavailable();
+      await admit(request, wallClockNow, false);
       return { request, payload: nextPayload };
     },
   });

@@ -17,6 +17,7 @@ import { rewardCommunicationFixture } from "./reward-communication-fixture";
 import { rewardExpiryCommunicationFixture } from "./reward-expiry-communication-fixture";
 
 const mocks = vi.hoisted(() => ({
+  admission: vi.fn(),
   findFirst: vi.fn(),
   updateMany: vi.fn(),
   account: vi.fn(),
@@ -29,6 +30,9 @@ const mocks = vi.hoisted(() => ({
   ledger: vi.fn(),
   referral: vi.fn(),
   order: vi.fn(),
+}));
+vi.mock("@/lib/weletic/loyalty/delivery-admission", () => ({
+  admitRetainedLoyaltyDelivery: mocks.admission,
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 vi.mock("@/lib/weletic/loyalty/merchant-write-fence", () => ({

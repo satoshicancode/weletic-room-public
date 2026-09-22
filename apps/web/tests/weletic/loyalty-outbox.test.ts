@@ -799,6 +799,7 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
             OR: [
               { jobType: "LOYALTY_COMMUNICATION" },
               { jobType: "REVIEW_REQUEST_EMAIL" },
+              { jobType: "ANONYMOUS_REFERRAL_EMAIL" },
               {
                 jobType: "INACTIVITY_EXPIRY",
                 OR: [

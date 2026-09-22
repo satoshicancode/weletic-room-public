@@ -24,6 +24,9 @@ vi.mock("@/lib/weletic/reviews/privacy-owner-redact", () => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    weleticShopperDeliveryReservation: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     weleticOpenReviewMediaOwnership: {
       findMany: vi.fn().mockResolvedValue([]),
     },
@@ -109,6 +112,10 @@ vi.mock("@/lib/weletic/reviews/incentive-privacy-fence", () => ({
 
 describe("Shopify GDPR & Privacy Compliance", () => {
   beforeEach(() => {
+    vi.stubEnv(
+      "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS",
+      `delivery-test:${Buffer.alloc(32, 7).toString("base64")}`,
+    );
     vi.clearAllMocks();
     vi.mocked(prisma.weleticStoreReview.findMany)
       .mockReset()

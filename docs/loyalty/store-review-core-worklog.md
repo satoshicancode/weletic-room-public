@@ -333,3 +333,60 @@ targeted lint and formatting passed. The [integration checklist](shared-shopper-
 producer boundaries and the remaining identity decision for anonymous referral
 confirmations. ADR 0042 remains accepted; anonymous identity semantics are a
 separate newly discovered choice, not a reopening of shared versus module policy.
+
+## September 23 — shared anonymous and authenticated delivery budget
+
+Hiro approved [ADR 0043](../adr/0043-shared-email-delivery-budget.md): anonymous
+confirmations share the store/email rolling budget with later authenticated
+messages while retaining independent customer limits. There is no outstanding
+identity decision for this behavior.
+
+The draft now includes two HMAC reservation/identity tables, additive settings JSON
+and an appended anonymous-confirmation outbox type. Existing Loyalty, expiry,
+anonymous confirmation and product-review producers reserve under the store lock
+and preserve original source/provider evidence. Deferred anonymous confirmations
+have a source-only queue job and encrypted immutable bytes; only proven-unsent,
+explicitly queued preparation can wait beyond a provider retry window. Uncertain
+attempts never receive a new deadline. Paused jobs do not starve financial work.
+
+Privacy includes owned projections, checkpointed encrypted exports, bounded
+customer/store erasure and key-retirement audit. Sharing a mailbox shares capacity,
+not another identified customer's exported history. ID-only requests retain the
+resolved shopper mailbox before pseudonymization. Old exports without delivery
+identities require draining or explicit reconciliation before writer rollout.
+
+Independent review and SQL testing found and fixed: shared-mailbox erasure losing
+another customer's capacity; anonymous retries gaining a new customer identity;
+RepeatableRead identity subqueries missing a concurrent winner; paused anonymous
+jobs occupying the bounded poll; ID-only privacy requests missing anonymous email
+history; and stale admission clocks across quiet-hours/expiry boundaries. Review
+invitations also check their expiry in the final transport authorization query.
+
+Local evidence (mocked providers; no customer sends):
+
+- Full web unit suite: **10,044 passed**, six existing skips, 618 files. The first
+  broad run lacked the synthetic Shopify app ID and exposed outdated producer
+  mocks; corrected fixtures and the configured rerun passed without weaker
+  assertions or runtime guard bypasses.
+- Complete shopper SQL suite: **187 passed**, including all **16 shared admission**
+  cases and three lock-wait clock boundaries.
+- Anonymous confirmation SQL: **19 passed**, including 25-hour never-attempted
+  recovery and the later authenticated mailbox budget.
+- Communication retention SQL: **59 passed**; separate SQL regressions pass for
+  paused-backlog fairness and exact-claim deferral without attempt consumption.
+- Expiry retention SQL: **five passed**, including delayed-render quiet hours.
+- Native review delivery/privacy SQL selection: **29 passed**, 67 unrelated cases
+  not selected. This is a focused run, not the entire native review suite.
+- Web typecheck and root lint passed. Each SQL harness removed its disposable
+  database/principal and verified retained ledger count 16 unchanged. Exact new
+  delivery DDL, including prior-to-new enum ordering, was rehearsed in the shared
+  delivery/producer harnesses.
+
+The normal production web build passed with disposable SQL and loopback provider
+placeholders; cleanup again left the retained ledger unchanged. The final small
+maintenance-deferral propagation fix subsequently passed its 37-case anonymous
+unit suite and web typecheck. Updated-head CI remains pending until push.
+Merchant settings controls, retained collection/reminder reconciliation, store
+review gateways/UI and installed yamaxdev acceptance remain open. PR #101 remains
+**draft, unmerged and undeployed**. No shared schema application, live sends/orders,
+spending, publication or module activation occurred.

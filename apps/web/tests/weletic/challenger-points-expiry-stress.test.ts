@@ -5,18 +5,40 @@ import {
   enqueueOutboxJobFromProgramTransaction,
 } from "@/lib/weletic/loyalty/outbox";
 import { handleInactivityExpiry } from "@/lib/weletic/loyalty/outbox-worker";
-import { sendPointsExpiryNotification } from "@/lib/weletic/loyalty/points-expiry-notifications";
 import {
   calculateNextPointsExpiryDate,
   getPointsExpiryStageDate,
   type PointsExpiryPolicy,
 } from "@/lib/weletic/loyalty/points-expiry-policy";
 import { enqueuePointsExpiryLifecycleJobs } from "@/lib/weletic/loyalty/points-expiry-scheduler";
-import { sendBatchEmail } from "@dub/email";
+import { prepareResendEmail, sendPreparedResendEmail } from "@dub/email";
 import { Prisma, WeleticPointsLedgerEntryType } from "@prisma/client";
 import { addDays, subDays } from "date-fns";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sendClaimedExpiryNotification } from "./claimed-expiry-notification-fixture";
 
+vi.mock("@/lib/weletic/loyalty/expiry-delivery-snapshot", async (original) => ({
+  ...(await original<
+    typeof import("@/lib/weletic/loyalty/expiry-delivery-snapshot")
+  >()),
+  retainExpiryDeliveryRequest: async ({
+    prepare,
+  }: {
+    prepare: () => Promise<unknown>;
+  }) => prepare(),
+}));
+vi.mock("@/lib/weletic/loyalty/delivery-admission", () => ({
+  admitRetainedLoyaltyDelivery: vi.fn(),
+}));
+vi.mock(
+  "@/lib/weletic/merchant-settings/delivery-reservations",
+  async (original) => ({
+    ...(await original<
+      typeof import("@/lib/weletic/merchant-settings/delivery-reservations")
+    >()),
+    confirmShopperDeliveryInTransaction: vi.fn(),
+  }),
+);
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
 }));
@@ -80,7 +102,8 @@ vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
 }));
 
 vi.mock("@dub/email", () => ({
-  sendBatchEmail: vi.fn(),
+  prepareResendEmail: vi.fn(),
+  sendPreparedResendEmail: vi.fn(),
 }));
 
 const testBasePolicy: PointsExpiryPolicy = {
@@ -101,8 +124,15 @@ const testBasePolicy: PointsExpiryPolicy = {
 describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requirement R1 / Nhóm 1.3)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useRealTimers();
-    vi.mocked(sendBatchEmail).mockResolvedValue({
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-01T00:00:00Z"));
+    vi.mocked(prepareResendEmail).mockImplementation(async (email) => ({
+      to: email.to,
+      from: email.from ?? "test@example.com",
+      subject: email.subject ?? "Synthetic",
+      html: `<p>${email.subject}</p>`,
+    }));
+    vi.mocked(sendPreparedResendEmail).mockResolvedValue({
       data: { data: [{ id: "challenger_email_ok" }] },
       error: null,
     } as any);
@@ -147,7 +177,7 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
       // Exactly 1 millisecond BEFORE the threshold: throws premature execution error
       const oneMsBefore = new Date(warningDate.getTime() - 1);
       await expect(
-        sendPointsExpiryNotification({
+        sendClaimedExpiryNotification({
           storeId: "store_challenger_1",
           payload: {
             accountId: "wlacc_warp_warning",
@@ -160,10 +190,10 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
           now: oneMsBefore,
         }),
       ).rejects.toThrow(/ran before its configured threshold/);
-      expect(sendBatchEmail).not.toHaveBeenCalled();
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
 
       // Exactly AT the threshold: succeeds
-      const outcomeAt = await sendPointsExpiryNotification({
+      const outcomeAt = await sendClaimedExpiryNotification({
         storeId: "store_challenger_1",
         payload: {
           accountId: "wlacc_warp_warning",
@@ -176,11 +206,11 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
         now: warningDate,
       });
       expect(outcomeAt).toBe("sent");
-      expect(sendBatchEmail).toHaveBeenCalledOnce();
+      expect(sendPreparedResendEmail).toHaveBeenCalledOnce();
 
       // Exactly 1 millisecond AFTER the threshold: succeeds
       const oneMsAfter = new Date(warningDate.getTime() + 1);
-      const outcomeAfter = await sendPointsExpiryNotification({
+      const outcomeAfter = await sendClaimedExpiryNotification({
         storeId: "store_challenger_1",
         payload: {
           accountId: "wlacc_warp_warning",
@@ -226,7 +256,7 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
 
       // 1ms before last-chance: rejected
       await expect(
-        sendPointsExpiryNotification({
+        sendClaimedExpiryNotification({
           storeId: "store_challenger_1",
           payload: {
             accountId: "wlacc_warp_last_chance",
@@ -241,7 +271,7 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
       ).rejects.toThrow(/ran before its configured threshold/);
 
       // Exactly at last-chance: sent
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "store_challenger_1",
         payload: {
           accountId: "wlacc_warp_last_chance",
@@ -254,13 +284,11 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
         now: lastChanceDate,
       });
       expect(outcome).toBe("sent");
-      expect(sendBatchEmail).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({
-            subject: expect.stringMatching(/^Last chance:/),
-          }),
-        ]),
-        expect.any(Object),
+      expect(sendPreparedResendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subject: expect.stringMatching(/^Last chance:/),
+        }),
+        expect.any(String),
       );
     });
 
@@ -386,7 +414,7 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
         expiryAt,
         stage: "warning",
       });
-      const res1 = await sendPointsExpiryNotification({
+      const res1 = await sendClaimedExpiryNotification({
         storeId: "store_challenger_1",
         payload: {
           accountId,
@@ -403,7 +431,7 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
       // 2. Erratic clock warp BACKWARD by 60 days: attempting last-chance is rejected
       const jumpedBackTime = subDays(warningDate, 60);
       await expect(
-        sendPointsExpiryNotification({
+        sendClaimedExpiryNotification({
           storeId: "store_challenger_1",
           payload: {
             accountId,
@@ -423,7 +451,7 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
         expiryAt,
         stage: "last_chance",
       });
-      const res2 = await sendPointsExpiryNotification({
+      const res2 = await sendClaimedExpiryNotification({
         storeId: "store_challenger_1",
         payload: {
           accountId,
@@ -1007,7 +1035,7 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
         store: { shopDomain: "teststore.myshopify.com" },
       });
 
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "store_challenger_1",
         payload: {
           accountId: "wlacc_notification_fence",
@@ -1021,7 +1049,7 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
       });
 
       expect(outcome).toBe("stale");
-      expect(sendBatchEmail).not.toHaveBeenCalled();
+      expect(sendPreparedResendEmail).not.toHaveBeenCalled();
     });
 
     it("4.3 drops outbox job when account rolling expiry was extended past payload expiryAt", async () => {
@@ -1132,4 +1160,9 @@ describe("Challenger 1 Stress Suite: Loyalty Points Expiry Lifecycle (Requiremen
       );
     });
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
 });

@@ -69,6 +69,10 @@ import {
   VoucherCleanupRetryableError,
 } from "@/lib/weletic/loyalty/voucher-privacy-cleanup";
 import { ShopperEmailPausedError } from "@/lib/weletic/merchant-settings/communications";
+import {
+  ShopperDeliveryDeferredError,
+  ShopperDeliveryReconciliationRequiredError,
+} from "@/lib/weletic/merchant-settings/delivery-reservations";
 import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
 import { REVIEW_FLOW_HANDLES } from "@/lib/weletic/reviews/flow-contract";
 import { ReviewFlowDeferredError } from "@/lib/weletic/reviews/flow-errors";
@@ -1211,6 +1215,7 @@ export async function processOutboxJobsBatch(
         OR: [
           { jobType: "LOYALTY_COMMUNICATION" },
           { jobType: "REVIEW_REQUEST_EMAIL" },
+          { jobType: "ANONYMOUS_REFERRAL_EMAIL" },
           {
             jobType: "INACTIVITY_EXPIRY",
             OR: [
@@ -1391,6 +1396,17 @@ export async function processOutboxJobsBatch(
         summary.skipped++;
         continue;
       }
+      if (error instanceof ShopperDeliveryDeferredError) {
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: new Date(),
+          retryAt: error.retryAt,
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
       if (
         isLoyaltyMaintenanceBlockedError(error) ||
         error instanceof ShopperEmailPausedError
@@ -1419,7 +1435,8 @@ export async function processOutboxJobsBatch(
         (error instanceof ShopifyFlowDispatchError && !error.retryable) ||
         error instanceof HistoricalImportExecutionContainedError ||
         error instanceof ExpiryDeliveryReconciliationRequiredError ||
-        error instanceof CommunicationDeliveryReconciliationRequiredError;
+        error instanceof CommunicationDeliveryReconciliationRequiredError ||
+        error instanceof ShopperDeliveryReconciliationRequiredError;
       const isExhausted =
         terminalOutboxFailure ||
         (currentAttempt >= candidate.maxAttempts &&
@@ -1558,6 +1575,15 @@ export async function executeOutboxJob(
   };
   if (loyaltyMaintenancePermit !== undefined) {
     assertLoyaltyMaintenanceOwnerPermitAuthorization(loyaltyMaintenancePermit);
+  }
+  if (job.jobType === "ANONYMOUS_REFERRAL_EMAIL") {
+    if (!deliveryClaim || deliveryClaim.candidate !== job)
+      throw new Error("Anonymous confirmation requires its worker claim");
+    const { resumeAnonymousReferralConfirmation } = await import(
+      "./anonymous-referral-confirmation"
+    );
+    await resumeAnonymousReferralConfirmation(deliveryClaim);
+    return;
   }
   if (job.jobType === "REVIEW_POINTS_RECOVERY") {
     // Unlike legacy projection jobs, a blocked financial promise must never be

@@ -116,7 +116,13 @@ export function openReviewDeliverySnapshot(input: {
     // SMTP offers no provider idempotency contract: an ambiguous attempt must be
     // reconciled, not retried automatically or switched to another provider.
     if (input.retry && evidence.provider === "smtp") throw unavailable();
-    return { content: evidence.content, providerKey: evidence.providerKey };
+    return {
+      content: evidence.content,
+      providerKey: evidence.providerKey,
+      retryUntil: new Date(
+        new Date(evidence.preparedAt).getTime() + RETRY_WINDOW_MS,
+      ),
+    };
   } catch {
     throw unavailable();
   }

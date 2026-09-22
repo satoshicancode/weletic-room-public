@@ -45,6 +45,7 @@ describe("private immutable review email evidence", () => {
     expect(open(ciphertext)).toEqual({
       content,
       providerKey: "native-review-request:invitation",
+      retryUntil: new Date("2026-09-20T23:00:00.000Z"),
     });
   });
   it("does not depend on current template, branding or locale when reopening", () => {

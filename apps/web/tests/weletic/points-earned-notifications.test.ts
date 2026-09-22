@@ -10,6 +10,7 @@ import { rewardCommunicationFixture } from "./reward-communication-fixture";
 import { rewardExpiryCommunicationFixture } from "./reward-expiry-communication-fixture";
 
 const mocks = vi.hoisted(() => ({
+  confirm: vi.fn(),
   account: vi.fn(),
   ledger: vi.fn(),
   grant: vi.fn(),
@@ -25,11 +26,21 @@ const mocks = vi.hoisted(() => ({
   sender: vi.fn(),
   expiryRemote: vi.fn(),
 }));
+vi.mock(
+  "@/lib/weletic/merchant-settings/delivery-reservations",
+  async (original) => ({
+    ...(await original<
+      typeof import("@/lib/weletic/merchant-settings/delivery-reservations")
+    >()),
+    confirmShopperDeliveryInTransaction: mocks.confirm,
+  }),
+);
 vi.mock("../../lib/weletic/loyalty/reward-expiry-remote-check", () => ({
   isRewardExpiryDiscountCurrentlyUsable: mocks.expiryRemote,
 }));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
     weleticLoyaltyAccount: { findFirst: mocks.account },
     weleticPointsLedgerEntry: { findFirst: mocks.ledger },
     weleticLoyaltyEarnGrant: { findFirst: mocks.grant },

@@ -21,6 +21,7 @@ import {
   WeleticLoyaltyOutboxJobType,
 } from "@prisma/client";
 import { z } from "zod";
+import { anonymousConfirmationJobSchema } from "./anonymous-confirmation-contract";
 import { loyaltyExpiryCommunicationSnapshotSchema } from "./communications-contract";
 import {
   HistoricalImportJobPayloadSchema,
@@ -276,6 +277,7 @@ export type FlowTriggerPayload = z.infer<typeof FlowTriggerPayloadSchema>;
  * Union of all valid outbox payloads
  */
 export type LoyaltyOutboxPayloadMap = {
+  ANONYMOUS_REFERRAL_EMAIL: z.infer<typeof anonymousConfirmationJobSchema>;
   REVIEW_POINTS_RECOVERY: z.infer<typeof ReviewPointsRecoveryPayloadSchema>;
   HISTORICAL_IMPORT_COMMIT: HistoricalImportJobPayload;
   HISTORICAL_IMPORT_ROLLBACK: HistoricalImportJobPayload;
@@ -449,6 +451,7 @@ function isInstallationBoundOperationalJob({
   if (
     [
       "LOYALTY_COMMUNICATION",
+      "ANONYMOUS_REFERRAL_EMAIL",
       "HOLDING_PERIOD_RELEASE",
       "INACTIVITY_EXPIRY",
       "TIER_REVIEW",
@@ -526,14 +529,17 @@ async function bindOperationalJobToInstallationGeneration({
   }
   if (
     (jobType === "LOYALTY_COMMUNICATION" ||
-      jobType === "REVIEW_POINTS_RECOVERY") &&
+      jobType === "REVIEW_POINTS_RECOVERY" ||
+      jobType === "ANONYMOUS_REFERRAL_EMAIL") &&
     store.installationGeneration !==
       (payload as Record<string, unknown>).installationGeneration
   ) {
     throw new Error(
       jobType === "LOYALTY_COMMUNICATION"
         ? "Loyalty communication installation changed"
-        : "Review points recovery installation changed",
+        : jobType === "ANONYMOUS_REFERRAL_EMAIL"
+          ? "Anonymous referral confirmation installation changed"
+          : "Review points recovery installation changed",
     );
   }
   if (
@@ -556,6 +562,9 @@ export function validateOutboxPayload(
   payload: unknown,
 ): void {
   switch (jobType) {
+    case "ANONYMOUS_REFERRAL_EMAIL":
+      anonymousConfirmationJobSchema.parse(payload);
+      break;
     case "REVIEW_POINTS_RECOVERY":
       ReviewPointsRecoveryPayloadSchema.parse(payload);
       break;

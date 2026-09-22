@@ -760,7 +760,8 @@ export async function readComplianceReviewCheckpoint({
     | "review_media"
     | "store_reviews"
     | "store_review_requests"
-    | "store_review_audits";
+    | "store_review_audits"
+    | "shopper_delivery";
 }): Promise<unknown | null> {
   await assertComplianceArtifactWriteLease({
     client: prisma,

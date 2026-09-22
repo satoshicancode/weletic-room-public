@@ -108,6 +108,9 @@ vi.mock("@/lib/prisma", () => ({
       count: vi.fn(),
     },
     // The legacy financial fixture contains no native review rows.
+    weleticShopperDeliveryReservation: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     weleticStoreReview: {
       findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn().mockResolvedValue(null),

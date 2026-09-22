@@ -102,6 +102,8 @@ describe("shopper profile production queries on isolated MySQL", () => {
   afterAll(async () => {
     if (safeToClean && stores.length) {
       const where = { storeId: { in: stores } };
+      await database.weleticShopperDeliveryIdentity.deleteMany({ where });
+      await database.weleticShopperDeliveryReservation.deleteMany({ where });
       await database.weleticShopifyCustomerPrivacyTombstone.deleteMany({
         where,
       });
@@ -214,6 +216,537 @@ describe("shopper profile production queries on isolated MySQL", () => {
     }
     return { storeId, projectId, shopperId, accountId, programId };
   }
+  async function deliveryFixture(limit = 1) {
+    const fixture = await seed(false);
+    const now = new Date();
+    const core = await import(
+      "../../lib/weletic/merchant-settings/delivery-reservations"
+    );
+    await database.weleticMerchantSettings.create({
+      data: {
+        storeId: fixture.storeId,
+        timeZone: "UTC",
+        shopperDeliveryPolicy: {
+          version: 1,
+          quietHours: null,
+          maxMessagesPer24Hours: limit,
+        },
+      },
+    });
+    const input: import("../../lib/weletic/merchant-settings/delivery-reservations").ShopperDeliveryIdentity =
+      {
+        storeId: fixture.storeId,
+        installationGeneration: "g1",
+        producer: "referral_confirmation",
+        sourceKey: randomUUID(),
+        provider: "resend",
+        contentDigest: core.shopperDeliveryContentDigest({
+          html: "immutable fixture",
+        }),
+        email: "shared-budget@example.test",
+        shopifyCustomerId: null,
+        expiresAt: null,
+        retryUntil: new Date(now.getTime() + 23 * 60 * 60_000),
+      };
+    const admit = (value = input, at = now, priorAttempt = false) =>
+      database.$transaction(
+        (tx) =>
+          core.admitShopperDeliveryInTransaction({
+            tx,
+            input: value,
+            now: at,
+            priorAttempt,
+          }),
+        { isolationLevel: "ReadCommitted", timeout: 15_000 },
+      );
+    return { ...fixture, now, input, admit, core };
+  }
+
+  it.each(["quiet_hours", "expiry", "retry_deadline"])(
+    "shared delivery: lock wait crossing %s uses fresh admission time",
+    async (boundary) => {
+      const f = await deliveryFixture();
+      const start = new Date("2026-09-23T11:59:00Z");
+      const end = new Date("2026-09-23T12:01:00Z");
+      if (boundary === "quiet_hours")
+        await database.weleticMerchantSettings.update({
+          where: { storeId: f.storeId },
+          data: {
+            shopperDeliveryPolicy: {
+              version: 1,
+              quietHours: { startMinute: 720, endMinute: 780 },
+              maxMessagesPer24Hours: 1,
+            },
+          },
+        });
+      const input = {
+        ...f.input,
+        expiresAt:
+          boundary === "expiry" ? new Date("2026-09-23T12:00:00Z") : null,
+        retryUntil:
+          boundary === "retry_deadline"
+            ? new Date("2026-09-23T12:00:00Z")
+            : new Date("2026-09-24T10:59:00Z"),
+      };
+      let locked!: () => void;
+      let release!: () => void;
+      const acquired = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const holding = database.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM WeleticShopifyStore WHERE id = ${f.storeId} FOR UPDATE`;
+        locked();
+        await gate;
+      });
+      await acquired;
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(start);
+      const attempted = database.$transaction((tx) =>
+        f.core.admitShopperDeliveryInTransaction({ tx, input }),
+      );
+      // Attach rejection handling before advancing the clock/releasing the lock.
+      const checked = expect(attempted).rejects.toBeInstanceOf(
+        boundary === "quiet_hours"
+          ? f.core.ShopperDeliveryDeferredError
+          : boundary === "expiry"
+            ? f.core.ShopperDeliveryIneligibleError
+            : f.core.ShopperDeliveryReconciliationRequiredError,
+      );
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        vi.setSystemTime(end);
+        release();
+        await holding;
+        await checked;
+        expect(
+          await database.weleticShopperDeliveryReservation.count({
+            where: { storeId: f.storeId },
+          }),
+        ).toBe(0);
+      } finally {
+        release();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("shared delivery: anonymous and authenticated modules race for one email slot", async () => {
+    const f = await deliveryFixture();
+    const results = await Promise.allSettled([
+      f.admit(),
+      f.admit({
+        ...f.input,
+        producer: "review_invitation",
+        sourceKey: randomUUID(),
+        shopifyCustomerId: "1234",
+      }),
+    ]);
+    expect(
+      results.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status === "rejected" && rejected.reason).toBeInstanceOf(
+      f.core.ShopperDeliveryDeferredError,
+    );
+    expect(
+      await database.weleticShopperDeliveryReservation.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(1);
+  });
+
+  it("shared delivery: immutable retry consumes one slot and refuses source rebinding", async () => {
+    const f = await deliveryFixture();
+    const first = await f.admit();
+    expect(
+      await f.admit(f.input, new Date(f.now.getTime() + 1000), true),
+    ).toEqual(first);
+    await expect(
+      f.admit({ ...f.input, shopifyCustomerId: "1234" }),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryReconciliationRequiredError);
+    await expect(
+      f.admit({ ...f.input, contentDigest: "f".repeat(64) }),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryReconciliationRequiredError);
+    expect(
+      await database.weleticShopperDeliveryReservation.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(1);
+    expect(
+      await database.weleticShopperDeliveryIdentity.count({
+        where: { storeId: f.storeId, identityKind: "customer_id" },
+      }),
+    ).toBe(0);
+  });
+
+  it("shared delivery: later registration shares email capacity and email changes retain customer capacity", async () => {
+    const f = await deliveryFixture();
+    await f.admit();
+    await expect(
+      f.admit({
+        ...f.input,
+        sourceKey: randomUUID(),
+        shopifyCustomerId: "1234",
+        producer: "loyalty_communication",
+      }),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryDeferredError);
+    const g = await deliveryFixture();
+    await g.admit({ ...g.input, shopifyCustomerId: "1234" });
+    await expect(
+      g.admit({
+        ...g.input,
+        sourceKey: randomUUID(),
+        shopifyCustomerId: "1234",
+        email: "changed@example.test",
+      }),
+    ).rejects.toBeInstanceOf(g.core.ShopperDeliveryDeferredError);
+  });
+
+  it("shared delivery: overlapping email/customer audiences are not summed twice", async () => {
+    const f = await deliveryFixture(2);
+    await f.admit({
+      ...f.input,
+      shopifyCustomerId: "1234",
+      email: "former@example.test",
+    });
+    await f.admit({
+      ...f.input,
+      sourceKey: randomUUID(),
+      shopifyCustomerId: "5678",
+    });
+    await expect(
+      f.admit({
+        ...f.input,
+        sourceKey: randomUUID(),
+        shopifyCustomerId: "1234",
+      }),
+    ).resolves.toMatchObject({ status: "admitted" });
+    await expect(
+      f.admit({
+        ...f.input,
+        sourceKey: randomUUID(),
+        shopifyCustomerId: "1234",
+      }),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryDeferredError);
+  });
+
+  it("shared delivery: cross-store addresses and stale installations remain isolated", async () => {
+    const f = await deliveryFixture();
+    const g = await deliveryFixture();
+    await f.admit();
+    await expect(g.admit()).resolves.toMatchObject({ status: "admitted" });
+    await expect(
+      f.admit({ ...f.input, installationGeneration: "old" }),
+    ).rejects.toThrow();
+    expect(
+      await database.weleticShopperDeliveryReservation.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(1);
+  });
+
+  it("shared delivery: SMTP ambiguity and legacy attempts never acquire a retry slot", async () => {
+    const f = await deliveryFixture();
+    const smtp = { ...f.input, provider: "smtp" as const };
+    await f.admit(smtp);
+    await expect(
+      f.admit(smtp, new Date(f.now.getTime() + 1000), true),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryReconciliationRequiredError);
+    const g = await deliveryFixture();
+    await expect(g.admit(g.input, g.now, true)).rejects.toBeInstanceOf(
+      g.core.ShopperDeliveryReconciliationRequiredError,
+    );
+    expect(
+      await database.weleticShopperDeliveryReservation.count({
+        where: { storeId: g.storeId },
+      }),
+    ).toBe(0);
+  });
+
+  it("shared delivery: rollback leaves neither reservation nor identity aliases", async () => {
+    const f = await deliveryFixture();
+    await expect(
+      database.$transaction(async (tx) => {
+        await f.core.admitShopperDeliveryInTransaction({
+          tx,
+          input: f.input,
+          now: f.now,
+        });
+        throw new Error("interrupt source transaction");
+      }),
+    ).rejects.toThrow("interrupt source transaction");
+    expect(
+      await database.weleticShopperDeliveryReservation.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(0);
+    expect(
+      await database.weleticShopperDeliveryIdentity.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(0);
+    await expect(f.admit()).resolves.toMatchObject({ status: "admitted" });
+  });
+
+  it("shared delivery: key rotation bridges old budgets and never doubles alias counts", async () => {
+    const f = await deliveryFixture(2);
+    const original = process.env.WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS!;
+    await f.admit();
+    try {
+      vi.stubEnv(
+        "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS",
+        `delivery-new:${randomBytes(32).toString("base64")},${original}`,
+      );
+      await f.admit(f.input, new Date(f.now.getTime() + 1000), true);
+      expect(
+        await database.weleticShopperDeliveryIdentity.count({
+          where: { storeId: f.storeId },
+        }),
+      ).toBe(2);
+      await f.admit({ ...f.input, sourceKey: randomUUID() });
+      await expect(
+        f.admit({ ...f.input, sourceKey: randomUUID() }),
+      ).rejects.toBeInstanceOf(f.core.ShopperDeliveryDeferredError);
+      expect(
+        await database.weleticShopperDeliveryReservation.count({
+          where: { storeId: f.storeId },
+        }),
+      ).toBe(2);
+    } finally {
+      vi.stubEnv("WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS", original);
+    }
+  });
+
+  it("shared delivery: export and erasure preserve a different customer sharing the mailbox", async () => {
+    const f = await deliveryFixture(3);
+    const privacy = await import(
+      "../../lib/weletic/merchant-settings/delivery-privacy"
+    );
+    const { deriveAllShopifyCustomerPrivacyIdentities } = await import(
+      "../../lib/weletic/shopify/privacy-identity"
+    );
+    const anonymous = await f.admit();
+    const own = await f.admit({
+      ...f.input,
+      sourceKey: randomUUID(),
+      shopifyCustomerId: "1234",
+    });
+    const foreign = await f.admit({
+      ...f.input,
+      sourceKey: randomUUID(),
+      shopifyCustomerId: "5678",
+    });
+    const identities = deriveAllShopifyCustomerPrivacyIdentities({
+      storeId: f.storeId,
+      email: f.input.email,
+      shopifyCustomerId: "1234",
+    });
+    const exported = await database.weleticShopperDeliveryReservation.findMany({
+      where: privacy.deliveryExportWhere(f.storeId, identities),
+      select: privacy.deliveryExportSelect,
+    });
+    expect(exported.map((row) => row.id).sort()).toEqual(
+      [anonymous.id, own.id].sort(),
+    );
+    expect(JSON.stringify(exported)).not.toContain("customerDigest");
+    for (const identity of identities)
+      await database.weleticShopifyCustomerPrivacyTombstone.create({
+        data: {
+          id: randomUUID(),
+          storeId: f.storeId,
+          ...identity,
+          redactedAt: f.now,
+          expiresAt: new Date(f.now.getTime() + 365 * 24 * 60 * 60_000),
+        },
+      });
+    expect(
+      await privacy.eraseShopperDeliveryBatch({
+        storeId: f.storeId,
+        identities,
+      }),
+    ).toMatchObject({ hasMore: false, count: 2 });
+    expect(
+      await database.weleticShopperDeliveryReservation.findUnique({
+        where: { id: foreign.id },
+      }),
+    ).not.toBeNull();
+    expect(
+      await database.weleticShopperDeliveryIdentity.findMany({
+        where: { reservationId: foreign.id },
+        select: { identityKind: true },
+      }),
+    ).toEqual([{ identityKind: "customer_id" }]);
+    await database.weleticMerchantSettings.update({
+      where: { storeId: f.storeId },
+      data: {
+        shopperDeliveryPolicy: {
+          version: 1,
+          quietHours: null,
+          maxMessagesPer24Hours: 1,
+        },
+      },
+    });
+    await expect(
+      f.admit({
+        ...f.input,
+        sourceKey: randomUUID(),
+        shopifyCustomerId: "5678",
+        email: "new-mailbox@example.test",
+      }),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryDeferredError);
+    await expect(
+      f.admit({ ...f.input, sourceKey: randomUUID() }),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryIneligibleError);
+  });
+
+  it("shared delivery: current reads see a winner after a pre-existing repeatable-read snapshot", async () => {
+    const f = await deliveryFixture();
+    await database.$transaction(
+      async (tx) => {
+        expect(
+          await tx.weleticShopperDeliveryReservation.count({
+            where: { storeId: f.storeId },
+          }),
+        ).toBe(0);
+        await f.admit();
+        await expect(
+          f.core.admitShopperDeliveryInTransaction({
+            tx,
+            input: { ...f.input, sourceKey: randomUUID() },
+            now: f.now,
+          }),
+        ).rejects.toBeInstanceOf(f.core.ShopperDeliveryDeferredError);
+      },
+      { isolationLevel: "RepeatableRead", timeout: 15_000 },
+    );
+    expect(
+      await database.weleticShopperDeliveryReservation.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(1);
+  });
+
+  it("shared delivery: pause and quiet hours defer without consuming capacity", async () => {
+    const f = await deliveryFixture();
+    await database.weleticMerchantSettings.update({
+      where: { storeId: f.storeId },
+      data: { shopperEmailPaused: true },
+    });
+    await expect(f.admit()).rejects.toMatchObject({ reason: "paused" });
+    const minute = f.now.getUTCHours() * 60 + f.now.getUTCMinutes();
+    await database.weleticMerchantSettings.update({
+      where: { storeId: f.storeId },
+      data: {
+        shopperEmailPaused: false,
+        shopperDeliveryPolicy: {
+          version: 1,
+          quietHours: { startMinute: minute, endMinute: (minute + 60) % 1440 },
+          maxMessagesPer24Hours: 1,
+        },
+      },
+    });
+    await expect(f.admit()).rejects.toBeInstanceOf(
+      f.core.ShopperDeliveryDeferredError,
+    );
+    expect(
+      await database.weleticShopperDeliveryReservation.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(0);
+    await database.weleticMerchantSettings.update({
+      where: { storeId: f.storeId },
+      data: {
+        shopperDeliveryPolicy: {
+          version: 1,
+          quietHours: null,
+          maxMessagesPer24Hours: 1,
+        },
+      },
+    });
+    await expect(f.admit()).resolves.toMatchObject({ status: "admitted" });
+  });
+
+  it("shared delivery: privacy fencing races admission without leaving an owned reservation", async () => {
+    const f = await deliveryFixture();
+    await database.weleticShopper.update({
+      where: { id: f.shopperId },
+      data: { email: f.input.email },
+    });
+    const { fenceShopperIncentiveRedaction } = await import(
+      "../../lib/weletic/reviews/incentive-privacy-fence"
+    );
+    const results = await Promise.allSettled([
+      f.admit({ ...f.input, shopifyCustomerId: "1234" }),
+      fenceShopperIncentiveRedaction({
+        storeId: f.storeId,
+        shopperId: f.shopperId,
+        shopifyCustomerId: "1234",
+        accountId: null,
+        redactedAt: f.now,
+      }),
+    ]);
+    expect(results[1].status).toBe("fulfilled");
+    if (results[0].status === "rejected")
+      expect(results[0].reason).toBeInstanceOf(
+        f.core.ShopperDeliveryIneligibleError,
+      );
+    expect(
+      await database.weleticShopperDeliveryReservation.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(0);
+    expect(
+      await database.weleticShopperDeliveryIdentity.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(0);
+  });
+
+  it("shared delivery: acknowledged sends cannot be recreated and retry deadlines never slide", async () => {
+    const f = await deliveryFixture();
+    await f.admit();
+    await expect(
+      f.admit(
+        {
+          ...f.input,
+          retryUntil: new Date(f.input.retryUntil.getTime() + 1000),
+        },
+        new Date(f.now.getTime() + 1000),
+        true,
+      ),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryReconciliationRequiredError);
+    await expect(
+      f.admit(f.input, f.input.retryUntil, true),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryReconciliationRequiredError);
+    await database.$transaction((tx) =>
+      f.core.confirmShopperDeliveryInTransaction(
+        tx,
+        f.input,
+        new Date(f.now.getTime() + 500),
+      ),
+    );
+    await expect(
+      f.admit(f.input, new Date(f.now.getTime() + 1000), true),
+    ).resolves.toMatchObject({ status: "sent" });
+    await database.weleticShopperDeliveryIdentity.deleteMany({
+      where: { storeId: f.storeId },
+    });
+    await database.weleticShopperDeliveryReservation.deleteMany({
+      where: { storeId: f.storeId },
+    });
+    expect(
+      await database.$transaction((tx) =>
+        f.core.confirmShopperDeliveryInTransaction(tx, f.input),
+      ),
+    ).toMatchObject({ count: 0 });
+    await expect(
+      f.admit(f.input, new Date(f.now.getTime() + 1000), true),
+    ).rejects.toBeInstanceOf(f.core.ShopperDeliveryReconciliationRequiredError);
+  });
+
   async function read(
     fixture: Awaited<ReturnType<typeof seed>>,
     section = "overview",

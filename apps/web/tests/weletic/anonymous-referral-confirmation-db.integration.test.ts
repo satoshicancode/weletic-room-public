@@ -2,11 +2,17 @@ import { prisma } from "@/lib/prisma";
 import {
   ANONYMOUS_CONFIRMATION_WINDOW_MS,
   createAnonymousConfirmationOrigin,
+  resumeAnonymousReferralConfirmation,
   sendAnonymousReferralConfirmation,
 } from "@/lib/weletic/loyalty/anonymous-referral-confirmation";
 import { purgeAnonymousReferralConfirmations } from "@/lib/weletic/loyalty/anonymous-referral-retention";
 import { createReferralPrivacySnapshot } from "@/lib/weletic/loyalty/referral-privacy-snapshot";
 import { scrubReferralCustomerContext } from "@/lib/weletic/loyalty/shopper-privacy";
+import {
+  admitShopperDeliveryInTransaction,
+  shopperDeliveryContentDigest,
+  ShopperDeliveryDeferredError,
+} from "@/lib/weletic/merchant-settings/delivery-reservations";
 import { createShopifyDerivedPrivacyDigest } from "@/lib/weletic/shopify/privacy-identity";
 import { Prisma } from "@prisma/client";
 import {
@@ -81,7 +87,9 @@ function guard() {
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
     url.port !== "3307" ||
-    url.username !== "loyalty_dev" ||
+    (url.username !== "loyalty_dev" &&
+      (!/^wr_[a-f0-9]{12}$/.test(url.username) ||
+        !url.pathname.endsWith(url.username.slice(3)))) ||
     !/^\/weletic_loyalty_it_anonymous_\d{8}_[a-z0-9]+$/.test(url.pathname) ||
     url.search
   )
@@ -142,6 +150,13 @@ describe("anonymous confirmation real MySQL lifecycle, mocked provider", () => {
       .mockReset()
       .mockResolvedValue({ data: { data: [{ id: "mock-provider" }] } });
     prepare.mockReset().mockResolvedValue(prepared);
+    await prisma.weleticShopperDeliveryIdentity.deleteMany({
+      where: { storeId },
+    });
+    await prisma.weleticShopperDeliveryReservation.deleteMany({
+      where: { storeId },
+    });
+    await prisma.weleticLoyaltyOutboxJob.deleteMany({ where: { storeId } });
     await prisma.weleticLoyaltyReferral.deleteMany({ where: { storeId } });
     await prisma.weleticMerchantSettings.deleteMany({ where: { storeId } });
     await prisma.weleticShopifyStore.update({
@@ -212,6 +227,13 @@ describe("anonymous confirmation real MySQL lifecycle, mocked provider", () => {
   afterAll(async () => {
     guard();
     hooks.afterTransaction.mockReset();
+    await prisma.weleticShopperDeliveryIdentity.deleteMany({
+      where: { storeId },
+    });
+    await prisma.weleticShopperDeliveryReservation.deleteMany({
+      where: { storeId },
+    });
+    await prisma.weleticLoyaltyOutboxJob.deleteMany({ where: { storeId } });
     await prisma.weleticLoyaltyReferral.deleteMany({ where: { storeId } });
     await prisma.weleticMerchantSettings.deleteMany({ where: { storeId } });
     await prisma.weleticLoyaltyAccount.deleteMany({ where: { storeId } });
@@ -468,7 +490,7 @@ describe("anonymous confirmation real MySQL lifecycle, mocked provider", () => {
       data: { storeId, shopperEmailPaused: true },
     });
     expect((await send()).emailSent).toBe(false);
-    expect(prepare).not.toHaveBeenCalled();
+    expect(prepare).toHaveBeenCalledTimes(1);
     expect((await read()).friendEmailDeliveryAttempts).toBe(0);
     await prisma.weleticMerchantSettings.update({
       where: { storeId },
@@ -477,5 +499,140 @@ describe("anonymous confirmation real MySQL lifecycle, mocked provider", () => {
     await Promise.all(Array.from({ length: 12 }, send));
     expect(transport.send).toHaveBeenCalledTimes(1);
     expect((await read()).friendEmailDeliveryAttempts).toBe(1);
+  });
+  it("resumes a queued never-attempted confirmation after 25 hours without rerendering", async () => {
+    await prisma.weleticMerchantSettings.create({
+      data: { storeId, shopperEmailPaused: true },
+    });
+    expect((await send()).state).toBe("deferred");
+    const before = await read();
+    expect(before.friendEmailDeliveryAttempts).toBe(0);
+    expect(
+      await prisma.weleticShopperDeliveryReservation.count({
+        where: { storeId },
+      }),
+    ).toBe(0);
+    const queued = await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+      where: { storeId, jobType: "ANONYMOUS_REFERRAL_EMAIL" },
+    });
+    expect(JSON.stringify(queued.payload)).not.toContain(email);
+    const resumedAt = new Date(Date.now() + 25 * 3600000);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(resumedAt);
+    expect(
+      await purgeAnonymousReferralConfirmations({ take: 10, now: resumedAt }),
+    ).toBe(0);
+    await prisma.weleticMerchantSettings.update({
+      where: { storeId },
+      data: { shopperEmailPaused: false },
+    });
+    const candidate = await prisma.weleticLoyaltyOutboxJob.update({
+      where: { id: queued.id },
+      data: {
+        status: "processing",
+        attempts: 1,
+        lockedBy: "resumed-worker",
+        lockedAt: resumedAt,
+      },
+    });
+    await resumeAnonymousReferralConfirmation({
+      candidate,
+      ownerToken: "resumed-worker",
+      claimedAt: resumedAt,
+      attempt: 1,
+    });
+    expect(transport.send).toHaveBeenCalledExactlyOnceWith(
+      prepared,
+      `loyalty-referral-friend-${referralId}`,
+    );
+    expect(prepare).toHaveBeenCalledTimes(1);
+    const after = await read();
+    expect(after.friendRewardExpiresAt).toEqual(before.friendRewardExpiresAt);
+    expect(after.friendRewardEmailedAt).not.toBeNull();
+    const reservation =
+      await prisma.weleticShopperDeliveryReservation.findFirstOrThrow({
+        where: { storeId },
+      });
+    expect(reservation.retryUntil.getTime()).toBe(
+      resumedAt.getTime() + ANONYMOUS_CONFIRMATION_WINDOW_MS,
+    );
+    expect(reservation.state).toBe("sent");
+  });
+
+  it("keeps an ambiguous provider attempt bound to its original deadline", async () => {
+    transport.send.mockRejectedValueOnce(Error("ambiguous"));
+    expect((await send()).emailSent).toBe(false);
+    const queued = await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+      where: { storeId, jobType: "ANONYMOUS_REFERRAL_EMAIL" },
+    });
+    const deadline = new Date(
+      ((await read()).metadata as any).anonymousConfirmationDelivery.expiresAt,
+    );
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(deadline);
+    const candidate = await prisma.weleticLoyaltyOutboxJob.update({
+      where: { id: queued.id },
+      data: {
+        status: "processing",
+        attempts: 1,
+        lockedBy: "late-worker",
+        lockedAt: deadline,
+      },
+    });
+    await expect(
+      resumeAnonymousReferralConfirmation({
+        candidate,
+        ownerToken: "late-worker",
+        claimedAt: deadline,
+        attempt: 1,
+      }),
+    ).rejects.toThrow("reconciliation");
+    expect(transport.send).toHaveBeenCalledTimes(1);
+    expect(prepare).toHaveBeenCalledTimes(1);
+  });
+
+  it("charges the anonymous send against later authenticated messages at the same email", async () => {
+    await prisma.weleticMerchantSettings.create({
+      data: {
+        storeId,
+        timeZone: "UTC",
+        shopperDeliveryPolicy: {
+          version: 1,
+          quietHours: null,
+          maxMessagesPer24Hours: 1,
+        },
+      },
+    });
+    expect((await send()).state).toBe("sent");
+    await expect(
+      prisma.$transaction((tx) =>
+        admitShopperDeliveryInTransaction({
+          tx,
+          input: {
+            storeId,
+            installationGeneration: generation,
+            producer: "loyalty_communication",
+            sourceKey: "later-authenticated-message",
+            provider: "resend",
+            contentDigest: shopperDeliveryContentDigest(prepared),
+            email,
+            shopifyCustomerId: "later-registered-customer",
+            expiresAt: null,
+            retryUntil: new Date(Date.now() + ANONYMOUS_CONFIRMATION_WINDOW_MS),
+          },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(ShopperDeliveryDeferredError);
+    expect(
+      await prisma.weleticShopperDeliveryReservation.count({
+        where: { storeId },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.weleticShopperDeliveryIdentity.count({
+        where: { storeId, identityKind: "customer_id" },
+      }),
+    ).toBe(0);
+    expect(transport.send).toHaveBeenCalledTimes(1);
   });
 });

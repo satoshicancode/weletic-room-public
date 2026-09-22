@@ -3,19 +3,42 @@ import { publishLoyaltyEarnPolicyRevision } from "@/lib/weletic/loyalty/earn-pol
 import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
 import { enqueueOutboxJobFromProgramTransaction } from "@/lib/weletic/loyalty/outbox";
-import { sendPointsExpiryNotification } from "@/lib/weletic/loyalty/points-expiry-notifications";
 import {
   calculateNextPointsExpiryDate,
   getPointsExpiryStageDate,
   pointsExpiryDatesMatch,
 } from "@/lib/weletic/loyalty/points-expiry-policy";
 import { enqueuePointsExpiryLifecycleJobs } from "@/lib/weletic/loyalty/points-expiry-scheduler";
-import { sendBatchEmail } from "@dub/email";
+import { prepareResendEmail, sendPreparedResendEmail } from "@dub/email";
 import { Prisma, WeleticPointsLedgerEntryType } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sendClaimedExpiryNotification } from "./claimed-expiry-notification-fixture";
 
+vi.mock("@/lib/weletic/loyalty/expiry-delivery-snapshot", async (original) => ({
+  ...(await original<
+    typeof import("@/lib/weletic/loyalty/expiry-delivery-snapshot")
+  >()),
+  retainExpiryDeliveryRequest: async ({
+    prepare,
+  }: {
+    prepare: () => Promise<unknown>;
+  }) => prepare(),
+}));
+vi.mock("@/lib/weletic/loyalty/delivery-admission", () => ({
+  admitRetainedLoyaltyDelivery: vi.fn(),
+}));
+vi.mock(
+  "@/lib/weletic/merchant-settings/delivery-reservations",
+  async (original) => ({
+    ...(await original<
+      typeof import("@/lib/weletic/merchant-settings/delivery-reservations")
+    >()),
+    confirmShopperDeliveryInTransaction: vi.fn(),
+  }),
+);
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({}),
     weleticMerchantSettings: { findUnique: vi.fn().mockResolvedValue(null) },
     weleticLoyaltyProgram: { findMany: vi.fn() },
     weleticLoyaltyAccount: { findFirst: vi.fn() },
@@ -40,7 +63,8 @@ vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
 }));
 
 vi.mock("@dub/email", () => ({
-  sendBatchEmail: vi.fn(),
+  prepareResendEmail: vi.fn(),
+  sendPreparedResendEmail: vi.fn(),
 }));
 
 const policy = {
@@ -61,8 +85,15 @@ const policy = {
 describe("Smile-parity rolling points expiry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useRealTimers();
-    vi.mocked(sendBatchEmail).mockResolvedValue({
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-01T00:00:00Z"));
+    vi.mocked(prepareResendEmail).mockImplementation(async (email) => ({
+      to: email.to,
+      from: email.from ?? "test@example.com",
+      subject: email.subject ?? "Synthetic",
+      html: `<p>${email.subject}</p>`,
+    }));
+    vi.mocked(sendPreparedResendEmail).mockResolvedValue({
       data: { data: [{ id: "email_expiry_1" }] },
       error: null,
     } as any);
@@ -458,7 +489,7 @@ describe("Smile-parity rolling points expiry", () => {
         store: { shopDomain: "yamax.myshopify.com" },
       } as any);
 
-      const outcome = await sendPointsExpiryNotification({
+      const outcome = await sendClaimedExpiryNotification({
         storeId: "wstore_expiry",
         payload: {
           accountId: "wlacc_expiry",
@@ -472,19 +503,17 @@ describe("Smile-parity rolling points expiry", () => {
       });
 
       expect(outcome).toBe("sent");
-      expect(sendBatchEmail).toHaveBeenCalledWith(
-        [
-          expect.objectContaining({
-            to: "member@example.com",
-            subject,
-            variant: "marketing",
-            unsubscribeUrl: "https://yamax.myshopify.com/account/profile",
-          }),
-        ],
-        {
-          idempotencyKey:
-            "loyalty-expiry-warning-wlacc_expiry-2026-09-30T00:00:00.000Z",
-        },
+      expect(prepareResendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: "member@example.com",
+          subject,
+          variant: "marketing",
+          unsubscribeUrl: "https://yamax.myshopify.com/account/profile",
+        }),
+      );
+      expect(sendPreparedResendEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ to: "member@example.com", subject }),
+        "loyalty-expiry-warning-wlacc_expiry-2026-09-30T00:00:00.000Z",
       );
 
       vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValueOnce({
@@ -505,7 +534,7 @@ describe("Smile-parity rolling points expiry", () => {
         store: { shopDomain: "yamax.myshopify.com" },
       } as any);
       expect(
-        await sendPointsExpiryNotification({
+        await sendClaimedExpiryNotification({
           storeId: "wstore_expiry",
           payload: {
             accountId: "wlacc_opted_out",
@@ -518,7 +547,7 @@ describe("Smile-parity rolling points expiry", () => {
           now: new Date("2026-09-01T00:00:00.000Z"),
         }),
       ).toBe("ineligible");
-      expect(sendBatchEmail).toHaveBeenCalledTimes(1);
+      expect(sendPreparedResendEmail).toHaveBeenCalledTimes(1);
 
       expect(pointsExpiryDatesMatch(expiryAt, "2026-10-01T00:00:00.000Z")).toBe(
         false,
@@ -541,7 +570,7 @@ describe("Smile-parity rolling points expiry", () => {
         store: { shopDomain: "yamax.myshopify.com" },
       } as any);
       expect(
-        await sendPointsExpiryNotification({
+        await sendClaimedExpiryNotification({
           storeId: "wstore_expiry",
           payload: {
             accountId: "wlacc_expiry",
@@ -582,17 +611,17 @@ describe("Smile-parity rolling points expiry", () => {
       const privateProviderDetails =
         "member@example.com synthetic-provider-secret";
       if (mode === "thrown")
-        vi.mocked(sendBatchEmail).mockRejectedValue(
+        vi.mocked(sendPreparedResendEmail).mockRejectedValue(
           new Error(privateProviderDetails),
         );
       else
-        vi.mocked(sendBatchEmail).mockResolvedValue({
+        vi.mocked(sendPreparedResendEmail).mockResolvedValue({
           data: null,
           error:
             mode === "returned" ? { message: privateProviderDetails } : null,
         } as any);
 
-      const failure = await sendPointsExpiryNotification({
+      const failure = await sendClaimedExpiryNotification({
         storeId: "wstore_expiry",
         payload: {
           accountId: "wlacc_expiry",
@@ -612,7 +641,12 @@ describe("Smile-parity rolling points expiry", () => {
       expect((failure as Error).stack).not.toMatch(
         /member@example\.com|synthetic-provider-secret|wlacc_expiry/,
       );
-      expect(sendBatchEmail).toHaveBeenCalledTimes(1);
+      expect(sendPreparedResendEmail).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
 });

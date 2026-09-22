@@ -6,10 +6,14 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  admission: vi.fn(),
   findFirst: vi.fn(),
   updateMany: vi.fn(),
   activeAccount: vi.fn(),
   fence: vi.fn(),
+}));
+vi.mock("@/lib/weletic/loyalty/delivery-admission", () => ({
+  admitRetainedLoyaltyDelivery: mocks.admission,
 }));
 vi.mock("@/lib/weletic/loyalty/merchant-write-fence", () => ({
   assertActiveLoyaltyAccountForMutation: mocks.activeAccount,

@@ -1,5 +1,13 @@
 # Company-store loyalty and reviews — completion checklist
 
+**September 23 draft update:** ADR 0043 accepts shared anonymous/authenticated
+email capacity while retaining independent customer limits. PR #101 now includes
+durable HMAC reservations, existing sender integration, deferred anonymous job
+recovery and privacy/export cleanup. Merchant policy controls, collection/reminder
+reconciliation and installed acceptance remain open. See the
+[delivery implementation record](shared-shopper-delivery-policy.md). This is not
+merged or activated and does not change any module's release status.
+
 Reconciled September 23, 2026 against public main
 `956bd0a7b02ff2cb3bc3acf425eeb34f1e5d882e` (PR #100). Its post-merge Fast Quality
 Gate passed. This document is the current combined scope, task and status

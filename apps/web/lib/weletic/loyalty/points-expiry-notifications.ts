@@ -9,13 +9,15 @@ import {
   readShopperCommunicationSettings,
   ShopperEmailPausedError,
 } from "@/lib/weletic/merchant-settings/communications";
+import {
+  confirmShopperDeliveryInTransaction,
+  ShopperDeliveryAlreadySentError,
+  shopperDeliveryContentDigest,
+  ShopperDeliveryIneligibleError,
+} from "@/lib/weletic/merchant-settings/delivery-reservations";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import { getWeleticTransactionalEmailOptions } from "@/lib/weletic/transactional-email";
-import {
-  prepareResendEmail,
-  sendBatchEmail,
-  sendPreparedResendEmail,
-} from "@dub/email";
+import { prepareResendEmail, sendPreparedResendEmail } from "@dub/email";
 import type { ResendEmailOptions } from "@dub/email/resend/types";
 import PointsExpiryReminder, {
   getPointsExpiryCopy,
@@ -265,18 +267,18 @@ export async function sendPointsExpiryNotification({
       `Failed to send points expiry ${stage}: email provider unavailable`,
     );
   if (
-    snapshot &&
-    (!deliveryClaim || deliveryClaim.candidate.storeId !== storeId)
+    !deliveryClaim ||
+    deliveryClaim.candidate.storeId !== storeId ||
+    !expectedInstallationGeneration
   )
-    throw new Error("Expiry delivery requires a worker claim");
+    throw new Error(
+      "Expiry delivery requires a worker claim for the current installation",
+    );
   const idempotencyKey = snapshot
-    ? `loyalty-expiry-job-${deliveryClaim!.candidate.id}`
+    ? `loyalty-expiry-job-${deliveryClaim.candidate.id}`
     : `loyalty-expiry-${stage}-${account.id}-${expiryAt.toISOString()}`;
-  let delivery;
-  if (snapshot) {
-    if (!deliveryClaim || deliveryClaim.candidate.storeId !== storeId)
-      throw new Error("Expiry delivery requires a worker claim");
-    let request;
+  let request;
+  {
     try {
       request = await retainExpiryDeliveryRequest({
         claim: deliveryClaim,
@@ -304,27 +306,33 @@ export async function sendPointsExpiryNotification({
         },
       });
     } catch (error) {
-      if (error instanceof ExpiryDeliveryRecipientChangedError)
+      if (error instanceof ShopperDeliveryAlreadySentError) return "sent";
+      if (
+        error instanceof ExpiryDeliveryRecipientChangedError ||
+        error instanceof ShopperDeliveryIneligibleError
+      )
         return "ineligible";
       throw error;
     }
-    delivery = await sendPreparedResendEmail(request, idempotencyKey).catch(
-      () => {
-        throw deliveryFailure();
-      },
-    );
-  } else {
-    delivery = await sendBatchEmail([buildEmail()], { idempotencyKey }).catch(
-      () => {
-        // Provider exceptions may contain recipient addresses or request details.
-        // Do not persist those in outbox lastError, logs, or an Error cause.
-        throw deliveryFailure();
-      },
-    );
   }
+  if (Date.now() >= expiryAt.getTime()) return "ineligible";
+  const delivery = await sendPreparedResendEmail(request, idempotencyKey).catch(
+    () => {
+      throw deliveryFailure();
+    },
+  );
 
   if (delivery?.error || !delivery?.data) {
     throw deliveryFailure();
   }
+  await prisma.$transaction((tx) =>
+    confirmShopperDeliveryInTransaction(tx, {
+      storeId,
+      installationGeneration: expectedInstallationGeneration,
+      producer: "points_expiry",
+      sourceKey: idempotencyKey,
+      contentDigest: shopperDeliveryContentDigest(request),
+    }),
+  );
   return "sent";
 }

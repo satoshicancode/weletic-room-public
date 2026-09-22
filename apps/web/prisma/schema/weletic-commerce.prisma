@@ -142,6 +142,7 @@ model WeleticShopifyStore {
   reviewIncentiveClaims        WeleticReviewIncentiveClaim[]
   reviewIncentiveInvalidations WeleticReviewIncentiveInvalidation[]
   merchantSettings             WeleticMerchantSettings?
+  shopperDeliveryReservations   WeleticShopperDeliveryReservation[]
   shopifyStaffGrants           WeleticShopifyStaffGrant[]
   shopifyMerchantActions       WeleticShopifyMerchantAction[]
   reviewOrderCancellations     WeleticReviewOrderCancellation[]

@@ -1,12 +1,13 @@
 # Shared shopper delivery policy implementation
 
-Date: 2026-09-23. Decision: [ADR 0042](../adr/0042-shared-shopper-delivery-policy.md).
+Date: 2026-09-23. Decisions: [ADR 0042](../adr/0042-shared-shopper-delivery-policy.md) and [ADR 0043](../adr/0043-shared-email-delivery-budget.md).
 
 ## Implemented boundary
 
 `apps/web/lib/weletic/merchant-settings/delivery-policy.ts` provides an internal
-strict versioned contract and pure scheduling evaluator. It has no transport,
-database or activation side effects and is not yet exposed by merchant settings.
+strict versioned contract and pure scheduling evaluator. The durable admission
+layer now connects existing producers; policy controls are not yet exposed by
+merchant settings. This remains draft implementation, not installed acceptance.
 
 - One optional local quiet window, with inclusive start and exclusive end.
   Equal endpoints are rejected so they cannot mean either all day or no window.
@@ -25,58 +26,92 @@ transport delivery, or authorize retries. Every producer must still enforce thos
 boundaries. The caller must re-evaluate at dispatch because settings and local time
 can change after a message becomes due.
 
-## Identity decision outstanding
+## Accepted identity and durable enforcement
 
-Anonymous referral confirmations have an email identity before a Shopify customer
-or shopper record exists. The existing sender is
-`apps/web/lib/weletic/loyalty/anonymous-referral-confirmation.ts`. Its immutable
-origin retains a store-scoped email digest, and its prepared request is encrypted.
-Authenticated Loyalty and Reviews messages also carry shopper/customer identities.
+Anonymous confirmations share their store/email rolling budget with later
+registered-customer messages. Customer limits also apply independently, so an
+email change does not reset the customer budget. Customers using the same email
+share that email's capacity. No customer identity is inferred for an anonymous
+source, and an immutable retry cannot acquire a new identity kind.
 
-Hiro has been asked to choose between a shared store/email budget that also keeps
-customer limits, or holding anonymous confirmations until linked to a customer.
-The first option coordinates anonymous and later authenticated sends, but two
-customers sharing an address also share capacity. The second can prevent a friend
-from receiving their confirmation indefinitely. This choice is separate from the
-approved shared-versus-per-module policy. Neither behavior is implemented yet.
+Two additive tables retain one reservation per immutable source and rotating
+HMAC identity aliases. The store mutation lock serializes policy reads, capacity
+counts and reservation creation. Both the reservation and identity subquery use
+MySQL locking reads; an older RepeatableRead snapshot cannot miss a concurrent
+winner. Uncertain attempts consume capacity. Retries reuse exact content,
+provider/source identity, original expiry and original provider deadline.
+Admission samples production time after lock acquisition; delayed rendering or
+lock waits cannot borrow an earlier quiet-hours/expiry window.
 
-## Remaining implementation sequence
+Existing Loyalty communications, both modern and legacy points-expiry templates,
+anonymous referral confirmations and product-review invitations use this layer.
+Expiry messages require a current installed worker claim, including legacy
+messages. Ambiguous legacy evidence without a matching reservation requires
+reconciliation rather than a new send. SMTP ambiguity remains terminal.
 
-1. Resolve the identity decision and define durable reservation/identity records.
-   Bind each immutable source message to store, installation, module, provider key,
-   content digest and original expiry. Retain uncertain attempts as consumed
-   capacity. A retry must reuse its reservation; it cannot claim a fresh slot.
-2. Add additive schema/DDL and owner discovery, export, erasure and store cleanup
-   before creating records. Reuse the existing store mutation lock order for
-   atomic policy read, capacity count and insertion. Include key rotation in the
-   email-identity implementation if selected. A read-only count is insufficient.
-3. Add revision-fenced shared merchant settings and signed EN/JA/VI controls. Do
-   not expose an enforceable setting until all relevant producers use admission.
-   Define a prospective activation boundary without sending historical messages.
-4. Integrate the producer paths below and the retained collection/reminder draft.
-   Policy deferral must preserve the exact source claim and attempt budget. Keep
-   original provider retry deadlines, immutable rendered bytes and consent checks.
-5. Verify isolated SQL concurrency, crash recovery, source-transaction rollback,
-   changed policy/generation, cross-store isolation, privacy races and provider
-   uncertainty. Then run UI, CI and scoped installed acceptance gates.
+Anonymous confirmations now enqueue a source-only `ANONYMOUS_REFERRAL_EMAIL`
+job. A policy deferral preserves attempts and encrypted rendered bytes. A marked
+queued message with zero transport attempts may wait longer than 23 hours before
+its first admission; only then is its provider retry window anchored. Once an
+attempt is recorded, the original deadline never moves. Coupon expiry never
+moves. Paused anonymous work is excluded from the bounded poll page so it cannot
+starve financial/cleanup work. No historical confirmations are collected.
 
-| Producer                           | Existing immutable delivery boundary                                        | Required integration                                                                                   |
-| ---------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Loyalty communications             | `communication-delivery-snapshot.ts`, then `points-earned-notifications.ts` | Reserve with retained source ownership; recheck at transport; defer outbox without spending an attempt |
-| Points expiry                      | `expiry-delivery-snapshot.ts`, then `points-expiry-notifications.ts`        | Same shared admission while retaining source expiry and provider retry deadline                        |
-| Anonymous referral confirmation    | `anonymous-referral-confirmation.ts`                                        | Resolve identity first; preserve exact lease and encrypted request through deferred/uncertain outcomes |
-| Product review invitation          | `reviews/email.tsx` and `reviews/prepared-email.ts`                         | Atomic admission with request claim; preserve SMTP ambiguity containment and Resend replay bounds      |
-| Review reminders/store invitations | Retained collection draft and unpublished store service                     | Reconcile with this shared boundary before enabling either writer                                      |
+## Privacy and rollout
 
-## Verification evidence
+Delivery exports project explicit operational fields, excluding HMAC aliases,
+content digests, recipients and transport bytes. Customer ownership includes
+customer-ID records and anonymous records matching their email, never another
+identified customer's shared-mailbox history. ID-only compliance requests retain
+the trusted same-store shopper mailbox before pseudonymization. Erasure removes
+owned reservations, then only matching email aliases on foreign owned records;
+other customers retain their customer capacity. Store erasure and key-retirement
+audit include both tables, including orphan aliases.
 
-- Scheduling and existing merchant-settings contract tests: 74 passed in two
-  files, including 41 scheduling cases.
-- Independent review found a date-range overflow edge case; fixed with a finite
-  candidate guard and a regression test.
-- Web typecheck, targeted lint and formatting passed.
-- The evaluator has no SQL or UI integration, so these unit results do not certify
-  reservation concurrency, end-to-end policy enforcement or live delivery.
+Encrypted export checkpoints preserve exact page membership after an ambiguous
+artifact write. Compatible workers must understand `export_shopper_delivery`,
+`scrub_customer_delivery` and `purge_shopper_delivery` through recovery.
 
-No shared/production migration, provider send, module activation or deployment is
-part of this work. Those existing gates remain separate.
+Before enabling writers:
+
+1. Apply `20260923_shopper_delivery_budget.sql` under the separate shared-schema
+   gate. It adds two tables, nullable settings JSON and appends the outbox enum;
+   existing enum ordinals remain unchanged. Readers require schema compatibility
+   even when collection is disabled.
+2. Drain existing data exports before rollout, or reconcile/restart their source
+   requests. Already-pseudonymized exports without saved delivery identities stop
+   for operator review; they must not silently skip the new phase.
+3. Keep a compatible worker until all persisted new phases and confirmation jobs
+   are drained. A rollback to an older reader/worker is not safe after new writes.
+4. Reconcile existing uncertain delivery evidence before resuming it. The new
+   budget must not manufacture a reservation for a possibly-sent legacy retry.
+
+## Remaining work
+
+- Revision-fenced merchant settings, signed EN/JA/VI controls and prospective
+  activation boundary. Unconfigured policy is explicit null; no default timezone
+  or cap is inferred.
+- Reconcile the retained collection/reminder draft and store-review invitations
+  with the same admission boundary before enabling those writers.
+- Complete UI, installed yamaxdev/provider journeys and operational release gates.
+  Local SQL/mock-provider evidence does not certify actual delivery.
+
+## Local verification
+
+- Full web units: 10,044 passed, six existing skips, 618 files.
+- Complete shopper SQL suite: 187 passed, including 16 shared admission cases
+  covering competing identities, old transaction
+  snapshots, key rotation, shared-mailbox erasure and clock-boundary lock waits.
+- Anonymous confirmation SQL: 19 cases, including 25-hour zero-attempt deferral,
+  original uncertain-attempt deadline and later authenticated email competition.
+- Communication retention SQL: 59 cases; a separate paused-backlog SQL regression
+  proves financial work remains eligible, and another proves policy deferral restores
+  the exact worker claim without consuming attempts. Expiry retention SQL: five cases,
+  including delayed rendering across quiet-hours start.
+- Each SQL run used a fresh restricted database, rehearsed additive migrations,
+  removed its exact database/principal and left retained development ledger count
+  16 unchanged. Provider calls were mocked. CI/build evidence is tracked in the
+  store-review worklog rather than inferred from these tests.
+
+No shared/production migration, provider send, module activation or deployment
+occurred. No Loyalty or Reviews release gate is closed by this draft.
