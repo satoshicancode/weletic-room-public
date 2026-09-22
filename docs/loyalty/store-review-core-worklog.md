@@ -370,7 +370,7 @@ Local evidence (mocked providers; no customer sends):
   assertions or runtime guard bypasses.
 - Complete shopper SQL suite: **187 passed**, including all **16 shared admission**
   cases and three lock-wait clock boundaries.
-- Anonymous confirmation SQL: **19 passed**, including 25-hour never-attempted
+- Anonymous confirmation SQL: **21 passed**, including 25-hour never-attempted
   recovery and the later authenticated mailbox budget.
 - Communication retention SQL: **59 passed**; separate SQL regressions pass for
   paused-backlog fairness and exact-claim deferral without attempt consumption.
@@ -385,7 +385,11 @@ Local evidence (mocked providers; no customer sends):
 The normal production web build passed with disposable SQL and loopback provider
 placeholders; cleanup again left the retained ledger unchanged. The final small
 maintenance-deferral propagation fix subsequently passed its 37-case anonymous
-unit suite and web typecheck. Updated-head CI remains pending until push.
+unit suite and web typecheck. A final retention correction removes queued encrypted
+payloads when privacy ownership is removed or expired, including coupons without
+an expiry. Both new SQL regressions passed, as did 45 focused retention/anonymous
+unit tests, targeted lint and web typecheck; adversarial review found no blocker.
+Updated-head CI remains pending until push.
 Merchant settings controls, retained collection/reminder reconciliation, store
 review gateways/UI and installed yamaxdev acceptance remain open. PR #101 remains
 **draft, unmerged and undeployed**. No shared schema application, live sends/orders,

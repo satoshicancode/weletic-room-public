@@ -102,7 +102,7 @@ Before enabling writers:
 - Complete shopper SQL suite: 187 passed, including 16 shared admission cases
   covering competing identities, old transaction
   snapshots, key rotation, shared-mailbox erasure and clock-boundary lock waits.
-- Anonymous confirmation SQL: 19 cases, including 25-hour zero-attempt deferral,
+- Anonymous confirmation SQL: 21 cases, including 25-hour zero-attempt deferral,
   original uncertain-attempt deadline and later authenticated email competition.
 - Communication retention SQL: 59 cases; a separate paused-backlog SQL regression
   proves financial work remains eligible, and another proves policy deferral restores

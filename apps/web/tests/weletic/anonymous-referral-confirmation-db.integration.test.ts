@@ -635,4 +635,37 @@ describe("anonymous confirmation real MySQL lifecycle, mocked provider", () => {
     ).toBe(0);
     expect(transport.send).toHaveBeenCalledTimes(1);
   });
+  it.each(["removed", "expired"])(
+    "purges a never-attempted queued envelope when privacy ownership is %s",
+    async (condition) => {
+      await prisma.weleticMerchantSettings.create({
+        data: { storeId, shopperEmailPaused: true },
+      });
+      expect((await send()).state).toBe("deferred");
+      const row = await read();
+      const metadata = row.metadata as Prisma.JsonObject;
+      const now = new Date();
+      if (condition === "removed") delete metadata.friendPrivacySnapshot;
+      else
+        metadata.friendPrivacySnapshot = {
+          ...(metadata.friendPrivacySnapshot as Prisma.JsonObject),
+          retainUntil: now.toISOString(),
+        };
+      await prisma.weleticLoyaltyReferral.update({
+        where: { id: referralId },
+        data: {
+          metadata: metadata as Prisma.InputJsonObject,
+          friendRewardExpiresAt: null,
+        },
+      });
+      expect(await purgeAnonymousReferralConfirmations({ take: 10, now })).toBe(
+        1,
+      );
+      expect((await read()).metadata).not.toHaveProperty(
+        "anonymousConfirmationDelivery",
+      );
+      expect((await read()).friendEmailDeliveryAttempts).toBe(0);
+      expect(transport.send).not.toHaveBeenCalled();
+    },
+  );
 });
