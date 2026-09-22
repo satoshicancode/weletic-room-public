@@ -318,3 +318,18 @@ Hiro selected the shared per-store Loyalty + Reviews delivery policy (Option A).
 [ADR 0042](../adr/0042-shared-shopper-delivery-policy.md) records this approval and
 supersedes the unresolved decision noted above. Implementation and verification
 continue; no migration or send is authorized by this architectural choice alone.
+
+## September 23 — shared delivery scheduling foundation
+
+Implemented the internal versioned shared-policy contract and scheduling
+evaluator, with strict timezone validation, DST-safe quiet hours, combined rolling
+capacity calculations and original expiry containment. The evaluator is not wired
+to settings or senders and does not reserve capacity. No policy became active.
+
+Scheduling plus existing merchant-settings contract tests passed 74 cases in two
+files. Independent review identified date overflow near JavaScript's maximum
+timestamp; a finite-date guard and regression test now cover it. Web typecheck,
+targeted lint and formatting passed. The [integration checklist](shared-shopper-delivery-policy.md) records
+producer boundaries and the remaining identity decision for anonymous referral
+confirmations. ADR 0042 remains accepted; anonymous identity semantics are a
+separate newly discovered choice, not a reopening of shared versus module policy.
