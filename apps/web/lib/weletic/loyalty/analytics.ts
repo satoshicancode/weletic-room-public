@@ -27,7 +27,7 @@ export interface DateRange {
   endDate?: Date | string;
 }
 
-const LEDGER_ANALYTICS_CLASSIFICATIONS = {
+export const LEDGER_ANALYTICS_CLASSIFICATIONS = {
   earned: new Set<WeleticPointsLedgerEntryType>([
     WeleticPointsLedgerEntryType.EARN_ORDER,
     WeleticPointsLedgerEntryType.EARN_REFERRAL,
