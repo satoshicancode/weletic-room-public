@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { readMerchantPointActivitySeries } from "../loyalty/activity-series";
 import { getLoyaltyDashboardOverview } from "../loyalty/analytics";
 import { resolveLoyaltyFinancialConfiguration } from "../loyalty/analytics-financial";
 import { escapeCsvUntrustedTextCell } from "../loyalty/csv";
@@ -97,7 +98,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     dateRange,
     now,
   });
-  const [rewards, referrals] = await Promise.all([
+  const [rewards, referrals, activitySeries] = await Promise.all([
     tx.weleticRewardRedemption.groupBy({
       by: ["status", "artifactKind"],
       where,
@@ -110,6 +111,12 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       where,
       _count: { _all: true },
       orderBy: { status: "asc" },
+    }),
+    readMerchantPointActivitySeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
     }),
   ]);
   const { liability, healthMetrics: health } = overview;
@@ -155,6 +162,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       manualCredits: String(health.totalManualAdjustmentCredits),
       manualDebits: String(health.totalManualAdjustmentDebits),
     },
+    activitySeries,
     referralEconomics: {
       total: String(health.referralMetrics.totalReferrals),
       successful: String(health.referralMetrics.successfulReferrals),

@@ -562,6 +562,7 @@ model WeleticPointsLedgerEntry {
 
   @@unique([accountId, sequenceNumber])
   @@unique([storeId, idempotencyKey])
+  @@index([storeId, createdAt])
   @@index([accountId, createdAt])
   @@index([referenceType, referenceId])
 }
