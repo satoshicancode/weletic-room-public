@@ -248,6 +248,14 @@ export function MerchantAnalyticsScreen({
           {!snapshot.canExport && <p>{copy.exportNote}</p>}
           {metrics(copy.liability, snapshot.liability)}
           {metrics(copy.activity, snapshot.activity)}
+          {snapshot.activitySeries.status === "available" ? (
+            table(copy.activitySeries, snapshot.activitySeries.rows)
+          ) : (
+            <section>
+              <h2>{copy.activitySeries}</h2>
+              <p role="status">{copy[snapshot.activitySeries.status]}</p>
+            </section>
+          )}
           {metrics(copy.referralEconomics, snapshot.referralEconomics)}
           {table(copy.referrals, snapshot.referrals)}
           {table(copy.rewards, snapshot.rewards)}

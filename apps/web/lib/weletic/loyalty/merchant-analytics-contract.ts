@@ -70,6 +70,32 @@ export const merchantAnalyticsSnapshotSchema = z
         manualDebits: integer,
       })
       .strict(),
+    activitySeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_day"),
+        rows: z
+          .array(
+            z
+              .object({
+                date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                earned: integer,
+                redeemed: integer,
+                refundReversed: integer,
+                expired: integer,
+                backfilled: integer,
+                backfillCorrected: integer,
+                manualCredits: integer,
+                manualDebits: integer,
+              })
+              .strict(),
+          )
+          .max(366),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
     referralEconomics: z
       .object({
         total: count,
