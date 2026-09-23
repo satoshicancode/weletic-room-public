@@ -1,4 +1,5 @@
 import { createWeleticId } from "@/lib/weletic/ids";
+import { enqueueOutboxJobFromProgramTransaction } from "@/lib/weletic/loyalty/outbox";
 import { ReviewError } from "./contracts";
 import { reviewPolicyAtOrderTime } from "./incentive-activation-history";
 import { readReviewIncentivePolicySnapshot } from "./incentive-policy";
@@ -9,8 +10,8 @@ import {
 } from "./store-purchase";
 import { withReviewMutation } from "./transaction";
 
-/** Creates durable evidence only. The fulfillment webhook must not call this
- * until the store-review delivery worker and recovery path are installed.
+/** Creates durable evidence and source-only outbox work atomically. The
+ * fulfillment webhook remains disconnected until installed delivery acceptance.
  */
 export function createProspectiveStoreReviewRequest({
   storeId,
@@ -145,6 +146,17 @@ export function createProspectiveStoreReviewRequest({
         include: storeReviewRequestInclude,
       });
       assertStoreReviewPurchase(request, generation);
+      await enqueueOutboxJobFromProgramTransaction({
+        tx,
+        storeId,
+        jobType: "REVIEW_REQUEST_EMAIL",
+        payload: {
+          storeRequestId: request.id,
+          installationGeneration: generation,
+        },
+        idempotencyKey: `store_review_request_email:${request.id}`,
+        scheduledFor: sendAt,
+      });
       return request.id;
     },
     expectedInstallationGeneration,

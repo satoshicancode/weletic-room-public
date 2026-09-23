@@ -13,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   readPolicy: vi.fn(),
   purchase: vi.fn(),
   suppression: vi.fn(),
+  enqueue: vi.fn(),
+}));
+vi.mock("@/lib/weletic/loyalty/outbox", () => ({
+  enqueueOutboxJobFromProgramTransaction: mocks.enqueue,
 }));
 vi.mock("@/lib/weletic/reviews/transaction", () => ({
   withReviewMutation: async (_store: string, operation: Function) =>
@@ -125,6 +129,17 @@ it("keeps the product invitation's original order-wide policy and one order requ
     },
   });
   expect(mocks.purchase).toHaveBeenCalledOnce();
+  expect(mocks.enqueue).toHaveBeenCalledWith(
+    expect.objectContaining({
+      storeId: "store",
+      jobType: "REVIEW_REQUEST_EMAIL",
+      payload: {
+        storeRequestId: expect.stringMatching(/^wstorereq_/),
+        installationGeneration: "generation-1",
+      },
+      scheduledFor: new Date("2026-09-23T00:00:00Z"),
+    }),
+  );
 });
 
 it("replays the existing invitation without replacing its policy or deadline", async () => {
@@ -135,6 +150,7 @@ it("replays the existing invitation without replacing its policy or deadline", a
   expect(await run()).toBe("prior-request");
   expect(mocks.create).not.toHaveBeenCalled();
   expect(mocks.productRequests).not.toHaveBeenCalled();
+  expect(mocks.enqueue).not.toHaveBeenCalled();
 });
 
 it("fails closed when product invitations disagree on the promised policy", async () => {

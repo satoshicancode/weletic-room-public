@@ -301,22 +301,30 @@ export type LoyaltyOutboxPayloadMap = {
 // 2. Transactional Enqueueing Service
 // ============================================================================
 
-export const ReviewRequestEmailPayloadSchema = z
-  .object({
-    requestId: z.string().min(1),
-    reminderId: z
-      .string()
-      .regex(/^wrevrem_[A-Za-z0-9_-]{20}$/)
-      .optional(),
-    installationGeneration: z.string().min(1).max(64).nullable().optional(),
-  })
-  .strict()
-  .refine(
-    (payload) => !payload.reminderId || !!payload.installationGeneration,
-    {
-      message: "Reminders require an explicit installation generation",
-    },
-  );
+export const ReviewRequestEmailPayloadSchema = z.union([
+  z
+    .object({
+      requestId: z.string().min(1),
+      reminderId: z
+        .string()
+        .regex(/^wrevrem_[A-Za-z0-9_-]{20}$/)
+        .optional(),
+      installationGeneration: z.string().min(1).max(64).nullable().optional(),
+    })
+    .strict()
+    .refine(
+      (payload) => !payload.reminderId || !!payload.installationGeneration,
+      {
+        message: "Reminders require an explicit installation generation",
+      },
+    ),
+  z
+    .object({
+      storeRequestId: z.string().regex(/^wstorereq_[A-Za-z0-9_-]{1,191}$/),
+      installationGeneration: z.string().min(1).max(64),
+    })
+    .strict(),
+]);
 export const ReviewSummarySyncPayloadSchema = z
   .object({
     productId: z.string().min(1),
@@ -511,7 +519,8 @@ async function bindOperationalJobToInstallationGeneration({
       jobType !== "REVIEW_POINTS_RECOVERY" &&
       !(
         jobType === "REVIEW_REQUEST_EMAIL" &&
-        (payload as Record<string, unknown>).reminderId
+        ((payload as Record<string, unknown>).reminderId ||
+          (payload as Record<string, unknown>).storeRequestId)
       ) &&
       jobType !== "LOYALTY_COMMUNICATION"
     ) {
@@ -564,11 +573,16 @@ async function bindOperationalJobToInstallationGeneration({
     throw new Error("Review Flow installation changed");
   if (
     jobType === "REVIEW_REQUEST_EMAIL" &&
-    (payload as Record<string, unknown>).reminderId &&
+    ((payload as Record<string, unknown>).reminderId ||
+      (payload as Record<string, unknown>).storeRequestId) &&
     store.installationGeneration !==
       (payload as Record<string, unknown>).installationGeneration
   )
-    throw new Error("Review reminder installation changed");
+    throw new Error(
+      (payload as Record<string, unknown>).reminderId
+        ? "Review reminder installation changed"
+        : "Store review invitation installation changed",
+    );
   return {
     ...payload,
     installationGeneration: store.installationGeneration ?? null,

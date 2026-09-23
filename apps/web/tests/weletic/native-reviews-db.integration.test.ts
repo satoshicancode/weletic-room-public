@@ -1,11 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
+import { createLoyaltyMaintenanceLeaseMetadata } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { awardVerifiedReviewPoints } from "@/lib/weletic/loyalty/review-rewards";
 import { upsertWeleticShopper } from "@/lib/weletic/loyalty/shopper";
 import { scrubWeleticShopperCustomerContext } from "@/lib/weletic/loyalty/shopper-privacy";
 import {
   admitShopperDeliveryInTransaction,
   ShopperDeliveryDeferredError,
+  shopperDeliveryReservationId,
 } from "@/lib/weletic/merchant-settings/delivery-reservations";
 import {
   generateReviewToken,
@@ -60,6 +62,11 @@ import {
   updateReviewCollectionInTransaction,
 } from "@/lib/weletic/reviews/service";
 import { listStoreAccountInvitations } from "@/lib/weletic/reviews/store-account-invitations";
+import { clearExpiredStoreReviewDeliveryEvidence } from "@/lib/weletic/reviews/store-delivery-retention";
+import {
+  deliverStoreReviewRequest,
+  storeReviewDeliveryAuthorized,
+} from "@/lib/weletic/reviews/store-email";
 import {
   purgeStoreReviewsBatch,
   redactStoreReviewsBatch,
@@ -663,6 +670,382 @@ describe("native reviews real MySQL production-service boundaries", () => {
       }),
     ).toEqual({ items: [], nextCursor: null });
     await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+  });
+
+  it("store review delivery: reserves shared capacity and retains ambiguous SMTP evidence", async () => {
+    const now = new Date();
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+    });
+    const create = async () => {
+      const order = await purchase();
+      const requestId = await createProspectiveStoreReviewRequest({
+        storeId,
+        orderExternalId: order.externalId,
+        fulfilledAt: new Date(now.getTime() - 1000),
+        expectedInstallationGeneration: "g1",
+      });
+      expect(requestId).toBeTruthy();
+      return requestId!;
+    };
+    const acceptedId = await create();
+    await deliverStoreReviewRequest({
+      storeId,
+      requestId: acceptedId,
+      installationGeneration: "g1",
+    });
+    const accepted = await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+      where: { id: acceptedId },
+    });
+    expect(accepted).toMatchObject({
+      status: "sent",
+      deliveryAttempts: 1,
+      encryptedDeliverySnapshot: null,
+    });
+    expect(mocks.viaSmtp).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(mocks.viaSmtp.mock.calls[0])).toContain("/account");
+    const reservation =
+      await prisma.weleticShopperDeliveryReservation.findFirst({
+        where: {
+          storeId,
+          id: shopperDeliveryReservationId({
+            storeId,
+            installationGeneration: "g1",
+            producer: "store_review_invitation",
+            sourceKey: `native-store-review-request:${acceptedId}`,
+          }),
+        },
+      });
+    expect(reservation).toMatchObject({ state: "sent" });
+
+    const ambiguousId = await create();
+    mocks.viaSmtp.mockRejectedValueOnce(new Error("private provider failure"));
+    await expect(
+      deliverStoreReviewRequest({
+        storeId,
+        requestId: ambiguousId,
+        installationGeneration: "g1",
+      }),
+    ).rejects.toThrow("Review email transport unavailable");
+    const failed = await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+      where: { id: ambiguousId },
+    });
+    expect(failed).toMatchObject({
+      status: "failed",
+      deliveryAttempts: 1,
+      encryptedDeliverySnapshot: expect.any(String),
+    });
+    await expect(
+      deliverStoreReviewRequest({
+        storeId,
+        requestId: ambiguousId,
+        installationGeneration: "g1",
+      }),
+    ).rejects.toThrow("Store-review delivery evidence unavailable");
+    expect(mocks.viaSmtp).toHaveBeenCalledTimes(2);
+    expect(
+      await clearExpiredStoreReviewDeliveryEvidence({
+        now: new Date(now.getTime() + 31 * 86_400_000),
+      }),
+    ).toEqual({ scanned: 1, cleared: 1, deferred: 0 });
+    expect(
+      await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+        where: { id: ambiguousId },
+      }),
+    ).toMatchObject({ status: "expired", encryptedDeliverySnapshot: null });
+    expect(
+      await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+        where: {
+          storeId,
+          idempotencyKey: `store_review_request_email:${ambiguousId}`,
+        },
+      }),
+    ).toMatchObject({ status: "cancelled" });
+    await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+  });
+
+  it("store review delivery: shares an anonymous email slot before sending", async () => {
+    mocks.resend = {};
+    const now = new Date();
+    const buyerId = `store-budget-buyer-${run}`;
+    const email = `store-budget-${run}@example.test`;
+    await prisma.weleticShopper.create({
+      data: {
+        id: buyerId,
+        storeId,
+        shopifyCustomerId: String(++sequence),
+        email,
+      },
+    });
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+    });
+    const order = await purchase(buyerId);
+    const requestId = await createProspectiveStoreReviewRequest({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(now.getTime() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    expect(requestId).toBeTruthy();
+    const originalSettings = await prisma.weleticMerchantSettings.findUnique({
+      where: { storeId },
+    });
+    try {
+      const anonymous = await withReviewMutation(
+        storeId,
+        (tx) =>
+          admitShopperDeliveryInTransaction({
+            tx,
+            input: {
+              storeId,
+              installationGeneration: "g1",
+              producer: "referral_confirmation",
+              sourceKey: `anonymous-store-${run}`,
+              provider: "resend",
+              contentDigest: "a".repeat(64),
+              email,
+              shopifyCustomerId: null,
+              expiresAt: new Date(now.getTime() + 86_400_000),
+              retryUntil: new Date(now.getTime() + 3_600_000),
+            },
+          }),
+        "g1",
+      );
+      await prisma.weleticMerchantSettings.upsert({
+        where: { storeId },
+        create: {
+          storeId,
+          timeZone: "UTC",
+          shopperDeliveryPolicy: {
+            version: 1,
+            quietHours: null,
+            maxMessagesPer24Hours: 1,
+          },
+        },
+        update: {
+          timeZone: "UTC",
+          shopperDeliveryPolicy: {
+            version: 1,
+            quietHours: null,
+            maxMessagesPer24Hours: 1,
+          },
+        },
+      });
+      await expect(
+        deliverStoreReviewRequest({
+          storeId,
+          requestId: requestId!,
+          installationGeneration: "g1",
+        }),
+      ).rejects.toBeInstanceOf(ShopperDeliveryDeferredError);
+      expect(
+        await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+          where: { id: requestId! },
+        }),
+      ).toMatchObject({
+        status: "queued",
+        deliveryAttempts: 0,
+        encryptedDeliverySnapshot: null,
+      });
+      expect(mocks.viaResend).not.toHaveBeenCalled();
+      await prisma.weleticShopperDeliveryReservation.update({
+        where: { id: anonymous.id },
+        data: { capacityAt: new Date(now.getTime() - 25 * 3_600_000) },
+      });
+      await deliverStoreReviewRequest({
+        storeId,
+        requestId: requestId!,
+        installationGeneration: "g1",
+      });
+      expect(mocks.viaResend).toHaveBeenCalledTimes(1);
+      expect(
+        await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+          where: { id: requestId! },
+        }),
+      ).toMatchObject({ status: "sent", deliveryAttempts: 1 });
+    } finally {
+      if (originalSettings)
+        await prisma.weleticMerchantSettings.update({
+          where: { storeId },
+          data: {
+            timeZone: originalSettings.timeZone,
+            shopperDeliveryPolicy:
+              originalSettings.shopperDeliveryPolicy ?? Prisma.DbNull,
+          },
+        });
+      else
+        await prisma.weleticMerchantSettings.deleteMany({ where: { storeId } });
+      await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+    }
+  });
+
+  it("store review delivery: final SQL authority fences merchant and communication changes", async () => {
+    const now = new Date();
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+    });
+    const order = await purchase();
+    const requestId = await createProspectiveStoreReviewRequest({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(now.getTime() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    expect(requestId).toBeTruthy();
+    const leaseToken = `final-gate-${run}`;
+    await prisma.weleticStoreReviewRequest.update({
+      where: { id: requestId! },
+      data: {
+        status: "sending",
+        deliveryToken: leaseToken,
+        deliveryLeaseExpiresAt: new Date(now.getTime() + 120_000),
+      },
+    });
+    const allowed = () =>
+      storeReviewDeliveryAuthorized({
+        storeId,
+        requestId: requestId!,
+        installationGeneration: "g1",
+        leaseToken,
+      });
+    const originalMerchant = await prisma.weleticMerchantSettings.findUnique({
+      where: { storeId },
+    });
+    const originalProgram = await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
+      where: { storeId },
+      select: { metadata: true },
+    });
+    try {
+      expect(await allowed()).toBe(true);
+      await prisma.weleticStoreReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: false },
+      });
+      expect(await allowed()).toBe(false);
+      await prisma.weleticStoreReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: true },
+      });
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: false },
+      });
+      expect(await allowed()).toBe(false);
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: true },
+      });
+      await prisma.weleticMerchantSettings.upsert({
+        where: { storeId },
+        create: { storeId, shopperEmailPaused: true },
+        update: { shopperEmailPaused: true },
+      });
+      await expect(allowed()).rejects.toMatchObject({
+        name: "ShopperEmailPausedError",
+      });
+      await prisma.weleticMerchantSettings.update({
+        where: { storeId },
+        data: { shopperEmailPaused: false },
+      });
+      await prisma.weleticStoreReviewSettings.update({
+        where: { storeId },
+        data: { activatedAt: new Date(now.getTime() + 1000) },
+      });
+      expect(await allowed()).toBe(false);
+      await prisma.weleticStoreReviewSettings.update({
+        where: { storeId },
+        data: { activatedAt: new Date(now.getTime() - 60_000) },
+      });
+      await prisma.weleticLoyaltyProgram.update({
+        where: { storeId },
+        data: {
+          metadata: createLoyaltyMaintenanceLeaseMetadata({
+            existingMetadata: originalProgram.metadata,
+            ownerToken: "o".repeat(40),
+            runMarker: `store-review-${run}`,
+            fixtureEmails: ["fixture@example.test"],
+            acquiredAt: now,
+            recoveryAfter: new Date(now.getTime() + 60_000),
+          }),
+        },
+      });
+      const outboxBefore =
+        await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+          where: {
+            storeId,
+            idempotencyKey: `store_review_request_email:${requestId}`,
+          },
+        });
+      await expect(allowed()).rejects.toMatchObject({
+        name: "LoyaltyMaintenanceBlockedError",
+      });
+      expect(
+        await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+          where: { id: outboxBefore.id },
+        }),
+      ).toMatchObject({ attempts: outboxBefore.attempts });
+      expect(mocks.viaSmtp).not.toHaveBeenCalled();
+    } finally {
+      await prisma.weleticLoyaltyProgram.update({
+        where: { storeId },
+        data: { metadata: originalProgram.metadata ?? Prisma.DbNull },
+      });
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: true },
+      });
+      if (originalMerchant)
+        await prisma.weleticMerchantSettings.update({
+          where: { storeId },
+          data: { shopperEmailPaused: originalMerchant.shopperEmailPaused },
+        });
+      else
+        await prisma.weleticMerchantSettings.deleteMany({ where: { storeId } });
+      await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+    }
   });
 
   it("store review privacy: discovers store-only owners and detects orphan sources", async () => {

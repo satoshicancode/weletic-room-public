@@ -15,6 +15,7 @@ const points = vi.fn();
 const tiers = vi.fn();
 const rewards = vi.fn();
 const retention = vi.fn();
+const storeRetention = vi.fn();
 const reviewRecovery = vi.fn();
 const reminders = vi.fn();
 vi.mock("@/lib/weletic/reviews/reminder-scheduler", () => ({
@@ -36,6 +37,9 @@ vi.mock("@/lib/weletic/loyalty/outbox", () => ({
 vi.mock("@/lib/weletic/reviews/delivery-retention", () => ({
   clearExpiredReviewDeliveryEvidence: retention,
 }));
+vi.mock("@/lib/weletic/reviews/store-delivery-retention", () => ({
+  clearExpiredStoreReviewDeliveryEvidence: storeRetention,
+}));
 vi.mock("@/lib/weletic/reviews/points-recovery-sweep", () => ({
   enqueueReviewPointsRecoverySweep: reviewRecovery,
 }));
@@ -48,6 +52,7 @@ beforeEach(() => {
   tiers.mockResolvedValue({ tiers: true });
   rewards.mockResolvedValue({ rewards: true });
   retention.mockResolvedValue({ scanned: 0, cleared: 0 });
+  storeRetention.mockResolvedValue({ scanned: 0, cleared: 0, deferred: 0 });
   reviewRecovery.mockResolvedValue({ scanned: 0, enqueued: 0, deferred: 0 });
   reminders.mockResolvedValue({ scanned: 0, enqueued: 0 });
   processJobs.mockResolvedValue({ processed: 0 });
@@ -83,6 +88,7 @@ test.each(["GET", "POST"])(
       tiers,
       rewards,
       retention,
+      storeRetention,
       reviewRecovery,
       reminders,
       processJobs,
@@ -107,6 +113,7 @@ test.each([
         tiers,
         rewards,
         retention,
+        storeRetention,
         reviewRecovery,
         reminders,
       ]) {
@@ -121,6 +128,7 @@ test.each([
       tierSweep: { tiers: true },
       rewardExpirySweep: { rewards: true },
       reviewRetention: { scanned: 0, cleared: 0 },
+      storeReviewRetention: { scanned: 0, cleared: 0, deferred: 0 },
       reviewPointsRecovery: { scanned: 0, enqueued: 0, deferred: 0 },
       reviewReminders: { scanned: 0, enqueued: 0 },
       outbox: { processed: 0 },

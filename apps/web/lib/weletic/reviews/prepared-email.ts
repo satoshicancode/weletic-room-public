@@ -17,9 +17,16 @@ import {
   type ReviewDeliveryProvider,
 } from "./delivery-snapshot";
 import { renderReviewInvitationEmail } from "./invitation-email-content";
+import { renderStoreReviewInvitationEmail } from "./store-invitation-email-content";
 
 const unavailable = () =>
   new ReviewError("unavailable", "Review email transport unavailable");
+
+type PreparedReviewEmail = {
+  provider: ReviewDeliveryProvider;
+  content: ReviewDeliveryContent;
+  transportIdentity: string;
+};
 
 /** Private identity only, retained inside encrypted evidence, never logged.
  * Credential rotation conservatively blocks retries even within one account.
@@ -52,21 +59,36 @@ export function reviewTransportIdentity(provider: ReviewDeliveryProvider) {
  */
 export async function prepareReviewEmail(
   input: Parameters<typeof renderReviewInvitationEmail>[0] & { email: string },
-): Promise<{
-  provider: ReviewDeliveryProvider;
-  content: ReviewDeliveryContent;
-  transportIdentity: string;
-}> {
+): Promise<PreparedReviewEmail> {
+  return prepareRenderedReviewEmail(input.email, () =>
+    renderReviewInvitationEmail(input),
+  );
+}
+
+export async function prepareStoreReviewEmail(
+  input: Parameters<typeof renderStoreReviewInvitationEmail>[0] & {
+    email: string;
+  },
+): Promise<PreparedReviewEmail> {
+  return prepareRenderedReviewEmail(input.email, () =>
+    renderStoreReviewInvitationEmail(input),
+  );
+}
+
+async function prepareRenderedReviewEmail(
+  email: string,
+  render: () => ReturnType<typeof renderReviewInvitationEmail>,
+): Promise<PreparedReviewEmail> {
   try {
     const options = {
       ...getWeleticTransactionalEmailOptions(),
-      ...renderReviewInvitationEmail(input),
-      to: input.email,
+      ...render(),
+      to: email,
     };
     if (resend) {
       const prepared = await prepareResendEmail(options);
       // Do not bind a shopper's invitation to preview recipient redirection.
-      if (prepared.to !== input.email) throw unavailable();
+      if (prepared.to !== email) throw unavailable();
       const content = reviewDeliveryContentSchema.parse({
         to: prepared.to,
         from: prepared.from,
@@ -117,6 +139,9 @@ export async function dispatchPreparedReviewEmail(input: {
       throw unavailable();
     if (
       !/^native-review-request:[A-Za-z0-9_-]{1,191}$/.test(input.providerKey) &&
+      !/^native-store-review-request:wstorereq_[A-Za-z0-9_-]{1,191}$/.test(
+        input.providerKey,
+      ) &&
       !/^native-review-reminder:wrevrem_[A-Za-z0-9_-]{20}$/.test(
         input.providerKey,
       )

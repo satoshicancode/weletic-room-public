@@ -589,3 +589,28 @@ then disappears after submission; its disposable database and principal were
 removed with the retained ledger unchanged. This does not activate invitation
 production or provider email. Installed account authentication, 375px layout,
 keyboard access and real-provider recovery still need acceptance.
+
+## September 23: store invitation delivery candidate
+
+The prospective request creator now persists a source-only outbox job in the
+same transaction. The worker recognizes a distinct store payload and uses a
+store-specific immutable encrypted provider snapshot and idempotency key. It
+reserves the shared shopper email budget before dispatch, so an anonymous
+confirmation's email-based slot also constrains a later authenticated store
+invitation. Ambiguous SMTP attempts fail closed. Expired evidence is cleared
+by the retention sweep, including the source outbox job.
+
+The invitation has EN/JA/VI copy and links to the shop's account entry point;
+the installed Store Reviews menu is still required for navigation. The final
+pre-provider transaction rechecks installation, module and email switches,
+communication pause, activation cutoffs, purchase/cancellation and privacy.
+The operational outbox path defers blocked stores instead of treating their
+review invitations as successful no-ops. The fulfillment webhook remains
+disconnected, so this is an isolated delivery candidate, not active collection.
+
+Focused unit tests and real-SQL delivery cases passed against the exact
+five-table plus collection/reminder migrations in a disposable database. The
+SQL cases covered successful delivery, ambiguous SMTP evidence, anonymous
+email-budget competition and final authorization changes. No provider message
+was sent outside mocks. Full installed account navigation, real provider
+recovery and release acceptance remain open; PR #101 remains draft.

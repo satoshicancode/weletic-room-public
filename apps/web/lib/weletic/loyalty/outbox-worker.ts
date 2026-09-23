@@ -1660,9 +1660,9 @@ export async function executeOutboxJob(
   }
   if (
     job.jobType === "REVIEW_REQUEST_EMAIL" &&
-    payload?.reminderId !== undefined
+    (payload?.reminderId !== undefined || payload?.storeRequestId !== undefined)
   ) {
-    // Reminder work must never inherit the legacy blocked-store success no-op.
+    // Review invitations must not inherit the blocked-store success no-op.
     // Its dispatcher checks the same store/program fence under the customer lock.
     const { executeNativeReviewJob } = await import(
       "@/lib/weletic/reviews/worker"
