@@ -2653,16 +2653,6 @@ export async function handleRedemptionRecovery(
       );
     }
 
-    if (redemption.status !== WeleticRedemptionStatus.expired) {
-      await compensateDiscountSaga({
-        redemptionId,
-        reason: "Unused loyalty discount expired",
-        targetStatus: WeleticRedemptionStatus.expired,
-        expectedInstallationGeneration,
-        loyaltyMaintenancePermit,
-      });
-    }
-
     const creds = await resolveShopifyOfflineCredentials({ storeId });
     const discount = await resolveVerifiedGenericDiscountForCleanup({
       storeId,
@@ -2681,10 +2671,20 @@ export async function handleRedemptionRecovery(
           `Shopify did not confirm expired discount deactivation for ${redemptionId}`,
         );
       }
-      return "deactivated" as const;
-    } else {
-      return "verified_absent" as const;
     }
+    // A failed or uncertain remote cleanup must never return points while a
+    // usable Shopify voucher may remain. Retrying a confirmed deactivation is
+    // safe if the local compensation fails after this point.
+    if (redemption.status !== WeleticRedemptionStatus.expired) {
+      await compensateDiscountSaga({
+        redemptionId,
+        reason: "Unused loyalty discount expired",
+        targetStatus: WeleticRedemptionStatus.expired,
+        expectedInstallationGeneration,
+        loyaltyMaintenancePermit,
+      });
+    }
+    return discount ? ("deactivated" as const) : ("verified_absent" as const);
   }
 
   // If already resolved, nothing to recover

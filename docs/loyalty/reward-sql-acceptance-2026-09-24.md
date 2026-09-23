@@ -15,10 +15,16 @@ replay; persisted provisioning snapshots; one debit and recovery job per issued
 redemption, including a three-step incremental redemption and its provider
 amount; a transport response lost after the remote request; terminal Shopify
 rejection; one-time compensation; and independent SQL `SUM(pointsDelta)` versus
-the cached wallet balance. No remote request was sent.
+the cached wallet balance. A follow-up case in the same isolated fixture exposed
+an expiry ordering defect: failed remote deactivation previously refunded points
+and marked the local voucher expired. The worker now verifies the exact owned
+remote code and confirms deactivation before refunding. The test proves a failed
+ownership check or deactivation retains the debit and `issued` state, a successful retry expires and
+refunds once, and repeated recovery does not refund again. Shopify transport
+remains mocked; no remote request was sent.
 
 The mocked customer lock means this test does not prove concurrent checkout or
-redaction ordering. It also does not cover discount use, expiry, cancellation,
+redaction ordering. It also does not cover discount use, cancellation, order
 refund, actual remote creation/lookup/deactivation, stored-value issuance or
 worker restart. Those and the named yamaxdev journeys remain open under L02.
 
