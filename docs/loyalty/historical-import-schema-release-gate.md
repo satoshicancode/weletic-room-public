@@ -53,6 +53,30 @@ It does not certify grants, server configuration, triggers, unrelated tables,
 queue supervision, application versions already running, concurrency, or live
 privacy acceptance. Those release checks remain required independently.
 
+## Candidate ledger provenance index preflight
+
+The separate `audit-historical-import-provenance-index.ts` checks the proposed
+ledger source index needed by the indexed reconciliation reader. From `apps/web`,
+use an explicitly selected target and a read-only database credential:
+
+```sh
+pnpm exec tsx scripts/loyalty/audit-historical-import-provenance-index.ts
+```
+
+This command reads only table, column and index metadata, then prepares the
+indexed predicate with `LIMIT 0`. It prints fixed issue codes, no schema
+expressions, credentials or customer rows. `ready: true` and
+`queryPrepared: true` apply only to the exact target and observation time.
+Record the target identity privately with the release SHA and normalized result.
+Any other result blocks the indexed reader. The command does not apply or
+authorize the candidate DDL, assess online DDL cost, prove selectivity with
+populated data, or replace the existing import schema and privacy gates.
+On disposable MySQL with a SELECT-only audit principal, the command failed
+before the candidate DDL, passed after it, and failed again after Prisma
+`db push` removed the column and index. The fixture database and principal were
+removed; the retained local ledger count was unchanged. This is local
+preflight evidence, not approval for a shared target.
+
 ## Enum reconciliation and DDL boundaries
 
 The local-only `scripts/dev/apply-loyalty-import-execution-schema.ts` now uses
