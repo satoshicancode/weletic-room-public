@@ -47,7 +47,10 @@ Read-only Shopify CLI check on September 24 at `037e80fe`: CLI 4.7.0 accepted
 both app configurations with zero validation issues. `shopify app info --json`
 reported 15 selected extensions for the default configuration and zero for
 `loyalty-public`; the two configurations have distinct client IDs. No extension
-was deployed or installed by this check. Before installed acceptance, reconcile
+was deployed or installed by this check. An authenticated, read-only
+`shopify app versions list --json` found one active public-app version created
+September 5 and 20 default-app versions. That listing does not expose extension
+contents or installed-store ownership. Before installed acceptance, reconcile
 the public app's extension identities and confirm ownership, grants and placement
 against the actual Shopify app and company store. The default-config build does
 not establish those facts for `loyalty-public`.
