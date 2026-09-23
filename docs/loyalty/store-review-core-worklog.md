@@ -623,3 +623,11 @@ webhook event retryable. Five focused orchestration tests passed, including
 product and store failures. This wiring is not a live-send approval: shared
 schema compatibility and installed acceptance are still required before
 deploying the draft worker or enabling invitations.
+
+The complete native Reviews real-SQL file then passed 114/114 cases against
+the exact draft migrations. Its first all-case run exposed two test assumptions
+about shared fixtures: a source-specific retirement count included the newly
+appended delivery-identity source, and a backfill page assumed no later shopper
+fixtures. Those assertions were scoped to their actual sources, then the full
+file passed. The disposable database and principal were removed; the retained
+ledger remained at 16.

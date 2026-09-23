@@ -1389,14 +1389,15 @@ describe("native reviews real MySQL production-service boundaries", () => {
       const independentCount =
         await prisma.weleticReviewOwnerPrivacyIdentity.count();
       for (const batchSize of [1, 2, 3, 7]) {
-        // Source 12 is appended after the existing checkpoint-compatible sources.
+        // Source 12 is the owner identity source; source 13 audits delivery
+        // identities separately and is outside this source-specific count.
         let cursor: ShopifyPrivacyKeyRetirementAuditCursor | null = {
           sourceIndex: 12,
         };
         const seen: string[] = [];
         let scanned = 0;
         let pages = 0;
-        while (cursor) {
+        while (cursor?.sourceIndex === 12) {
           expect(++pages).toBeLessThan(100);
           const page = await auditShopifyPrivacyKeyRetirementBatch({
             retiringKeyIds: [retiredKey],
@@ -1526,7 +1527,9 @@ describe("native reviews real MySQL production-service boundaries", () => {
       expiresAt: new Date("2000-01-01"),
     });
     const last = await backfillReviewOwnerPrivacyPage({ ...scope, checkpoint });
-    expect(last).toEqual({ projected: 0, suppressed: 1, checkpoint: null });
+    expect(last).toMatchObject({ projected: 0, suppressed: 1 });
+    // Other tests may have added later shoppers in this shared fixture.
+    if (last.checkpoint) expect(last.checkpoint.afterShopperId).toBe(owners[1]);
     const coverage =
       await prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
         where: { storeId_shopperId: { storeId, shopperId: owners[1] } },
