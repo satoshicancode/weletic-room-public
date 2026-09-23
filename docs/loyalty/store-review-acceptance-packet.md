@@ -1,15 +1,16 @@
 # Store-review acceptance packet
 
-Status: implementation preparation, September 23, 2026. Not live execution
+Status: implementation preparation, September 24, 2026. Not live execution
 approval and not a completed Reviews release gate.
 
 ## Required before scheduling yamaxdev execution
 
-1. Complete the signed customer/merchant gateways, settings, prospective
-   collection/reminders and EN/JA/VI interfaces. The current internal services
-   cannot establish installed authentication or delivery acceptance by themselves.
-2. Complete prospective collector integration and installed acceptance of the
-   locally verified signed controls for the shared policy (ADRs 0042/0043).
+1. Verify the implemented signed customer/merchant gateways, settings,
+   prospective collection/reminders and EN/JA/VI interfaces in the installed
+   Shopify runtime. Local gateway and UI tests do not establish installed
+   authentication or delivery acceptance.
+2. Complete installed acceptance of the locally verified prospective collector
+   and signed controls for the shared policy (ADRs 0042/0043).
    Anonymous and authenticated messages share email
    capacity; customer limits also apply. Never infer timezone from locale/currency
    or schedule historical invitations automatically.
@@ -24,6 +25,10 @@ approval and not a completed Reviews release gate.
    `export_shopper_delivery`, `scrub_customer_delivery`, `purge_shopper_delivery`
    and `ANONYMOUS_REFERRAL_EMAIL`. Drain/reconcile old exports without saved
    delivery identities and uncertain sends without a matching reservation.
+   Public `main` also includes the unapplied Loyalty activity index migration
+   `20260923_loyalty_activity_store_date_index.sql`; track its separate schema
+   gate in the same deployment inventory without treating this Reviews packet
+   as approval to apply it.
 4. Identify the installation generation, staff identities/permissions, controlled
    shopper/recipient, provider connection, eligible test orders and exact spend /
    live-send limits. Obtain the existing scoped live-order/send approval.

@@ -631,3 +631,33 @@ appended delivery-identity source, and a backfill page assumed no later shopper
 fixtures. Those assertions were scoped to their actual sources, then the full
 file passed. The disposable database and principal were removed; the retained
 ledger remained at 16.
+
+## September 24: reconciliation with public main
+
+Public main advanced to `83324a01b9c8e29de4ec216e1a53e8717e239981`
+through Loyalty daily activity PR #102. The draft store-review branch merged
+that commit without rewriting its history. The only shared source path was the
+Prisma schema: the ledger's `(storeId, createdAt)` index coexists with the
+additive store-review and shared-delivery models. The index migration is on
+public main but remains unapplied to shared databases, as do this draft's
+Reviews migrations. Store-review activation and live acceptance remain gated.
+
+## September 24: storefront asset and launch baseline
+
+The product-review theme block used an 11,344-byte JavaScript asset and failed
+Shopify's 10,000-byte theme app block limit. The readable implementation now
+lives in `extensions/weletic-analytics/src/weletic-reviews.js`; a deterministic
+Vite/esbuild script writes the checked-in theme asset. A Node unit test verifies
+source/asset equality and byte size, while existing jsdom tests exercise the
+shipped file. The generated asset is 8,419 bytes. `shopify app build
+--skip-dependencies-installation` succeeded after installing this worktree's
+lockfile dependencies offline; no deployment was run. The CLI still emitted
+non-fatal source-map location warnings from imported web UI files.
+
+All 322 Shopify package unit tests, package typecheck, Prisma validation and
+targeted storefront lint passed. The [v1 readiness index](v1-launch-readiness-2026-09-24.md)
+reconciles public main, draft PR #101, all capability blockers and known schema
+gates. The local product/store Reviews real-SQL file had passed 114/114 after
+merging PR #102; that result remains isolated SQL evidence. Web typecheck
+passed after regenerating the local Prisma client from the current draft
+schema. Current-head CI and installed Shopify journeys are separate gates.

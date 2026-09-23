@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "remix vite:dev",
     "build": "remix vite:build",
+    "build:theme-assets": "node scripts/build-theme-assets.mjs",
+    "check:theme-assets": "node scripts/build-theme-assets.mjs --check",
     "start": "remix-serve ./build/server/index.js",
     "typecheck": "tsc --noEmit",
     "test": "pnpm test:unit",

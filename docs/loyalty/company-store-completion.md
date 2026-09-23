@@ -1,20 +1,14 @@
 # Company-store loyalty and reviews — completion checklist
 
-**September 23 draft update:** ADR 0043 accepts shared anonymous/authenticated
-email capacity while retaining independent customer limits. PR #101 now includes
-durable HMAC reservations, existing sender integration, deferred anonymous job
-recovery, privacy/export cleanup and locally verified EN/JA/VI merchant policy
-controls. Collection/reminder reconciliation and installed acceptance remain
-open. See the
-[delivery implementation record](shared-shopper-delivery-policy.md). This is not
-merged or activated and does not change any module's release status.
-
-Reconciled September 23, 2026 against public main
-`956bd0a7b02ff2cb3bc3acf425eeb34f1e5d882e` (PR #100). Its post-merge Fast Quality
-Gate passed. This document is the current combined scope, task and status
-authority under [ADR 0040](../adr/0040-company-store-loyalty-and-reviews-completion.md).
-The [acceptance matrix](unified-acceptance-matrix.md) retains detailed loyalty
-requirements and historical checkpoints; old snapshots are not current PR state.
+**September 24 release baseline:** [The v1 launch readiness index](v1-launch-readiness-2026-09-24.md)
+tracks every L01–L10, R01–R10 and S01–S06 capability, its next blocker and
+milestone. Public `main` is `83324a01b9c8e29de4ec216e1a53e8717e239981`
+(PR #102); its post-merge CI passed. Draft PR #101 contains locally verified
+store-review, prospective collection and shared anonymous/authenticated email
+capacity, but remains unmerged and inactive. This checklist defines the
+capability contracts and evidence rules; dated worklogs retain their exact test
+boundaries. The [acceptance matrix](unified-acceptance-matrix.md) retains the
+detailed Loyalty requirement IDs. No module is release complete.
 
 ## Status and evidence rules
 
@@ -25,13 +19,13 @@ evidence link states the boundary. A date/source revision is required before a
 live result can close a gate. Untested behavior remains open even when adjacent
 code exists. No module is complete at this checkpoint.
 
-Shipped: public-main implementations through PR #100; its post-merge CI passed.
+Shipped: public-main implementations through PR #102; its post-merge CI passed.
 Live accepted: only the bounded journeys below. Hiro approved finishing the
 active store-review slice first on September 22, then prioritizing Loyalty
 acceptance. Store-review persistence, privacy/export, public reads, shared incentives and
 internal authenticated submission/moderation are in unmerged [draft PR #101](https://github.com/satoshicancode/weletic-room-public/pull/101); see the [current worklog](store-review-core-worklog.md).
 Hiro approved a shared Loyalty + Reviews delivery policy in [ADR 0042](../adr/0042-shared-shopper-delivery-policy.md).
-Its scheduling, [durable admission, existing producer integration and merchant controls](shared-shopper-delivery-policy.md) are locally verified in the draft. ADR 0043 resolves anonymous-recipient identity; prospective collector integration and installed acceptance remain open.
+Its scheduling, [durable admission, existing producer integration and merchant controls](shared-shopper-delivery-policy.md) and prospective collector integration are locally verified in the draft. ADR 0043 resolves anonymous-recipient identity; installed acceptance remains open.
 External execution remains gated where approval/resources are absent.
 
 | Evidence ID | Status           | Exact accepted boundary                                                                                                                                                                                                           | Still open                                                                                                           |
