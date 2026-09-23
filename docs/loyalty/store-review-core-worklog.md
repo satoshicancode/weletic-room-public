@@ -545,3 +545,26 @@ database, with four selected store-review privacy cases passing. Exact fixture
 database and principal cleanup left the retained ledger count at 16. No shared
 schema or live settings were changed. Invitation production/delivery and
 installed activation are still missing, so PR #101 remains draft.
+
+## September 23: prospective store-review request core
+
+Added a transaction-fenced, one-per-order store request creator. It requires
+both parent Reviews and store-review email to be enabled, and fulfillment at or
+after both activation cutoffs. Cancellation, same-store shopper ownership,
+privacy tombstones, active installation and paid-order evidence are checked
+before persistence. The request snapshots the store settings revision, original
+send/expiry times, all purchased line bindings and the order-wide incentive
+policy already fixed by product invitations. A replay returns the original
+request; mixed product policies fail closed for reconciliation. The product
+request writer now also reads an existing store invitation's policy, so a
+store-first fulfillment cannot change the order's saved promise later.
+Like product reviews, a legacy null-policy invitation can be submitted as a
+verified purchase without validating participation or creating an incentive
+claim. The isolated SQL case covers that path as well as one-per-order replay,
+line evidence and the cutoff.
+
+This is deliberately not called by the fulfillment webhook and does not queue
+delivery. Store-review email needs its own immutable provider snapshot,
+shared-capacity admission and interrupted-send recovery before enabling that
+writer. The request core alone is not acceptance or permission to activate
+store-review collection.

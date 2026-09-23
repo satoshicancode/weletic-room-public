@@ -95,12 +95,17 @@ export function submitAuthenticatedStoreReview({
         return { status: "received" as const, duplicate: true };
       }
       const now = new Date();
-      if (
-        request.status !== "sent" ||
-        request.expiresAt <= now ||
-        !request.incentivePolicyId
-      )
+      if (request.status !== "sent" || request.expiresAt <= now)
         throw new ReviewError("unavailable", "Review invitation unavailable");
+      if (
+        request.incentivePolicyId !== null &&
+        (!request.incentivePolicyId ||
+          request.incentivePolicyId.trim() !== request.incentivePolicyId)
+      )
+        throw new ReviewError(
+          "unavailable",
+          "Review incentive policy requires reconciliation",
+        );
       await assertStoreReviewSubmissionPurchase({
         tx,
         storeId,
@@ -163,19 +168,24 @@ export function submitAuthenticatedStoreReview({
           verifiedPurchase: true,
           status: settings.autoPublish ? "published" : "pending",
           publishedAt: settings.autoPublish ? now : null,
-          participationStatus: "validated",
-          participationValidatedAt: now,
-          participationValidationRevision: "store_purchase_abuse_v1",
-          participationContentDigest:
-            storeReviewParticipationContentDigest(content),
+          ...(request.incentivePolicyId
+            ? {
+                participationStatus: "validated",
+                participationValidatedAt: now,
+                participationValidationRevision: "store_purchase_abuse_v1",
+                participationContentDigest:
+                  storeReviewParticipationContentDigest(content),
+              }
+            : {}),
         },
       });
-      await reserveStoreReviewIncentiveInTransaction({
-        tx,
-        storeId,
-        reviewId: review.id,
-        generation,
-      });
+      if (request.incentivePolicyId)
+        await reserveStoreReviewIncentiveInTransaction({
+          tx,
+          storeId,
+          reviewId: review.id,
+          generation,
+        });
       return { status: "received" as const, duplicate: false };
     },
     expectedInstallationGeneration,

@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   enqueue: vi.fn(),
   requests: vi.fn(),
+  storeRequest: vi.fn(),
   update: vi.fn(),
   cancelJobs: vi.fn(),
   erase: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("@/lib/weletic/reviews/transaction", () => ({
           create: mocks.create,
           update: mocks.update,
         },
+        weleticStoreReviewRequest: { findUnique: mocks.storeRequest },
         weleticLoyaltyOutboxJob: { updateMany: mocks.cancelJobs },
       },
       "g1",
@@ -69,6 +71,7 @@ const run = () =>
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.requests.mockResolvedValue([]);
+  mocks.storeRequest.mockResolvedValue(null);
   mocks.settings.mockResolvedValue(settings);
   mocks.order.mockResolvedValue({
     id: "order",
@@ -138,6 +141,19 @@ it("does not retrofit a reminder schedule when a fulfillment event replays", asy
   expect(await run()).toEqual(["historical-request"]);
   expect(mocks.create).not.toHaveBeenCalled();
   expect(mocks.enqueue).not.toHaveBeenCalled();
+});
+it("uses the already-promised store invitation policy for a later product invitation", async () => {
+  mocks.storeRequest.mockResolvedValue({ incentivePolicyId: "store-promise" });
+  await run();
+  expect(mocks.create.mock.calls[0][0].data.incentivePolicyId).toBe(
+    "store-promise",
+  );
+});
+it("rejects conflicting product and store invitation policies", async () => {
+  mocks.requests.mockResolvedValue([{ incentivePolicyId: "product-promise" }]);
+  mocks.storeRequest.mockResolvedValue({ incentivePolicyId: "store-promise" });
+  await expect(run()).rejects.toThrow("require reconciliation");
+  expect(mocks.create).not.toHaveBeenCalled();
 });
 it("retains no-reminder behavior for legacy null settings", async () => {
   mocks.settings.mockResolvedValue({

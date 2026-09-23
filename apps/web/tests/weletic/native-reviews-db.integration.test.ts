@@ -64,6 +64,8 @@ import {
   redactStoreReviewsBatch,
 } from "@/lib/weletic/reviews/store-privacy";
 import { getPublicStoreReviews } from "@/lib/weletic/reviews/store-public";
+import { createProspectiveStoreReviewRequest } from "@/lib/weletic/reviews/store-requests";
+import { submitAuthenticatedStoreReview } from "@/lib/weletic/reviews/store-service";
 import { syncProductReviewSummary } from "@/lib/weletic/reviews/summary-sync";
 import * as reviewTransactions from "@/lib/weletic/reviews/transaction";
 import { withReviewMutation } from "@/lib/weletic/reviews/transaction";
@@ -475,6 +477,115 @@ describe("native reviews real MySQL production-service boundaries", () => {
   afterAll(async () => {
     if (safeDatabase) await prisma.$disconnect();
     vi.unstubAllEnvs();
+  });
+
+  it("store review collection: keeps one prospective order request, line evidence and a legacy no-reward submission", async () => {
+    const now = new Date();
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+        expiresAfterDays: 30,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+        expiresAfterDays: 30,
+      },
+    });
+    const order = await purchase();
+    const fulfilledAt = new Date(now.getTime() - 1000);
+    const [productRequestId] = await createFulfilledReviewRequests({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt,
+      expectedInstallationGeneration: "g1",
+    });
+    const storeRequestId = await createProspectiveStoreReviewRequest({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt,
+      expectedInstallationGeneration: "g1",
+    });
+    expect(storeRequestId).toBeTruthy();
+    expect(
+      await createProspectiveStoreReviewRequest({
+        storeId,
+        orderExternalId: order.externalId,
+        fulfilledAt,
+        expectedInstallationGeneration: "g1",
+      }),
+    ).toBe(storeRequestId);
+    const [product, storeRequest] = await Promise.all([
+      prisma.weleticReviewRequest.findUniqueOrThrow({
+        where: { id: productRequestId },
+      }),
+      prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+        where: { id: storeRequestId! },
+        include: { lines: true },
+      }),
+    ]);
+    expect(storeRequest.incentivePolicyId).toBe(product.incentivePolicyId);
+    expect(storeRequest.lines).toMatchObject([
+      { storeId, orderLineId: order.lineId, purchasedQuantity: 2 },
+    ]);
+    expect(
+      await prisma.weleticStoreReviewRequest.count({
+        where: { storeId, orderId: order.id },
+      }),
+    ).toBe(1);
+    await prisma.weleticStoreReviewRequest.update({
+      where: { id: storeRequestId! },
+      data: { status: "sent", sentAt: new Date() },
+    });
+    expect(
+      await submitAuthenticatedStoreReview({
+        storeId,
+        shopperId,
+        expectedInstallationGeneration: "g1",
+        input: {
+          requestId: storeRequestId,
+          rating: 1,
+          title: "Store experience",
+          body: "The store could improve its service.",
+          displayName: "Buyer",
+          locale: "en",
+          publishConsent: true,
+        },
+      }),
+    ).toEqual({ status: "received", duplicate: false });
+    expect(
+      await prisma.weleticStoreReview.findUniqueOrThrow({
+        where: { requestId: storeRequestId! },
+      }),
+    ).toMatchObject({
+      source: "invitation",
+      verifiedPurchase: true,
+      participationStatus: "pending",
+      rewardStatus: "ineligible",
+    });
+    expect(
+      await prisma.weleticReviewIncentiveClaim.count({
+        where: { storeId, orderId: order.id },
+      }),
+    ).toBe(0);
+    const historical = await purchase();
+    expect(
+      await createProspectiveStoreReviewRequest({
+        storeId,
+        orderExternalId: historical.externalId,
+        fulfilledAt: new Date(now.getTime() - 120_000),
+        expectedInstallationGeneration: "g1",
+      }),
+    ).toBeNull();
+    await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
   });
 
   it("store review privacy: discovers store-only owners and detects orphan sources", async () => {

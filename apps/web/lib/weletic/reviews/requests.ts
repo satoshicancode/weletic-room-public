@@ -78,20 +78,28 @@ export async function createFulfilledReviewRequests({
       const results: string[] = [];
       // An order's first invitation fixes its policy for later product groups.
       // In particular, partially fulfilled legacy orders cannot cross cutover.
-      const orderRequests = await tx.weleticReviewRequest.findMany({
-        where: { storeId, orderId: order.id },
-        select: { incentivePolicyId: true },
-      });
-      const orderPolicies = new Set(
-        orderRequests.map((request) => request.incentivePolicyId),
-      );
+      const [orderRequests, storeRequest] = await Promise.all([
+        tx.weleticReviewRequest.findMany({
+          where: { storeId, orderId: order.id },
+          select: { incentivePolicyId: true },
+        }),
+        tx.weleticStoreReviewRequest.findUnique({
+          where: { storeId_orderId: { storeId, orderId: order.id } },
+          select: { incentivePolicyId: true },
+        }),
+      ]);
+      const savedPolicies = [
+        ...orderRequests.map((request) => request.incentivePolicyId),
+        ...(storeRequest ? [storeRequest.incentivePolicyId] : []),
+      ];
+      const orderPolicies = new Set(savedPolicies);
       if (orderPolicies.size > 1)
         throw new ReviewError(
           "unavailable",
           "Order review policies require reconciliation",
         );
-      const incentivePolicyId = orderRequests.length
-        ? orderRequests[0].incentivePolicyId
+      const incentivePolicyId = savedPolicies.length
+        ? savedPolicies[0]
         : await reviewPolicyAtOrderTime(
             tx,
             storeId,
