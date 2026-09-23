@@ -1,8 +1,8 @@
 # Weletic Room v1 launch readiness
 
 Reconciled September 24, 2026. Public `main` is
-[`70cad45b`](https://github.com/satoshicancode/weletic-room-public/commit/70cad45b5adfc0bb27f6e2af86277c4960058522)
-(PR #101, [green post-merge CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/35898371940)).
+[`11d3d4b5`](https://github.com/satoshicancode/weletic-room-public/commit/11d3d4b5410061a78925c4f13818a0b96a64cc6b)
+(PR #105, [green post-merge CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/35905975050)).
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
@@ -43,13 +43,14 @@ only to the exact revision and environment recorded in its evidence.
 
 ## Migration and runtime inventory
 
-| Change                                                       | Source state                                          | Required before deployment                                                                                                                   |
-| ------------------------------------------------------------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Loyalty daily activity `(storeId, createdAt)` index          | Merged in PR #102; shared application unverified      | Exact target metadata, reviewed DDL and read-plan acceptance                                                                                 |
-| Store-review five-table core                                 | Merged PR #101; only disposable SQL rehearsed         | Create all five before privacy readers; retain export-phase-compatible workers                                                               |
-| Review collection/reminder settings and history              | Merged PR #101; only disposable SQL rehearsed         | Schema before readers/jobs; retain reminder export phase                                                                                     |
-| Shared shopper delivery tables, settings and outbox labels   | Merged PR #101; only disposable SQL rehearsed         | Schema before sender/privacy workers; reconcile old exports and uncertain sends                                                              |
-| Historical import tables, enums and nullable no-tier history | Code merged; target-specific schema status unverified | Run the [read-only import audit](historical-import-schema-release-gate.md) against each exact target, then separately approve compatible DDL |
+| Change                                                       | Source state                                                                                  | Required before deployment                                                                                                                   |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Loyalty daily activity `(storeId, createdAt)` index          | Merged in PR #102; shared application unverified                                              | Exact target metadata, reviewed DDL and read-plan acceptance                                                                                 |
+| Store-review five-table core                                 | Merged PR #101; only disposable SQL rehearsed                                                 | Create all five before privacy readers; retain export-phase-compatible workers                                                               |
+| Review collection/reminder settings and history              | Merged PR #101; only disposable SQL rehearsed                                                 | Schema before readers/jobs; retain reminder export phase                                                                                     |
+| Shared shopper delivery tables, settings and outbox labels   | Merged PR #101; only disposable SQL rehearsed                                                 | Schema before sender/privacy workers; reconcile old exports and uncertain sends                                                              |
+| Historical import tables, enums and nullable no-tier history | Code merged; target-specific schema status unverified                                         | Run the [read-only import audit](historical-import-schema-release-gate.md) against each exact target, then separately approve compatible DDL |
+| Historical import ledger provenance index                    | [Candidate reader and DDL](historical-import-provenance-index-gate.md); no shared application | Verify provider and deployment compatibility, prohibit post-DDL Prisma `db push`, then apply approved DDL before deploying the reader        |
 
 Do not infer a target database's schema from a merged SQL file or disposable
 rehearsal. Capture exact target metadata and mixed-version worker compatibility

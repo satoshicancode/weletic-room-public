@@ -1649,8 +1649,27 @@ async function queuedRollbackWorkerFixture(rowCount = 1, withFields = false) {
       jobIds: [fixture.job.id],
     });
   const first = await runCommit();
-  if (first.succeeded !== 1)
-    expect(await runCommit()).toMatchObject({ succeeded: 1 });
+  if (first.succeeded !== 1) {
+    expect(first).toMatchObject({ processed: 1, failed: 0 });
+    const previousRows = await database.weleticLoyaltyImportRowExecution.count({
+      where: { sourceId: fixture.source.id, status: "committed" },
+    });
+    expect(
+      await pollImportWorkerUntilEligible({
+        run: runCommit,
+        readEvidence: () =>
+          readImportPollEvidence({
+            storeId: fixture.source.storeId,
+            sourceId: fixture.source.id,
+            jobId: fixture.job.id,
+            terminal: "committed",
+          }),
+        phase: "committing",
+        previousRows,
+        report: () => {},
+      }),
+    ).toMatchObject({ succeeded: 1 });
+  }
   const source = await database.weleticLoyaltyImportSource.findUniqueOrThrow({
     where: { id: fixture.source.id },
   });
@@ -1760,6 +1779,82 @@ it.skipIf(process.env.HISTORICAL_IMPORT_MAX_SOURCE_WORKER_INTEGRATION !== "1")(
     );
   },
   180_000,
+);
+it.skipIf(process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1")(
+  "uses the additive provenance index for exact source-wide orphan discovery",
+  async () => {
+    const fixture = await rollbackFixture();
+    const sourceId = fixture.source.id;
+    const indexed = await database.$queryRaw<
+      Array<{ id: string; metadata: { sourceId?: string } | null }>
+    >(Prisma.sql`
+      SELECT * FROM WeleticPointsLedgerEntry FORCE INDEX (wl_import_metadata_source_idx)
+      WHERE importSourceId = ${sourceId}
+        AND JSON_CONTAINS(metadata, JSON_QUOTE(${sourceId}), '$.sourceId')
+    `);
+    const baseline = await database.weleticPointsLedgerEntry.findMany({
+      where: { metadata: { path: "$.sourceId", equals: sourceId } },
+      select: { id: true },
+    });
+    expect(indexed.map(({ id }) => id).sort()).toEqual(
+      baseline.map(({ id }) => id).sort(),
+    );
+    expect(indexed).toHaveLength(1);
+    expect(indexed[0].metadata?.sourceId).toBe(sourceId);
+    // Populate the disposable ledger with unrelated provenance so the plan
+    // check measures a selective lookup, not a one-row table scan.
+    await database.weleticPointsLedgerEntry.createMany({
+      data: Array.from({ length: 1000 }, (_, index) => ({
+        id: `index-probe-${sourceId}-${index}`,
+        storeId: fixture.source.storeId,
+        accountId: fixture.execution.accountId,
+        sequenceNumber: 1000 + index,
+        entryType: "MANUAL_ADJUSTMENT" as const,
+        pointsDelta: BigInt(0),
+        pendingDelta: BigInt(0),
+        balanceAfter: BigInt(0),
+        idempotencyKey: `index-probe:${sourceId}:${index}`,
+        metadata: { sourceId: index === 0 ? sourceId : `unrelated-${index}` },
+      })),
+    });
+    // A ledger row absent from the import execution record must still be
+    // discovered globally when it carries this source provenance.
+    const withOrphan = await database.$queryRaw<Array<{ id: string }>>(
+      Prisma.sql`
+        SELECT id FROM WeleticPointsLedgerEntry FORCE INDEX (wl_import_metadata_source_idx)
+        WHERE importSourceId = ${sourceId}
+          AND JSON_CONTAINS(metadata, JSON_QUOTE(${sourceId}), '$.sourceId')
+      `,
+    );
+    const baselineWithOrphan = await database.weleticPointsLedgerEntry.findMany(
+      {
+        where: { metadata: { path: "$.sourceId", equals: sourceId } },
+        select: { id: true },
+      },
+    );
+    expect(withOrphan.map(({ id }) => id).sort()).toEqual(
+      baselineWithOrphan.map(({ id }) => id).sort(),
+    );
+    expect(withOrphan).toHaveLength(2);
+    const { readImportPlanColumn, summarizeImportPlan } = await import(
+      "./helpers/import-query-plan"
+    );
+    const plan = await database.$queryRaw<
+      Array<Record<string, unknown>>
+    >(Prisma.sql`
+      EXPLAIN FORMAT=JSON SELECT * FROM WeleticPointsLedgerEntry FORCE INDEX (wl_import_metadata_source_idx)
+      WHERE importSourceId = ${sourceId}
+        AND JSON_CONTAINS(metadata, JSON_QUOTE(${sourceId}), '$.sourceId')
+    `);
+    const planJson = readImportPlanColumn(plan);
+    const summary = summarizeImportPlan(planJson);
+    expect(summary).toEqual([
+      expect.objectContaining({
+        chosenKey: "wl_import_metadata_source_idx",
+        accessType: "ref",
+      }),
+    ]);
+  },
 );
 it.skipIf(process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1")(
   "matches JSON-only identities through Prisma and captured parameter replay",
@@ -2672,7 +2767,24 @@ it("continues a real 50-row rollback without treating the partial source as comp
       where: { id: fixture.source.id },
     }),
   ).toMatchObject({ status: "rolling_back" });
-  expect(await fixture.run()).toMatchObject({ succeeded: 1, failed: 0 });
+  const previousRows = await database.weleticLoyaltyImportRowExecution.count({
+    where: { sourceId: fixture.source.id, status: "rolled_back" },
+  });
+  expect(
+    await pollImportWorkerUntilEligible({
+      run: fixture.run,
+      readEvidence: () =>
+        readImportPollEvidence({
+          storeId: fixture.source.storeId,
+          sourceId: fixture.source.id,
+          jobId: fixture.job.id,
+          terminal: "rolled_back",
+        }),
+      phase: "rolling_back",
+      previousRows,
+      report: () => {},
+    }),
+  ).toMatchObject({ succeeded: 1, failed: 0 });
   expect(
     await database.weleticPointsLedgerEntry.count({
       where: { storeId: fixture.source.storeId },
@@ -2981,7 +3093,24 @@ it("keeps a 50-row continuation pending until the real worker proves terminal co
       where: { id: job.id },
     }),
   ).toMatchObject({ status: "pending", attempts: 0, completedAt: null });
-  expect(await run()).toMatchObject({ processed: 1, succeeded: 1, failed: 0 });
+  const previousRows = await database.weleticLoyaltyImportRowExecution.count({
+    where: { sourceId: source.id, status: "committed" },
+  });
+  expect(
+    await pollImportWorkerUntilEligible({
+      run,
+      readEvidence: () =>
+        readImportPollEvidence({
+          storeId: source.storeId,
+          sourceId: source.id,
+          jobId: job.id,
+          terminal: "committed",
+        }),
+      phase: "committing",
+      previousRows,
+      report: () => {},
+    }),
+  ).toMatchObject({ processed: 1, succeeded: 1, failed: 0 });
   expect(
     await database.weleticPointsLedgerEntry.count({
       where: { storeId: source.storeId },
