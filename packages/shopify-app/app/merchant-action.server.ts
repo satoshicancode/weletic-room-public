@@ -15,6 +15,7 @@ import {
   openReviewPolicyReadSchema,
   openReviewPolicyWriteSchema,
 } from "../../../apps/web/lib/weletic/reviews/open-policy-contract";
+import { storeMerchantListInputSchema } from "../../../apps/web/lib/weletic/reviews/store-merchant-contract";
 import {
   manualReviewTranslationInputSchema,
   manualReviewTranslationReadInputSchema,
@@ -79,6 +80,10 @@ const operations = {
   overview: { schema: shopifyMerchantOverviewInputSchema, path: "overview" },
   export: { schema: shopifyStaffExportInputSchema, path: "staff/export" },
   reviews: { schema: merchantReviewListInputSchema, path: "reviews/list" },
+  "store-reviews": {
+    schema: storeMerchantListInputSchema,
+    path: "reviews/store/list",
+  },
   customers: { schema: merchantShopperListInputSchema, path: "customers/list" },
   "customer-profile": {
     schema: merchantShopperProfileInputSchema,
@@ -87,6 +92,10 @@ const operations = {
   "moderate-review": {
     schema: auditedReviewModerationInputSchema,
     path: "reviews/moderate",
+  },
+  "moderate-store-review": {
+    schema: auditedReviewModerationInputSchema,
+    path: "reviews/store/moderate",
   },
 } as const;
 
@@ -109,7 +118,8 @@ export function createMerchantAction(
         maxBytes:
           (operation === "review-translations-write"
             ? 64
-            : operation === "moderate-review"
+            : operation === "moderate-review" ||
+                operation === "moderate-store-review"
               ? 32
               : 16) * 1024,
       });

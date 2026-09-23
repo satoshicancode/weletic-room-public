@@ -33,6 +33,7 @@ import { ReviewDeliveryHistory } from "../components/ReviewDeliveryHistory";
 import { ReviewIncentivesPanel } from "../components/ReviewIncentivesPanel";
 import { ReviewModerationForm } from "../components/ReviewModerationForm";
 import { ReviewTranslationsPanel } from "../components/ReviewTranslationsPanel";
+import { StoreReviewsPanel } from "../components/StoreReviewsPanel";
 import { createMerchantOpenReviewPolicyClient } from "../merchant-open-review-policy-client";
 import { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
@@ -40,6 +41,7 @@ import { createMerchantReviewModerationClient } from "../merchant-review-moderat
 import { createMerchantReviewTranslationsClient } from "../merchant-review-translations-client";
 import { createMerchantReviewsClient } from "../merchant-reviews-client";
 import { merchantReviewsCopy } from "../merchant-reviews-copy";
+import { createMerchantStoreReviewsClient } from "../merchant-store-reviews-client";
 import { reviewModerationCopy } from "../review-moderation-copy";
 import { reviewTranslationCopy } from "../review-translation-copy";
 import { authenticate } from "../shopify.server";
@@ -91,6 +93,10 @@ export default function ReviewsPage() {
   );
   const collectionClient = useMemo(
     () => createMerchantReviewCollectionClient(() => shopify.idToken()),
+    [shopify],
+  );
+  const storeReviewsClient = useMemo(
+    () => createMerchantStoreReviewsClient(() => shopify.idToken()),
     [shopify],
   );
   const copy = merchantReviewsCopy[locale];
@@ -274,6 +280,9 @@ export default function ReviewsPage() {
                 acquireOperation={acquireTranslationOperation}
                 onDirtyChange={policyDirtyChanged}
               />
+            </Card>
+            <Card>
+              <StoreReviewsPanel client={storeReviewsClient} locale={locale} />
             </Card>
             <Select
               disabled={busy}

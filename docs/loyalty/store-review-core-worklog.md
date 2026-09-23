@@ -477,3 +477,24 @@ surfaces and the installed yamaxdev invitation/acceptance journey. The separate
 collection acceptance packet is updated for the approved shared budget and remains
 unexecuted. No shared migration, real provider sends/orders, spending, deployment,
 publication or module activation occurred.
+
+## September 23: signed merchant store-review inbox
+
+The merchant Reviews page now has a separate EN/JA/VI store-review inbox. Its
+signed list gateway derives store, app and installation authority from the
+authenticated Shopify staff actor, requires `reviews.read`, and returns only
+bounded moderation fields. Pagination cursors bind store, app, installation and
+filters. The SQL list uses the complete owner-privacy readiness and tombstone
+predicate shared with public store-review reads; uncertain coverage fails closed.
+Signed moderation requires `reviews.moderate` and uses the existing audited,
+version-checked store-review mutation. The editor clears old data when its
+authenticated client changes, rejects mismatched write acknowledgments and
+requires explicit reload after an uncertain result. Disabled store-review
+settings still prevent moderation.
+
+Focused service, browser-client and panel regressions passed (five cases),
+including authority denial, privacy uncertainty, scoped cursors, acknowledgment
+version/status and old-client response races. Web and Shopify typechecks passed.
+This local UI test does not establish installed Shopify acceptance. The public
+storefront gateway, authenticated shopper submission path, prospective invitation
+writer/settings and live merchant/shopper journey remain open; PR #101 stays draft.

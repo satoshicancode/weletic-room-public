@@ -15,12 +15,14 @@ function buildReviewPrivacySql({
   productId,
   installationGeneration,
   subject = "product",
+  merchant = false,
   keyring = loadShopifyPrivacyHmacKeyring(),
 }: {
   storeId: string;
   productId?: string;
   installationGeneration: string;
   subject?: "product" | "store";
+  merchant?: boolean;
   keyring?: ShopifyPrivacyHmacKeyring;
 }) {
   for (const value of [
@@ -44,7 +46,7 @@ function buildReviewPrivacySql({
       ? Prisma.empty
       : Prisma.sql`AND r.productId = ${productId}`;
   const base = Prisma.sql`r.storeId = ${storeId} ${productScope}
-    AND r.status = 'published' AND r.redactedAt IS NULL
+    AND ${merchant ? Prisma.sql`r.status IN ('pending', 'published', 'hidden', 'rejected')` : Prisma.sql`r.status = 'published'`} AND r.redactedAt IS NULL
     ${
       subject === "product"
         ? Prisma.sql`AND EXISTS (SELECT 1 FROM WeleticShopifyProduct p
@@ -140,4 +142,13 @@ export function buildStoreReviewPublicPrivacySql(input: {
     keyring: input.keyring,
     subject: "store",
   });
+}
+
+/** Merchant moderation uses the same complete owner-readiness predicate. */
+export function buildStoreReviewMerchantPrivacySql(input: {
+  storeId: string;
+  installationGeneration: string;
+  keyring?: ShopifyPrivacyHmacKeyring;
+}) {
+  return buildReviewPrivacySql({ ...input, subject: "store", merchant: true });
 }
