@@ -3376,6 +3376,9 @@ describe("Milestone 2: Outbox Job Infrastructure Unit & Integration Test Suite",
         "test-token",
         redemption.shopifyDiscountId,
       );
+      expect(deactivateSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        mockTx.weleticRewardRedemption.updateMany.mock.invocationCallOrder[0],
+      );
     });
 
     it("fails closed instead of trusting a legacy persisted Shopify discount ID", async () => {
