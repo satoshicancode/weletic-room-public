@@ -114,6 +114,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const subpath = normalizeSubpath(params["*"]);
 
   if (!CUSTOMER_ACCOUNT_GET_PATHS.has(subpath)) {
+    if (subpath === "reviews/store-invitations")
+      return cors(
+        await reviewCustomerAccountResponse(request, shop, subpath, customerId),
+      );
     return cors(
       privateCustomerJson(
         { error: { code: "not_found", message: "Unsupported loyalty route" } },

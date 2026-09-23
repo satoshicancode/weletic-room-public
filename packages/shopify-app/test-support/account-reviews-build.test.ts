@@ -57,6 +57,8 @@ it("bundles the staged account entry and Reviews dependencies without legacy end
     );
     expect(code).toContain("open-prepare");
     expect(code).toContain("open-submit");
+    expect(code).toContain("store-invitations");
+    expect(code).toContain("store-submit");
     expect(code).toContain("open_unverified_unrewarded_v1");
     expect(code).toContain("This review is unverified");
     expect(code).not.toContain("https://shopify.weletic.com");

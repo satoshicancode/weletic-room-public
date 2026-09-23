@@ -336,6 +336,11 @@ it("keeps an uncertain operation mounted across internal module navigation", asy
   fill();
   await click();
   const changed = navigation.addEventListener.mock.calls[0][1];
+  navigation.currentEntry.url = "extension://reviews?view=store-reviews";
+  await act(async () => {
+    changed();
+  });
+  expect(document.body.textContent).toContain(accountReviewCopy.en.uncertain);
   navigation.currentEntry.url = "extension://home";
   await act(async () => {
     changed();

@@ -1,4 +1,3 @@
-import { prisma } from "@/lib/prisma";
 import { ratelimit } from "@/lib/upstash";
 import {
   readWeleticShopifyRequestBodyBytes,
@@ -8,6 +7,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { ReviewError } from "./contracts";
 import { reviewHttpError, reviewJson } from "./http";
+import { resolveStoreReviewAccountIdentity } from "./store-account-identity";
 import {
   storeReviewSubmissionSchema,
   submitAuthenticatedStoreReview,
@@ -45,40 +45,12 @@ export async function storeReviewSubmissionRoute(request: Request) {
       throw new ReviewError("bad_request", "Invalid review context");
     const context = contextSchema.parse(Object.fromEntries(url.searchParams));
     const input = storeReviewSubmissionSchema.parse(JSON.parse(body));
-    const store = await prisma.weleticShopifyStore.findUnique({
-      where: { shopDomain: context.shop },
-      select: {
-        id: true,
-        installationGeneration: true,
-        complianceState: true,
-        storeAccessState: true,
-      },
-    });
-    if (
-      !store?.installationGeneration ||
-      store.complianceState !== "active" ||
-      store.storeAccessState !== "active"
-    )
-      throw new ReviewError("not_found", "Store unavailable");
-    const shopper = await prisma.weleticShopper.findMany({
-      where: {
-        storeId: store.id,
-        shopifyCustomerId: {
-          in: [
-            context.customerId,
-            `gid://shopify/Customer/${context.customerId}`,
-          ],
-        },
-      },
-      select: { id: true },
-      take: 2,
-    });
-    if (!shopper.length)
-      throw new ReviewError("not_found", "Review invitation unavailable");
-    if (shopper.length !== 1)
-      throw new ReviewError("unavailable", "Review identity unavailable");
+    const identity = await resolveStoreReviewAccountIdentity(
+      context.shop,
+      context.customerId,
+    );
     const bucket = createHash("sha256")
-      .update(JSON.stringify([store.id, context.customerId]))
+      .update(JSON.stringify([identity.storeId, context.customerId]))
       .digest("hex");
     const limit = await ratelimit(60, "1 h").limit(
       `weletic:reviews:store:${bucket}`,
@@ -86,9 +58,9 @@ export async function storeReviewSubmissionRoute(request: Request) {
     if (!limit.success)
       return reviewJson({ error: { code: "rate_limited" } }, 429);
     const result = await submitAuthenticatedStoreReview({
-      storeId: store.id,
-      shopperId: shopper[0].id,
-      expectedInstallationGeneration: store.installationGeneration,
+      storeId: identity.storeId,
+      shopperId: identity.shopperId,
+      expectedInstallationGeneration: identity.installationGeneration,
       input,
     });
     return reviewJson(result, result.duplicate ? 200 : 201);

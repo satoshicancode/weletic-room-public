@@ -170,6 +170,46 @@ describe("Shopify New Customer Account Token Claim Validation", () => {
     );
   });
 
+  it("forwards store invitations using only verified account claims", async () => {
+    vi.stubEnv("WELETIC_API_URL", "https://app.weletic.com");
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", serviceSecret);
+    authenticateCustomerAccount.mockResolvedValue({
+      sessionToken: {
+        dest: "https://n0pvef-cs.myshopify.com",
+        sub: "gid://shopify/Customer/1001",
+      },
+      cors: (response: Response) => response,
+    });
+
+    let forwardedRequest: Request | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        forwardedRequest = new Request(input, init);
+        return Response.json({ items: [], nextCursor: null });
+      }),
+    );
+
+    const { loader } = await import(
+      "../../../../packages/shopify-app/app/routes/api.customer-account.$"
+    );
+    const response = await loader({
+      request: new Request(
+        "https://shopify.weletic.com/api/customer-account/reviews/store-invitations?shop=attacker.myshopify.com&customerId=999&source=app_proxy&limit=10",
+      ),
+      params: { "*": "reviews/store-invitations" },
+    } as any);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ items: [], nextCursor: null });
+    const query = new URL(forwardedRequest!.url).searchParams;
+    expect(query.get("shop")).toBe("n0pvef-cs.myshopify.com");
+    expect(query.get("customerId")).toBe("1001");
+    expect(query.get("source")).toBe("customer_account");
+    expect(query.get("limit")).toBe("10");
+    expect(query.getAll("shop")).toHaveLength(1);
+  });
+
   it("pins authenticated online redemptions to online_store", async () => {
     vi.stubEnv("WELETIC_API_URL", "https://app.weletic.com");
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", serviceSecret);

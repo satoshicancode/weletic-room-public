@@ -568,3 +568,24 @@ delivery. Store-review email needs its own immutable provider snapshot,
 shared-capacity admission and interrupted-send recovery before enabling that
 writer. The request core alone is not acceptance or permission to activate
 store-review collection.
+
+## September 23: authenticated store-review account discovery
+
+The customer-account gateway now admits a signed GET for store invitations.
+Shop and Shopify customer identity come only from the verified session;
+cross-store, ambiguous, stale-installation and app-proxy requests cannot list
+them. The core uses the same store mutation fence and owner privacy checks as
+submission, then pages at most 20 current sent invitations. Purchase evidence,
+cancellation and expiry are rechecked before returning only the owned request
+ID, order identifier, dates and immutable policy disclosure. Submitted or
+invalidated requests are not shown. The EN/JA/VI account page provides order
+selection, text-only submission, an explicit privacy/consent notice, and exact
+payload retry after an uncertain result. No shopper identifiers, email or
+delivery tokens enter the extension response.
+
+Focused gateway/service/client/UI tests and one exact-migration isolated SQL
+case passed. The SQL case proved a sent invitation appears only to its owner,
+then disappears after submission; its disposable database and principal were
+removed with the retained ledger unchanged. This does not activate invitation
+production or provider email. Installed account authentication, 375px layout,
+keyboard access and real-provider recovery still need acceptance.

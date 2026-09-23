@@ -59,6 +59,7 @@ import {
   submitNativeReview,
   updateReviewCollectionInTransaction,
 } from "@/lib/weletic/reviews/service";
+import { listStoreAccountInvitations } from "@/lib/weletic/reviews/store-account-invitations";
 import {
   purgeStoreReviewsBatch,
   redactStoreReviewsBatch,
@@ -585,6 +586,82 @@ describe("native reviews real MySQL production-service boundaries", () => {
         expectedInstallationGeneration: "g1",
       }),
     ).toBeNull();
+    await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+  });
+
+  it("store review account discovery: scopes sent invitations to the authenticated owner", async () => {
+    const now = new Date();
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+    });
+    const order = await purchase();
+    const requestId = await createProspectiveStoreReviewRequest({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(now.getTime() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    expect(requestId).toBeTruthy();
+    await prisma.weleticStoreReviewRequest.update({
+      where: { id: requestId! },
+      data: { status: "sent", sentAt: now },
+    });
+    const own = await listStoreAccountInvitations({
+      storeId,
+      shopperId,
+      expectedInstallationGeneration: "g1",
+      query: { limit: 10 },
+    });
+    expect(own.items).toContainEqual(
+      expect.objectContaining({
+        requestId,
+        orderExternalId: order.externalId,
+        incentiveDisclosure: null,
+      }),
+    );
+    const otherId = `store-account-other-${run}`;
+    await prisma.weleticShopper.create({
+      data: {
+        id: otherId,
+        storeId,
+        shopifyCustomerId: String(++sequence),
+        email: "other-store-account@example.test",
+      },
+    });
+    expect(
+      await listStoreAccountInvitations({
+        storeId,
+        shopperId: otherId,
+        expectedInstallationGeneration: "g1",
+        query: {},
+      }),
+    ).toEqual({ items: [], nextCursor: null });
+    await prisma.weleticStoreReviewRequest.update({
+      where: { id: requestId! },
+      data: { status: "submitted", submittedAt: new Date() },
+    });
+    expect(
+      await listStoreAccountInvitations({
+        storeId,
+        shopperId,
+        expectedInstallationGeneration: "g1",
+        query: {},
+      }),
+    ).toEqual({ items: [], nextCursor: null });
     await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
   });
 

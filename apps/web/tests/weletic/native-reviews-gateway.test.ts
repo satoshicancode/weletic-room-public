@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { reviewProxyResponse } from "../../../../packages/shopify-app/app/reviews-gateway.server";
+import {
+  reviewCustomerAccountResponse,
+  reviewProxyResponse,
+} from "../../../../packages/shopify-app/app/reviews-gateway.server";
 import { verifyWeleticInternalRequest } from "../../../../packages/shopify-app/app/weletic-api.server";
 
 const transport = vi.fn<typeof fetch>();
@@ -34,6 +37,38 @@ describe("native review production proxy gateway", () => {
     );
     expect(response.status).toBe(404);
     expect(transport).not.toHaveBeenCalled();
+  });
+  it("only signs account invitation discovery for the verified customer", async () => {
+    const request = new Request(
+      "https://shop.example.test/api/customer-account/reviews/store-invitations?shop=attacker.myshopify.com&customerId=999&source=app_proxy&limit=10",
+    );
+    expect(
+      (
+        await reviewProxyResponse(
+          request,
+          "verified.myshopify.com",
+          "reviews/store-invitations",
+          "123",
+        )
+      ).status,
+    ).toBe(404);
+    expect(transport).not.toHaveBeenCalled();
+    await reviewCustomerAccountResponse(
+      request,
+      "verified.myshopify.com",
+      "reviews/store-invitations",
+      "123",
+    );
+    const [url, init] = transport.mock.calls[0];
+    const signed = new Request(String(url), init);
+    const params = new URL(signed.url).searchParams;
+    expect(params.get("shop")).toBe("verified.myshopify.com");
+    expect(params.get("customerId")).toBe("123");
+    expect(params.get("source")).toBe("customer_account");
+    expect(params.get("limit")).toBe("10");
+    expect(verifyWeleticInternalRequest({ request: signed, body: "" })).toBe(
+      true,
+    );
   });
   it("forwards only bounded store-summary inputs with the verified shop", async () => {
     await reviewProxyResponse(
