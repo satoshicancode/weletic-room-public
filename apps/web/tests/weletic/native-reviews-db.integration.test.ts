@@ -954,10 +954,11 @@ describe("native reviews real MySQL production-service boundaries", () => {
     const originalMerchant = await prisma.weleticMerchantSettings.findUnique({
       where: { storeId },
     });
-    const originalProgram = await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
-      where: { storeId },
-      select: { metadata: true },
-    });
+    const originalProgram =
+      await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
+        where: { storeId },
+        select: { metadata: true },
+      });
     try {
       expect(await allowed()).toBe(true);
       await prisma.weleticStoreReviewSettings.update({

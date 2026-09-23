@@ -1,5 +1,5 @@
-import { ReviewRequestEmailPayloadSchema } from "@/lib/weletic/loyalty/outbox";
 import { LoyaltyMaintenanceBlockedError } from "@/lib/weletic/loyalty/maintenance-write-fence";
+import { ReviewRequestEmailPayloadSchema } from "@/lib/weletic/loyalty/outbox";
 import { executeNativeReviewJob } from "@/lib/weletic/reviews/worker";
 import { beforeEach, expect, it, vi } from "vitest";
 const m = vi.hoisted(() => ({

@@ -605,8 +605,7 @@ the installed Store Reviews menu is still required for navigation. The final
 pre-provider transaction rechecks installation, module and email switches,
 communication pause, activation cutoffs, purchase/cancellation and privacy.
 The operational outbox path defers blocked stores instead of treating their
-review invitations as successful no-ops. The fulfillment webhook remains
-disconnected, so this is an isolated delivery candidate, not active collection.
+review invitations as successful no-ops.
 
 Focused unit tests and real-SQL delivery cases passed against the exact
 five-table plus collection/reminder migrations in a disposable database. The
@@ -614,3 +613,13 @@ SQL cases covered successful delivery, ambiguous SMTP evidence, anonymous
 email-budget competition and final authorization changes. No provider message
 was sent outside mocks. Full installed account navigation, real provider
 recovery and release acceptance remain open; PR #101 remains draft.
+
+The authenticated fulfilled-order dispatcher now invokes the store request
+creator after product invitations under the same order/customer settlement
+lock. A null installation generation skips store creation; cancellation and
+non-fulfilled events never create it. The store creator still applies both
+prospective activation cutoffs, and any projection failure leaves the durable
+webhook event retryable. Five focused orchestration tests passed, including
+product and store failures. This wiring is not a live-send approval: shared
+schema compatibility and installed acceptance are still required before
+deploying the draft worker or enabling invitations.

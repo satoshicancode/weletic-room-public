@@ -435,13 +435,13 @@ export function storeReviewDeliveryAuthorized({
         include: storeReviewRequestInclude,
       });
       if (!request) return false;
-        const [parent, settings, communications] = await Promise.all([
+      const [parent, settings, communications] = await Promise.all([
         tx.weleticReviewSettings.findUnique({ where: { storeId } }),
         tx.weleticStoreReviewSettings.findUnique({ where: { storeId } }),
         readShopperCommunicationSettings({ storeId, tx }),
-        ]);
-        if (communications.paused) throw new ShopperEmailPausedError();
-        if (
+      ]);
+      if (communications.paused) throw new ShopperEmailPausedError();
+      if (
         !parent?.enabled ||
         !parent.requestEmailEnabled ||
         !parent.activatedAt ||
