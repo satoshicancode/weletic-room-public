@@ -492,5 +492,63 @@ describe("loyalty reward lifecycle on isolated MySQL", () => {
     expect(await sumPersistedLedgerPoints()).toBe(
       balanceBeforeExpiry + BigInt(100),
     );
+
+    const { settleRewardRedemptionsUsedByOrder } = await import(
+      "@/lib/weletic/loyalty/redemption-settlement"
+    );
+    const balanceBeforeUse = await sumPersistedLedgerPoints();
+    for (const [index, { redemptionId }] of results.entries()) {
+      const redemption =
+        await database.weleticRewardRedemption.findUniqueOrThrow({
+          where: { id: redemptionId },
+        });
+      const orderId = `gid://shopify/Order/${1000 + index}`;
+      const request = {
+        storeId,
+        discountCodes: [redemption.shopifyDiscountCode],
+        orderId,
+        shopifyCustomerId: `gid://shopify/Customer/${suffix}`,
+        usedAt: new Date("2026-09-24T12:00:00Z"),
+      };
+      expect(await settleRewardRedemptionsUsedByOrder(request)).toEqual({
+        matched: 1,
+        markedUsed: 1,
+        lateUseCorrections: index === 0 ? 1 : 0,
+      });
+      expect(
+        await database.weleticRewardRedemption.findUniqueOrThrow({
+          where: { id: redemptionId },
+          select: { status: true, orderId: true },
+        }),
+      ).toMatchObject({ status: "used", orderId });
+      expect(await settleRewardRedemptionsUsedByOrder(request)).toEqual({
+        matched: 0,
+        markedUsed: 0,
+        lateUseCorrections: 0,
+      });
+      expect(await sumPersistedLedgerPoints()).toBe(
+        balanceBeforeUse - BigInt(100),
+      );
+    }
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: {
+          storeId,
+          accountId,
+          referenceType: "REDEMPTION_LATE_USE",
+          referenceId: expiringRedemption.id,
+        },
+      }),
+    ).toBe(1);
+    expect(await sumPersistedLedgerPoints()).toBe(
+      balanceBeforeUse - BigInt(100),
+    );
+    expect(
+      (
+        await database.weleticLoyaltyAccount.findUniqueOrThrow({
+          where: { id: accountId },
+        })
+      ).cachedPointsBalance,
+    ).toBe(await sumPersistedLedgerPoints());
   }, 120_000);
 });

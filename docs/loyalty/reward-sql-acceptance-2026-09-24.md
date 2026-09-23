@@ -23,8 +23,16 @@ ownership check or deactivation retains the debit and `issued` state, a successf
 refunds once, and repeated recovery does not refund again. Shopify transport
 remains mocked; no remote request was sent.
 
+The same isolated fixture now settles all five issued discount variants against
+distinct synthetic order identifiers. The formerly expired voucher is reported used
+late: its prior refund is offset by exactly one adjustment debit, while the
+other four uses do not change wallet points. Replayed settlement adds no ledger
+entry, and an independent SQL sum still equals the cached wallet. This proves
+the local order-settlement transition and late-use accounting, not that any
+Shopify checkout accepted these discounts or that refunds reached this path.
+
 The mocked customer lock means this test does not prove concurrent checkout or
-redaction ordering. It also does not cover discount use, cancellation, order
+redaction ordering. It also does not cover actual checkout use, cancellation, order
 refund, actual remote creation/lookup/deactivation, stored-value issuance or
 worker restart. Those and the named yamaxdev journeys remain open under L02.
 
