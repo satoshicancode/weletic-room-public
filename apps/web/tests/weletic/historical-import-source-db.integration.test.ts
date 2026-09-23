@@ -199,7 +199,8 @@ vi.mock("@/lib/prisma", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/prisma")>();
   if (
     process.env.HISTORICAL_IMPORT_POPULATED_ROLLBACK_PROFILE !== "1" &&
-    process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1"
+    process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE !== "1" &&
+    process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1"
   )
     return actual;
   const { PrismaClient } = await import("@prisma/client");
