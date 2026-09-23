@@ -3,6 +3,10 @@
 Status: implementation preparation, September 24, 2026. Not live execution
 approval and not a completed Reviews release gate.
 
+The [local storefront build check](store-review-storefront-build-2026-09-24.md)
+passed for the default app configuration. Public-app extension ownership and
+installed runtime acceptance remain open.
+
 ## Required before scheduling yamaxdev execution
 
 1. Verify the implemented signed customer/merchant gateways, settings,
