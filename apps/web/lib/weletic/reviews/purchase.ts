@@ -34,7 +34,13 @@ export type ReviewRequestPurchase = Prisma.WeleticReviewRequestGetPayload<{
  */
 export async function assertReviewPurchaseNotSuppressed(
   tx: Prisma.TransactionClient,
-  request: ReviewRequestPurchase,
+  request: {
+    storeId: string;
+    shopper: Pick<
+      ReviewRequestPurchase["shopper"],
+      "shopifyCustomerId" | "email"
+    >;
+  },
 ) {
   if (
     await hasShopifyCustomerPrivacyTombstone({

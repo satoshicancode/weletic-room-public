@@ -5,7 +5,10 @@ import { scheduleTierReviewAfterQualifyingActivity } from "@/lib/weletic/loyalty
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { ReviewError } from "./contracts";
-import { reviewParticipationContentDigest } from "./incentive-evidence";
+import {
+  reviewParticipationContentDigest,
+  storeReviewParticipationContentDigest,
+} from "./incentive-evidence";
 import {
   reviewIncentivePolicyDigest,
   selectReviewIncentiveAward,
@@ -16,6 +19,11 @@ import {
   assertReviewPurchaseNotSuppressed,
   reviewRequestInclude,
 } from "./purchase";
+import {
+  assertStoreReviewPurchaseIdentity,
+  assertStoreReviewRequestLineBindings,
+  storeReviewRequestInclude,
+} from "./store-purchase";
 import { withReviewMutation } from "./transaction";
 
 const pointsAwardSchema = z
@@ -33,7 +41,7 @@ const pointsAwardSchema = z
   .strict();
 const validationSchema = z
   .object({
-    revision: z.literal("purchase_abuse_v1"),
+    revision: z.enum(["purchase_abuse_v1", "store_purchase_abuse_v1"]),
     validatedAt: z.string().datetime(),
     contentDigest: z.string().regex(/^[a-f0-9]{64}$/),
     installationGeneration: z.string().min(1),
@@ -63,7 +71,7 @@ export async function fulfillReviewPointsClaimInTransaction({
   });
   if (
     !claim ||
-    claim.subjectType !== "product" ||
+    !["product", "store"].includes(claim.subjectType) ||
     !["reserved", "fulfilled"].includes(claim.status)
   )
     throw new ReviewError(
@@ -82,10 +90,16 @@ export async function fulfillReviewPointsClaimInTransaction({
       "conflict",
       "Review incentive policy or installation requires reconciliation",
     );
-  const review = await tx.weleticProductReview.findFirst({
-    where: { id: claim.sourceReviewId, storeId },
-    include: { request: { include: reviewRequestInclude }, media: true },
-  });
+  const review =
+    claim.subjectType === "store"
+      ? await tx.weleticStoreReview.findFirst({
+          where: { id: claim.sourceReviewId, storeId, source: "invitation" },
+          include: { request: { include: storeReviewRequestInclude } },
+        })
+      : await tx.weleticProductReview.findFirst({
+          where: { id: claim.sourceReviewId, storeId },
+          include: { request: { include: reviewRequestInclude }, media: true },
+        });
   if (
     !review ||
     !review.request ||
@@ -96,7 +110,9 @@ export async function fulfillReviewPointsClaimInTransaction({
     review.request.shopperId !== claim.shopperId ||
     review.request.orderId !== claim.orderId ||
     review.request.incentivePolicyId !== claim.policyId ||
-    review.request.productId !== review.productId ||
+    ("productId" in review &&
+      "productId" in review.request &&
+      review.request.productId !== review.productId) ||
     review.request.status !== "submitted" ||
     !review.verifiedPurchase ||
     review.participationStatus !== "validated"
@@ -106,17 +122,28 @@ export async function fulfillReviewPointsClaimInTransaction({
       "Validated review participation is unavailable",
     );
   await assertReviewPurchaseNotSuppressed(tx, review.request);
-  const media = review.media.filter(
+  if (!("productId" in review.request)) {
+    assertStoreReviewRequestLineBindings(review.request);
+    assertStoreReviewPurchaseIdentity(review.request, generation);
+  }
+  const media = ("media" in review ? review.media : []).filter(
     (item) =>
       item.status === "uploaded" &&
       item.storeId === storeId &&
       item.requestId === review.requestId,
   );
-  const digest = reviewParticipationContentDigest({
-    ...review,
-    mediaIds: media.map((item) => item.id),
-  });
+  const digest =
+    claim.subjectType === "store"
+      ? storeReviewParticipationContentDigest(review)
+      : reviewParticipationContentDigest({
+          ...review,
+          mediaIds: media.map((item) => item.id),
+        });
   if (
+    validation.revision !==
+      (claim.subjectType === "store"
+        ? "store_purchase_abuse_v1"
+        : "purchase_abuse_v1") ||
     digest !== validation.contentDigest ||
     review.participationContentDigest !== digest ||
     review.participationValidationRevision !== validation.revision ||
@@ -189,7 +216,9 @@ export async function fulfillReviewPointsClaimInTransaction({
   // A durable claim already passed purchase validation. Ordinary refunds revoke
   // unused invitations, not a legitimate participant's promised award. Keep
   // identity/privacy/generation checks; explicit invalidation blocks above.
-  assertReviewPurchaseIdentity(review.request, generation);
+  if ("productId" in review.request)
+    assertReviewPurchaseIdentity(review.request, generation);
+  else assertStoreReviewPurchaseIdentity(review.request, generation);
   const settings = await tx.weleticReviewSettings.findUnique({
     where: { storeId },
   });
@@ -206,10 +235,13 @@ export async function fulfillReviewPointsClaimInTransaction({
     account.program.status !== "active" ||
     account.program.killSwitchActive
   ) {
-    await tx.weleticProductReview.update({
+    const pendingMarker = {
       where: { id: review.id },
       data: { rewardReason: "active_reviews_and_loyalty_account_required" },
-    });
+    };
+    if (claim.subjectType === "store")
+      await tx.weleticStoreReview.update(pendingMarker);
+    else await tx.weleticProductReview.update(pendingMarker);
     await scheduleReviewPointsRecovery({
       tx,
       storeId,
@@ -238,15 +270,18 @@ export async function fulfillReviewPointsClaimInTransaction({
     where: { id: claim.id },
     data: { status: "fulfilled" },
   });
-  await tx.weleticProductReview.update({
+  const fulfilledMarker = {
     where: { id: review.id },
     data: {
-      rewardStatus: "awarded",
+      rewardStatus: "awarded" as const,
       rewardReason: null,
       rewardLedgerId: entry.id,
       incentivized: true,
     },
-  });
+  };
+  if (claim.subjectType === "store")
+    await tx.weleticStoreReview.update(fulfilledMarker);
+  else await tx.weleticProductReview.update(fulfilledMarker);
   await enqueueFlowTriggerJob({
     storeId,
     eventId: entry.id,

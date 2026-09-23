@@ -24,6 +24,10 @@ const mocks = vi.hoisted(() => ({
   importCustomerRedact: vi.fn(),
   importStorePurge: vi.fn(),
   nativeReviewFindMany: vi.fn(),
+  storeReviewFindMany: vi.fn(),
+  storeReviewRequestFindMany: vi.fn(),
+  reviewReminderFindMany: vi.fn(),
+  storeReviewAuditFindMany: vi.fn(),
   nativeRequestFindMany: vi.fn(),
   nativeMediaFindMany: vi.fn(),
   nativeMediaFindFirst: vi.fn(),
@@ -137,6 +141,10 @@ vi.mock("@/lib/encryption", () => ({
 vi.mock("@/lib/weletic/reviews/privacy-owner-redact", () => ({
   redactReviewOwnerPrivacyProjection: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@/lib/weletic/reviews/store-privacy", () => ({
+  redactStoreReviewsBatch: vi.fn().mockResolvedValue({ hasMore: false }),
+  purgeStoreReviewsBatch: vi.fn().mockResolvedValue({ hasMore: false }),
+}));
 vi.mock("@/lib/storage", () => ({
   storage: { readPrivateR2Object: mocks.nativeMediaDownload },
 }));
@@ -166,6 +174,12 @@ vi.mock("@/lib/prisma", () => ({
       findMany: mocks.importExecutionFindMany,
     },
     weleticProductReview: { findMany: mocks.nativeReviewFindMany },
+    weleticStoreReview: { findMany: mocks.storeReviewFindMany },
+    weleticStoreReviewRequest: { findMany: mocks.storeReviewRequestFindMany },
+    weleticReviewReminder: { findMany: mocks.reviewReminderFindMany },
+    weleticStoreReviewModerationAudit: {
+      findMany: mocks.storeReviewAuditFindMany,
+    },
     weleticReviewRequest: { findMany: mocks.nativeRequestFindMany },
     weleticReviewIncentiveClaim: { findMany: mocks.incentiveClaimFindMany },
     weleticReviewIncentivePolicy: { findMany: mocks.incentivePolicyFindMany },
@@ -363,6 +377,7 @@ vi.mock("@/lib/weletic/shopify/store-resolver", () => ({
 }));
 vi.mock("@/lib/weletic/shopify/compliance-artifacts", () => ({
   readComplianceMediaCheckpoint: mocks.artifactCheckpoint,
+  readComplianceReviewCheckpoint: mocks.artifactCheckpoint,
   storeEncryptedComplianceArtifact: mocks.artifactStore,
   deliverComplianceExportReference: mocks.artifactDeliver,
   deleteExpiredComplianceArtifactsBatch: mocks.artifactExpiryDeleteBatch,
@@ -420,6 +435,10 @@ describe("durable compliance worker boundaries", () => {
       executionsRedacted: 0,
     });
     mocks.nativeReviewFindMany.mockResolvedValue([]);
+    mocks.storeReviewFindMany.mockResolvedValue([]);
+    mocks.storeReviewRequestFindMany.mockResolvedValue([]);
+    mocks.reviewReminderFindMany.mockResolvedValue([]);
+    mocks.storeReviewAuditFindMany.mockResolvedValue([]);
     mocks.nativeRequestFindMany.mockResolvedValue([]);
     mocks.nativeMediaFindMany.mockResolvedValue([]);
     mocks.openMediaFindMany.mockResolvedValue([]);
@@ -488,14 +507,24 @@ describe("durable compliance worker boundaries", () => {
     mocks.deriveReferralEmailDigests.mockReturnValue([
       "hmac:v1:kid_1:FRIEND_EMAIL_DIGEST",
     ]);
-    const fileCheckpoints = new Map<number, unknown>();
+    const fileCheckpoints = new Map<string, unknown>();
     mocks.artifactCheckpoint.mockImplementation(
-      async ({ sequence }) => fileCheckpoints.get(sequence) ?? null,
+      async ({ kind = "review_media", sequence }) =>
+        fileCheckpoints.get(`${kind}:${sequence}`) ?? null,
     );
     mocks.artifactStore.mockImplementation(
       async ({ kind, sequence, value }) => {
-        if (kind === "review_media" && !fileCheckpoints.has(sequence))
-          fileCheckpoints.set(sequence, value);
+        if (
+          [
+            "review_media",
+            "review_reminders",
+            "store_reviews",
+            "store_review_requests",
+            "store_review_audits",
+          ].includes(kind) &&
+          !fileCheckpoints.has(`${kind}:${sequence}`)
+        )
+          fileCheckpoints.set(`${kind}:${sequence}`, value);
         return {};
       },
     );
@@ -1277,7 +1306,7 @@ describe("durable compliance worker boundaries", () => {
     },
   );
 
-  it("exports only account-owned import execution fields and advances to the manifest", async () => {
+  it("exports only account-owned import execution fields and advances to store reviews", async () => {
     await processCustomerDataRequestStep({
       id: "import_export",
       storeId: "store_1",
@@ -1291,7 +1320,7 @@ describe("durable compliance worker boundaries", () => {
         accountId: "account_42",
         orderExternalIds: [],
       }),
-    }).then((result) => expect(result.phase).toBe("export_manifest"));
+    }).then((result) => expect(result.phase).toBe("export_store_reviews"));
     expect(mocks.importExecutionFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         take: 101,
@@ -1307,6 +1336,126 @@ describe("durable compliance worker boundaries", () => {
     expect(
       mocks.importExecutionFindMany.mock.calls[0][0].select,
     ).not.toHaveProperty("source");
+  });
+
+  describe.each([
+    ["export_review_reminders", "export_manifest", "reviewReminderFindMany"],
+    [
+      "export_store_reviews",
+      "export_store_review_requests",
+      "storeReviewFindMany",
+    ],
+    [
+      "export_store_review_requests",
+      "export_store_review_audits",
+      "storeReviewRequestFindMany",
+    ],
+    [
+      "export_store_review_audits",
+      "export_shopper_delivery",
+      "storeReviewAuditFindMany",
+    ],
+  ] as const)("private store-review export: %s", (phase, next, mockName) => {
+    function request(shopperId: string | null = "shopper_42") {
+      return {
+        id: "store_review_export",
+        storeId: "store_1",
+        lockedBy: "worker_1",
+        leaseVersion: 1,
+        phase,
+        cursor: { lastId: "prior", sequence: 1 },
+        progress: {},
+        store: { projectId: "workspace_1" },
+        payloadCiphertext: JSON.stringify({ shopperId, orderExternalIds: [] }),
+      };
+    }
+
+    it("exports an exact-owner scalar projection without credentials", async () => {
+      mocks[mockName].mockResolvedValue([{ id: "owned" }]);
+      expect(await processCustomerDataRequestStep(request())).toMatchObject({
+        phase: next,
+      });
+      expect(mocks[mockName]).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            storeId: "store_1",
+            ...(phase === "export_review_reminders"
+              ? { request: { storeId: "store_1", shopperId: "shopper_42" } }
+              : phase === "export_store_review_audits"
+                ? { review: { storeId: "store_1", shopperId: "shopper_42" } }
+                : { shopperId: "shopper_42" }),
+            id: { gt: "prior" },
+          },
+          take: 21,
+        }),
+      );
+      const select = mocks[mockName].mock.calls[0][0].select;
+      expect(Object.values(select).every((value) => value === true)).toBe(true);
+      for (const field of [
+        "storeId",
+        "shopperId",
+        "tokenHash",
+        "encryptedDeliveryToken",
+        "encryptedDeliverySnapshot",
+        "deliveryToken",
+        "deliveryLeaseExpiresAt",
+        "lastError",
+        "moderationAudits",
+        "participationContentDigest",
+        "installationGeneration",
+      ])
+        expect(select).not.toHaveProperty(field);
+      expect(mocks.artifactStore).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestId: "store_review_export",
+          storeId: "store_1",
+          kind: phase.replace("export_", ""),
+          value: expect.objectContaining({
+            rows: [{ id: "owned" }],
+            afterId: "prior",
+            sequence: 1,
+          }),
+        }),
+      );
+    });
+
+    it("does not query or export without an owner", async () => {
+      expect(await processCustomerDataRequestStep(request(null))).toMatchObject(
+        { phase: next },
+      );
+      expect(mocks[mockName]).not.toHaveBeenCalled();
+      expect(mocks.artifactStore).not.toHaveBeenCalled();
+    });
+
+    it("keeps pagination bounded and resumes the same phase", async () => {
+      mocks[mockName].mockResolvedValue(
+        Array.from({ length: 21 }, (_, n) => ({ id: `row_${n}` })),
+      );
+      expect(await processCustomerDataRequestStep(request())).toMatchObject({
+        phase,
+        cursor: { lastId: "row_19", sequence: 2 },
+      });
+      expect(mocks.artifactStore.mock.calls[0][0].value.rows).toHaveLength(20);
+    });
+
+    it("does not skip missing tables or failed artifact storage", async () => {
+      const input = request();
+      mocks[mockName].mockRejectedValueOnce(
+        Object.assign(new Error("table unavailable"), { code: "P2021" }),
+      );
+      await expect(processCustomerDataRequestStep(input)).rejects.toThrow(
+        "table unavailable",
+      );
+      expect(mocks.artifactStore).not.toHaveBeenCalled();
+      mocks[mockName].mockResolvedValue([{ id: "owned" }]);
+      mocks.artifactStore.mockRejectedValueOnce(
+        new Error("storage unavailable"),
+      );
+      await expect(processCustomerDataRequestStep(input)).rejects.toThrow(
+        "storage unavailable",
+      );
+      expect(input.cursor).toEqual({ lastId: "prior", sequence: 1 });
+    });
   });
 
   it.each(["export_import_snapshots", "export_import_executions"])(
@@ -1539,6 +1688,53 @@ describe("durable compliance worker boundaries", () => {
     expect(mocks.backfillSnapshotFindMany).not.toHaveBeenCalled();
     expect(mocks.backfillPreviewFindMany).not.toHaveBeenCalled();
     expect(mocks.artifactStore).not.toHaveBeenCalled();
+  });
+
+  it("retains the same-store mailbox for ID-only delivery export and erasure", async () => {
+    mocks.shopperFindUnique.mockResolvedValue({
+      id: "shopper-id",
+      email: "current@example.test",
+      loyaltyAccount: { id: "account-id" },
+    });
+    const request = {
+      id: "id-only",
+      storeId: "store_1",
+      phase: "received",
+      cursor: null,
+      progress: null,
+      lockedBy: "worker",
+      leaseVersion: 1,
+      store: { projectId: "workspace_1" },
+      payloadCiphertext: JSON.stringify({
+        shopDomain: "target.myshopify.com",
+        customerId: "123",
+        orderExternalIds: [],
+      }),
+    };
+    const exported = await processCustomerDataRequestStep(request);
+    expect(mocks.deriveCustomerIdentities).toHaveBeenCalledWith({
+      storeId: "store_1",
+      shopifyCustomerId: "123",
+      email: "current@example.test",
+    });
+    expect(exported.payloadCiphertext).not.toContain("current@example.test");
+    expect(JSON.parse(exported.payloadCiphertext as string)).toHaveProperty(
+      "deliveryPrivacyIdentities",
+    );
+    const erased = await processCustomerRedactStep(request);
+    expect(JSON.parse(erased.payloadCiphertext as string)).toMatchObject({
+      customerId: "123",
+      customerEmail: "current@example.test",
+    });
+    expect(mocks.shopperFindUnique).toHaveBeenCalledWith({
+      where: {
+        storeId_shopifyCustomerId: {
+          storeId: "store_1",
+          shopifyCustomerId: "123",
+        },
+      },
+      select: { email: true },
+    });
   });
 
   it("exports anonymous friend claims through a rotation-aware email digest without retaining raw email", async () => {

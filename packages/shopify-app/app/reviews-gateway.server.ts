@@ -23,7 +23,7 @@ export async function reviewProxyResponse(
 }
 
 /** Only called after customer-account SDK verification. The source is fixed by
- * this server entrypoint, not caller JSON/query. No invitation routes here. */
+ * this server entrypoint, not caller JSON/query. */
 export async function reviewCustomerAccountResponse(
   request: Request,
   shop: string,
@@ -31,12 +31,16 @@ export async function reviewCustomerAccountResponse(
   authenticatedCustomerId: string,
 ) {
   if (
-    request.method !== "POST" ||
-    ![
-      "reviews/open-prepare",
-      "reviews/open-submit",
-      "reviews/open-upload",
-    ].includes(subpath)
+    !(
+      (request.method === "GET" && subpath === "reviews/store-invitations") ||
+      (request.method === "POST" &&
+        [
+          "reviews/open-prepare",
+          "reviews/open-submit",
+          "reviews/open-upload",
+          "reviews/store-submit",
+        ].includes(subpath))
+    )
   )
     return privateCustomerJson(
       { error: { code: "not_found" } },
@@ -61,6 +65,11 @@ async function reviewGatewayResponse(
   const vary = source === "customer_account" ? "Authorization" : "Cookie";
   try {
     const action = subpath.slice("reviews/".length);
+    if (
+      ["store-submit", "store-invitations"].includes(action) &&
+      source !== "customer_account"
+    )
+      throw new WeleticGatewayError("Review route unavailable", 404);
     if (request.method === "GET" && action === "open-write")
       return reviewFormResponse(
         new URL(request.url).searchParams.get("locale"),
@@ -72,7 +81,7 @@ async function reviewGatewayResponse(
       );
     const allowed =
       request.method === "GET"
-        ? ["list", "photo"]
+        ? ["list", "store-list", "store-invitations", "photo"]
         : request.method === "POST"
           ? [
               "request",
@@ -81,12 +90,21 @@ async function reviewGatewayResponse(
               "open-submit",
               "open-prepare",
               "open-upload",
+              "store-submit",
             ]
           : [];
     if (!allowed.includes(action))
       throw new WeleticGatewayError("Review route unavailable", 404);
     const query = new URLSearchParams({ shop });
-    if (["open-submit", "open-prepare", "open-upload"].includes(action)) {
+    if (
+      [
+        "open-submit",
+        "open-prepare",
+        "open-upload",
+        "store-submit",
+        "store-invitations",
+      ].includes(action)
+    ) {
       if (
         !authenticatedCustomerId ||
         !/^[1-9][0-9]{0,19}$/.test(authenticatedCustomerId)
@@ -97,15 +115,19 @@ async function reviewGatewayResponse(
     }
     if (request.method === "GET") {
       const url = new URL(request.url);
-      for (const key of [
-        "productId",
-        "sort",
-        "rating",
-        "cursor",
-        "limit",
-        "mediaId",
-        "locale",
-      ]) {
+      const keys =
+        action === "store-invitations"
+          ? ["limit", "cursor"]
+          : [
+              "productId",
+              "sort",
+              "rating",
+              "cursor",
+              "limit",
+              "mediaId",
+              "locale",
+            ];
+      for (const key of keys) {
         const value = url.searchParams.get(key);
         if (value !== null) query.set(key, value);
       }

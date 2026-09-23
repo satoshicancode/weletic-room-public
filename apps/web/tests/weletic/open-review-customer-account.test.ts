@@ -93,6 +93,34 @@ it.each(["open-prepare", "open-submit", "open-upload"])(
     expect(options.body).toBe(JSON.stringify(content));
   },
 );
+it("binds store submission to the verified account and ignores forged query identity", async () => {
+  const content = {
+    requestId: "request-a",
+    rating: 4,
+    title: "Store experience",
+    body: "Helpful staff",
+    displayName: "Buyer",
+    locale: "en",
+    publishConsent: true,
+  };
+  const response = await run("store-submit", content);
+  expect(response.status).toBe(200);
+  const [url, options] = mocks.fetch.mock.calls[0];
+  const signed = new Request(url, options);
+  expect(new URL(signed.url).searchParams.get("shop")).toBe(
+    "verified.myshopify.com",
+  );
+  expect(new URL(signed.url).searchParams.get("customerId")).toBe("123");
+  expect(new URL(signed.url).searchParams.get("source")).toBe(
+    "customer_account",
+  );
+  expect(
+    verifyWeleticShopifyRequest({
+      request: signed,
+      body: String(options.body),
+    }),
+  ).toBe(true);
+});
 it("never dispatches rejected authentication", async () => {
   mocks.auth.mockRejectedValue(new Response(null, { status: 401 }));
   await expect(run()).rejects.toMatchObject({ status: 401 });

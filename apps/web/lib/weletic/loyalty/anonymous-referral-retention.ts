@@ -30,12 +30,17 @@ export async function purgeAnonymousReferralConfirmations({
     WHERE JSON_CONTAINS_PATH(metadata, 'one', '$.anonymousConfirmationDelivery') = 1
       AND (
         friendRewardEmailedAt IS NOT NULL
+        OR COALESCE(JSON_TYPE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot')) <> 'OBJECT', TRUE)
+        OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.retainUntil')) <= ${now.toISOString()}
         OR COALESCE(JSON_TYPE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery')) <> 'OBJECT', TRUE)
         OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery.preparedAt')), '') NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'
         OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery.expiresAt')), '') NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'
-        OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery.preparedAt')) <= ${cutoff}
+        OR ((friendEmailDeliveryAttempts > 0 OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationQueued')), 'false') <> 'true') AND (
+          JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery.preparedAt')) <= ${cutoff}
+          OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery.expiresAt')) <= ${now.toISOString()}
+        ))
+        OR friendRewardExpiresAt <= ${now}
         OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery.preparedAt')) > ${now.toISOString()}
-        OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery.expiresAt')) <= ${now.toISOString()}
         OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery.expiresAt')) <= JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.anonymousConfirmationDelivery.preparedAt'))
       )
     ORDER BY id ASC

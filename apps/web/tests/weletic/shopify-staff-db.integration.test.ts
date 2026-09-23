@@ -28,18 +28,26 @@ vi.mock("@/lib/weletic/shopify/privacy-identity", async (original) => ({
 describe("Shopify staff authorization with actual MySQL transactions", () => {
   beforeAll(async () => {
     const url = new URL(process.env.DATABASE_URL || "invalid:");
+    const isolatedSuffix = /^\/weletic_loyalty_it_staff_([a-f0-9]{12})$/.exec(
+      url.pathname,
+    )?.[1];
+    const allowedPrincipal = isolatedSuffix
+      ? `wr_${isolatedSuffix}`
+      : "loyalty_dev";
     if (
       process.env.SHOPIFY_SESSION_DATABASE_INTEGRATION !== "1" ||
       url.protocol !== "mysql:" ||
       url.hostname !== "127.0.0.1" ||
       url.port !== "3307" ||
-      url.username !== "loyalty_dev" ||
-      url.pathname !== "/weletic_loyalty_dev"
+      url.username !== allowedPrincipal ||
+      (!isolatedSuffix && url.pathname !== "/weletic_loyalty_dev")
     )
       throw new Error("Refusing non-isolated staff database");
     expect(
       await database.$queryRaw`SELECT DATABASE() AS name, CURRENT_USER() AS principal`,
-    ).toEqual([{ name: "weletic_loyalty_dev", principal: "loyalty_dev@%" }]);
+    ).toEqual([
+      { name: url.pathname.slice(1), principal: `${allowedPrincipal}@%` },
+    ]);
     safeToClean = true;
     vi.stubEnv("SHOPIFY_API_KEY", "staff-db-test");
     vi.stubEnv("ENCRYPTION_KEY", randomBytes(32).toString("hex"));
@@ -2067,6 +2075,82 @@ describe("Shopify staff authorization with actual MySQL transactions", () => {
     ).toBe(0);
   });
 
+  it("saves shared delivery controls only with settings authority and preserves failed-write nonces", async () => {
+    const f = await seed();
+    const owner = await actor(f);
+    const staff = await actor(f, false);
+    const policy = {
+      version: 1,
+      quietHours: { startMinute: 1320, endMinute: 480 },
+      maxMessagesPer24Hours: 3,
+    };
+    const input = {
+      expectedRevision: 0,
+      expectedInstallationGeneration: "generation-1",
+      settings: { timeZone: "Asia/Tokyo", shopperDeliveryPolicy: policy },
+    };
+    const writer = freshNonce(staff);
+    const request = { actor: writer, request: { operation: "update", input } };
+    await grant(freshNonce(owner), 0, ["appearance.configure"]);
+    expect((await signedRequest(request, undefined, "settings")).status).toBe(
+      403,
+    );
+    await grant(freshNonce(owner), 1, ["settings.configure"]);
+    expect(
+      (
+        await signedRequest(
+          {
+            ...request,
+            request: {
+              ...request.request,
+              input: { ...input, settings: { shopperDeliveryPolicy: policy } },
+            },
+          },
+          undefined,
+          "settings",
+        )
+      ).status,
+    ).toBe(400);
+    const response = await signedRequest(request, undefined, "settings");
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      revision: 1,
+      settings: input.settings,
+    });
+    expect((await signedRequest(request, undefined, "settings")).status).toBe(
+      409,
+    );
+    const clear = {
+      actor: freshNonce(staff),
+      request: {
+        operation: "update",
+        input: { ...input, expectedRevision: 1, settings: { timeZone: null } },
+      },
+    };
+    expect((await signedRequest(clear, undefined, "settings")).status).toBe(
+      400,
+    );
+    expect(
+      await database.weleticMerchantSettings.findUnique({
+        where: { storeId: f.id },
+      }),
+    ).toMatchObject({
+      revision: 1,
+      shopperDeliveryPolicy: policy,
+      timeZone: "Asia/Tokyo",
+    });
+    await grant(freshNonce(owner), 2, []);
+    expect(
+      (
+        await signedRequest(
+          { ...request, actor: freshNonce(staff) },
+          undefined,
+          "settings",
+        )
+      ).status,
+    ).toBe(403);
+  });
+
   it("authorizes signed settings reads/writes with explicit grants and rejects replay/revocation", async () => {
     const f = await seed();
     const owner = await actor(f);
@@ -2474,6 +2558,7 @@ describe("Shopify staff authorization with actual MySQL transactions", () => {
     };
     for (const settings of [
       { shopperEmailPaused: false },
+      { shopperDeliveryPolicy: null },
       { timeZone: "UTC" },
       { defaultLocale: "en" },
       {},

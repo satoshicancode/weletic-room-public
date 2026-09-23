@@ -1,6 +1,10 @@
 import { linkCache } from "@/lib/api/links/cache";
 import { prisma } from "@/lib/prisma";
 import {
+  deliveryExportSelect,
+  deliveryExportWhere,
+} from "@/lib/weletic/merchant-settings/delivery-privacy";
+import {
   attachReviewIncentivePolicyExports,
   reviewIncentiveClaimExportSelect,
   reviewIncentiveInvalidationExportSelect,
@@ -13,8 +17,15 @@ import {
 } from "@/lib/weletic/reviews/open-media-export";
 import { openReviewProvenanceExportSelection } from "@/lib/weletic/reviews/open-submission-privacy";
 import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
+import { reviewReminderExportSelect } from "@/lib/weletic/reviews/reminder-export";
+import {
+  storeReviewAuditExportSelect,
+  storeReviewExportSelect,
+  storeReviewRequestExportSelect,
+} from "@/lib/weletic/reviews/store-export";
 import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
 import {
+  deriveAllShopifyCustomerPrivacyIdentities,
   getShopifyCustomerPrivacyPseudonym,
   hasShopifyCustomerPrivacyTombstone,
 } from "@/lib/weletic/shopify/privacy-identity";
@@ -1806,6 +1817,64 @@ export async function getShopperDataExport({
       )
     : [];
 
+  const reviewReminders = shopper
+    ? await collectAllExportPages((cursor) =>
+        prisma.weleticReviewReminder.findMany({
+          where: {
+            storeId,
+            request: { storeId, shopperId: shopper.id },
+            ...(cursor ? { id: { gt: cursor } } : {}),
+          },
+          orderBy: { id: "asc" },
+          take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+          select: reviewReminderExportSelect,
+        }),
+      )
+    : [];
+
+  const storeReviews = shopper
+    ? await collectAllExportPages((cursor) =>
+        prisma.weleticStoreReview.findMany({
+          where: {
+            storeId,
+            shopperId: shopper.id,
+            ...(cursor ? { id: { gt: cursor } } : {}),
+          },
+          orderBy: { id: "asc" },
+          take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+          select: storeReviewExportSelect,
+        }),
+      )
+    : [];
+  const storeReviewRequests = shopper
+    ? await collectAllExportPages((cursor) =>
+        prisma.weleticStoreReviewRequest.findMany({
+          where: {
+            storeId,
+            shopperId: shopper.id,
+            ...(cursor ? { id: { gt: cursor } } : {}),
+          },
+          orderBy: { id: "asc" },
+          take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+          select: storeReviewRequestExportSelect,
+        }),
+      )
+    : [];
+
+  const storeReviewModerationAudits = shopper
+    ? await collectAllExportPages((cursor) =>
+        prisma.weleticStoreReviewModerationAudit.findMany({
+          where: {
+            storeId,
+            review: { storeId, shopperId: shopper.id },
+            ...(cursor ? { id: { gt: cursor } } : {}),
+          },
+          orderBy: { id: "asc" },
+          take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+          select: storeReviewAuditExportSelect,
+        }),
+      )
+    : [];
   const reviewIncentiveInvalidations = shopper
     ? await collectAllExportPages((cursor) =>
         prisma.weleticReviewIncentiveInvalidation.findMany({
@@ -1833,12 +1902,33 @@ export async function getShopperDataExport({
       )
     : [];
 
+  const deliveryIdentities = deriveAllShopifyCustomerPrivacyIdentities({
+    storeId,
+    shopifyCustomerId,
+    email: shopper?.email,
+  });
+  const shopperDeliveries = await collectAllExportPages((cursor) =>
+    prisma.weleticShopperDeliveryReservation.findMany({
+      where: {
+        ...deliveryExportWhere(storeId, deliveryIdentities),
+        ...(cursor ? { id: { gt: cursor } } : {}),
+      },
+      orderBy: { id: "asc" },
+      take: SHOPPER_DATA_EXPORT_RECORD_LIMIT,
+      select: deliveryExportSelect,
+    }),
+  );
   return {
     shopperId: shopper?.id ?? null,
+    shopperDeliveries,
     nativeReviews,
     openReviewUploads,
     reviewModerationAudits,
     reviewRequests,
+    reviewReminders,
+    storeReviews,
+    storeReviewRequests,
+    storeReviewModerationAudits,
     reviewIncentiveClaims,
     reviewIncentiveInvalidations,
     shopifyCustomerId: shopper?.shopifyCustomerId ?? String(shopifyCustomerId),

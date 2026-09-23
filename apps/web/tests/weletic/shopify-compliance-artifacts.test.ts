@@ -78,6 +78,7 @@ import {
   deliverComplianceExportReference,
   ensureComplianceExportManifest,
   readComplianceMediaCheckpoint,
+  readComplianceReviewCheckpoint,
   storeEncryptedComplianceArtifact,
 } from "../../lib/weletic/shopify/compliance-artifacts";
 
@@ -188,44 +189,56 @@ describe("encrypted compliance artifact lifecycle", () => {
     );
   });
 
-  it("recovers a bounded encrypted checkpoint under the current lease on both sides of I/O", async () => {
-    const value = {
-      format: "review_media_files_v1",
-      sequence: 0,
-      afterId: null,
-      hasMore: true,
-      files: [{ id: "photo_A" }],
-    };
-    const ciphertext = `enc:${JSON.stringify(value)}`;
-    mocks.artifactFindUnique.mockResolvedValue({
-      storeId: "store_1",
-      deletedAt: null,
-      expiresAt: new Date(Date.now() + 60_000),
-      byteSize: BigInt(ciphertext.length),
-      storageKey: "checkpoint.enc",
-      contentSha256: createHash("sha256").update(ciphertext).digest("hex"),
-    });
-    mocks.signedDownload.mockResolvedValue("https://storage.test/checkpoint");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(ciphertext)));
-    const lease = { workerId: "worker_1", leaseVersion: 4 };
-    expect(
-      await readComplianceMediaCheckpoint({
-        requestId: "wcomp_1",
-        storeId: "store_1",
+  it.each(["review_media", "store_reviews", "store_review_requests"] as const)(
+    "recovers a bounded %s checkpoint under the current lease on both sides of I/O",
+    async (kind) => {
+      const value = {
+        format: "review_media_files_v1",
         sequence: 0,
-        lease,
-      }),
-    ).toEqual(value);
-    const leaseChecks = mocks.requestFindFirst.mock.calls.filter(
-      ([{ where }]) => where.id === "wcomp_1",
-    );
-    expect(leaseChecks).toHaveLength(2);
-    expect(leaseChecks[0][0].where).toMatchObject({
-      status: "processing",
-      lockedBy: "worker_1",
-      leaseVersion: 4,
-    });
-  });
+        afterId: null,
+        hasMore: true,
+        files: [{ id: "photo_A" }],
+      };
+      const ciphertext = `enc:${JSON.stringify(value)}`;
+      mocks.artifactFindUnique.mockResolvedValue({
+        storeId: "store_1",
+        deletedAt: null,
+        expiresAt: new Date(Date.now() + 60_000),
+        byteSize: BigInt(ciphertext.length),
+        storageKey: "checkpoint.enc",
+        contentSha256: createHash("sha256").update(ciphertext).digest("hex"),
+      });
+      mocks.signedDownload.mockResolvedValue("https://storage.test/checkpoint");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(new Response(ciphertext)),
+      );
+      const lease = { workerId: "worker_1", leaseVersion: 4 };
+      expect(
+        await readComplianceReviewCheckpoint({
+          kind,
+          requestId: "wcomp_1",
+          storeId: "store_1",
+          sequence: 0,
+          lease,
+        }),
+      ).toEqual(value);
+      expect(mocks.artifactFindUnique).toHaveBeenCalledWith({
+        where: {
+          requestId_kind_sequence: { requestId: "wcomp_1", kind, sequence: 0 },
+        },
+      });
+      const leaseChecks = mocks.requestFindFirst.mock.calls.filter(
+        ([{ where }]) => where.id === "wcomp_1",
+      );
+      expect(leaseChecks).toHaveLength(2);
+      expect(leaseChecks[0][0].where).toMatchObject({
+        status: "processing",
+        lockedBy: "worker_1",
+        leaseVersion: 4,
+      });
+    },
+  );
 
   it("withholds a checkpoint when the lease is lost during retrieval", async () => {
     const ciphertext = 'enc:{"format":"review_media_files_v1"}';

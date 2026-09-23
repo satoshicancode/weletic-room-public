@@ -4,6 +4,7 @@ import {
   createFulfilledReviewRequests,
   recordReviewOrderCancellation,
 } from "./requests";
+import { createProspectiveStoreReviewRequest } from "./store-requests";
 
 const identitySchema = z.object({
   id: z.union([z.string(), z.number()]).optional(),
@@ -72,6 +73,15 @@ export async function processReviewOrderEvent({
           fulfilledAt: new Date(input.updated_at),
           expectedInstallationGeneration,
         });
+        // Store invitations use the same authenticated fulfillment and order
+        // lock, but require a current installation and both activation cutoffs.
+        if (expectedInstallationGeneration)
+          await createProspectiveStoreReviewRequest({
+            storeId,
+            orderExternalId,
+            fulfilledAt: new Date(input.updated_at),
+            expectedInstallationGeneration,
+          });
       }
     },
   });

@@ -38,6 +38,34 @@ beforeEach(() => vi.stubEnv("ENCRYPTION_KEY", "37".repeat(32)));
 afterEach(() => vi.unstubAllEnvs());
 
 describe("private immutable review email evidence", () => {
+  it("isolates reminder delivery identity from its original invitation and other reminders", () => {
+    const reminderId = `wrevrem_${"x".repeat(20)}`;
+    const reminderContext = { ...context, reminderId };
+    const ciphertext = sealReviewDeliverySnapshot({
+      context: reminderContext,
+      content,
+      provider: "resend",
+      now,
+    });
+    expect(open(ciphertext, { context: reminderContext }).providerKey).toBe(
+      `native-review-reminder:${reminderId}`,
+    );
+    expect(() => open(ciphertext)).toThrow();
+    expect(() =>
+      open(ciphertext, {
+        context: {
+          ...reminderContext,
+          reminderId: `wrevrem_${"y".repeat(20)}`,
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      open(ciphertext, {
+        context: { ...reminderContext, requestId: "other-invitation" },
+      }),
+    ).toThrow();
+    expect(() => open(seal(), { context: reminderContext })).toThrow();
+  });
   it("retains rendered bytes and provider identity without cleartext PII", () => {
     const ciphertext = seal();
     expect(ciphertext).not.toContain(context.recipient);
@@ -45,6 +73,7 @@ describe("private immutable review email evidence", () => {
     expect(open(ciphertext)).toEqual({
       content,
       providerKey: "native-review-request:invitation",
+      retryUntil: new Date("2026-09-20T23:00:00.000Z"),
     });
   });
   it("does not depend on current template, branding or locale when reopening", () => {

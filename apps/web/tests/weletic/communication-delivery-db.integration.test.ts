@@ -59,14 +59,16 @@ beforeAll(async () => {
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
     url.port !== "3307" ||
-    url.username !== "loyalty_dev" ||
+    (url.username !== "loyalty_dev" &&
+      (!/^wr_[a-f0-9]{12}$/.test(url.username) ||
+        !url.pathname.endsWith(url.username.slice(3)))) ||
     !/^\/weletic_loyalty_it_communications_[a-z0-9_]+$/.test(url.pathname)
   )
     throw new Error("Refusing non-isolated communication database");
   expect(
     await prisma.$queryRaw`SELECT DATABASE() AS databaseName, CURRENT_USER() AS principal`,
   ).toEqual([
-    { databaseName: url.pathname.slice(1), principal: "loyalty_dev@%" },
+    { databaseName: url.pathname.slice(1), principal: `${url.username}@%` },
   ]);
   expect(await prisma.weleticShopifyStore.count()).toBe(0);
   verified = true;
@@ -2276,4 +2278,139 @@ it("rolls back queue failure and preserves the SQL retry cursor while recording 
   expect(
     await prisma.weleticLoyaltyOutboxJob.count({ where: { storeId: id } }),
   ).toBe(2);
+});
+
+it("a paused anonymous backlog cannot occupy the financial worker page", async () => {
+  const { id } = await seed();
+  await prisma.weleticMerchantSettings.update({
+    where: { storeId: id },
+    data: { shopperEmailPaused: true },
+  });
+  await prisma.weleticLoyaltyOutboxJob.createMany({
+    data: Array.from({ length: 8 }, (_, index) => ({
+      id: `${id}-paused-${index}`,
+      storeId: id,
+      jobType: "ANONYMOUS_REFERRAL_EMAIL" as const,
+      payload: {
+        version: 1,
+        referralId: `missing-${index}`,
+        installationGeneration: "g1",
+      },
+      idempotencyKey: `${id}-paused-${index}`,
+      scheduledFor: new Date(0),
+      priority: 100,
+    })),
+  });
+  const financialId = `${id}-financial`;
+  await prisma.weleticLoyaltyOutboxJob.create({
+    data: {
+      id: financialId,
+      storeId: id,
+      jobType: "HOLDING_PERIOD_RELEASE",
+      payload: { grantId: "already-removed", installationGeneration: "g1" },
+      idempotencyKey: financialId,
+      scheduledFor: new Date(0),
+      priority: 0,
+    },
+  });
+  const result = await processOutboxJobsBatch({
+    storeId: id,
+    batchSize: 1,
+    workerId: "fairness-worker",
+  });
+  expect(result.succeeded).toBe(1);
+  expect(
+    (
+      await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id: financialId },
+      })
+    ).status,
+  ).toBe("completed");
+  expect(
+    await prisma.weleticLoyaltyOutboxJob.count({
+      where: {
+        storeId: id,
+        jobType: "ANONYMOUS_REFERRAL_EMAIL",
+        status: "pending",
+        attempts: 0,
+      },
+    }),
+  ).toBe(8);
+});
+
+it("shared budget deferral restores the exact worker claim without consuming an attempt", async () => {
+  const { id, args } = await seed();
+  const { admitShopperDeliveryInTransaction, shopperDeliveryContentDigest } =
+    await import("@/lib/weletic/merchant-settings/delivery-reservations");
+  await prisma.weleticMerchantSettings.update({
+    where: { storeId: id },
+    data: {
+      timeZone: "UTC",
+      shopperDeliveryPolicy: {
+        version: 1,
+        quietHours: null,
+        maxMessagesPer24Hours: 1,
+      },
+    },
+  });
+  await prisma.$transaction((tx) =>
+    admitShopperDeliveryInTransaction({
+      tx,
+      input: {
+        storeId: id,
+        installationGeneration: "g1",
+        producer: "referral_confirmation",
+        sourceKey: "earlier-anonymous",
+        provider: "resend",
+        contentDigest: shopperDeliveryContentDigest(request),
+        email: request.to,
+        shopifyCustomerId: null,
+        expiresAt: null,
+        retryUntil: new Date(Date.now() + 23 * 3600000),
+      },
+    }),
+  );
+  const jobId = args.claim.candidate.id;
+  await prisma.weleticLoyaltyOutboxJob.update({
+    where: { id: jobId },
+    data: {
+      status: "pending",
+      attempts: 0,
+      lockedBy: null,
+      lockedAt: null,
+      scheduledFor: new Date(0),
+    },
+  });
+  workerSender.mockReset().mockImplementation(async ({ claim }) => {
+    await retainCommunicationDeliveryRequest({ ...args, claim });
+    return "sent";
+  });
+  const outcome = await processOutboxJobsBatch({
+    storeId: id,
+    jobIds: [jobId],
+    batchSize: 1,
+    workerId: "deferred-worker",
+  });
+  expect(outcome).toMatchObject({
+    processed: 0,
+    succeeded: 0,
+    failed: 0,
+    skipped: 1,
+  });
+  const deferred = await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+    where: { id: jobId },
+  });
+  expect(deferred).toMatchObject({
+    status: "pending",
+    attempts: 0,
+    lockedBy: null,
+    lockedAt: null,
+  });
+  expect(deferred.nextRetryAt!.getTime()).toBeGreaterThan(Date.now());
+  expect(deferred.payload).not.toHaveProperty("communicationDeliverySnapshot");
+  expect(
+    await prisma.weleticShopperDeliveryReservation.count({
+      where: { storeId: id },
+    }),
+  ).toBe(1);
 });

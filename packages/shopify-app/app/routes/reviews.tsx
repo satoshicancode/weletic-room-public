@@ -28,15 +28,22 @@ import {
 } from "../../../../apps/web/lib/weletic/reviews/merchant-contract";
 import type { AuditedReviewModerationInput } from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
 import { OpenReviewPolicyPanel } from "../components/OpenReviewPolicyPanel";
+import { ReviewCollectionPanel } from "../components/ReviewCollectionPanel";
+import { ReviewDeliveryHistory } from "../components/ReviewDeliveryHistory";
 import { ReviewIncentivesPanel } from "../components/ReviewIncentivesPanel";
 import { ReviewModerationForm } from "../components/ReviewModerationForm";
 import { ReviewTranslationsPanel } from "../components/ReviewTranslationsPanel";
+import { StoreReviewSettingsPanel } from "../components/StoreReviewSettingsPanel";
+import { StoreReviewsPanel } from "../components/StoreReviewsPanel";
 import { createMerchantOpenReviewPolicyClient } from "../merchant-open-review-policy-client";
+import { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { createMerchantReviewModerationClient } from "../merchant-review-moderation-client";
 import { createMerchantReviewTranslationsClient } from "../merchant-review-translations-client";
 import { createMerchantReviewsClient } from "../merchant-reviews-client";
 import { merchantReviewsCopy } from "../merchant-reviews-copy";
+import { createMerchantStoreReviewSettingsClient } from "../merchant-store-review-settings-client";
+import { createMerchantStoreReviewsClient } from "../merchant-store-reviews-client";
 import { reviewModerationCopy } from "../review-moderation-copy";
 import { reviewTranslationCopy } from "../review-translation-copy";
 import { authenticate } from "../shopify.server";
@@ -84,6 +91,18 @@ export default function ReviewsPage() {
   );
   const translationClient = useMemo(
     () => createMerchantReviewTranslationsClient(() => shopify.idToken()),
+    [shopify],
+  );
+  const collectionClient = useMemo(
+    () => createMerchantReviewCollectionClient(() => shopify.idToken()),
+    [shopify],
+  );
+  const storeReviewsClient = useMemo(
+    () => createMerchantStoreReviewsClient(() => shopify.idToken()),
+    [shopify],
+  );
+  const storeReviewSettingsClient = useMemo(
+    () => createMerchantStoreReviewSettingsClient(() => shopify.idToken()),
     [shopify],
   );
   const copy = merchantReviewsCopy[locale];
@@ -255,6 +274,10 @@ export default function ReviewsPage() {
             <Text as="p">{copy.description}</Text>
             <Card>
               <ReviewIncentivesPanel client={incentiveClient} locale={locale} />
+              <ReviewCollectionPanel
+                client={collectionClient}
+                locale={locale}
+              />
             </Card>
             <Card>
               <OpenReviewPolicyPanel
@@ -263,6 +286,15 @@ export default function ReviewsPage() {
                 acquireOperation={acquireTranslationOperation}
                 onDirtyChange={policyDirtyChanged}
               />
+            </Card>
+            <Card>
+              <StoreReviewSettingsPanel
+                client={storeReviewSettingsClient}
+                locale={locale}
+              />
+            </Card>
+            <Card>
+              <StoreReviewsPanel client={storeReviewsClient} locale={locale} />
             </Card>
             <Select
               disabled={busy}
@@ -450,6 +482,10 @@ export default function ReviewsPage() {
                             {copy.attempts}: {row.deliveryAttempts}
                           </p>
                           {row.hasDeliveryError && <p>{copy.deliveryError}</p>}
+                          <ReviewDeliveryHistory
+                            history={row.deliveryHistory}
+                            locale={locale}
+                          />
                         </>
                       )}
                     </BlockStack>

@@ -4,6 +4,7 @@ import type { Api } from "@shopify/ui-extensions/customer-account.page.render";
 import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { CustomerAccountReviews } from "./CustomerAccountReviews";
+import { CustomerAccountStoreReviews } from "./CustomerAccountStoreReviews";
 import {
   hubActivityLabel,
   hubDate,
@@ -17,6 +18,8 @@ import {
 import { accountReviewProduct, accountReviewTransport } from "./reviews-client";
 import { accountReviewCopy, accountReviewLocale } from "./reviews-copy";
 import type { ReviewProductQuery } from "./reviews-products";
+import { accountStoreReviewTransport } from "./store-reviews-client";
+import { accountStoreReviewCopy } from "./store-reviews-copy";
 
 declare const shopify: Api;
 // The installed 2026.7 SDK exposes this as a global (its own navigation hook
@@ -1313,6 +1316,7 @@ export function CustomerAccountModules() {
     shopify.query(query, options),
   );
   const [reviewPending, setReviewPending] = useState(false);
+  const [storeReviewPending, setStoreReviewPending] = useState(false);
   const [url, setUrl] = useState(() =>
     typeof navigation === "undefined"
       ? null
@@ -1323,6 +1327,12 @@ export function CustomerAccountModules() {
       shopify.sessionToken.get(),
     ),
   );
+  const storeReviewTransport = useRef(
+    accountStoreReviewTransport(
+      API_BASE_URL.replace(/\/loyalty$/, "/reviews"),
+      () => shopify.sessionToken.get(),
+    ),
+  );
   useEffect(() => {
     if (typeof navigation === "undefined") return;
     const changed = () => setUrl(navigation.currentEntry?.url ?? null);
@@ -1330,13 +1340,22 @@ export function CustomerAccountModules() {
     return () => navigation?.removeEventListener("currententrychange", changed);
   }, []);
   const productId = accountReviewProduct(url);
-  let reviews = productId !== null || reviewPending;
+  let storeReviews = storeReviewPending && !reviewPending;
+  let reviews = reviewPending || (!storeReviewPending && productId !== null);
   try {
-    reviews ||= new URL(url || "").searchParams.get("view") === "reviews";
+    const view = new URL(url || "").searchParams.get("view");
+    storeReviews ||= !reviewPending && view === "store-reviews";
+    reviews ||= !storeReviewPending && view === "reviews";
   } catch {
     /* Missing navigation keeps the Loyalty home. */
   }
-  return reviews ? (
+  return storeReviews ? (
+    <CustomerAccountStoreReviews
+      language={hubLocale()}
+      transport={storeReviewTransport.current}
+      onPendingChange={setStoreReviewPending}
+    />
+  ) : reviews ? (
     <CustomerAccountReviews
       productId={productId}
       language={hubLocale()}
@@ -1350,10 +1369,16 @@ export function CustomerAccountModules() {
 }
 
 function ReviewsEntry() {
+  const locale = accountReviewLocale(hubLocale());
   return (
-    <s-button href="extension://reviews?view=reviews">
-      {accountReviewCopy[accountReviewLocale(hubLocale())].browseReviews}
-    </s-button>
+    <s-stack direction="block" gap="small">
+      <s-button href="extension://reviews?view=reviews">
+        {accountReviewCopy[locale].browseReviews}
+      </s-button>
+      <s-button href="extension://reviews?view=store-reviews">
+        {accountStoreReviewCopy[locale].browse}
+      </s-button>
+    </s-stack>
   );
 }
 

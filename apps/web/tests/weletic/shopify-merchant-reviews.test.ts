@@ -200,6 +200,112 @@ describe("merchant review inbox production projection", () => {
     );
     expect(mocks.reviews).not.toHaveBeenCalled();
   });
+  it("projects bounded tenant-scoped reminder history without private payloads", async () => {
+    mocks.requests.mockResolvedValue([
+      {
+        id: "request-1",
+        createdAt: now,
+        status: "submitted",
+        sendAt: now,
+        expiresAt: now,
+        sentAt: now,
+        submittedAt: now,
+        deliveryAttempts: 1,
+        lastError: null,
+        product: row.product,
+        reminders: [
+          {
+            sequence: 1,
+            status: "reconciliation",
+            attempts: 1,
+            scheduledFor: now,
+            sentAt: null,
+            id: "private-reminder",
+            encryptedDeliverySnapshot: "private-ciphertext",
+            outcomeReason: "private-provider-error",
+          },
+        ],
+      },
+    ]);
+    const result = await read({ view: "requests" });
+    expect(result.items[0]).toMatchObject({
+      deliveryHistory: {
+        initial: { outcome: "confirmed" },
+        reminders: [
+          {
+            sequence: 1,
+            outcome: "unconfirmed",
+            attempts: 1,
+            confirmedAt: null,
+            scheduledFor: now.toISOString(),
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(result)).not.toMatch(
+      /private-reminder|private-ciphertext|private-provider-error/,
+    );
+    expect(mocks.requests).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          reminders: {
+            where: { storeId: "store-a" },
+            orderBy: { sequence: "asc" },
+            take: 4,
+            select: {
+              sequence: true,
+              status: true,
+              attempts: true,
+              scheduledFor: true,
+              sentAt: true,
+              leaseExpiresAt: true,
+            },
+          },
+        }),
+      }),
+    );
+  });
+  it("does not present expired initial or reminder leases as active delivery", async () => {
+    const expired = new Date("2000-01-01T00:00:00Z");
+    mocks.requests.mockResolvedValue([
+      {
+        id: "request-1",
+        createdAt: now,
+        status: "sending",
+        sendAt: now,
+        expiresAt: now,
+        sentAt: null,
+        submittedAt: null,
+        deliveryAttempts: 1,
+        deliveryLeaseExpiresAt: expired,
+        lastError: null,
+        product: row.product,
+        reminders: [
+          {
+            sequence: 1,
+            status: "sending",
+            attempts: 1,
+            scheduledFor: now,
+            sentAt: null,
+            leaseExpiresAt: expired,
+          },
+        ],
+      },
+    ]);
+    const result = await read({ view: "requests" });
+    expect(result.items[0]).toMatchObject({
+      deliveryHistory: {
+        initial: { outcome: "unconfirmed" },
+        reminders: [{ outcome: "unconfirmed" }],
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("leaseExpiresAt");
+    expect(mocks.requests).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ deliveryLeaseExpiresAt: true }),
+      }),
+    );
+  });
   it.each([
     { view: "requests", rating: 1 },
     { view: "reviews", status: "sent" },

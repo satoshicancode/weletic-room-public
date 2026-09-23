@@ -150,6 +150,7 @@ enum WeleticLoyaltyOutboxJobType {
   HISTORICAL_IMPORT_COMMIT
   HISTORICAL_IMPORT_ROLLBACK
   REVIEW_POINTS_RECOVERY
+  ANONYMOUS_REFERRAL_EMAIL
 }
 
 enum WeleticLoyaltyOutboxJobStatus {
@@ -186,6 +187,8 @@ model WeleticShopper {
   reviewPrivacyCoverage       WeleticReviewOwnerPrivacyCoverage?
   reviewRequests               WeleticReviewRequest[]
   nativeReviews                WeleticProductReview[]
+  storeReviewRequests          WeleticStoreReviewRequest[]
+  storeReviews                 WeleticStoreReview[]
   rewardFulfillments           WeleticRewardRedemption[]
   reviewIncentiveClaims        WeleticReviewIncentiveClaim[]
   reviewIncentiveInvalidations WeleticReviewIncentiveInvalidation[]

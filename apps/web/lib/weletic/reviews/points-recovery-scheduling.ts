@@ -39,7 +39,7 @@ export async function scheduleReviewPointsRecovery({
   const validation = claim?.validationSnapshot;
   if (
     !claim ||
-    claim.subjectType !== "product" ||
+    !["product", "store"].includes(claim.subjectType) ||
     !award ||
     typeof award !== "object" ||
     Array.isArray(award) ||

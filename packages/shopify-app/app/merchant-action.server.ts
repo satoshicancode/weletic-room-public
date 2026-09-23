@@ -1,5 +1,9 @@
 import { json } from "@remix-run/node";
 import {
+  reviewCollectionReadInputSchema,
+  reviewCollectionWriteInputSchema,
+} from "../../../apps/web/lib/weletic/reviews/collection-contract";
+import {
   merchantReviewCouponListInputSchema,
   merchantReviewIncentiveActivationInputSchema,
   merchantReviewIncentiveDraftInputSchema,
@@ -11,6 +15,11 @@ import {
   openReviewPolicyReadSchema,
   openReviewPolicyWriteSchema,
 } from "../../../apps/web/lib/weletic/reviews/open-policy-contract";
+import { storeMerchantListInputSchema } from "../../../apps/web/lib/weletic/reviews/store-merchant-contract";
+import {
+  storeReviewSettingsReadInputSchema,
+  storeReviewSettingsWriteInputSchema,
+} from "../../../apps/web/lib/weletic/reviews/store-settings-contract";
 import {
   manualReviewTranslationInputSchema,
   manualReviewTranslationReadInputSchema,
@@ -46,6 +55,14 @@ const operations = {
     schema: manualReviewTranslationInputSchema,
     path: "reviews/translations/write",
   },
+  "review-collection-read": {
+    schema: reviewCollectionReadInputSchema,
+    path: "reviews/collection/read",
+  },
+  "review-collection-write": {
+    schema: reviewCollectionWriteInputSchema,
+    path: "reviews/collection/write",
+  },
   "review-incentives-activate": {
     schema: merchantReviewIncentiveActivationInputSchema,
     path: "reviews/incentives/activate",
@@ -67,6 +84,18 @@ const operations = {
   overview: { schema: shopifyMerchantOverviewInputSchema, path: "overview" },
   export: { schema: shopifyStaffExportInputSchema, path: "staff/export" },
   reviews: { schema: merchantReviewListInputSchema, path: "reviews/list" },
+  "store-reviews": {
+    schema: storeMerchantListInputSchema,
+    path: "reviews/store/list",
+  },
+  "store-review-settings-read": {
+    schema: storeReviewSettingsReadInputSchema,
+    path: "reviews/store/settings/read",
+  },
+  "store-review-settings-write": {
+    schema: storeReviewSettingsWriteInputSchema,
+    path: "reviews/store/settings/write",
+  },
   customers: { schema: merchantShopperListInputSchema, path: "customers/list" },
   "customer-profile": {
     schema: merchantShopperProfileInputSchema,
@@ -75,6 +104,10 @@ const operations = {
   "moderate-review": {
     schema: auditedReviewModerationInputSchema,
     path: "reviews/moderate",
+  },
+  "moderate-store-review": {
+    schema: auditedReviewModerationInputSchema,
+    path: "reviews/store/moderate",
   },
 } as const;
 
@@ -97,7 +130,8 @@ export function createMerchantAction(
         maxBytes:
           (operation === "review-translations-write"
             ? 64
-            : operation === "moderate-review"
+            : operation === "moderate-review" ||
+                operation === "moderate-store-review"
               ? 32
               : 16) * 1024,
       });

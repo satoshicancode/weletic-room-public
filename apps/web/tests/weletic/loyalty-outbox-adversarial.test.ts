@@ -26,6 +26,9 @@ import { migrateLedgerVersions } from "../../scripts/loyalty/migrate-ledger-vers
 // ============================================================================
 // Mock Setup
 // ============================================================================
+vi.mock("@/lib/weletic/loyalty/delivery-admission", () => ({
+  admitRetainedLoyaltyDelivery: vi.fn(),
+}));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     weleticLoyaltyOutboxJob: {

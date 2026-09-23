@@ -9,6 +9,11 @@ import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopif
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import {
+  reviewCollectionPolicySchema,
+  reviewCollectionWriteInputSchema,
+  type ReviewCollectionWriteInput,
+} from "./collection-contract";
+import {
   ReviewError,
   reviewModerationSchema,
   reviewSettingsSchema,
@@ -31,6 +36,10 @@ import {
   type ReviewModuleToggle,
 } from "./module-contract";
 import { assertReviewPurchase, reviewRequestInclude } from "./purchase";
+import {
+  disableReviewRemindersInTransaction,
+  eraseReviewReminderMaterialInTransaction,
+} from "./reminder-retention";
 import { readUsableReviewRequest } from "./requests";
 import { withReviewMutation } from "./transaction";
 
@@ -78,15 +87,39 @@ export async function toggleReviewModuleInTransaction(
   return writeReviewSettings(tx, storeId, null, moduleToggle);
 }
 
+/** Caller owns the store/program fence and commits actor authorization in this
+ * transaction. Collection edits cannot toggle module or incentive activation.
+ */
+export async function updateReviewCollectionInTransaction(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+  input: unknown,
+) {
+  const collection = reviewCollectionWriteInputSchema.parse(input);
+  await assertShopifyStoreAcceptsOperationalWrites({
+    tx,
+    storeId,
+    action: "native_reviews",
+    expectedInstallationGeneration: collection.expectedInstallationGeneration,
+  });
+  return writeReviewSettings(tx, storeId, null, undefined, collection);
+}
+
 async function writeReviewSettings(
   tx: Prisma.TransactionClient,
   storeId: string,
   parsed: ReturnType<typeof reviewSettingsSchema.parse> | null,
   moduleToggle?: ReviewModuleToggle,
+  collection?: ReviewCollectionWriteInput,
 ) {
   const previous = await tx.weleticReviewSettings.findUnique({
     where: { storeId },
   });
+  const revision = previous?.collectionRevision ?? 0;
+  if (!Number.isInteger(revision) || revision < 0 || revision >= 2147483647)
+    throw new ReviewError("conflict", "Review collection revision unavailable");
+  if (collection && revision !== collection.expectedRevision)
+    throw new ReviewError("conflict", "Review collection settings changed");
   if (
     moduleToggle &&
     (previous?.updatedAt.toISOString() ?? null) !==
@@ -99,23 +132,44 @@ async function writeReviewSettings(
   const data =
     parsed ??
     reviewSettingsSchema.parse({
-      enabled: moduleToggle!.enabled,
-      sendAfterDays: previous?.sendAfterDays ?? 7,
-      expiresAfterDays: previous?.expiresAfterDays ?? 30,
-      autoPublish: previous?.autoPublish ?? false,
-      photoUploadsEnabled: previous?.photoUploadsEnabled ?? true,
-      requestEmailEnabled: previous?.requestEmailEnabled ?? false,
+      enabled: collection ? previous?.enabled ?? false : moduleToggle!.enabled,
+      sendAfterDays:
+        collection?.policy.sendAfterDays ?? previous?.sendAfterDays ?? 7,
+      expiresAfterDays:
+        collection?.policy.expiresAfterDays ?? previous?.expiresAfterDays ?? 30,
+      autoPublish:
+        collection?.policy.autoPublish ?? previous?.autoPublish ?? false,
+      photoUploadsEnabled:
+        collection?.policy.photoUploadsEnabled ??
+        previous?.photoUploadsEnabled ??
+        true,
+      requestEmailEnabled:
+        collection?.policy.requestEmailEnabled ??
+        previous?.requestEmailEnabled ??
+        false,
     });
+  const { enabled: _enabled, ...fields } = data;
+  const policy = reviewCollectionPolicySchema.parse({
+    ...fields,
+    reminderAfterDays:
+      collection?.policy.reminderAfterDays ?? previous?.reminderAfterDays ?? [],
+  });
   const settings = await tx.weleticReviewSettings.upsert({
     where: { storeId },
     create: {
       storeId,
       ...data,
+      collectionRevision: revision + 1,
+      reminderAfterDays: policy.reminderAfterDays,
       activatedAt: data.enabled ? new Date() : null,
     },
     update: {
       ...data,
-      ...(data.enabled && !previous?.enabled
+      collectionRevision: revision + 1,
+      reminderAfterDays: policy.reminderAfterDays,
+      ...(data.enabled &&
+      (!previous?.enabled ||
+        (data.requestEmailEnabled && !previous?.requestEmailEnabled))
         ? { activatedAt: new Date() }
         : {}),
     },
@@ -137,6 +191,7 @@ async function writeReviewSettings(
     });
   }
   if (!data.enabled || !data.requestEmailEnabled) {
+    await disableReviewRemindersInTransaction(tx, storeId);
     // Disabling email stops unfinished sends, but keeps already-sent tokens
     // usable while native reviews themselves remain enabled.
     await tx.weleticReviewRequest.updateMany({
@@ -341,6 +396,12 @@ export async function submitNativeReview(storeId: string, input: unknown) {
     });
     if (consumed.count !== 1)
       throw new ReviewError("conflict", "Review request has already been used");
+    if (request.reminderSnapshot || request.encryptedReminderToken)
+      await eraseReviewReminderMaterialInTransaction(tx, {
+        storeId,
+        requestIds: [request.id],
+        reason: "submitted",
+      });
     const review = await tx.weleticProductReview.create({
       data: {
         id: createWeleticId("wreview_"),

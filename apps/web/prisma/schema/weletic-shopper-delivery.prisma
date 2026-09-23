@@ -1,0 +1,41 @@
+enum WeleticShopperDeliveryState {
+  attempted
+  sent
+}
+
+model WeleticShopperDeliveryReservation {
+  id                     String                       @id @db.VarChar(64)
+  storeId                String
+  installationGeneration String                       @db.VarChar(64)
+  producer               String                       @db.VarChar(32)
+  provider               String                       @db.VarChar(16)
+  contentDigest          String                       @db.VarChar(64)
+  state                  WeleticShopperDeliveryState  @default(attempted)
+  capacityAt             DateTime
+  expiresAt              DateTime?
+  retryUntil             DateTime
+  attemptedAt            DateTime?
+  sentAt                 DateTime?
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+
+  store      WeleticShopifyStore             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  identities WeleticShopperDeliveryIdentity[]
+
+  @@unique([storeId, id])
+  @@index([storeId, capacityAt, id], map: "wl_delivery_capacity_idx")
+}
+
+model WeleticShopperDeliveryIdentity {
+  id            String                              @id @db.VarChar(64)
+  storeId       String
+  reservationId String                              @db.VarChar(64)
+  identityKind  WeleticCustomerPrivacyIdentityKind
+  identityKeyId String                              @db.VarChar(64)
+  customerDigest String                             @db.VarChar(64)
+
+  reservation WeleticShopperDeliveryReservation @relation(fields: [storeId, reservationId], references: [storeId, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([storeId, reservationId, identityKind, identityKeyId], map: "wl_delivery_identity_unique")
+  @@index([storeId, identityKind, identityKeyId, customerDigest], map: "wl_delivery_identity_lookup_idx")
+}

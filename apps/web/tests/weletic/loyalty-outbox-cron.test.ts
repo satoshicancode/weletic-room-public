@@ -15,7 +15,12 @@ const points = vi.fn();
 const tiers = vi.fn();
 const rewards = vi.fn();
 const retention = vi.fn();
+const storeRetention = vi.fn();
 const reviewRecovery = vi.fn();
+const reminders = vi.fn();
+vi.mock("@/lib/weletic/reviews/reminder-scheduler", () => ({
+  enqueueReviewReminderJobs: reminders,
+}));
 const processJobs = vi.fn();
 vi.mock("@/lib/weletic/loyalty/points-expiry-scheduler", () => ({
   enqueuePointsExpiryLifecycleJobs: points,
@@ -32,6 +37,9 @@ vi.mock("@/lib/weletic/loyalty/outbox", () => ({
 vi.mock("@/lib/weletic/reviews/delivery-retention", () => ({
   clearExpiredReviewDeliveryEvidence: retention,
 }));
+vi.mock("@/lib/weletic/reviews/store-delivery-retention", () => ({
+  clearExpiredStoreReviewDeliveryEvidence: storeRetention,
+}));
 vi.mock("@/lib/weletic/reviews/points-recovery-sweep", () => ({
   enqueueReviewPointsRecoverySweep: reviewRecovery,
 }));
@@ -44,7 +52,9 @@ beforeEach(() => {
   tiers.mockResolvedValue({ tiers: true });
   rewards.mockResolvedValue({ rewards: true });
   retention.mockResolvedValue({ scanned: 0, cleared: 0 });
+  storeRetention.mockResolvedValue({ scanned: 0, cleared: 0, deferred: 0 });
   reviewRecovery.mockResolvedValue({ scanned: 0, enqueued: 0, deferred: 0 });
+  reminders.mockResolvedValue({ scanned: 0, enqueued: 0 });
   processJobs.mockResolvedValue({ processed: 0 });
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -78,7 +88,9 @@ test.each(["GET", "POST"])(
       tiers,
       rewards,
       retention,
+      storeRetention,
       reviewRecovery,
+      reminders,
       processJobs,
     ]) {
       expect(work).not.toHaveBeenCalled();
@@ -96,7 +108,15 @@ test.each([
   "runs all sweeps before dispatch with bounded input %s",
   async (query, size) => {
     processJobs.mockImplementation(async () => {
-      for (const sweep of [points, tiers, rewards, retention, reviewRecovery]) {
+      for (const sweep of [
+        points,
+        tiers,
+        rewards,
+        retention,
+        storeRetention,
+        reviewRecovery,
+        reminders,
+      ]) {
         expect(sweep).toHaveBeenCalledWith({ batchSize: size });
       }
       return { processed: 0 };
@@ -108,7 +128,9 @@ test.each([
       tierSweep: { tiers: true },
       rewardExpirySweep: { rewards: true },
       reviewRetention: { scanned: 0, cleared: 0 },
+      storeReviewRetention: { scanned: 0, cleared: 0, deferred: 0 },
       reviewPointsRecovery: { scanned: 0, enqueued: 0, deferred: 0 },
+      reviewReminders: { scanned: 0, enqueued: 0 },
       outbox: { processed: 0 },
     });
     expect(processJobs).toHaveBeenCalledWith({

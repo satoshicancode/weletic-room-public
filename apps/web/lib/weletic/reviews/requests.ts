@@ -11,6 +11,8 @@ import {
   assertReviewPurchaseNotSuppressed,
   reviewRequestInclude,
 } from "./purchase";
+import { eraseReviewReminderMaterialInTransaction } from "./reminder-retention";
+import { snapshotReviewReminderSchedule } from "./reminder-schedule";
 import { withReviewMutation } from "./transaction";
 
 /** Called only with an authenticated orders/fulfilled event. Missing paid-order
@@ -35,7 +37,7 @@ export async function createFulfilledReviewRequests({
         where: { storeId },
       });
       if (!settings?.enabled || !settings.requestEmailEnabled) return [];
-      // Never backfill review email sends merely by enabling the module.
+      // Never backfill review email sends by enabling the module or collection.
       if (!settings.activatedAt || fulfilledAt < settings.activatedAt)
         return [];
       if (
@@ -76,20 +78,28 @@ export async function createFulfilledReviewRequests({
       const results: string[] = [];
       // An order's first invitation fixes its policy for later product groups.
       // In particular, partially fulfilled legacy orders cannot cross cutover.
-      const orderRequests = await tx.weleticReviewRequest.findMany({
-        where: { storeId, orderId: order.id },
-        select: { incentivePolicyId: true },
-      });
-      const orderPolicies = new Set(
-        orderRequests.map((request) => request.incentivePolicyId),
-      );
+      const [orderRequests, storeRequest] = await Promise.all([
+        tx.weleticReviewRequest.findMany({
+          where: { storeId, orderId: order.id },
+          select: { incentivePolicyId: true },
+        }),
+        tx.weleticStoreReviewRequest.findUnique({
+          where: { storeId_orderId: { storeId, orderId: order.id } },
+          select: { incentivePolicyId: true },
+        }),
+      ]);
+      const savedPolicies = [
+        ...orderRequests.map((request) => request.incentivePolicyId),
+        ...(storeRequest ? [storeRequest.incentivePolicyId] : []),
+      ];
+      const orderPolicies = new Set(savedPolicies);
       if (orderPolicies.size > 1)
         throw new ReviewError(
           "unavailable",
           "Order review policies require reconciliation",
         );
-      const incentivePolicyId = orderRequests.length
-        ? orderRequests[0].incentivePolicyId
+      const incentivePolicyId = savedPolicies.length
+        ? savedPolicies[0]
         : await reviewPolicyAtOrderTime(
             tx,
             storeId,
@@ -129,6 +139,17 @@ export async function createFulfilledReviewRequests({
             fulfilledAt,
             sendAt,
             expiresAt,
+            reminderSnapshot: snapshotReviewReminderSchedule(
+              {
+                sendAfterDays: settings.sendAfterDays,
+                expiresAfterDays: settings.expiresAfterDays,
+                autoPublish: settings.autoPublish,
+                photoUploadsEnabled: settings.photoUploadsEnabled,
+                requestEmailEnabled: settings.requestEmailEnabled,
+                reminderAfterDays: settings.reminderAfterDays ?? [],
+              },
+              settings.collectionRevision ?? 0,
+            ),
             lines: {
               create: lines.map((line) => ({
                 id: createWeleticId("wrevline_"),
@@ -292,6 +313,12 @@ async function cancelReviewRequestsInTransaction(
       },
       data: { status: "cancelled", lockedAt: null, lockedBy: null },
     });
+    if (request.reminderSnapshot || request.encryptedReminderToken)
+      await eraseReviewReminderMaterialInTransaction(tx, {
+        storeId,
+        requestIds: [request.id],
+        reason: "purchase_ineligible",
+      });
   }
 }
 

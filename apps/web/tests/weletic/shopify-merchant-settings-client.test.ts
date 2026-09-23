@@ -11,6 +11,7 @@ const view = {
     accentColor: null,
     defaultLocale: "en",
     timeZone: null,
+    shopperDeliveryPolicy: null,
     shopperEmailPaused: true,
   },
   branding: { name: "Weletic", source: "default" },
@@ -75,6 +76,51 @@ describe("validated shared-settings browser client", () => {
     fetcher.mockResolvedValue(Response.json(response));
     await expect(client().save(update)).rejects.toThrow("unavailable");
     expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it("acknowledges structurally equal JSON policies and rejects altered limits", async () => {
+    const policy = {
+      version: 1 as const,
+      quietHours: { startMinute: 1320, endMinute: 480 },
+      maxMessagesPer24Hours: 3,
+    };
+    const result = {
+      ...view,
+      settings: {
+        ...view.settings,
+        timeZone: "Asia/Tokyo",
+        shopperDeliveryPolicy: policy,
+      },
+    };
+    const input = {
+      ...update,
+      settings: { timeZone: "Asia/Tokyo", shopperDeliveryPolicy: policy },
+    };
+    fetcher.mockImplementation(async () => Response.json(result));
+    expect(await client().save(input)).toEqual(result);
+    fetcher.mockImplementation(async () =>
+      Response.json({
+        ...result,
+        settings: {
+          ...result.settings,
+          shopperDeliveryPolicy: { ...policy, maxMessagesPer24Hours: 4 },
+        },
+      }),
+    );
+    await expect(client().save(input)).rejects.toThrow("unavailable");
+  });
+  it("does not interpret a missing or malformed policy as unconfigured", async () => {
+    for (const policy of [
+      undefined,
+      { version: 2, quietHours: null, maxMessagesPer24Hours: null },
+    ]) {
+      fetcher.mockImplementation(async () =>
+        Response.json({
+          ...view,
+          settings: { ...view.settings, shopperDeliveryPolicy: policy },
+        }),
+      );
+      await expect(client().read()).rejects.toThrow("unavailable");
+    }
   });
   it("validates before obtaining authority or sending", async () => {
     await expect(

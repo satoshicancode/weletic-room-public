@@ -11,6 +11,7 @@ model WeleticMerchantSettings {
   // Applies only to Weletic shopper producers, not Dub partner communications.
   // False preserves each existing producer's own eligibility/consent gates.
   shopperEmailPaused Boolean  @default(false)
+  shopperDeliveryPolicy Json? @db.Json
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

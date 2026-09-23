@@ -22,18 +22,25 @@ vi.mock("@/lib/api/links/cache", () => ({ linkCache: {} }));
 describe("shared merchant settings on isolated MySQL", () => {
   beforeAll(async () => {
     const url = new URL(process.env.DATABASE_URL || "invalid:");
+    const isolatedSuffix =
+      /^\/weletic_loyalty_it_settings_([a-f0-9]{12})$/.exec(url.pathname)?.[1];
+    const allowedPrincipal = isolatedSuffix
+      ? `wr_${isolatedSuffix}`
+      : "loyalty_dev";
     if (
       process.env.MERCHANT_SETTINGS_DATABASE_INTEGRATION !== "1" ||
       url.protocol !== "mysql:" ||
       url.hostname !== "127.0.0.1" ||
       url.port !== "3307" ||
-      url.username !== "loyalty_dev" ||
-      url.pathname !== "/weletic_loyalty_dev"
+      url.username !== allowedPrincipal ||
+      (!isolatedSuffix && url.pathname !== "/weletic_loyalty_dev")
     )
       throw new Error("Refusing non-isolated merchant settings database");
     expect(
       await database.$queryRaw`SELECT DATABASE() AS name, CURRENT_USER() AS principal`,
-    ).toEqual([{ name: "weletic_loyalty_dev", principal: "loyalty_dev@%" }]);
+    ).toEqual([
+      { name: url.pathname.slice(1), principal: `${allowedPrincipal}@%` },
+    ]);
     safeToClean = true;
     vi.stubEnv(
       "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS",
@@ -56,6 +63,8 @@ describe("shared merchant settings on isolated MySQL", () => {
       await database.weleticReviewRequest.deleteMany({ where });
       await database.weleticReviewSettings.deleteMany({ where });
       await database.weleticLoyaltyReferral.deleteMany({ where });
+      await database.weleticShopperDeliveryIdentity.deleteMany({ where });
+      await database.weleticShopperDeliveryReservation.deleteMany({ where });
       await database.weleticMerchantSettings.deleteMany({ where });
       await database.weleticShopifyStore.deleteMany({
         where: { id: { in: stores } },
@@ -239,6 +248,219 @@ describe("shared merchant settings on isolated MySQL", () => {
       role,
     );
   }
+  const deliveryPolicy = {
+    version: 1,
+    quietHours: null,
+    maxMessagesPer24Hours: 2,
+  };
+  it("requires an effective timezone and clears the policy as SQL NULL atomically", async () => {
+    const f = await seed();
+    await expect(
+      save(f.workspaceId, { shopperDeliveryPolicy: deliveryPolicy }),
+    ).rejects.toMatchObject({ code: "bad_request" });
+    expect((await read(f.workspaceId)).revision).toBe(0);
+    const saved = await save(f.workspaceId, {
+      timeZone: "Asia/Tokyo",
+      shopperDeliveryPolicy: deliveryPolicy,
+      shopperEmailPaused: true,
+    });
+    expect(saved.settings).toMatchObject({
+      timeZone: "Asia/Tokyo",
+      shopperDeliveryPolicy: deliveryPolicy,
+    });
+    await expect(
+      save(f.workspaceId, { timeZone: null }, 1),
+    ).rejects.toMatchObject({ code: "bad_request" });
+    expect((await read(f.workspaceId)).revision).toBe(1);
+    await save(
+      f.workspaceId,
+      {
+        shopperDeliveryPolicy: { ...deliveryPolicy, maxMessagesPer24Hours: 3 },
+      },
+      1,
+    );
+    const cleared = await save(
+      f.workspaceId,
+      { shopperDeliveryPolicy: null, timeZone: null },
+      2,
+    );
+    expect(cleared).toMatchObject({
+      revision: 3,
+      settings: {
+        timeZone: null,
+        shopperDeliveryPolicy: null,
+        shopperEmailPaused: true,
+      },
+    });
+    const rows = await database.$queryRaw<
+      { isNull: bigint }[]
+    >`SELECT shopperDeliveryPolicy IS NULL AS isNull FROM WeleticMerchantSettings WHERE storeId = ${f.storeId}`;
+    expect(Number(rows[0].isNull)).toBe(1);
+  });
+  it("permits an explicit revision-fenced repair of malformed stored policy without treating it as unconfigured", async () => {
+    const f = await seed();
+    await database.weleticMerchantSettings.create({
+      data: {
+        storeId: f.storeId,
+        revision: 1,
+        shopperDeliveryPolicy: { version: 999 },
+      },
+    });
+    await expect(read(f.workspaceId)).rejects.toMatchObject({
+      name: "ZodError",
+    });
+    await expect(
+      save(
+        f.workspaceId,
+        { shopperDeliveryPolicy: null, shopperEmailPaused: true },
+        0,
+      ),
+    ).rejects.toMatchObject({ code: "conflict" });
+    const repaired = await save(
+      f.workspaceId,
+      { shopperDeliveryPolicy: null, shopperEmailPaused: true },
+      1,
+    );
+    expect(repaired).toMatchObject({
+      revision: 2,
+      settings: { shopperDeliveryPolicy: null, shopperEmailPaused: true },
+    });
+  });
+  it("serializes a timezone clear competing with policy activation", async () => {
+    const f = await seed();
+    await save(f.workspaceId, { timeZone: "UTC" });
+    const results = await Promise.allSettled([
+      save(f.workspaceId, { timeZone: null }, 1),
+      save(f.workspaceId, { shopperDeliveryPolicy: deliveryPolicy }, 1),
+    ]);
+    expect(
+      results.filter((result) => result.status === "fulfilled"),
+    ).toHaveLength(1);
+    expect(
+      results.find((result) => result.status === "rejected"),
+    ).toMatchObject({ reason: { code: "conflict" } });
+    const result = await read(f.workspaceId);
+    expect(result.revision).toBe(2);
+    expect(
+      result.settings.shopperDeliveryPolicy === null ||
+        result.settings.timeZone === "UTC",
+    ).toBe(true);
+  });
+  it("rolls back policy and timezone with the caller transaction", async () => {
+    const f = await seed();
+    const { updateMerchantSettingsInTransaction } = await import(
+      "../../lib/weletic/merchant-settings/service"
+    );
+    await expect(
+      database.$transaction(async (tx) => {
+        await updateMerchantSettingsInTransaction({
+          tx,
+          storeId: f.storeId,
+          workspaceId: f.workspaceId,
+          input: {
+            expectedRevision: 0,
+            expectedInstallationGeneration: "g1",
+            settings: {
+              timeZone: "UTC",
+              shopperDeliveryPolicy: deliveryPolicy,
+            },
+          },
+        });
+        throw new Error("caller rollback");
+      }),
+    ).rejects.toThrow("caller rollback");
+    expect(await read(f.workspaceId)).toMatchObject({
+      revision: 0,
+      settings: { timeZone: null, shopperDeliveryPolicy: null },
+    });
+  });
+  it("applies saved limits to the next admission without resetting existing capacity or queuing history", async () => {
+    const f = await seed();
+    const core = await import(
+      "../../lib/weletic/merchant-settings/delivery-reservations"
+    );
+    const now = new Date();
+    const input = {
+      storeId: f.storeId,
+      installationGeneration: "g1",
+      producer: "referral_confirmation" as const,
+      sourceKey: randomUUID(),
+      provider: "resend" as const,
+      contentDigest: core.shopperDeliveryContentDigest({ html: "fixture" }),
+      email: "budget@example.test",
+      shopifyCustomerId: null,
+      expiresAt: null,
+      retryUntil: new Date(now.getTime() + 23 * 3600_000),
+    };
+    const admit = (sourceKey: string) =>
+      database.$transaction((tx) =>
+        core.admitShopperDeliveryInTransaction({
+          tx,
+          input: { ...input, sourceKey },
+          now,
+        }),
+      );
+    await admit(input.sourceKey);
+    await save(f.workspaceId, {
+      timeZone: "UTC",
+      shopperDeliveryPolicy: { ...deliveryPolicy, maxMessagesPer24Hours: 1 },
+    });
+    await expect(admit(randomUUID())).rejects.toBeInstanceOf(
+      core.ShopperDeliveryDeferredError,
+    );
+    await save(f.workspaceId, { shopperDeliveryPolicy: null }, 1);
+    await admit(randomUUID());
+    await save(f.workspaceId, { shopperDeliveryPolicy: deliveryPolicy }, 2);
+    await expect(admit(randomUUID())).rejects.toBeInstanceOf(
+      core.ShopperDeliveryDeferredError,
+    );
+    expect(
+      await database.weleticShopperDeliveryReservation.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(2);
+    expect(
+      await database.weleticLoyaltyOutboxJob.count({
+        where: { storeId: f.storeId },
+      }),
+    ).toBe(0);
+    expect((await read(f.workspaceId)).modules).toMatchObject({
+      loyalty: { status: "not_configured" },
+      reviews: { enabled: false },
+    });
+  });
+  it("rejects foreign, stale and nonowner policy writes", async () => {
+    const f = await seed();
+    const foreign = await seed();
+    const settings = { timeZone: "UTC", shopperDeliveryPolicy: deliveryPolicy };
+    await expect(
+      save(f.workspaceId, settings, 0, "member"),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    await expect(
+      save(f.workspaceId, settings, 0, "owner", "old"),
+    ).rejects.toMatchObject({
+      complianceState: "stale_installation_generation",
+    });
+    const { updateMerchantSettingsInTransaction } = await import(
+      "../../lib/weletic/merchant-settings/service"
+    );
+    await expect(
+      database.$transaction((tx) =>
+        updateMerchantSettingsInTransaction({
+          tx,
+          storeId: f.storeId,
+          workspaceId: foreign.workspaceId,
+          input: {
+            expectedRevision: 0,
+            expectedInstallationGeneration: "g1",
+            settings,
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect((await read(f.workspaceId)).revision).toBe(0);
+    expect((await read(foreign.workspaceId)).revision).toBe(0);
+  });
   it("reads defaults without creating any program or settings row", async () => {
     const f = await seed();
     const result = await read(f.workspaceId);

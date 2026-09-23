@@ -39,6 +39,7 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
       "HISTORICAL_IMPORT_COMMIT",
       "HISTORICAL_IMPORT_ROLLBACK",
       "REVIEW_POINTS_RECOVERY",
+      "ANONYMOUS_REFERRAL_EMAIL",
     ]);
     const expansion = readFileSync(
       new URL(
@@ -69,7 +70,7 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
         communicationEnum[1].matchAll(/'([^']+)'/g),
         (match) => match[1],
       ),
-    ).toEqual(prismaLabels.slice(0, -3));
+    ).toEqual(prismaLabels.slice(0, -4));
     const recoveryExpansion = readFileSync(
       new URL(
         "../../../../infra/shopify-development/migrations/20260920_review_points_recovery.sql",
@@ -84,6 +85,21 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
       throw new Error("Review recovery enum expansion missing");
     expect(
       Array.from(recoveryEnum[1].matchAll(/'([^']+)'/g), (match) => match[1]),
+    ).toEqual(prismaLabels.slice(0, -1));
+    const deliveryExpansion = readFileSync(
+      new URL(
+        "../../../../infra/shopify-development/migrations/20260923_shopper_delivery_budget.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const deliveryEnum = deliveryExpansion.match(
+      /MODIFY COLUMN `jobType` ENUM\(([^)]+)\)/,
+    );
+    if (!deliveryEnum)
+      throw new Error("Shared delivery enum expansion missing");
+    expect(
+      Array.from(deliveryEnum[1].matchAll(/'([^']+)'/g), (match) => match[1]),
     ).toEqual(prismaLabels);
     expect(sqlLabels).toEqual(
       expect.arrayContaining([

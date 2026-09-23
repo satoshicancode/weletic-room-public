@@ -4,6 +4,7 @@ import {
   reviewIncentivePolicyDigest,
   reviewIncentivePolicySnapshotSchema,
 } from "@/lib/weletic/reviews/incentive-policy";
+import { assertStoreReviewClaimEvidence } from "@/lib/weletic/reviews/store-claim-evidence";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { hasShopifyCustomerPrivacyTombstone } from "@/lib/weletic/shopify/privacy-identity";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
@@ -117,7 +118,7 @@ export async function provisionShopperReviewCoupon({
       !redemption?.shopper ||
       !claim ||
       !settings?.enabled ||
-      claim.subjectType !== "product" ||
+      !["product", "store"].includes(claim.subjectType) ||
       claim.order.storeId !== storeId ||
       claim.order.shopperId !== claim.shopperId ||
       redemption.accountId !== null ||
@@ -148,22 +149,30 @@ export async function provisionShopperReviewCoupon({
       })
     )
       throw new Error("Shopper coupon owner is privacy suppressed");
-    const review = await tx.weleticProductReview.findFirst({
-      where: {
-        id: claim.sourceReviewId,
-        storeId,
-        shopperId: claim.shopperId,
-        redactedAt: null,
-        status: { not: "redacted" },
-        participationStatus: { not: "invalid" },
-        request: {
-          storeId,
-          orderId: claim.orderId,
-          incentivePolicyId: claim.policyId,
-        },
-      },
-      select: { id: true },
-    });
+    const review =
+      claim.subjectType === "store"
+        ? await assertStoreReviewClaimEvidence({
+            tx,
+            storeId,
+            generation: payload.installationGeneration,
+            claim,
+          })
+        : await tx.weleticProductReview.findFirst({
+            where: {
+              id: claim.sourceReviewId,
+              storeId,
+              shopperId: claim.shopperId,
+              redactedAt: null,
+              status: { not: "redacted" },
+              participationStatus: { not: "invalid" },
+              request: {
+                storeId,
+                orderId: claim.orderId,
+                incentivePolicyId: claim.policyId,
+              },
+            },
+            select: { id: true },
+          });
     if (!review)
       throw new Error("Review participation requires reconciliation");
     const metadata = metadataSchema.parse(redemption.metadata);
@@ -392,7 +401,7 @@ export async function provisionShopperReviewCoupon({
             where: { id: current.claim.id },
             data: { status: "fulfilled" },
           });
-          const reviewed = await tx.weleticProductReview.updateMany({
+          const reviewMarker = {
             where: {
               id: current.claim.sourceReviewId,
               storeId,
@@ -405,7 +414,11 @@ export async function provisionShopperReviewCoupon({
               rewardStatus: "awarded",
               rewardReason: "review_coupon_fulfilled",
             },
-          });
+          } satisfies Prisma.WeleticProductReviewUpdateManyArgs;
+          const reviewed =
+            current.claim.subjectType === "store"
+              ? await tx.weleticStoreReview.updateMany(reviewMarker)
+              : await tx.weleticProductReview.updateMany(reviewMarker);
           if (reviewed.count !== 1)
             throw new Error(
               "Review participation record requires reconciliation",

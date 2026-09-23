@@ -4,6 +4,7 @@ import { loadShopifyPrivacyHmacKeyring } from "../shopify/privacy-identity";
 import { assertShopifyStoreAcceptsOperationalWrites } from "../shopify/store-compliance-state";
 import { reviewPrivacyKeySetDigest } from "./privacy-owner-contract";
 import { redactReviewOwnerPrivacyProjection } from "./privacy-owner-redact";
+import { reviewPrivacyOwnerSources } from "./privacy-owner-sources";
 import {
   replaceReviewOwnerPrivacyProjection,
   ReviewOwnerPrivacySuppressedError,
@@ -95,8 +96,7 @@ export async function backfillReviewOwnerPrivacyPage({
     });
     return tx.weleticShopper.findMany({
       where: {
-        storeId,
-        nativeReviews: { some: { storeId } },
+        ...reviewPrivacyOwnerSources(storeId),
         ...(checkpoint ? { id: { gt: checkpoint.afterShopperId } } : {}),
       },
       select: { id: true },

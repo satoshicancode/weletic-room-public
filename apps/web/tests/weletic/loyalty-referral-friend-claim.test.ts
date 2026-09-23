@@ -37,6 +37,18 @@ const emailMocks = vi.hoisted(() => ({
   prepared: vi.fn(),
 }));
 
+vi.mock(
+  "@/lib/weletic/merchant-settings/delivery-reservations",
+  async (original) => ({
+    ...(await original<
+      typeof import("@/lib/weletic/merchant-settings/delivery-reservations")
+    >()),
+    admitShopperDeliveryInTransaction: vi
+      .fn()
+      .mockResolvedValue({ id: "budget", status: "attempted" }),
+    confirmShopperDeliveryInTransaction: vi.fn(),
+  }),
+);
 vi.mock("@/lib/prisma", () => {
   const prismaMock: any = {
     $queryRaw: vi.fn(
@@ -161,6 +173,9 @@ vi.mock("@/lib/weletic/loyalty/ledger", () => ({
 
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({
   enqueueOutboxJob: vi.fn().mockResolvedValue({ id: "job_1" }),
+  enqueueOutboxJobFromProgramTransaction: vi
+    .fn()
+    .mockResolvedValue({ id: "job_confirm" }),
 }));
 
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({

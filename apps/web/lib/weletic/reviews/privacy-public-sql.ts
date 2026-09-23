@@ -14,11 +14,15 @@ function buildReviewPrivacySql({
   storeId,
   productId,
   installationGeneration,
+  subject = "product",
+  merchant = false,
   keyring = loadShopifyPrivacyHmacKeyring(),
 }: {
   storeId: string;
   productId?: string;
   installationGeneration: string;
+  subject?: "product" | "store";
+  merchant?: boolean;
   keyring?: ShopifyPrivacyHmacKeyring;
 }) {
   for (const value of [
@@ -33,15 +37,24 @@ function buildReviewPrivacySql({
     throw new Error("Review public privacy generation invalid");
   const keySetDigest = reviewPrivacyKeySetDigest(keyring);
   const keys = Prisma.join(keyring.all.map((key) => key.identityKeyId));
-  const from = Prisma.sql`WeleticProductReview r`;
+  const from =
+    subject === "store"
+      ? Prisma.sql`WeleticStoreReview r`
+      : Prisma.sql`WeleticProductReview r`;
   const productScope =
     productId === undefined
       ? Prisma.empty
       : Prisma.sql`AND r.productId = ${productId}`;
   const base = Prisma.sql`r.storeId = ${storeId} ${productScope}
-    AND r.status = 'published' AND r.redactedAt IS NULL
-    AND EXISTS (SELECT 1 FROM WeleticShopifyProduct p
+    AND ${merchant ? Prisma.sql`r.status IN ('pending', 'published', 'hidden', 'rejected')` : Prisma.sql`r.status = 'published'`} AND r.redactedAt IS NULL
+    ${
+      subject === "product"
+        ? Prisma.sql`AND EXISTS (SELECT 1 FROM WeleticShopifyProduct p
       WHERE p.id = r.productId AND p.storeId = r.storeId AND p.status = 'active')
+    `
+        : Prisma.sql`AND EXISTS (SELECT 1 FROM WeleticStoreReviewSettings srs
+      WHERE srs.storeId = r.storeId AND srs.enabled = 1)`
+    }
     AND EXISTS (SELECT 1 FROM WeleticShopifyStore st
       JOIN WeleticReviewSettings rs ON rs.storeId = st.id
       WHERE st.id = r.storeId AND st.complianceState = 'active'
@@ -112,4 +125,30 @@ export function buildReviewStorePrivacySql(input: {
   keyring?: ShopifyPrivacyHmacKeyring;
 }) {
   return buildReviewPrivacySql(input);
+}
+
+/** Store-experience feedback uses the same owner predicate for rows and totals.
+ * This is distinct from the cross-product inspection helper above. Unowned
+ * imported content remains unknown until an approved owner contract exists.
+ */
+export function buildStoreReviewPublicPrivacySql(input: {
+  storeId: string;
+  installationGeneration: string;
+  keyring?: ShopifyPrivacyHmacKeyring;
+}) {
+  return buildReviewPrivacySql({
+    storeId: input.storeId,
+    installationGeneration: input.installationGeneration,
+    keyring: input.keyring,
+    subject: "store",
+  });
+}
+
+/** Merchant moderation uses the same complete owner-readiness predicate. */
+export function buildStoreReviewMerchantPrivacySql(input: {
+  storeId: string;
+  installationGeneration: string;
+  keyring?: ShopifyPrivacyHmacKeyring;
+}) {
+  return buildReviewPrivacySql({ ...input, subject: "store", merchant: true });
 }

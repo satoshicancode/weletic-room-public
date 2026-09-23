@@ -69,6 +69,10 @@ import {
   VoucherCleanupRetryableError,
 } from "@/lib/weletic/loyalty/voucher-privacy-cleanup";
 import { ShopperEmailPausedError } from "@/lib/weletic/merchant-settings/communications";
+import {
+  ShopperDeliveryDeferredError,
+  ShopperDeliveryReconciliationRequiredError,
+} from "@/lib/weletic/merchant-settings/delivery-reservations";
 import { reviewFlowCandidateWhere } from "@/lib/weletic/reviews/flow-candidates";
 import { REVIEW_FLOW_HANDLES } from "@/lib/weletic/reviews/flow-contract";
 import { ReviewFlowDeferredError } from "@/lib/weletic/reviews/flow-errors";
@@ -76,6 +80,10 @@ import {
   ReviewPointsRecoveryPendingError,
   ReviewPointsRecoveryReconciliationError,
 } from "@/lib/weletic/reviews/points-recovery-contract";
+import {
+  ReviewReminderDeferredError,
+  ReviewReminderReconciliationError,
+} from "@/lib/weletic/reviews/reminder-errors";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import {
   assertShopifyStoreAcceptsOperationalWrites,
@@ -1211,6 +1219,7 @@ export async function processOutboxJobsBatch(
         OR: [
           { jobType: "LOYALTY_COMMUNICATION" },
           { jobType: "REVIEW_REQUEST_EMAIL" },
+          { jobType: "ANONYMOUS_REFERRAL_EMAIL" },
           {
             jobType: "INACTIVITY_EXPIRY",
             OR: [
@@ -1391,6 +1400,17 @@ export async function processOutboxJobsBatch(
         summary.skipped++;
         continue;
       }
+      if (error instanceof ShopperDeliveryDeferredError) {
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: new Date(),
+          retryAt: error.retryAt,
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
       if (
         isLoyaltyMaintenanceBlockedError(error) ||
         error instanceof ShopperEmailPausedError
@@ -1399,6 +1419,20 @@ export async function processOutboxJobsBatch(
         // and the exact winning-lease fence; resume can retry the same event.
         await restoreOutboxClaimAfterMaintenanceDeferral({
           claim,
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
+      if (
+        candidate.jobType === "REVIEW_REQUEST_EMAIL" &&
+        error instanceof ReviewReminderDeferredError
+      ) {
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: new Date(),
+          retryAt: error.retryAt,
         });
         summary.processed--;
         summary.skipped++;
@@ -1416,10 +1450,12 @@ export async function processOutboxJobsBatch(
         error instanceof VoucherCleanupRetryableError;
       const terminalOutboxFailure =
         error instanceof ReviewPointsRecoveryReconciliationError ||
+        error instanceof ReviewReminderReconciliationError ||
         (error instanceof ShopifyFlowDispatchError && !error.retryable) ||
         error instanceof HistoricalImportExecutionContainedError ||
         error instanceof ExpiryDeliveryReconciliationRequiredError ||
-        error instanceof CommunicationDeliveryReconciliationRequiredError;
+        error instanceof CommunicationDeliveryReconciliationRequiredError ||
+        error instanceof ShopperDeliveryReconciliationRequiredError;
       const isExhausted =
         terminalOutboxFailure ||
         (currentAttempt >= candidate.maxAttempts &&
@@ -1559,6 +1595,15 @@ export async function executeOutboxJob(
   if (loyaltyMaintenancePermit !== undefined) {
     assertLoyaltyMaintenanceOwnerPermitAuthorization(loyaltyMaintenancePermit);
   }
+  if (job.jobType === "ANONYMOUS_REFERRAL_EMAIL") {
+    if (!deliveryClaim || deliveryClaim.candidate !== job)
+      throw new Error("Anonymous confirmation requires its worker claim");
+    const { resumeAnonymousReferralConfirmation } = await import(
+      "./anonymous-referral-confirmation"
+    );
+    await resumeAnonymousReferralConfirmation(deliveryClaim);
+    return;
+  }
   if (job.jobType === "REVIEW_POINTS_RECOVERY") {
     // Unlike legacy projection jobs, a blocked financial promise must never be
     // acknowledged as a successful no-op. Its handler owns strict validation,
@@ -1611,6 +1656,37 @@ export async function executeOutboxJob(
       payload?.handle === REVIEW_FLOW_HANDLES.PUBLISHED)
   ) {
     await handleFlowTrigger(job.storeId, job.payload, loyaltyMaintenancePermit);
+    return;
+  }
+  if (
+    job.jobType === "REVIEW_REQUEST_EMAIL" &&
+    (payload?.reminderId !== undefined || payload?.storeRequestId !== undefined)
+  ) {
+    // Review invitations must not inherit the blocked-store success no-op.
+    // Its dispatcher checks the same store/program fence under the customer lock.
+    const { executeNativeReviewJob } = await import(
+      "@/lib/weletic/reviews/worker"
+    );
+    try {
+      await executeNativeReviewJob(job);
+    } catch (error) {
+      if (isShopifyStoreOperationalWritesBlocked(error)) {
+        if (
+          !error.complianceState ||
+          ![
+            "suspended",
+            "pending_approval",
+            "frozen",
+            "currency_unverified",
+          ].includes(error.complianceState)
+        )
+          throw new ReviewReminderReconciliationError();
+        throw new ReviewReminderDeferredError(
+          new Date(Date.now() + 5 * 60_000),
+        );
+      }
+      throw error;
+    }
     return;
   }
   const operationalJob =

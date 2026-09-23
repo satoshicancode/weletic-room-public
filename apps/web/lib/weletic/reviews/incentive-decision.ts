@@ -33,7 +33,10 @@ export const reviewInvalidationAwardSchema = z.union([
 
 export const reviewInvalidationSnapshotSchema = z
   .object({
-    revision: z.literal("review_invalidation_v1"),
+    revision: z.enum([
+      "review_invalidation_v1",
+      "store_review_invalidation_v1",
+    ]),
     policyId: identifier,
     policyDigest: z.string().regex(/^[a-f0-9]{64}$/),
     sourceReviewId: identifier,
@@ -42,3 +45,10 @@ export const reviewInvalidationSnapshotSchema = z
     redemptionId: identifier.nullable(),
   })
   .strict();
+
+/** Keep product decision bytes unchanged; store decisions use a separate domain. */
+export function reviewInvalidationRevision(subjectType: string) {
+  if (subjectType === "product") return "review_invalidation_v1" as const;
+  if (subjectType === "store") return "store_review_invalidation_v1" as const;
+  throw new Error("Unknown review incentive subject");
+}

@@ -1,6 +1,8 @@
 import { decrypt, encrypt } from "@/lib/encryption";
+import { isShopperDeliveryError } from "@/lib/weletic/merchant-settings/delivery-reservations";
 import { Prisma, type WeleticLoyaltyOutboxJob } from "@prisma/client";
 import { z } from "zod";
+import { admitRetainedLoyaltyDelivery } from "./delivery-admission";
 import type { LoyaltyMaintenancePermit } from "./maintenance-write-fence";
 import {
   assertActiveLoyaltyAccountForMutation,
@@ -70,7 +72,7 @@ export async function retainExpiryDeliveryRequest({
   idempotencyKey,
   recipientEmail,
   prepare,
-  wallClockNow = new Date(),
+  wallClockNow: suppliedWallClockNow,
   loyaltyMaintenancePermit,
 }: {
   claim: ExpiryDeliveryClaim;
@@ -82,6 +84,7 @@ export async function retainExpiryDeliveryRequest({
   wallClockNow?: Date;
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
 }): Promise<ExpiryDeliveryRequest> {
+  const wallClockNow = suppliedWallClockNow ?? new Date();
   const job = claim.candidate;
   const payload = job.payload;
   if (
@@ -127,6 +130,28 @@ export async function retainExpiryDeliveryRequest({
         select: { id: true, updatedAt: true },
       });
       if (!current) throw unavailable();
+      const admit = (
+        request: { to: string },
+        preparedAt: Date,
+        priorAttempt: boolean,
+      ) =>
+        admitRetainedLoyaltyDelivery({
+          tx,
+          storeId: job.storeId,
+          installationGeneration: expectedInstallationGeneration,
+          accountId,
+          sourceKey: idempotencyKey,
+          producer: "points_expiry",
+          request,
+          preparedAt,
+          expiresAt:
+            typeof payload.expiryAt === "string"
+              ? new Date(payload.expiryAt)
+              : null,
+          now: suppliedWallClockNow,
+          priorAttempt,
+          loyaltyMaintenancePermit,
+        });
 
       if (payload.expiryDeliverySnapshot !== undefined) {
         try {
@@ -153,8 +178,10 @@ export async function retainExpiryDeliveryRequest({
             wallClockNow.getTime() - new Date(evidence.preparedAt).getTime();
           if (age < 0 || age >= SAFE_RETRY_WINDOW_MS)
             throw new ExpiryDeliveryReconciliationRequiredError();
+          await admit(evidence.request, new Date(evidence.preparedAt), true);
           return { request: evidence.request, payload };
         } catch (error) {
+          if (isShopperDeliveryError(error)) throw error;
           if (error instanceof ExpiryDeliveryRecipientChangedError) throw error;
           if (error instanceof ExpiryDeliveryReconciliationRequiredError)
             throw error;
@@ -162,6 +189,9 @@ export async function retainExpiryDeliveryRequest({
           throw unavailable();
         }
       }
+
+      if (claim.attempt > 1)
+        throw new ExpiryDeliveryReconciliationRequiredError();
 
       let ciphertext: string;
       let request: ExpiryDeliveryRequest;
@@ -190,6 +220,7 @@ export async function retainExpiryDeliveryRequest({
         data: { payload: nextPayload as Prisma.InputJsonObject },
       });
       if (updated.count !== 1) throw unavailable();
+      await admit(request, wallClockNow, false);
       return { request, payload: nextPayload };
     },
   });

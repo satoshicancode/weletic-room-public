@@ -23,6 +23,7 @@ const initial: MerchantSettings = {
     accentColor: null,
     timeZone: null,
     defaultLocale: "en",
+    shopperDeliveryPolicy: null,
     shopperEmailPaused: false,
   },
   branding: { name: "Legacy brand", source: "legacy_loyalty" },
@@ -133,6 +134,102 @@ describe("shared merchant settings screen", () => {
     });
     expect(container.textContent).toContain("Settings saved");
     expect((field("Brand name") as HTMLInputElement).value).toBe("New brand");
+  });
+  async function toggle(label: string) {
+    const input = field(label);
+    await act(async () => input.click());
+  }
+  async function submit() {
+    await act(async () =>
+      container
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+  }
+  it.each(["en", "ja", "vi"] as const)(
+    "configures explicit overnight quiet hours and a shared cap in %s",
+    async (locale) => {
+      await render();
+      await edit("Interface language", locale);
+      const text = merchantSettingsCopy[locale];
+      await toggle(text.deliveryEnabled);
+      await toggle(text.quietEnabled);
+      await edit(text.quietStart, "22:00");
+      await edit(text.quietEnd, "08:00");
+      await edit(text.messageLimit, "3");
+      await submit();
+      expect(transport.save).not.toHaveBeenCalled();
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        text.deliveryInvalid,
+      );
+      await edit(text.timeZone, "Asia/Tokyo");
+      await submit();
+      expect(transport.save).toHaveBeenCalledWith({
+        expectedRevision: 0,
+        expectedInstallationGeneration: "g1",
+        settings: {
+          timeZone: "Asia/Tokyo",
+          shopperDeliveryPolicy: {
+            version: 1,
+            quietHours: { startMinute: 1320, endMinute: 480 },
+            maxMessagesPer24Hours: 3,
+          },
+        },
+      });
+      expect(container.textContent).toContain(text.saved);
+      expect(field(text.messageLimit).value).toBe("3");
+    },
+  );
+  it("rejects equal quiet endpoints and fractional limits without sending", async () => {
+    data.settings.timeZone = "UTC";
+    await render();
+    await toggle(merchantSettingsCopy.en.deliveryEnabled);
+    await toggle(merchantSettingsCopy.en.quietEnabled);
+    await edit(merchantSettingsCopy.en.quietStart, "22:00");
+    await edit(merchantSettingsCopy.en.quietEnd, "22:00");
+    await submit();
+    expect(transport.save).not.toHaveBeenCalled();
+    await edit(merchantSettingsCopy.en.quietEnd, "08:00");
+    await edit(merchantSettingsCopy.en.messageLimit, "1.5");
+    await submit();
+    expect(transport.save).not.toHaveBeenCalled();
+  });
+  it("clears policy and timezone together without resuming paused email", async () => {
+    data.settings.timeZone = "UTC";
+    data.settings.shopperEmailPaused = true;
+    data.settings.shopperDeliveryPolicy = {
+      version: 1,
+      quietHours: null,
+      maxMessagesPer24Hours: 2,
+    };
+    await render();
+    await edit(merchantSettingsCopy.en.timeZone, "");
+    await submit();
+    expect(transport.save).not.toHaveBeenCalled();
+    await toggle(merchantSettingsCopy.en.deliveryEnabled);
+    await submit();
+    expect(transport.save).toHaveBeenCalledWith({
+      expectedRevision: 0,
+      expectedInstallationGeneration: "g1",
+      settings: { timeZone: null, shopperDeliveryPolicy: null },
+    });
+    expect(data.settings.shopperEmailPaused).toBe(true);
+  });
+  it("does not include an untouched configured policy in a branding-only save", async () => {
+    data.settings.timeZone = "UTC";
+    data.settings.shopperDeliveryPolicy = {
+      version: 1,
+      quietHours: { startMinute: 1320, endMinute: 480 },
+      maxMessagesPer24Hours: 3,
+    };
+    await render();
+    await edit("Brand name", "Brand only");
+    await submit();
+    expect(transport.save).toHaveBeenCalledWith(
+      expect.objectContaining({ settings: { brandName: "Brand only" } }),
+    );
   });
   it("keeps module operations separate from unsaved branding", async () => {
     await render();
@@ -305,7 +402,7 @@ describe("shared merchant settings screen", () => {
     expect(transport.read).toHaveBeenCalledTimes(1);
   });
   it.each(["en", "ja", "vi"] as const)(
-    "shows explicit stored-only timezone and policy caveats in %s",
+    "shows explicit timezone and policy guidance in %s",
     async (locale) => {
       await render();
       await edit("Interface language", locale);

@@ -4,10 +4,17 @@ import {
   readShopperCommunicationSettings,
   ShopperEmailPausedError,
 } from "@/lib/weletic/merchant-settings/communications";
+import {
+  admitShopperDeliveryInTransaction,
+  confirmShopperDeliveryInTransaction,
+  shopperDeliveryContentDigest,
+  type ShopperDeliveryIdentity,
+} from "@/lib/weletic/merchant-settings/delivery-reservations";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { resend } from "@dub/email/resend";
 import { randomUUID } from "node:crypto";
 import { generateReviewToken, hashReviewToken, ReviewError } from "./contracts";
+import { finalizeReviewDeliveryInTransaction } from "./delivery-finalization";
 import {
   openReviewDeliverySnapshot,
   reviewDeliveryProviderKey,
@@ -150,6 +157,7 @@ async function deliverReviewRequestLocked(
       };
       let ciphertext = request.encryptedDeliverySnapshot;
       let prepared;
+      let retryUntil = new Date(now.getTime() + 23 * 60 * 60_000);
       if (ciphertext) {
         const reopened = openReviewDeliverySnapshot({
           ciphertext,
@@ -158,6 +166,7 @@ async function deliverReviewRequestLocked(
           now,
           retry: true,
         });
+        retryUntil = reopened.retryUntil;
         prepared = {
           provider,
           content: reopened.content,
@@ -226,7 +235,36 @@ async function deliverReviewRequestLocked(
       });
       if (reserved.count !== 1)
         throw new ReviewError("conflict", "Review request already reserved");
-      return { ...prepared, providerKey: reviewDeliveryProviderKey(requestId) };
+      if (!generation)
+        throw new ReviewError("unavailable", "Review installation unavailable");
+      const deliveryIdentity: ShopperDeliveryIdentity = {
+        storeId,
+        installationGeneration: generation,
+        producer: "review_invitation",
+        sourceKey: reviewDeliveryProviderKey(requestId),
+        provider,
+        contentDigest: shopperDeliveryContentDigest({
+          content: prepared.content,
+          transportIdentity: prepared.transportIdentity,
+        }),
+        email: request.shopper.email,
+        shopifyCustomerId: request.shopper.shopifyCustomerId,
+        expiresAt: request.expiresAt,
+        retryUntil,
+      };
+      const admission = await admitShopperDeliveryInTransaction({
+        tx,
+        input: deliveryIdentity,
+        priorAttempt: request.deliveryAttempts > 0,
+      });
+      return {
+        ...prepared,
+        providerKey: reviewDeliveryProviderKey(requestId),
+        deliveryIdentity,
+        alreadySent: admission.status === "sent",
+        invitationToken: token,
+        installationGeneration: generation,
+      };
     },
     expectedGeneration,
   );
@@ -264,33 +302,22 @@ async function deliverReviewRequestLocked(
         status: "sending",
         deliveryToken: leaseToken,
         deliveryLeaseExpiresAt: { gt: new Date() },
+        expiresAt: { gt: new Date() },
       },
     });
     if (authorized !== 1)
       throw new ReviewError("conflict", "Review delivery lease lost");
-    await dispatchPreparedReviewEmail(claimed);
-    const finalized = await prisma.weleticReviewRequest.updateMany({
-      where: {
-        id: requestId,
+    if (!claimed.alreadySent) await dispatchPreparedReviewEmail(claimed);
+    await prisma.$transaction(async (tx) => {
+      await finalizeReviewDeliveryInTransaction(tx, {
         storeId,
-        status: "sending",
-        deliveryToken: leaseToken,
-      },
-      data: {
-        status: "sent",
-        sentAt: new Date(),
-        deliveryToken: null,
-        deliveryLeaseExpiresAt: null,
-        encryptedDeliveryToken: null,
-        encryptedDeliverySnapshot: null,
-        lastError: null,
-      },
+        requestId,
+        leaseToken,
+        installationGeneration: claimed.installationGeneration,
+        invitationToken: claimed.invitationToken,
+      });
+      await confirmShopperDeliveryInTransaction(tx, claimed.deliveryIdentity);
     });
-    if (finalized.count !== 1)
-      throw new ReviewError(
-        "conflict",
-        "Review delivery lease lost before finalization",
-      );
   } catch (error) {
     await prisma.weleticReviewRequest.updateMany({
       where: {

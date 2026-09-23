@@ -5,6 +5,8 @@ import {
   createAnonymousConfirmationOrigin,
   sendAnonymousReferralConfirmation,
 } from "@/lib/weletic/loyalty/anonymous-referral-confirmation";
+import type { ExpiryDeliveryClaim } from "@/lib/weletic/loyalty/expiry-delivery-snapshot";
+import { LoyaltyMaintenanceBlockedError } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { createReferralPrivacySnapshot } from "@/lib/weletic/loyalty/referral-privacy-snapshot";
 import { createShopifyDerivedPrivacyDigest } from "@/lib/weletic/shopify/privacy-identity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,12 +18,28 @@ const mocks = vi.hoisted(() => ({
   paused: false,
   tombstone: false,
   account: { id: "advocate", metadata: null } as any,
+  admission: vi.fn(),
+  confirmation: vi.fn(),
+  enqueue: vi.fn(),
   send: vi.fn(),
   prepare: vi.fn(),
   beforeTransaction: vi.fn(),
   beforeSettings: vi.fn(),
   failFinalization: false,
 }));
+vi.mock("@/lib/weletic/loyalty/outbox", () => ({
+  enqueueOutboxJobFromProgramTransaction: mocks.enqueue,
+}));
+vi.mock(
+  "@/lib/weletic/merchant-settings/delivery-reservations",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@/lib/weletic/merchant-settings/delivery-reservations")
+    >()),
+    admitShopperDeliveryInTransaction: mocks.admission,
+    confirmShopperDeliveryInTransaction: mocks.confirmation,
+  }),
+);
 vi.mock("@dub/email", () => ({ sendPreparedResendEmail: mocks.send }));
 vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
   assertShopifyStoreAcceptsOperationalWrites: async ({
@@ -139,6 +157,9 @@ beforeEach(() => {
   mocks.storeGeneration = "generation-a";
   mocks.active = true;
   mocks.paused = false;
+  mocks.admission
+    .mockReset()
+    .mockResolvedValue({ id: "capacity", status: "attempted" });
   mocks.tombstone = false;
   mocks.account = { id: "advocate", metadata: null };
   mocks.failFinalization = false;
@@ -201,6 +222,24 @@ afterEach(() => {
 });
 
 describe("anonymous requested confirmation retained delivery", () => {
+  it("preserves maintenance deferral for a claimed worker without preparing or sending", async () => {
+    mocks.beforeTransaction.mockRejectedValueOnce(
+      new LoyaltyMaintenanceBlockedError(),
+    );
+    const deliveryClaim = {} as ExpiryDeliveryClaim; // Failure occurs before any claim/source read.
+    await expect(
+      sendAnonymousReferralConfirmation({
+        storeId: "store",
+        referralId: "referral",
+        email,
+        prepare: mocks.prepare,
+        deliveryClaim,
+      }),
+    ).rejects.toBeInstanceOf(LoyaltyMaintenanceBlockedError);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(mocks.enqueue).not.toHaveBeenCalled();
+  });
   it("rejects a valid encrypted request transplanted from another claim for the same recipient", async () => {
     mocks.send.mockRejectedValueOnce(Error("ambiguous"));
     await send();

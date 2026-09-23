@@ -1,5 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { upsertShopifyCustomerPrivacyTombstones } from "@/lib/weletic/shopify/privacy-identity";
+import { eraseShopperDeliveryBatch } from "@/lib/weletic/merchant-settings/delivery-privacy";
+import {
+  deriveAllShopifyCustomerPrivacyIdentities,
+  upsertShopifyCustomerPrivacyTombstones,
+} from "@/lib/weletic/shopify/privacy-identity";
 import { Prisma } from "@prisma/client";
 
 /** Compatibility redaction lacks the durable worker's customer-lock phase.
@@ -20,7 +24,7 @@ export async function fenceShopperIncentiveRedaction({
   sourceRequestId?: string | null;
   redactedAt: Date;
 }) {
-  await prisma.$transaction(async (tx) => {
+  const identities = await prisma.$transaction(async (tx) => {
     const stores = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT id FROM WeleticShopifyStore WHERE id = ${storeId} LIMIT 1 FOR UPDATE
     `);
@@ -40,5 +44,13 @@ export async function fenceShopperIncentiveRedaction({
       redactedAt,
       tx,
     });
+    return deriveAllShopifyCustomerPrivacyIdentities({
+      storeId,
+      shopifyCustomerId: shopper.shopifyCustomerId,
+      email: shopper.email,
+    });
   });
+  while ((await eraseShopperDeliveryBatch({ storeId, identities })).hasMore) {
+    /* Bounded compatibility drain; durable workers persist a separate phase. */
+  }
 }

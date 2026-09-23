@@ -79,13 +79,16 @@ describe("offline public extension staging", () => {
       if (path.endsWith(".tsx")) {
         if (
           !path.endsWith("/CustomerAccountReviews.tsx") &&
+          !path.endsWith("/CustomerAccountStoreReviews.tsx") &&
           !path.endsWith("/ReviewProductPicker.tsx")
         )
           expect(text).toContain(
             "https://loyalty-shopify-dev.weletic.com/api/",
           );
         else {
-          expect(text).toMatch(/from "\.\/reviews-(client|products)"/);
+          expect(text).toMatch(
+            /from "\.\/(?:reviews-(?:client|products)|store-reviews-client)"/,
+          );
           expect(text).not.toMatch(/https?:\/\//);
         }
         expect(text).not.toContain("https://shopify.weletic.com");

@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { reviewProxyResponse } from "../../../../packages/shopify-app/app/reviews-gateway.server";
+import {
+  reviewCustomerAccountResponse,
+  reviewProxyResponse,
+} from "../../../../packages/shopify-app/app/reviews-gateway.server";
 import { verifyWeleticInternalRequest } from "../../../../packages/shopify-app/app/weletic-api.server";
 
 const transport = vi.fn<typeof fetch>();
@@ -18,6 +21,73 @@ afterEach(() => {
 });
 
 describe("native review production proxy gateway", () => {
+  it("does not expose account-only store submission to the app proxy", async () => {
+    const response = await reviewProxyResponse(
+      new Request(
+        "https://shop.example.test/apps/weletic/reviews/store-submit",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
+      ),
+      "verified.myshopify.com",
+      "reviews/store-submit",
+      "123",
+    );
+    expect(response.status).toBe(404);
+    expect(transport).not.toHaveBeenCalled();
+  });
+  it("only signs account invitation discovery for the verified customer", async () => {
+    const request = new Request(
+      "https://shop.example.test/api/customer-account/reviews/store-invitations?shop=attacker.myshopify.com&customerId=999&source=app_proxy&limit=10",
+    );
+    expect(
+      (
+        await reviewProxyResponse(
+          request,
+          "verified.myshopify.com",
+          "reviews/store-invitations",
+          "123",
+        )
+      ).status,
+    ).toBe(404);
+    expect(transport).not.toHaveBeenCalled();
+    await reviewCustomerAccountResponse(
+      request,
+      "verified.myshopify.com",
+      "reviews/store-invitations",
+      "123",
+    );
+    const [url, init] = transport.mock.calls[0];
+    const signed = new Request(String(url), init);
+    const params = new URL(signed.url).searchParams;
+    expect(params.get("shop")).toBe("verified.myshopify.com");
+    expect(params.get("customerId")).toBe("123");
+    expect(params.get("source")).toBe("customer_account");
+    expect(params.get("limit")).toBe("10");
+    expect(verifyWeleticInternalRequest({ request: signed, body: "" })).toBe(
+      true,
+    );
+  });
+  it("forwards only bounded store-summary inputs with the verified shop", async () => {
+    await reviewProxyResponse(
+      new Request(
+        "https://shop.example.test/apps/weletic/reviews/store-list?shop=attacker.myshopify.com&storeId=attacker&rating=5&limit=10",
+      ),
+      "verified.myshopify.com",
+      "reviews/store-list",
+    );
+    const [url, init] = transport.mock.calls[0];
+    const signed = new Request(String(url), init);
+    const forwarded = new URL(signed.url);
+    expect(forwarded.searchParams.get("shop")).toBe("verified.myshopify.com");
+    expect(forwarded.searchParams.get("storeId")).toBeNull();
+    expect(forwarded.searchParams.get("rating")).toBe("5");
+    expect(verifyWeleticInternalRequest({ request: signed, body: "" })).toBe(
+      true,
+    );
+  });
   it.each([
     ["open-upload", 400, "invalid_open_photo", "invalid_open_photo"],
     ["open-upload", 400, "bad_request", "review_error"],

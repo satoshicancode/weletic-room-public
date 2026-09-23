@@ -6,7 +6,7 @@ import {
 import { scrubCustomerContextJsonValue } from "@/lib/weletic/loyalty/shopper-privacy";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
 const fixtures: string[] = [];
 let verified = false;
@@ -17,7 +17,9 @@ beforeAll(async () => {
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
     url.port !== "3307" ||
-    url.username !== "loyalty_dev" ||
+    (url.username !== "loyalty_dev" &&
+      (!/^wr_[a-f0-9]{12}$/.test(url.username) ||
+        !url.pathname.endsWith(url.username.slice(3)))) ||
     !/^\/weletic_loyalty_it_expiry_[a-z0-9_]+$/.test(url.pathname)
   )
     throw new Error("Refusing non-isolated expiry delivery database");
@@ -25,7 +27,7 @@ beforeAll(async () => {
     Array<{ databaseName: string; principal: string }>
   >`SELECT DATABASE() AS databaseName, CURRENT_USER() AS principal`;
   expect(rows).toEqual([
-    { databaseName: url.pathname.slice(1), principal: "loyalty_dev@%" },
+    { databaseName: url.pathname.slice(1), principal: `${url.username}@%` },
   ]);
   expect(await prisma.weleticShopifyStore.count()).toBe(0);
   verified = true;
@@ -122,7 +124,13 @@ async function seed() {
     data: { id, storeId: id, status: "active" },
   });
   await prisma.weleticShopper.create({
-    data: { id, storeId: id, shopifyCustomerId: id },
+    data: {
+      id,
+      storeId: id,
+      shopifyCustomerId: id,
+      email: request.to,
+      acceptsMarketing: true,
+    },
   });
   await prisma.weleticLoyaltyAccount.create({
     data: { id, storeId: id, programId: id, shopperId: id, status: "active" },
@@ -298,4 +306,39 @@ it("cannot restore an encrypted envelope after privacy closure erases it", async
   });
   expect(row.payload).not.toHaveProperty("expiryDeliverySnapshot");
   expect(args.prepare).toHaveBeenCalledTimes(1);
+});
+
+afterEach(() => vi.useRealTimers());
+it("a delayed render cannot cross into quiet hours using its preparation clock", async () => {
+  const { id, args } = await seed();
+  await prisma.weleticMerchantSettings.create({
+    data: {
+      storeId: id,
+      timeZone: "UTC",
+      shopperDeliveryPolicy: {
+        version: 1,
+        quietHours: { startMinute: 720, endMinute: 780 },
+        maxMessagesPer24Hours: 1,
+      },
+    },
+  });
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-09-23T11:59:00Z"));
+  args.prepare.mockImplementation(async () => {
+    vi.setSystemTime(new Date("2026-09-23T12:01:00Z"));
+    return request;
+  });
+  await expect(retainExpiryDeliveryRequest(args)).rejects.toMatchObject({
+    name: "ShopperDeliveryDeferredError",
+    retryAt: new Date("2026-09-23T13:00:00Z"),
+  });
+  expect(
+    (await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({ where: { id } }))
+      .payload,
+  ).not.toHaveProperty("expiryDeliverySnapshot");
+  expect(
+    await prisma.weleticShopperDeliveryReservation.count({
+      where: { storeId: id },
+    }),
+  ).toBe(0);
 });

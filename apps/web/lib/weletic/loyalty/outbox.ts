@@ -21,6 +21,7 @@ import {
   WeleticLoyaltyOutboxJobType,
 } from "@prisma/client";
 import { z } from "zod";
+import { anonymousConfirmationJobSchema } from "./anonymous-confirmation-contract";
 import { loyaltyExpiryCommunicationSnapshotSchema } from "./communications-contract";
 import {
   HistoricalImportJobPayloadSchema,
@@ -276,6 +277,7 @@ export type FlowTriggerPayload = z.infer<typeof FlowTriggerPayloadSchema>;
  * Union of all valid outbox payloads
  */
 export type LoyaltyOutboxPayloadMap = {
+  ANONYMOUS_REFERRAL_EMAIL: z.infer<typeof anonymousConfirmationJobSchema>;
   REVIEW_POINTS_RECOVERY: z.infer<typeof ReviewPointsRecoveryPayloadSchema>;
   HISTORICAL_IMPORT_COMMIT: HistoricalImportJobPayload;
   HISTORICAL_IMPORT_ROLLBACK: HistoricalImportJobPayload;
@@ -299,12 +301,30 @@ export type LoyaltyOutboxPayloadMap = {
 // 2. Transactional Enqueueing Service
 // ============================================================================
 
-export const ReviewRequestEmailPayloadSchema = z
-  .object({
-    requestId: z.string().min(1),
-    installationGeneration: z.string().min(1).max(64).nullable().optional(),
-  })
-  .strict();
+export const ReviewRequestEmailPayloadSchema = z.union([
+  z
+    .object({
+      requestId: z.string().min(1),
+      reminderId: z
+        .string()
+        .regex(/^wrevrem_[A-Za-z0-9_-]{20}$/)
+        .optional(),
+      installationGeneration: z.string().min(1).max(64).nullable().optional(),
+    })
+    .strict()
+    .refine(
+      (payload) => !payload.reminderId || !!payload.installationGeneration,
+      {
+        message: "Reminders require an explicit installation generation",
+      },
+    ),
+  z
+    .object({
+      storeRequestId: z.string().regex(/^wstorereq_[A-Za-z0-9_-]{1,191}$/),
+      installationGeneration: z.string().min(1).max(64),
+    })
+    .strict(),
+]);
 export const ReviewSummarySyncPayloadSchema = z
   .object({
     productId: z.string().min(1),
@@ -449,6 +469,7 @@ function isInstallationBoundOperationalJob({
   if (
     [
       "LOYALTY_COMMUNICATION",
+      "ANONYMOUS_REFERRAL_EMAIL",
       "HOLDING_PERIOD_RELEASE",
       "INACTIVITY_EXPIRY",
       "TIER_REVIEW",
@@ -496,6 +517,11 @@ async function bindOperationalJobToInstallationGeneration({
       jobType !== "HISTORICAL_IMPORT_COMMIT" &&
       jobType !== "HISTORICAL_IMPORT_ROLLBACK" &&
       jobType !== "REVIEW_POINTS_RECOVERY" &&
+      !(
+        jobType === "REVIEW_REQUEST_EMAIL" &&
+        ((payload as Record<string, unknown>).reminderId ||
+          (payload as Record<string, unknown>).storeRequestId)
+      ) &&
       jobType !== "LOYALTY_COMMUNICATION"
     ) {
       return {
@@ -526,14 +552,17 @@ async function bindOperationalJobToInstallationGeneration({
   }
   if (
     (jobType === "LOYALTY_COMMUNICATION" ||
-      jobType === "REVIEW_POINTS_RECOVERY") &&
+      jobType === "REVIEW_POINTS_RECOVERY" ||
+      jobType === "ANONYMOUS_REFERRAL_EMAIL") &&
     store.installationGeneration !==
       (payload as Record<string, unknown>).installationGeneration
   ) {
     throw new Error(
       jobType === "LOYALTY_COMMUNICATION"
         ? "Loyalty communication installation changed"
-        : "Review points recovery installation changed",
+        : jobType === "ANONYMOUS_REFERRAL_EMAIL"
+          ? "Anonymous referral confirmation installation changed"
+          : "Review points recovery installation changed",
     );
   }
   if (
@@ -542,6 +571,18 @@ async function bindOperationalJobToInstallationGeneration({
     store.installationGeneration !== payload.installationGeneration
   )
     throw new Error("Review Flow installation changed");
+  if (
+    jobType === "REVIEW_REQUEST_EMAIL" &&
+    ((payload as Record<string, unknown>).reminderId ||
+      (payload as Record<string, unknown>).storeRequestId) &&
+    store.installationGeneration !==
+      (payload as Record<string, unknown>).installationGeneration
+  )
+    throw new Error(
+      (payload as Record<string, unknown>).reminderId
+        ? "Review reminder installation changed"
+        : "Store review invitation installation changed",
+    );
   return {
     ...payload,
     installationGeneration: store.installationGeneration ?? null,
@@ -556,6 +597,9 @@ export function validateOutboxPayload(
   payload: unknown,
 ): void {
   switch (jobType) {
+    case "ANONYMOUS_REFERRAL_EMAIL":
+      anonymousConfirmationJobSchema.parse(payload);
+      break;
     case "REVIEW_POINTS_RECOVERY":
       ReviewPointsRecoveryPayloadSchema.parse(payload);
       break;

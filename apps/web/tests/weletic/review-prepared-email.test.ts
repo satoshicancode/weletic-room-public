@@ -1,6 +1,7 @@
 import {
   dispatchPreparedReviewEmail,
   prepareReviewEmail,
+  prepareStoreReviewEmail,
 } from "@/lib/weletic/reviews/prepared-email";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -54,6 +55,41 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("prepared review provider boundary (mocked transports)", () => {
+  it("prepares a separate store invitation and preserves its provider key", async () => {
+    const prepared = await prepareStoreReviewEmail({
+      email: draft.email,
+      language: "en",
+      brandName: draft.brandName,
+      logoUrl: null,
+      accentColor: draft.accentColor,
+      disclosure: ["One reward per order"],
+      url: "https://synthetic.myshopify.com/account",
+    });
+    const providerKey = `native-store-review-request:wstorereq_${"a".repeat(20)}`;
+    expect(prepared.content.html).toContain("Sign in and open Store Reviews");
+    expect(prepared.content.html).not.toContain("#token=");
+    expect(transport.send).not.toHaveBeenCalled();
+    await dispatchPreparedReviewEmail({ ...prepared, providerKey });
+    expect(transport.send).toHaveBeenCalledExactlyOnceWith([prepared.content], {
+      idempotencyKey: providerKey,
+    });
+  });
+  it("uses a distinct stable provider identity for each reminder", async () => {
+    const prepared = await prepareReviewEmail(draft);
+    const reminderKey = `native-review-reminder:wrevrem_${"x".repeat(20)}`;
+    await dispatchPreparedReviewEmail({
+      ...prepared,
+      providerKey: reminderKey,
+    });
+    await dispatchPreparedReviewEmail({
+      ...prepared,
+      providerKey: reminderKey,
+    });
+    expect(transport.send.mock.calls).toEqual([
+      [[prepared.content], { idempotencyKey: reminderKey }],
+      [[prepared.content], { idempotencyKey: reminderKey }],
+    ]);
+  });
   it("refuses preparation if the environment no longer matches the constructed client", async () => {
     vi.stubEnv("RESEND_API_KEY", "changed-before-preparation");
     await expect(prepareReviewEmail(draft)).rejects.toThrow(

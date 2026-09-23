@@ -6,6 +6,8 @@ import {
 import { WeleticLoyaltyOutboxJob } from "@prisma/client";
 import { deliverReviewRequest } from "./email";
 import { cleanupReviewPhoto } from "./media";
+import { deliverReviewReminder } from "./reminder-email";
+import { deliverStoreReviewRequest } from "./store-email";
 import {
   enqueueReviewSummaryPage,
   syncProductReviewSummary,
@@ -15,6 +17,25 @@ export async function executeNativeReviewJob(job: WeleticLoyaltyOutboxJob) {
   switch (job.jobType) {
     case "REVIEW_REQUEST_EMAIL": {
       const payload = ReviewRequestEmailPayloadSchema.parse(job.payload);
+      if ("storeRequestId" in payload) {
+        await deliverStoreReviewRequest({
+          storeId: job.storeId,
+          requestId: payload.storeRequestId,
+          installationGeneration: payload.installationGeneration,
+        });
+        break;
+      }
+      if (payload.reminderId) {
+        if (!payload.installationGeneration)
+          throw new Error("Reminder generation required");
+        await deliverReviewReminder({
+          storeId: job.storeId,
+          requestId: payload.requestId,
+          reminderId: payload.reminderId,
+          installationGeneration: payload.installationGeneration,
+        });
+        break;
+      }
       await deliverReviewRequest(
         job.storeId,
         payload.requestId,

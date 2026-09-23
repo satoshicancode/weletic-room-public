@@ -5,6 +5,8 @@ import { enqueueRewardExpiryReminderJobs } from "@/lib/weletic/loyalty/reward-ex
 import { enqueueTierReviewSweepJobs } from "@/lib/weletic/loyalty/tier-review-scheduling";
 import { clearExpiredReviewDeliveryEvidence } from "@/lib/weletic/reviews/delivery-retention";
 import { enqueueReviewPointsRecoverySweep } from "@/lib/weletic/reviews/points-recovery-sweep";
+import { enqueueReviewReminderJobs } from "@/lib/weletic/reviews/reminder-scheduler";
+import { clearExpiredStoreReviewDeliveryEvidence } from "@/lib/weletic/reviews/store-delivery-retention";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -20,7 +22,9 @@ const runOutboxBatch = withCron(async ({ searchParams }) => {
     tierSweep,
     rewardExpirySweep,
     reviewRetention,
+    storeReviewRetention,
     reviewPointsRecovery,
+    reviewReminders,
   ] = await Promise.all([
     enqueuePointsExpiryLifecycleJobs({
       batchSize,
@@ -30,7 +34,9 @@ const runOutboxBatch = withCron(async ({ searchParams }) => {
     }),
     enqueueRewardExpiryReminderJobs({ batchSize }),
     clearExpiredReviewDeliveryEvidence({ batchSize }),
+    clearExpiredStoreReviewDeliveryEvidence({ batchSize }),
     enqueueReviewPointsRecoverySweep({ batchSize }),
+    enqueueReviewReminderJobs({ batchSize }),
   ]);
   const outbox = await processOutboxJobsBatch({
     batchSize,
@@ -42,7 +48,9 @@ const runOutboxBatch = withCron(async ({ searchParams }) => {
     tierSweep,
     rewardExpirySweep,
     reviewRetention,
+    storeReviewRetention,
     reviewPointsRecovery,
+    reviewReminders,
     outbox,
   });
 });

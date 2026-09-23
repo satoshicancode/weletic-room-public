@@ -24,12 +24,21 @@ vi.mock("@/lib/weletic/reviews/privacy-owner-redact", () => ({
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
+    weleticShopperDeliveryReservation: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     weleticOpenReviewMediaOwnership: {
       findMany: vi.fn().mockResolvedValue([]),
     },
     weleticProductReview: { findMany: vi.fn().mockResolvedValue([]) },
     weleticReviewModerationAudit: { findMany: vi.fn().mockResolvedValue([]) },
+    weleticReviewReminder: { findMany: vi.fn().mockResolvedValue([]) },
     weleticReviewRequest: { findMany: vi.fn().mockResolvedValue([]) },
+    weleticStoreReview: { findMany: vi.fn().mockResolvedValue([]) },
+    weleticStoreReviewRequest: { findMany: vi.fn().mockResolvedValue([]) },
+    weleticStoreReviewModerationAudit: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
     weleticReviewIncentiveClaim: { findMany: vi.fn().mockResolvedValue([]) },
     weleticReviewIncentiveInvalidation: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -104,7 +113,17 @@ vi.mock("@/lib/weletic/reviews/incentive-privacy-fence", () => ({
 
 describe("Shopify GDPR & Privacy Compliance", () => {
   beforeEach(() => {
+    vi.stubEnv(
+      "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS",
+      `delivery-test:${Buffer.alloc(32, 7).toString("base64")}`,
+    );
     vi.clearAllMocks();
+    vi.mocked(prisma.weleticStoreReview.findMany)
+      .mockReset()
+      .mockResolvedValue([]);
+    vi.mocked(prisma.weleticStoreReviewRequest.findMany)
+      .mockReset()
+      .mockResolvedValue([]);
     vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([]);
     vi.mocked(prisma.weleticRewardRedemption.findMany).mockResolvedValue([]);
     vi.mocked(prisma.weleticLoyaltyTierHistory.findMany).mockResolvedValue([]);
@@ -378,6 +397,18 @@ describe("Shopify GDPR & Privacy Compliance", () => {
         },
       ] as any);
 
+      vi.mocked(prisma.weleticStoreReview.findMany).mockResolvedValueOnce([
+        {
+          id: "store-review-1",
+          body: "Store experience",
+          source: "invitation",
+        },
+      ] as any);
+      vi.mocked(
+        prisma.weleticStoreReviewRequest.findMany,
+      ).mockResolvedValueOnce([
+        { id: "store-request-1", orderId: "order_1", status: "submitted" },
+      ] as any);
       const exported = await getShopperDataExport({
         storeId: "store_gdpr_1",
         shopifyCustomerId: "cust_shopify_99",
@@ -385,6 +416,34 @@ describe("Shopify GDPR & Privacy Compliance", () => {
 
       expect(exported).not.toBeNull();
       expect(exported?.firstName).toBe("Alice");
+      expect(exported?.storeReviews).toEqual([
+        {
+          id: "store-review-1",
+          body: "Store experience",
+          source: "invitation",
+        },
+      ]);
+      expect(exported?.storeReviewRequests).toEqual([
+        { id: "store-request-1", orderId: "order_1", status: "submitted" },
+      ]);
+      for (const query of [
+        vi.mocked(prisma.weleticStoreReview.findMany).mock.calls[0][0],
+        vi.mocked(prisma.weleticStoreReviewRequest.findMany).mock.calls[0][0],
+      ]) {
+        expect(query?.where).toMatchObject({
+          storeId: "store_gdpr_1",
+          shopperId: exported?.shopperId,
+        });
+        for (const privateField of [
+          "tokenHash",
+          "encryptedDeliveryToken",
+          "encryptedDeliverySnapshot",
+          "deliveryToken",
+          "deliveryLeaseExpiresAt",
+          "participationContentDigest",
+        ])
+          expect(query?.select).not.toHaveProperty(privateField);
+      }
       expect(prisma.weleticProductReview.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({ storeId: "store_gdpr_1" }),

@@ -36,6 +36,7 @@ async function main() {
       let pages = 0;
       let checked = 0;
       let orphanReviews: number | null = null;
+      let orphanRequests: number | null = null;
       const counts = {
         matched: 0,
         missing: 0,
@@ -55,6 +56,7 @@ async function main() {
           counts[key] += page.counts[key];
         checked += page.checked;
         if (page.orphanReviews !== null) orphanReviews = page.orphanReviews;
+        if (page.orphanRequests !== null) orphanRequests = page.orphanRequests;
         pages++;
         checkpoint = page.checkpoint ?? undefined;
       } while (checkpoint && pages < Number(values["max-pages"] ?? "100"));
@@ -68,6 +70,7 @@ async function main() {
           pages,
           checked,
           orphanReviews,
+          orphanRequests,
           counts,
         }),
       );
@@ -75,6 +78,8 @@ async function main() {
         !scanComplete ||
         orphanReviews === null ||
         orphanReviews > 0 ||
+        orphanRequests === null ||
+        orphanRequests > 0 ||
         counts.missing ||
         counts.mismatched ||
         counts.invalidSource ||

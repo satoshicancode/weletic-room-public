@@ -3,6 +3,12 @@ import {
   readShopperCommunicationSettings,
   ShopperEmailPausedError,
 } from "@/lib/weletic/merchant-settings/communications";
+import {
+  confirmShopperDeliveryInTransaction,
+  ShopperDeliveryAlreadySentError,
+  shopperDeliveryContentDigest,
+  ShopperDeliveryIneligibleError,
+} from "@/lib/weletic/merchant-settings/delivery-reservations";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import { getWeleticTransactionalEmailOptions } from "@/lib/weletic/transactional-email";
 import { prepareResendEmail, sendPreparedResendEmail } from "@dub/email";
@@ -295,9 +301,11 @@ export async function sendPointsEarnedNotification({
       },
     });
   } catch (error) {
+    if (error instanceof ShopperDeliveryAlreadySentError) return "sent";
     if (
       error instanceof CommunicationDeliveryRecipientChangedError ||
-      error instanceof CommunicationDeliveryIneligibleError
+      error instanceof CommunicationDeliveryIneligibleError ||
+      error instanceof ShopperDeliveryIneligibleError
     )
       return "ineligible";
     throw error;
@@ -318,5 +326,14 @@ export async function sendPointsEarnedNotification({
     throw deliveryFailure();
   });
   if (!result?.data || result.error) throw deliveryFailure();
+  await prisma.$transaction((tx) =>
+    confirmShopperDeliveryInTransaction(tx, {
+      storeId: event.storeId,
+      installationGeneration: event.installationGeneration,
+      producer: "loyalty_communication",
+      sourceKey: communicationDeliveryProviderKey(claim),
+      contentDigest: shopperDeliveryContentDigest(request),
+    }),
+  );
   return "sent";
 }

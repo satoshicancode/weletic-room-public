@@ -1,8 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
+import { createLoyaltyMaintenanceLeaseMetadata } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { awardVerifiedReviewPoints } from "@/lib/weletic/loyalty/review-rewards";
 import { upsertWeleticShopper } from "@/lib/weletic/loyalty/shopper";
 import { scrubWeleticShopperCustomerContext } from "@/lib/weletic/loyalty/shopper-privacy";
+import {
+  admitShopperDeliveryInTransaction,
+  ShopperDeliveryDeferredError,
+  shopperDeliveryReservationId,
+} from "@/lib/weletic/merchant-settings/delivery-reservations";
 import {
   generateReviewToken,
   hashReviewToken,
@@ -29,10 +35,21 @@ import {
 } from "@/lib/weletic/reviews/privacy-owner-contract";
 import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
 import { replaceReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-write";
-import { buildReviewPublicPrivacySql } from "@/lib/weletic/reviews/privacy-public-sql";
+import {
+  buildReviewPublicPrivacySql,
+  buildStoreReviewPublicPrivacySql,
+} from "@/lib/weletic/reviews/privacy-public-sql";
 import { inspectReviewPrivacyReaderCoverage } from "@/lib/weletic/reviews/privacy-readiness";
 import { reconcileReviewPrivacySourcePage } from "@/lib/weletic/reviews/privacy-source-reconciliation";
 import { getPublicProductReviews } from "@/lib/weletic/reviews/public";
+import { deliverReviewReminder } from "@/lib/weletic/reviews/reminder-email";
+import {
+  ReviewReminderDeferredError,
+  ReviewReminderReconciliationError,
+} from "@/lib/weletic/reviews/reminder-errors";
+import { prepareReviewRemindersInTransaction } from "@/lib/weletic/reviews/reminder-production";
+import { eraseReviewReminderMaterialInTransaction } from "@/lib/weletic/reviews/reminder-retention";
+import { enqueueReviewReminderJobs } from "@/lib/weletic/reviews/reminder-scheduler";
 import {
   cancelIneligibleReviewRequests,
   createFulfilledReviewRequests,
@@ -42,8 +59,23 @@ import {
 import {
   moderateNativeReview,
   submitNativeReview,
+  updateReviewCollectionInTransaction,
 } from "@/lib/weletic/reviews/service";
+import { listStoreAccountInvitations } from "@/lib/weletic/reviews/store-account-invitations";
+import { clearExpiredStoreReviewDeliveryEvidence } from "@/lib/weletic/reviews/store-delivery-retention";
+import {
+  deliverStoreReviewRequest,
+  storeReviewDeliveryAuthorized,
+} from "@/lib/weletic/reviews/store-email";
+import {
+  purgeStoreReviewsBatch,
+  redactStoreReviewsBatch,
+} from "@/lib/weletic/reviews/store-privacy";
+import { getPublicStoreReviews } from "@/lib/weletic/reviews/store-public";
+import { createProspectiveStoreReviewRequest } from "@/lib/weletic/reviews/store-requests";
+import { submitAuthenticatedStoreReview } from "@/lib/weletic/reviews/store-service";
 import { syncProductReviewSummary } from "@/lib/weletic/reviews/summary-sync";
+import * as reviewTransactions from "@/lib/weletic/reviews/transaction";
 import { withReviewMutation } from "@/lib/weletic/reviews/transaction";
 import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
 import { readReviewTranslationsInTransaction } from "@/lib/weletic/reviews/translation-read";
@@ -455,6 +487,843 @@ describe("native reviews real MySQL production-service boundaries", () => {
     vi.unstubAllEnvs();
   });
 
+  it("store review collection: keeps one prospective order request, line evidence and a legacy no-reward submission", async () => {
+    const now = new Date();
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+        expiresAfterDays: 30,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+        expiresAfterDays: 30,
+      },
+    });
+    const order = await purchase();
+    const fulfilledAt = new Date(now.getTime() - 1000);
+    const [productRequestId] = await createFulfilledReviewRequests({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt,
+      expectedInstallationGeneration: "g1",
+    });
+    const storeRequestId = await createProspectiveStoreReviewRequest({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt,
+      expectedInstallationGeneration: "g1",
+    });
+    expect(storeRequestId).toBeTruthy();
+    expect(
+      await createProspectiveStoreReviewRequest({
+        storeId,
+        orderExternalId: order.externalId,
+        fulfilledAt,
+        expectedInstallationGeneration: "g1",
+      }),
+    ).toBe(storeRequestId);
+    const [product, storeRequest] = await Promise.all([
+      prisma.weleticReviewRequest.findUniqueOrThrow({
+        where: { id: productRequestId },
+      }),
+      prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+        where: { id: storeRequestId! },
+        include: { lines: true },
+      }),
+    ]);
+    expect(storeRequest.incentivePolicyId).toBe(product.incentivePolicyId);
+    expect(storeRequest.lines).toMatchObject([
+      { storeId, orderLineId: order.lineId, purchasedQuantity: 2 },
+    ]);
+    expect(
+      await prisma.weleticStoreReviewRequest.count({
+        where: { storeId, orderId: order.id },
+      }),
+    ).toBe(1);
+    await prisma.weleticStoreReviewRequest.update({
+      where: { id: storeRequestId! },
+      data: { status: "sent", sentAt: new Date() },
+    });
+    expect(
+      await submitAuthenticatedStoreReview({
+        storeId,
+        shopperId,
+        expectedInstallationGeneration: "g1",
+        input: {
+          requestId: storeRequestId,
+          rating: 1,
+          title: "Store experience",
+          body: "The store could improve its service.",
+          displayName: "Buyer",
+          locale: "en",
+          publishConsent: true,
+        },
+      }),
+    ).toEqual({ status: "received", duplicate: false });
+    expect(
+      await prisma.weleticStoreReview.findUniqueOrThrow({
+        where: { requestId: storeRequestId! },
+      }),
+    ).toMatchObject({
+      source: "invitation",
+      verifiedPurchase: true,
+      participationStatus: "pending",
+      rewardStatus: "ineligible",
+    });
+    expect(
+      await prisma.weleticReviewIncentiveClaim.count({
+        where: { storeId, orderId: order.id },
+      }),
+    ).toBe(0);
+    const historical = await purchase();
+    expect(
+      await createProspectiveStoreReviewRequest({
+        storeId,
+        orderExternalId: historical.externalId,
+        fulfilledAt: new Date(now.getTime() - 120_000),
+        expectedInstallationGeneration: "g1",
+      }),
+    ).toBeNull();
+    await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+  });
+
+  it("store review account discovery: scopes sent invitations to the authenticated owner", async () => {
+    const now = new Date();
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+    });
+    const order = await purchase();
+    const requestId = await createProspectiveStoreReviewRequest({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(now.getTime() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    expect(requestId).toBeTruthy();
+    await prisma.weleticStoreReviewRequest.update({
+      where: { id: requestId! },
+      data: { status: "sent", sentAt: now },
+    });
+    const own = await listStoreAccountInvitations({
+      storeId,
+      shopperId,
+      expectedInstallationGeneration: "g1",
+      query: { limit: 10 },
+    });
+    expect(own.items).toContainEqual(
+      expect.objectContaining({
+        requestId,
+        orderExternalId: order.externalId,
+        incentiveDisclosure: null,
+      }),
+    );
+    const otherId = `store-account-other-${run}`;
+    await prisma.weleticShopper.create({
+      data: {
+        id: otherId,
+        storeId,
+        shopifyCustomerId: String(++sequence),
+        email: "other-store-account@example.test",
+      },
+    });
+    expect(
+      await listStoreAccountInvitations({
+        storeId,
+        shopperId: otherId,
+        expectedInstallationGeneration: "g1",
+        query: {},
+      }),
+    ).toEqual({ items: [], nextCursor: null });
+    await prisma.weleticStoreReviewRequest.update({
+      where: { id: requestId! },
+      data: { status: "submitted", submittedAt: new Date() },
+    });
+    expect(
+      await listStoreAccountInvitations({
+        storeId,
+        shopperId,
+        expectedInstallationGeneration: "g1",
+        query: {},
+      }),
+    ).toEqual({ items: [], nextCursor: null });
+    await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+  });
+
+  it("store review delivery: reserves shared capacity and retains ambiguous SMTP evidence", async () => {
+    const now = new Date();
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+    });
+    const create = async () => {
+      const order = await purchase();
+      const requestId = await createProspectiveStoreReviewRequest({
+        storeId,
+        orderExternalId: order.externalId,
+        fulfilledAt: new Date(now.getTime() - 1000),
+        expectedInstallationGeneration: "g1",
+      });
+      expect(requestId).toBeTruthy();
+      return requestId!;
+    };
+    const acceptedId = await create();
+    await deliverStoreReviewRequest({
+      storeId,
+      requestId: acceptedId,
+      installationGeneration: "g1",
+    });
+    const accepted = await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+      where: { id: acceptedId },
+    });
+    expect(accepted).toMatchObject({
+      status: "sent",
+      deliveryAttempts: 1,
+      encryptedDeliverySnapshot: null,
+    });
+    expect(mocks.viaSmtp).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(mocks.viaSmtp.mock.calls[0])).toContain("/account");
+    const reservation =
+      await prisma.weleticShopperDeliveryReservation.findFirst({
+        where: {
+          storeId,
+          id: shopperDeliveryReservationId({
+            storeId,
+            installationGeneration: "g1",
+            producer: "store_review_invitation",
+            sourceKey: `native-store-review-request:${acceptedId}`,
+          }),
+        },
+      });
+    expect(reservation).toMatchObject({ state: "sent" });
+
+    const ambiguousId = await create();
+    mocks.viaSmtp.mockRejectedValueOnce(new Error("private provider failure"));
+    await expect(
+      deliverStoreReviewRequest({
+        storeId,
+        requestId: ambiguousId,
+        installationGeneration: "g1",
+      }),
+    ).rejects.toThrow("Review email transport unavailable");
+    const failed = await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+      where: { id: ambiguousId },
+    });
+    expect(failed).toMatchObject({
+      status: "failed",
+      deliveryAttempts: 1,
+      encryptedDeliverySnapshot: expect.any(String),
+    });
+    await expect(
+      deliverStoreReviewRequest({
+        storeId,
+        requestId: ambiguousId,
+        installationGeneration: "g1",
+      }),
+    ).rejects.toThrow("Store-review delivery evidence unavailable");
+    expect(mocks.viaSmtp).toHaveBeenCalledTimes(2);
+    expect(
+      await clearExpiredStoreReviewDeliveryEvidence({
+        now: new Date(now.getTime() + 31 * 86_400_000),
+      }),
+    ).toEqual({ scanned: 1, cleared: 1, deferred: 0 });
+    expect(
+      await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+        where: { id: ambiguousId },
+      }),
+    ).toMatchObject({ status: "expired", encryptedDeliverySnapshot: null });
+    expect(
+      await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+        where: {
+          storeId,
+          idempotencyKey: `store_review_request_email:${ambiguousId}`,
+        },
+      }),
+    ).toMatchObject({ status: "cancelled" });
+    await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+  });
+
+  it("store review delivery: shares an anonymous email slot before sending", async () => {
+    mocks.resend = {};
+    const now = new Date();
+    const buyerId = `store-budget-buyer-${run}`;
+    const email = `store-budget-${run}@example.test`;
+    await prisma.weleticShopper.create({
+      data: {
+        id: buyerId,
+        storeId,
+        shopifyCustomerId: String(++sequence),
+        email,
+      },
+    });
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+    });
+    const order = await purchase(buyerId);
+    const requestId = await createProspectiveStoreReviewRequest({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(now.getTime() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    expect(requestId).toBeTruthy();
+    const originalSettings = await prisma.weleticMerchantSettings.findUnique({
+      where: { storeId },
+    });
+    try {
+      const anonymous = await withReviewMutation(
+        storeId,
+        (tx) =>
+          admitShopperDeliveryInTransaction({
+            tx,
+            input: {
+              storeId,
+              installationGeneration: "g1",
+              producer: "referral_confirmation",
+              sourceKey: `anonymous-store-${run}`,
+              provider: "resend",
+              contentDigest: "a".repeat(64),
+              email,
+              shopifyCustomerId: null,
+              expiresAt: new Date(now.getTime() + 86_400_000),
+              retryUntil: new Date(now.getTime() + 3_600_000),
+            },
+          }),
+        "g1",
+      );
+      await prisma.weleticMerchantSettings.upsert({
+        where: { storeId },
+        create: {
+          storeId,
+          timeZone: "UTC",
+          shopperDeliveryPolicy: {
+            version: 1,
+            quietHours: null,
+            maxMessagesPer24Hours: 1,
+          },
+        },
+        update: {
+          timeZone: "UTC",
+          shopperDeliveryPolicy: {
+            version: 1,
+            quietHours: null,
+            maxMessagesPer24Hours: 1,
+          },
+        },
+      });
+      await expect(
+        deliverStoreReviewRequest({
+          storeId,
+          requestId: requestId!,
+          installationGeneration: "g1",
+        }),
+      ).rejects.toBeInstanceOf(ShopperDeliveryDeferredError);
+      expect(
+        await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+          where: { id: requestId! },
+        }),
+      ).toMatchObject({
+        status: "queued",
+        deliveryAttempts: 0,
+        encryptedDeliverySnapshot: null,
+      });
+      expect(mocks.viaResend).not.toHaveBeenCalled();
+      await prisma.weleticShopperDeliveryReservation.update({
+        where: { id: anonymous.id },
+        data: { capacityAt: new Date(now.getTime() - 25 * 3_600_000) },
+      });
+      await deliverStoreReviewRequest({
+        storeId,
+        requestId: requestId!,
+        installationGeneration: "g1",
+      });
+      expect(mocks.viaResend).toHaveBeenCalledTimes(1);
+      expect(
+        await prisma.weleticStoreReviewRequest.findUniqueOrThrow({
+          where: { id: requestId! },
+        }),
+      ).toMatchObject({ status: "sent", deliveryAttempts: 1 });
+    } finally {
+      if (originalSettings)
+        await prisma.weleticMerchantSettings.update({
+          where: { storeId },
+          data: {
+            timeZone: originalSettings.timeZone,
+            shopperDeliveryPolicy:
+              originalSettings.shopperDeliveryPolicy ?? Prisma.DbNull,
+          },
+        });
+      else
+        await prisma.weleticMerchantSettings.deleteMany({ where: { storeId } });
+      await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+    }
+  });
+
+  it("store review delivery: final SQL authority fences merchant and communication changes", async () => {
+    const now = new Date();
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: {
+        id: `store-settings-${run}`,
+        storeId,
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+      update: {
+        enabled: true,
+        requestEmailEnabled: true,
+        activatedAt: new Date(now.getTime() - 60_000),
+        sendAfterDays: 0,
+      },
+    });
+    const order = await purchase();
+    const requestId = await createProspectiveStoreReviewRequest({
+      storeId,
+      orderExternalId: order.externalId,
+      fulfilledAt: new Date(now.getTime() - 1000),
+      expectedInstallationGeneration: "g1",
+    });
+    expect(requestId).toBeTruthy();
+    const leaseToken = `final-gate-${run}`;
+    await prisma.weleticStoreReviewRequest.update({
+      where: { id: requestId! },
+      data: {
+        status: "sending",
+        deliveryToken: leaseToken,
+        deliveryLeaseExpiresAt: new Date(now.getTime() + 120_000),
+      },
+    });
+    const allowed = () =>
+      storeReviewDeliveryAuthorized({
+        storeId,
+        requestId: requestId!,
+        installationGeneration: "g1",
+        leaseToken,
+      });
+    const originalMerchant = await prisma.weleticMerchantSettings.findUnique({
+      where: { storeId },
+    });
+    const originalProgram =
+      await prisma.weleticLoyaltyProgram.findUniqueOrThrow({
+        where: { storeId },
+        select: { metadata: true },
+      });
+    try {
+      expect(await allowed()).toBe(true);
+      await prisma.weleticStoreReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: false },
+      });
+      expect(await allowed()).toBe(false);
+      await prisma.weleticStoreReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: true },
+      });
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: false },
+      });
+      expect(await allowed()).toBe(false);
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: true },
+      });
+      await prisma.weleticMerchantSettings.upsert({
+        where: { storeId },
+        create: { storeId, shopperEmailPaused: true },
+        update: { shopperEmailPaused: true },
+      });
+      await expect(allowed()).rejects.toMatchObject({
+        name: "ShopperEmailPausedError",
+      });
+      await prisma.weleticMerchantSettings.update({
+        where: { storeId },
+        data: { shopperEmailPaused: false },
+      });
+      await prisma.weleticStoreReviewSettings.update({
+        where: { storeId },
+        data: { activatedAt: new Date(now.getTime() + 1000) },
+      });
+      expect(await allowed()).toBe(false);
+      await prisma.weleticStoreReviewSettings.update({
+        where: { storeId },
+        data: { activatedAt: new Date(now.getTime() - 60_000) },
+      });
+      await prisma.weleticLoyaltyProgram.update({
+        where: { storeId },
+        data: {
+          metadata: createLoyaltyMaintenanceLeaseMetadata({
+            existingMetadata: originalProgram.metadata,
+            ownerToken: "o".repeat(40),
+            runMarker: `store-review-${run}`,
+            fixtureEmails: ["fixture@example.test"],
+            acquiredAt: now,
+            recoveryAfter: new Date(now.getTime() + 60_000),
+          }),
+        },
+      });
+      const outboxBefore =
+        await prisma.weleticLoyaltyOutboxJob.findFirstOrThrow({
+          where: {
+            storeId,
+            idempotencyKey: `store_review_request_email:${requestId}`,
+          },
+        });
+      await expect(allowed()).rejects.toMatchObject({
+        name: "LoyaltyMaintenanceBlockedError",
+      });
+      expect(
+        await prisma.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+          where: { id: outboxBefore.id },
+        }),
+      ).toMatchObject({ attempts: outboxBefore.attempts });
+      expect(mocks.viaSmtp).not.toHaveBeenCalled();
+    } finally {
+      await prisma.weleticLoyaltyProgram.update({
+        where: { storeId },
+        data: { metadata: originalProgram.metadata ?? Prisma.DbNull },
+      });
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: true },
+      });
+      if (originalMerchant)
+        await prisma.weleticMerchantSettings.update({
+          where: { storeId },
+          data: { shopperEmailPaused: originalMerchant.shopperEmailPaused },
+        });
+      else
+        await prisma.weleticMerchantSettings.deleteMany({ where: { storeId } });
+      await prisma.weleticStoreReviewSettings.delete({ where: { storeId } });
+    }
+  });
+
+  it("store review privacy: discovers store-only owners and detects orphan sources", async () => {
+    const owner = `zz-store-owner-${run}-1`;
+    const reviewId = `store-only-${run}`;
+    await prisma.weleticShopper.create({
+      data: {
+        id: owner,
+        storeId,
+        shopifyCustomerId: String(++sequence),
+        email: "store-only@example.test",
+      },
+    });
+    await prisma.weleticStoreReview.create({
+      data: {
+        id: reviewId,
+        storeId,
+        shopperId: owner,
+        source: "open",
+        status: "published",
+        rating: 1,
+        title: "Store only",
+        body: "Feedback without product participation",
+        displayName: "Buyer",
+        locale: "en",
+      },
+    });
+    const checkpoint = {
+      storeId,
+      installationGeneration: "g1",
+      keySetDigest: reviewPrivacyKeySetDigest(),
+      afterShopperId: `zz-store-owner-${run}-0`,
+    };
+    const inspect = () =>
+      reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "g1",
+        checkpoint,
+        limit: 1,
+      });
+    await prisma.weleticStoreReviewSettings.create({
+      data: {
+        id: `store-settings-${run}`,
+        storeId,
+      },
+    });
+    const privacy = buildStoreReviewPublicPrivacySql({
+      storeId,
+      installationGeneration: "g1",
+    });
+    const counts = async () => {
+      const rows = await prisma.$queryRaw<
+        Array<{ eligible: bigint; unknown: bigint; suppressed: bigint }>
+      >(Prisma.sql`
+        SELECT SUM(CASE WHEN ${privacy.eligible} THEN 1 ELSE 0 END) AS eligible,
+          SUM(CASE WHEN ${privacy.unknown} THEN 1 ELSE 0 END) AS unknown,
+          SUM(CASE WHEN ${privacy.suppressed} THEN 1 ELSE 0 END) AS suppressed
+        FROM ${privacy.from} WHERE r.storeId = ${storeId}`);
+      return Object.fromEntries(
+        Object.entries(rows[0]).map(([k, v]) => [k, Number(v)]),
+      );
+    };
+    expect(await counts()).toEqual({ eligible: 0, unknown: 0, suppressed: 0 });
+    await prisma.weleticStoreReviewSettings.update({
+      where: { storeId },
+      data: { enabled: true },
+    });
+    expect(await counts()).toEqual({ eligible: 0, unknown: 1, suppressed: 0 });
+    await expect(getPublicStoreReviews(storeId, {})).rejects.toThrow(
+      "Store reviews unavailable",
+    );
+    expect((await inspect()).counts.missing).toBe(1);
+    expect(
+      await backfillReviewOwnerPrivacyPage({
+        ...checkpoint,
+        checkpoint,
+        limit: 1,
+      }),
+    ).toMatchObject({ projected: 1 });
+    expect((await inspect()).counts.matched).toBe(1);
+    expect(await counts()).toEqual({ eligible: 1, unknown: 0, suppressed: 0 });
+    const visible = await getPublicStoreReviews(storeId, {});
+    expect(visible.summary).toMatchObject({ count: 1, average: 1 });
+    expect(visible.items).toEqual([
+      expect.objectContaining({
+        id: reviewId,
+        verifiedPurchase: false,
+        incentivized: false,
+      }),
+    ]);
+    expect(visible.items[0]).not.toHaveProperty("shopperId");
+    expect(visible.items[0]).not.toHaveProperty("requestId");
+    const identity =
+      await prisma.weleticReviewOwnerPrivacyIdentity.findFirstOrThrow({
+        where: { storeId, shopperId: owner, identityKind: "customer_email" },
+      });
+    await prisma.weleticShopifyCustomerPrivacyTombstone.create({
+      data: {
+        id: `store-tombstone-${run}`,
+        storeId,
+        identityKind: identity.identityKind,
+        identityKeyId: identity.identityKeyId,
+        customerDigest: identity.customerDigest,
+        redactedAt: new Date(),
+        expiresAt: new Date("2040-01-01"),
+      },
+    });
+    expect(await counts()).toEqual({ eligible: 0, unknown: 0, suppressed: 1 });
+    expect(await getPublicStoreReviews(storeId, {})).toMatchObject({
+      summary: { count: 0, average: null },
+      items: [],
+      nextCursor: null,
+    });
+    const scan = () =>
+      reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "g1",
+      });
+    const before = (await scan()).orphanReviews!;
+    await prisma.$executeRaw`UPDATE WeleticStoreReview SET shopperId = ${`missing-${run}`} WHERE id = ${reviewId}`;
+    expect((await scan()).orphanReviews).toBe(before + 1);
+    await prisma.weleticStoreReview.delete({ where: { id: reviewId } });
+    await prisma.weleticStoreReviewSettings.update({
+      where: { storeId },
+      data: { enabled: false },
+    });
+  });
+
+  it("store review privacy: detects orphan invitations before any submitted review", async () => {
+    const { id: orderId } = await purchase();
+    const requestId = `store-orphan-invitation-${run}`;
+    await prisma.weleticStoreReviewRequest.create({
+      data: {
+        id: requestId,
+        storeId,
+        shopperId,
+        orderId,
+        installationGeneration: "g1",
+        settingsRevision: 1,
+        fulfilledAt: new Date(),
+        sendAt: new Date(),
+        expiresAt: new Date("2040-01-01"),
+      },
+    });
+    const inspect = () =>
+      reconcileReviewPrivacySourcePage({
+        storeId,
+        installationGeneration: "g1",
+      });
+    const before = (await inspect()).orphanRequests!;
+    await prisma.$executeRaw`UPDATE WeleticStoreReviewRequest SET shopperId = ${`absent-${run}`} WHERE id = ${requestId}`;
+    expect((await inspect()).orphanRequests).toBe(before + 1);
+    await prisma.weleticStoreReviewRequest.delete({ where: { id: requestId } });
+  });
+
+  it("store review privacy: pages tied timestamps and filters without leaking owner fields", async () => {
+    await prisma.weleticStoreReviewSettings.upsert({
+      where: { storeId },
+      create: { id: `store-settings-${run}`, storeId, enabled: true },
+      update: { enabled: true },
+    });
+    const prefix = `store-page-${run}`;
+    const rows = [1, 2, 3].map((n) => ({
+      id: `${prefix}-${n}`,
+      storeId,
+      shopperId,
+      source: "open" as const,
+      status: "published" as const,
+      rating: n,
+      title: `Feedback ${n}`,
+      body: "Original store feedback",
+      displayName: "Buyer",
+      locale: "en",
+      createdAt: new Date("2026-01-01"),
+    }));
+    await prisma.weleticStoreReview.createMany({ data: rows });
+    const first = await getPublicStoreReviews(storeId, { limit: 1 });
+    expect(first.summary).toMatchObject({ count: 3, average: 2 });
+    expect(first.items.map((r) => r.id)).toEqual([`${prefix}-3`]);
+    const next = await getPublicStoreReviews(storeId, {
+      limit: 2,
+      cursor: first.nextCursor,
+    });
+    expect(next.items.map((r) => r.id)).toEqual([`${prefix}-2`, `${prefix}-1`]);
+    expect(next.nextCursor).toBeNull();
+    const filtered = await getPublicStoreReviews(storeId, { rating: 1 });
+    expect(filtered.items.map((r) => r.id)).toEqual([`${prefix}-1`]);
+    expect(filtered.summary.count).toBe(3);
+    await expect(
+      getPublicStoreReviews(storeId, { rating: 1, cursor: first.nextCursor }),
+    ).rejects.toThrow("Invalid store review cursor");
+    await prisma.weleticStoreReview.deleteMany({
+      where: { storeId, id: { in: rows.map((r) => r.id) } },
+    });
+    await prisma.weleticStoreReviewSettings.update({
+      where: { storeId },
+      data: { enabled: false },
+    });
+  });
+
+  it("store review privacy: rolls back source changes on SQL failure and drains bounded pages", async () => {
+    const owner = `store-erasure-${run}`;
+    await prisma.weleticShopper.create({
+      data: { id: owner, storeId, shopifyCustomerId: String(++sequence) },
+    });
+    const rows = Array.from({ length: 21 }, (_, n) => ({
+      id: `store-erasure-${run}-${String(n).padStart(2, "0")}`,
+      storeId,
+      shopperId: owner,
+      source: "open" as const,
+      rating: 2,
+      title: "Private source",
+      body: "Private store feedback before erasure",
+      displayName: "Buyer",
+      locale: "en",
+    }));
+    await prisma.weleticStoreReview.createMany({ data: rows });
+    const scope = { kind: "customer" as const, storeId, shopperId: owner };
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await redactStoreReviewsBatch(tx, scope);
+        await tx.weleticStoreReview.create({ data: rows[0] });
+      }),
+    ).rejects.toMatchObject({ code: "P2002" });
+    expect(
+      await prisma.weleticStoreReview.count({
+        where: {
+          storeId,
+          shopperId: owner,
+          redactedAt: null,
+          title: "Private source",
+          version: 1,
+        },
+      }),
+    ).toBe(21);
+    expect(
+      await prisma.$transaction((tx) => redactStoreReviewsBatch(tx, scope)),
+    ).toEqual({ hasMore: true });
+    expect(
+      await prisma.weleticStoreReview.count({
+        where: {
+          storeId,
+          shopperId: owner,
+          redactedAt: { not: null },
+          title: "",
+          body: "",
+          displayName: "Redacted customer",
+        },
+      }),
+    ).toBe(20);
+    expect(
+      await prisma.$transaction((tx) => redactStoreReviewsBatch(tx, scope)),
+    ).toEqual({ hasMore: false });
+    const after = await prisma.weleticStoreReview.findMany({
+      where: { storeId, shopperId: owner },
+      orderBy: { id: "asc" },
+    });
+    await prisma.$transaction((tx) => redactStoreReviewsBatch(tx, scope));
+    expect(
+      await prisma.weleticStoreReview.findMany({
+        where: { storeId, shopperId: owner },
+        orderBy: { id: "asc" },
+      }),
+    ).toEqual(after);
+    expect(
+      await prisma.weleticStoreReview.count({
+        where: { storeId, shopperId: owner, incentivized: true },
+      }),
+    ).toBe(0);
+    await expect(
+      prisma.$transaction((tx) => purgeStoreReviewsBatch(tx, storeId)),
+    ).rejects.toThrow("frozen store");
+    await prisma.weleticStoreReview.deleteMany({
+      where: { storeId, shopperId: owner },
+    });
+  });
+
   it("review owner privacy: bounded multi-tenant query plans and public load", async () => {
     const { verifyReviewPrivacyLoad } = await import(
       "./helpers/review-privacy-load"
@@ -520,14 +1389,15 @@ describe("native reviews real MySQL production-service boundaries", () => {
       const independentCount =
         await prisma.weleticReviewOwnerPrivacyIdentity.count();
       for (const batchSize of [1, 2, 3, 7]) {
-        // Source 12 is appended after the existing checkpoint-compatible sources.
+        // Source 12 is the owner identity source; source 13 audits delivery
+        // identities separately and is outside this source-specific count.
         let cursor: ShopifyPrivacyKeyRetirementAuditCursor | null = {
           sourceIndex: 12,
         };
         const seen: string[] = [];
         let scanned = 0;
         let pages = 0;
-        while (cursor) {
+        while (cursor?.sourceIndex === 12) {
           expect(++pages).toBeLessThan(100);
           const page = await auditShopifyPrivacyKeyRetirementBatch({
             retiringKeyIds: [retiredKey],
@@ -657,7 +1527,9 @@ describe("native reviews real MySQL production-service boundaries", () => {
       expiresAt: new Date("2000-01-01"),
     });
     const last = await backfillReviewOwnerPrivacyPage({ ...scope, checkpoint });
-    expect(last).toEqual({ projected: 0, suppressed: 1, checkpoint: null });
+    expect(last).toMatchObject({ projected: 0, suppressed: 1 });
+    // Other tests may have added later shoppers in this shared fixture.
+    if (last.checkpoint) expect(last.checkpoint.afterShopperId).toBe(owners[1]);
     const coverage =
       await prisma.weleticReviewOwnerPrivacyCoverage.findUniqueOrThrow({
         where: { storeId_shopperId: { storeId, shopperId: owners[1] } },
@@ -1011,7 +1883,15 @@ describe("native reviews real MySQL production-service boundaries", () => {
       if (maxPages === 100) {
         expect(report.counts.suppressedPending).toBeGreaterThanOrEqual(1);
         const owners = await prisma.weleticShopper.count({
-          where: { storeId, nativeReviews: { some: { storeId } } },
+          where: {
+            storeId,
+            OR: [
+              { nativeReviews: { some: { storeId } } },
+              { reviewRequests: { some: { storeId } } },
+              { storeReviews: { some: { storeId } } },
+              { storeReviewRequests: { some: { storeId } } },
+            ],
+          },
         });
         expect(report.checked).toBe(owners);
         expect(report.pages).toBe(owners);
@@ -3642,8 +4522,16 @@ describe("native reviews real MySQL production-service boundaries", () => {
         });
         await prisma.weleticReviewSettings.upsert({
           where: { storeId },
-          update: originalSettings,
-          create: originalSettings,
+          update: {
+            ...originalSettings,
+            reminderAfterDays:
+              originalSettings.reminderAfterDays ?? Prisma.DbNull,
+          },
+          create: {
+            ...originalSettings,
+            reminderAfterDays:
+              originalSettings.reminderAfterDays ?? Prisma.DbNull,
+          },
         });
       }
     },
@@ -3712,6 +4600,770 @@ describe("native reviews real MySQL production-service boundaries", () => {
           where: { storeId },
           data: { enabled: true },
         });
+      }
+    },
+  );
+
+  it("commits reminder intents with the confirmed initial delivery receipt", async () => {
+    await prisma.weleticReviewSettings.update({
+      where: { storeId },
+      data: {
+        reminderAfterDays: [1, 3],
+      },
+    });
+    try {
+      const order = await purchase();
+      const [id] = await createFulfilledReviewRequests({
+        storeId,
+        orderExternalId: order.externalId,
+        fulfilledAt: new Date(Date.now() - 1000),
+        expectedInstallationGeneration: "g1",
+      });
+      await deliverReviewRequest(storeId, id, "g1");
+      const request = await prisma.weleticReviewRequest.findUniqueOrThrow({
+        where: { id },
+      });
+      expect(request.status).toBe("sent");
+      expect(request.sentAt).not.toBeNull();
+      expect(request.encryptedReminderToken).not.toBeNull();
+      const reminders = await prisma.weleticReviewReminder.findMany({
+        where: { storeId, requestId: id },
+        orderBy: { sequence: "asc" },
+      });
+      expect(reminders).toHaveLength(2);
+      expect(
+        reminders.map(
+          (row) => row.scheduledFor.getTime() - request.sentAt!.getTime(),
+        ),
+      ).toEqual([86_400_000, 3 * 86_400_000]);
+      await deliverReviewRequest(storeId, id, "g1");
+      expect(mocks.viaSmtp).toHaveBeenCalledTimes(1);
+      expect(
+        await prisma.weleticReviewReminder.count({
+          where: { storeId, requestId: id },
+        }),
+      ).toBe(2);
+      await withReviewMutation(
+        storeId,
+        (tx) =>
+          eraseReviewReminderMaterialInTransaction(tx, {
+            storeId,
+            requestIds: [id],
+            reason: "submitted",
+          }),
+        "g1",
+      );
+    } finally {
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { reminderAfterDays: Prisma.DbNull },
+      });
+    }
+  });
+
+  it("deduplicates concurrent reminder preparation and scheduling in real SQL", async () => {
+    const request = await invitation(await purchase());
+    await prisma.weleticReviewRequest.update({
+      where: { id: request.id },
+      data: {
+        reminderSnapshot: {
+          version: 1,
+          collectionRevision: 0,
+          expiresAfterDays: 30,
+          reminderAfterDays: [1, 3, 7],
+        },
+      },
+    });
+    const prepare = () =>
+      withReviewMutation(
+        storeId,
+        (tx) =>
+          prepareReviewRemindersInTransaction(tx, {
+            storeId,
+            requestId: request.id,
+            installationGeneration: "g1",
+            token: request.token,
+          }),
+        "g1",
+      );
+    expect(await Promise.all(Array.from({ length: 8 }, prepare))).toEqual(
+      Array(8).fill(3),
+    );
+    const rows = await prisma.weleticReviewReminder.findMany({
+      where: { storeId, requestId: request.id },
+      orderBy: { sequence: "asc" },
+    });
+    expect(rows.map((row) => row.sequence)).toEqual([1, 2, 3]);
+    await Promise.all(
+      Array.from({ length: 8 }, () => enqueueReviewReminderJobs()),
+    );
+    for (const row of rows) {
+      const jobs = await prisma.weleticLoyaltyOutboxJob.findMany({
+        where: {
+          storeId,
+          idempotencyKey: `review_reminder_email:${row.id}`,
+        },
+      });
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].scheduledFor).toEqual(row.scheduledFor);
+      expect(jobs[0].payload).toMatchObject({
+        requestId: request.id,
+        reminderId: row.id,
+        installationGeneration: "g1",
+      });
+    }
+    expect(mocks.viaSmtp).not.toHaveBeenCalled();
+    expect(mocks.viaResend).not.toHaveBeenCalled();
+    await withReviewMutation(
+      storeId,
+      (tx) =>
+        eraseReviewReminderMaterialInTransaction(tx, {
+          storeId,
+          requestIds: [request.id],
+          reason: "submitted",
+        }),
+      "g1",
+    );
+    expect(await prepare()).toBe(0);
+    expect(
+      await prisma.weleticReviewReminder.count({
+        where: {
+          storeId,
+          requestId: request.id,
+          status: "cancelled",
+        },
+      }),
+    ).toBe(3);
+    expect(
+      (
+        await prisma.weleticReviewRequest.findUniqueOrThrow({
+          where: { id: request.id },
+        })
+      ).encryptedReminderToken,
+    ).toBeNull();
+  });
+
+  it("preserves attempted-reminder ambiguity while erasing private material in SQL", async () => {
+    const request = await invitation(await purchase());
+    await prisma.weleticReviewRequest.update({
+      where: { id: request.id },
+      data: {
+        reminderSnapshot: {
+          version: 1,
+          collectionRevision: 0,
+          expiresAfterDays: 30,
+          reminderAfterDays: [1, 3],
+        },
+      },
+    });
+    await withReviewMutation(
+      storeId,
+      (tx) =>
+        prepareReviewRemindersInTransaction(tx, {
+          storeId,
+          requestId: request.id,
+          installationGeneration: "g1",
+          token: request.token,
+        }),
+      "g1",
+    );
+    await prisma.weleticReviewReminder.updateMany({
+      where: { storeId, requestId: request.id, sequence: 1 },
+      data: {
+        status: "sending",
+        attempts: 1,
+        leaseToken: "synthetic-lease",
+        leaseExpiresAt: new Date(Date.now() + 60_000),
+        encryptedDeliverySnapshot: "synthetic-private-evidence",
+      },
+    });
+    await withReviewMutation(
+      storeId,
+      (tx) =>
+        eraseReviewReminderMaterialInTransaction(tx, {
+          storeId,
+          requestIds: [request.id],
+          reason: "privacy",
+        }),
+      "g1",
+    );
+    const rows = await prisma.weleticReviewReminder.findMany({
+      where: { storeId, requestId: request.id },
+      orderBy: { sequence: "asc" },
+    });
+    expect(rows.map((row) => row.status)).toEqual([
+      "reconciliation",
+      "cancelled",
+    ]);
+    expect(rows[0].outcomeReason).toBe("privacy_delivery_unconfirmed");
+    for (const row of rows) {
+      expect(row.encryptedDeliverySnapshot).toBeNull();
+      expect(row.leaseToken).toBeNull();
+      expect(row.leaseExpiresAt).toBeNull();
+    }
+    expect(
+      (
+        await prisma.weleticReviewRequest.findUniqueOrThrow({
+          where: { id: request.id },
+        })
+      ).encryptedReminderToken,
+    ).toBeNull();
+  });
+
+  it("collection enablement excludes delayed pre-enable fulfillments while preserving existing invitations", async () => {
+    const original = await prisma.weleticReviewSettings.findUniqueOrThrow({
+      where: { storeId },
+    });
+    const existing = await invitation(await purchase());
+    const saved = await prisma.weleticReviewRequest.findUniqueOrThrow({
+      where: { id: existing.id },
+    });
+    const order = await purchase();
+    const oldFulfillment = new Date(Date.now() - 60000);
+    try {
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: { requestEmailEnabled: false },
+      });
+      const settings = await withReviewMutation(
+        storeId,
+        (tx) =>
+          updateReviewCollectionInTransaction(tx, storeId, {
+            expectedRevision: original.collectionRevision,
+            expectedInstallationGeneration: "g1",
+            policy: {
+              sendAfterDays: 0,
+              expiresAfterDays: 30,
+              autoPublish: false,
+              photoUploadsEnabled: true,
+              requestEmailEnabled: true,
+              reminderAfterDays: [],
+            },
+          }),
+        "g1",
+      );
+      expect(settings.activatedAt!.getTime()).toBeGreaterThan(
+        oldFulfillment.getTime(),
+      );
+      expect(
+        await createFulfilledReviewRequests({
+          storeId,
+          orderExternalId: order.externalId,
+          fulfilledAt: oldFulfillment,
+          expectedInstallationGeneration: "g1",
+        }),
+      ).toEqual([]);
+      expect(
+        await createFulfilledReviewRequests({
+          storeId,
+          orderExternalId: order.externalId,
+          fulfilledAt: new Date(),
+          expectedInstallationGeneration: "g1",
+        }),
+      ).toHaveLength(1);
+      const unchanged = await prisma.weleticReviewRequest.findUniqueOrThrow({
+        where: { id: existing.id },
+      });
+      expect(unchanged.sendAt).toEqual(saved.sendAt);
+      expect(unchanged.expiresAt).toEqual(saved.expiresAt);
+      expect(unchanged.tokenHash).toBe(saved.tokenHash);
+      expect(unchanged.reminderSnapshot).toEqual(saved.reminderSnapshot);
+      expect(unchanged.incentivePolicyId).toBe(saved.incentivePolicyId);
+    } finally {
+      await prisma.weleticReviewSettings.update({
+        where: { storeId },
+        data: {
+          ...original,
+          reminderAfterDays: original.reminderAfterDays ?? Prisma.DbNull,
+        },
+      });
+    }
+  });
+
+  it("shares anonymous email capacity with later authenticated reminders without consuming source attempts", async () => {
+    mocks.resend = {};
+    const buyer = await prisma.weleticShopper.create({
+      data: {
+        id: `reminder-budget-${run}`,
+        storeId,
+        shopifyCustomerId: "987654",
+        email: `reminder-budget-${run}@example.test`,
+      },
+    });
+    const request = await invitation(await purchase(buyer.id));
+    await prisma.weleticReviewRequest.update({
+      where: { id: request.id },
+      data: {
+        sentAt: new Date(Date.now() - 2 * 86400000),
+        reminderSnapshot: {
+          version: 1,
+          collectionRevision: 0,
+          expiresAfterDays: 30,
+          reminderAfterDays: [1],
+        },
+      },
+    });
+    await withReviewMutation(
+      storeId,
+      (tx) =>
+        prepareReviewRemindersInTransaction(tx, {
+          storeId,
+          requestId: request.id,
+          installationGeneration: "g1",
+          token: request.token,
+        }),
+      "g1",
+    );
+    const reminder = await prisma.weleticReviewReminder.findFirstOrThrow({
+      where: { storeId, requestId: request.id },
+    });
+    const originalSettings = await prisma.weleticMerchantSettings.findUnique({
+      where: { storeId },
+    });
+    try {
+      const anonymous = await withReviewMutation(
+        storeId,
+        (tx) =>
+          admitShopperDeliveryInTransaction({
+            tx,
+            input: {
+              storeId,
+              installationGeneration: "g1",
+              producer: "referral_confirmation",
+              sourceKey: `anonymous-reminder-${run}`,
+              provider: "resend",
+              contentDigest: "a".repeat(64),
+              email: `reminder-budget-${run}@example.test`,
+              shopifyCustomerId: null,
+              expiresAt: new Date(Date.now() + 86400000),
+              retryUntil: new Date(Date.now() + 3600000),
+            },
+          }),
+        "g1",
+      );
+      await prisma.weleticMerchantSettings.upsert({
+        where: { storeId },
+        create: {
+          storeId,
+          timeZone: "UTC",
+          shopperDeliveryPolicy: {
+            version: 1,
+            quietHours: null,
+            maxMessagesPer24Hours: 1,
+          },
+        },
+        update: {
+          timeZone: "UTC",
+          shopperDeliveryPolicy: {
+            version: 1,
+            quietHours: null,
+            maxMessagesPer24Hours: 1,
+          },
+        },
+      });
+      const before = await prisma.weleticShopperDeliveryReservation.count({
+        where: { storeId },
+      });
+      await expect(
+        deliverReviewReminder({
+          storeId,
+          requestId: request.id,
+          reminderId: reminder.id,
+          installationGeneration: "g1",
+        }),
+      ).rejects.toBeInstanceOf(ShopperDeliveryDeferredError);
+      const retained = await prisma.weleticReviewReminder.findUniqueOrThrow({
+        where: { id: reminder.id },
+      });
+      expect(retained).toMatchObject({
+        status: "queued",
+        attempts: 0,
+        encryptedDeliverySnapshot: null,
+        leaseToken: null,
+      });
+      expect(
+        await prisma.weleticShopperDeliveryReservation.count({
+          where: { storeId },
+        }),
+      ).toBe(before);
+      expect(mocks.viaResend).not.toHaveBeenCalled();
+      // Once the existing anonymous slot leaves the rolling window, the same
+      // authenticated reminder can obtain its own email and customer aliases.
+      await prisma.weleticShopperDeliveryReservation.update({
+        where: { id: anonymous.id },
+        data: { capacityAt: new Date(Date.now() - 25 * 3600000) },
+      });
+      await deliverReviewReminder({
+        storeId,
+        requestId: request.id,
+        reminderId: reminder.id,
+        installationGeneration: "g1",
+      });
+      expect(mocks.viaResend).toHaveBeenCalledTimes(1);
+    } finally {
+      if (originalSettings)
+        await prisma.weleticMerchantSettings.update({
+          where: { storeId },
+          data: {
+            timeZone: originalSettings.timeZone,
+            shopperDeliveryPolicy:
+              originalSettings.shopperDeliveryPolicy ?? Prisma.DbNull,
+          },
+        });
+      else
+        await prisma.weleticMerchantSettings.deleteMany({ where: { storeId } });
+    }
+  });
+
+  it.each(["rollback", "lost_ack"] as const)(
+    "recovers atomic reminder admission after %s in SQL",
+    async (failure) => {
+      mocks.resend = {};
+      const request = await invitation(await purchase());
+      await prisma.weleticReviewRequest.update({
+        where: { id: request.id },
+        data: {
+          sentAt: new Date(Date.now() - 2 * 86400000),
+          reminderSnapshot: {
+            version: 1,
+            collectionRevision: 0,
+            expiresAfterDays: 30,
+            reminderAfterDays: [1],
+          },
+        },
+      });
+      await withReviewMutation(
+        storeId,
+        (tx) =>
+          prepareReviewRemindersInTransaction(tx, {
+            storeId,
+            requestId: request.id,
+            installationGeneration: "g1",
+            token: request.token,
+          }),
+        "g1",
+      );
+      const reminder = await prisma.weleticReviewReminder.findFirstOrThrow({
+        where: { storeId, requestId: request.id },
+      });
+      const before = await prisma.weleticShopperDeliveryReservation.count({
+        where: { storeId, producer: "review_reminder" },
+      });
+      const original = reviewTransactions.withReviewMutation;
+      const intercept = vi.spyOn(reviewTransactions, "withReviewMutation");
+      intercept.mockImplementationOnce(
+        async (store, operation, generation, permit) => {
+          const result = await original(
+            store,
+            async (tx, current) => {
+              const value = await operation(tx, current);
+              if (failure === "rollback") throw new Error("injected rollback");
+              return value;
+            },
+            generation,
+            permit,
+          );
+          if (failure === "lost_ack")
+            throw new Error("injected lost acknowledgment");
+          return result;
+        },
+      );
+      const dispatch = () =>
+        deliverReviewReminder({
+          storeId,
+          requestId: request.id,
+          reminderId: reminder.id,
+          installationGeneration: "g1",
+        });
+      try {
+        await expect(dispatch()).rejects.toThrow("injected");
+      } finally {
+        intercept.mockRestore();
+      }
+      expect(mocks.viaResend).not.toHaveBeenCalled();
+      const retained = await prisma.weleticReviewReminder.findUniqueOrThrow({
+        where: { id: reminder.id },
+      });
+      expect(retained.attempts).toBe(failure === "rollback" ? 0 : 1);
+      expect(retained.encryptedDeliverySnapshot === null).toBe(
+        failure === "rollback",
+      );
+      expect(
+        await prisma.weleticShopperDeliveryReservation.count({
+          where: { storeId, producer: "review_reminder" },
+        }),
+      ).toBe(before + (failure === "rollback" ? 0 : 1));
+      if (failure === "lost_ack")
+        await prisma.weleticReviewReminder.update({
+          where: { id: reminder.id },
+          data: { leaseExpiresAt: new Date(0) },
+        });
+      await dispatch();
+      expect(mocks.viaResend).toHaveBeenCalledTimes(1);
+      expect(
+        (
+          await prisma.weleticReviewReminder.findUniqueOrThrow({
+            where: { id: reminder.id },
+          })
+        ).status,
+      ).toBe("sent");
+      expect(
+        await prisma.weleticShopperDeliveryReservation.count({
+          where: { storeId, producer: "review_reminder" },
+        }),
+      ).toBe(before + 1);
+    },
+  );
+
+  it.each(["resend", "smtp"])(
+    "settles one %s reminder despite concurrent SQL acquisition",
+    async (provider) => {
+      mocks.resend = provider === "resend" ? {} : null;
+      const request = await invitation(await purchase());
+      await prisma.weleticReviewRequest.update({
+        where: { id: request.id },
+        data: {
+          sentAt: new Date(Date.now() - 2 * 86_400_000),
+          reminderSnapshot: {
+            version: 1,
+            collectionRevision: 0,
+            expiresAfterDays: 30,
+            reminderAfterDays: [1],
+          },
+        },
+      });
+      await withReviewMutation(
+        storeId,
+        (tx) =>
+          prepareReviewRemindersInTransaction(tx, {
+            storeId,
+            requestId: request.id,
+            installationGeneration: "g1",
+            token: request.token,
+          }),
+        "g1",
+      );
+      const reminder = await prisma.weleticReviewReminder.findFirstOrThrow({
+        where: { storeId, requestId: request.id },
+      });
+      const dispatch = () =>
+        deliverReviewReminder({
+          storeId,
+          requestId: request.id,
+          reminderId: reminder.id,
+          installationGeneration: "g1",
+        });
+      const outcomes = await Promise.allSettled(
+        Array.from({ length: 8 }, dispatch),
+      );
+      for (const outcome of outcomes) {
+        if (outcome.status === "rejected")
+          expect(outcome.reason).toBeInstanceOf(ReviewReminderDeferredError);
+      }
+      expect(outcomes.some((result) => result.status === "fulfilled")).toBe(
+        true,
+      );
+      expect(mocks.viaResend).toHaveBeenCalledTimes(
+        provider === "resend" ? 1 : 0,
+      );
+      expect(mocks.viaSmtp).toHaveBeenCalledTimes(provider === "smtp" ? 1 : 0);
+      const settled = await prisma.weleticReviewReminder.findUniqueOrThrow({
+        where: { id: reminder.id },
+      });
+      expect(settled.status).toBe("sent");
+      expect(settled.attempts).toBe(1);
+      expect(settled.sentAt).not.toBeNull();
+      expect(settled.encryptedDeliverySnapshot).toBeNull();
+      expect(
+        (
+          await prisma.weleticReviewRequest.findUniqueOrThrow({
+            where: { id: request.id },
+          })
+        ).encryptedReminderToken,
+      ).toBeNull();
+      await dispatch();
+      expect(
+        mocks.viaResend.mock.calls.length + mocks.viaSmtp.mock.calls.length,
+      ).toBe(1);
+    },
+  );
+
+  it.each([true, false])(
+    "preserves reminder provider evidence when cleanup wins in flight (confirmed=%s)",
+    async (confirmed) => {
+      const request = await invitation(await purchase());
+      await prisma.weleticReviewRequest.update({
+        where: { id: request.id },
+        data: {
+          sentAt: new Date(Date.now() - 2 * 86_400_000),
+          reminderSnapshot: {
+            version: 1,
+            collectionRevision: 0,
+            expiresAfterDays: 30,
+            reminderAfterDays: [1],
+          },
+        },
+      });
+      await withReviewMutation(
+        storeId,
+        (tx) =>
+          prepareReviewRemindersInTransaction(tx, {
+            storeId,
+            requestId: request.id,
+            installationGeneration: "g1",
+            token: request.token,
+          }),
+        "g1",
+      );
+      const reminder = await prisma.weleticReviewReminder.findFirstOrThrow({
+        where: { storeId, requestId: request.id },
+      });
+      mocks.viaSmtp.mockImplementationOnce(async () => {
+        await withReviewMutation(
+          storeId,
+          (tx) =>
+            eraseReviewReminderMaterialInTransaction(tx, {
+              storeId,
+              requestIds: [request.id],
+              reason: "privacy",
+            }),
+          "g1",
+        );
+        if (!confirmed) throw new Error("synthetic transport ambiguity");
+        return { messageId: "synthetic-confirmed" };
+      });
+      const dispatch = () =>
+        deliverReviewReminder({
+          storeId,
+          requestId: request.id,
+          reminderId: reminder.id,
+          installationGeneration: "g1",
+        });
+      if (confirmed) await dispatch();
+      else await expect(dispatch()).rejects.toThrow();
+      const settled = await prisma.weleticReviewReminder.findUniqueOrThrow({
+        where: { id: reminder.id },
+      });
+      expect(settled.status).toBe(confirmed ? "sent" : "reconciliation");
+      expect(settled.sentAt !== null).toBe(confirmed);
+      expect(settled.encryptedDeliverySnapshot).toBeNull();
+      expect(
+        (
+          await prisma.weleticReviewRequest.findUniqueOrThrow({
+            where: { id: request.id },
+          })
+        ).encryptedReminderToken,
+      ).toBeNull();
+      if (confirmed) await dispatch();
+      else await expect(dispatch()).rejects.toThrow();
+      expect(mocks.viaSmtp).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(["resend", "smtp"])(
+    "contains %s ambiguity without inventing a new delivery",
+    async (provider) => {
+      mocks.resend = provider === "resend" ? {} : null;
+      const transport = provider === "resend" ? mocks.viaResend : mocks.viaSmtp;
+      transport.mockRejectedValueOnce(
+        new Error("synthetic ambiguous transport"),
+      );
+      const request = await invitation(await purchase());
+      await prisma.weleticReviewRequest.update({
+        where: { id: request.id },
+        data: {
+          sentAt: new Date(Date.now() - 2 * 86_400_000),
+          reminderSnapshot: {
+            version: 1,
+            collectionRevision: 0,
+            expiresAfterDays: 30,
+            reminderAfterDays: [1],
+          },
+        },
+      });
+      await withReviewMutation(
+        storeId,
+        (tx) =>
+          prepareReviewRemindersInTransaction(tx, {
+            storeId,
+            requestId: request.id,
+            installationGeneration: "g1",
+            token: request.token,
+          }),
+        "g1",
+      );
+      const reminder = await prisma.weleticReviewReminder.findFirstOrThrow({
+        where: { storeId, requestId: request.id },
+      });
+      const dispatch = () =>
+        deliverReviewReminder({
+          storeId,
+          requestId: request.id,
+          reminderId: reminder.id,
+          installationGeneration: "g1",
+        });
+      if (provider === "smtp")
+        await expect(dispatch()).rejects.toBeInstanceOf(
+          ReviewReminderReconciliationError,
+        );
+      else
+        await expect(dispatch()).rejects.toMatchObject({ code: "unavailable" });
+      const uncertain = await prisma.weleticReviewReminder.findUniqueOrThrow({
+        where: { id: reminder.id },
+      });
+      expect(uncertain.attempts).toBe(1);
+      expect(uncertain.sentAt).toBeNull();
+      expect(uncertain.encryptedDeliverySnapshot).not.toBeNull();
+      expect(uncertain.status).toBe(
+        provider === "smtp" ? "reconciliation" : "failed",
+      );
+      if (provider === "smtp") {
+        await expect(dispatch()).rejects.toBeInstanceOf(
+          ReviewReminderReconciliationError,
+        );
+        expect(transport).toHaveBeenCalledTimes(1);
+        expect(
+          (
+            await prisma.weleticReviewRequest.findUniqueOrThrow({
+              where: { id: request.id },
+            })
+          ).encryptedReminderToken,
+        ).toBeNull();
+      } else {
+        await expect(dispatch()).rejects.toBeInstanceOf(
+          ReviewReminderDeferredError,
+        );
+        expect(transport).toHaveBeenCalledTimes(1);
+        // Advance only the retry not-before fence; retain the immutable schedule
+        // and encrypted payload exactly as a restarted worker must see them.
+        await prisma.weleticReviewReminder.update({
+          where: { id: reminder.id },
+          data: { leaseExpiresAt: new Date(Date.now() - 1) },
+        });
+        await prisma.weleticShopifyProduct.update({
+          where: { id: productId },
+          data: { title: "Changed after the ambiguous attempt" },
+        });
+        try {
+          await dispatch();
+          expect(transport).toHaveBeenCalledTimes(2);
+          expect(transport.mock.calls[1]).toEqual(transport.mock.calls[0]);
+          expect(transport.mock.calls[1][1]).toEqual({
+            idempotencyKey: `native-review-reminder:${reminder.id}`,
+          });
+        } finally {
+          await prisma.weleticShopifyProduct.update({
+            where: { id: productId },
+            data: { title: "Review fixture product" },
+          });
+        }
+        const settled = await prisma.weleticReviewReminder.findUniqueOrThrow({
+          where: { id: reminder.id },
+        });
+        expect(settled.status).toBe("sent");
+        expect(settled.attempts).toBe(2);
+        expect(settled.scheduledFor).toEqual(reminder.scheduledFor);
+        expect(settled.encryptedDeliverySnapshot).toBeNull();
       }
     },
   );

@@ -25,6 +25,8 @@ import {
   processAccountVoucherEnumerationComplianceStep,
   processStoreVoucherCleanupComplianceStep,
 } from "@/lib/weletic/loyalty/voucher-privacy-cleanup";
+import { exportShopperDeliveryPage } from "@/lib/weletic/merchant-settings/delivery-export-checkpoint";
+import { eraseShopperDeliveryBatch } from "@/lib/weletic/merchant-settings/delivery-privacy";
 import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import {
   attachReviewIncentivePolicyExports,
@@ -44,6 +46,7 @@ import {
   redactNativeReviewsBatch,
 } from "@/lib/weletic/reviews/privacy";
 import { redactReviewOwnerPrivacyProjection } from "@/lib/weletic/reviews/privacy-owner-redact";
+import { exportStoreReviewPage } from "@/lib/weletic/reviews/store-export-checkpoint";
 import { reviewTranslationExportSelection } from "@/lib/weletic/reviews/translation-export";
 import {
   addRetentionDays,
@@ -382,6 +385,22 @@ export async function resolveCustomerSubject({
   };
 }
 
+/** Resolve only the authenticated same-store customer's current mailbox. */
+async function retainCustomerDeliveryEmail(
+  storeId: string,
+  subject: DurableComplianceSubject,
+  customerId: string | null,
+) {
+  if (subject.customerEmail || !customerId) return subject;
+  const shopper = await prisma.weleticShopper.findUnique({
+    where: {
+      storeId_shopifyCustomerId: { storeId, shopifyCustomerId: customerId },
+    },
+    select: { email: true },
+  });
+  return { ...subject, customerEmail: shopper?.email ?? undefined };
+}
+
 function exportExpiry() {
   return new Date(
     Date.now() + getShopifyComplianceExportRetentionHours() * 60 * 60 * 1000,
@@ -435,6 +454,11 @@ const EXPORT_PHASES = [
   "export_review_incentive_invalidations",
   "export_import_snapshots",
   "export_import_executions",
+  "export_store_reviews",
+  "export_store_review_requests",
+  "export_store_review_audits",
+  "export_shopper_delivery",
+  "export_review_reminders",
 ] as const;
 
 type ExportPhase = (typeof EXPORT_PHASES)[number];
@@ -528,6 +552,14 @@ async function fetchExportPage({
     orderBy: { id: "asc" as const },
     ...(lastId ? { cursor: { id: lastId }, skip: 1 } : {}),
   };
+  if (
+    phase === "export_review_reminders" ||
+    phase === "export_shopper_delivery" ||
+    phase === "export_store_reviews" ||
+    phase === "export_store_review_requests" ||
+    phase === "export_store_review_audits"
+  )
+    throw new Error("Store-review exports require durable checkpoints");
   if (phase === "export_import_snapshots") {
     const shopper = shopperId
       ? await prisma.weleticShopper.findUnique({
@@ -833,21 +865,31 @@ export async function processCustomerDataRequestStep(
   const lease = complianceArtifactLease(request);
 
   if (request.phase === "received") {
+    const resolved = await resolveCustomerSubject({
+      storeId: request.storeId,
+      workspaceId: request.store.projectId,
+      subject,
+    });
+    subject = await retainCustomerDeliveryEmail(
+      request.storeId,
+      subject,
+      resolved.customerId,
+    );
     const referralEmailDigests = subject.customerEmail
       ? createAllShopifyDerivedPrivacyDigests({
           purpose: "referral_email",
           values: [request.storeId, subject.customerEmail],
         })
       : subject.referralEmailDigests;
-    const resolved = await resolveCustomerSubject({
-      storeId: request.storeId,
-      workspaceId: request.store.projectId,
-      subject,
-    });
     subject = {
       ...subject,
       customerId: undefined,
       customerEmail: undefined,
+      deliveryPrivacyIdentities: deriveAllShopifyCustomerPrivacyIdentities({
+        storeId: request.storeId,
+        shopifyCustomerId: resolved.customerId ?? subject.customerId,
+        email: subject.customerEmail,
+      }),
       referralEmailDigests,
       legacyCustomerId: resolved.legacyCustomerId ?? undefined,
       shopperId: resolved.shopperId ?? undefined,
@@ -896,6 +938,72 @@ export async function processCustomerDataRequestStep(
       subject.customerId ?? null,
       subject,
     );
+    if (phase === "export_shopper_delivery") {
+      if (!subject.deliveryPrivacyIdentities?.length)
+        throw new ComplianceOperatorReviewError(
+          "Delivery export requires retained privacy identities; restart this legacy export before activating delivery writers.",
+        );
+      const sequence = Number(cursor.sequence ?? 0);
+      const result = await exportShopperDeliveryPage({
+        requestId: request.id,
+        storeId: request.storeId,
+        identities: subject.deliveryPrivacyIdentities,
+        kind: "shopper_delivery",
+        sequence,
+        afterId: cursor.lastId ?? null,
+        expiresAt: exportExpiry(),
+        lease,
+      });
+      return {
+        completed: false,
+        phase: result.hasMore ? phase : nextExportPhase(phase),
+        cursor: result.hasMore
+          ? { lastId: result.lastId!, sequence: sequence + 1 }
+          : Prisma.DbNull,
+        progress: {
+          ...progress,
+          chunks: Number(progress.chunks ?? 0) + (result.count ? 1 : 0),
+          records: Number(progress.records ?? 0) + result.count,
+        },
+      };
+    }
+    if (
+      phase === "export_review_reminders" ||
+      phase === "export_store_reviews" ||
+      phase === "export_store_review_requests" ||
+      phase === "export_store_review_audits"
+    ) {
+      const sequence = Number(cursor.sequence ?? 0);
+      const result = await exportStoreReviewPage({
+        requestId: request.id,
+        storeId: request.storeId,
+        shopperId: context.shopperId,
+        kind:
+          phase === "export_review_reminders"
+            ? "review_reminders"
+            : phase === "export_store_reviews"
+              ? "store_reviews"
+              : phase === "export_store_review_requests"
+                ? "store_review_requests"
+                : "store_review_audits",
+        sequence,
+        afterId: cursor.lastId ?? null,
+        expiresAt: exportExpiry(),
+        lease,
+      });
+      return {
+        completed: false,
+        phase: result.hasMore ? phase : nextExportPhase(phase),
+        cursor: result.hasMore
+          ? { lastId: result.lastId!, sequence: sequence + 1 }
+          : Prisma.DbNull,
+        progress: {
+          ...progress,
+          chunks: Number(progress.chunks ?? 0) + (result.count ? 1 : 0),
+          records: Number(progress.records ?? 0) + result.count,
+        },
+      };
+    }
     if (phase === "export_review_media") {
       const sequence = Number(cursor.sequence ?? 0);
       const result = await exportReviewMediaPage({
@@ -1247,6 +1355,11 @@ export async function processCustomerRedactStep(
       workspaceId: request.store.projectId,
       subject,
     });
+    subject = await retainCustomerDeliveryEmail(
+      request.storeId,
+      subject,
+      resolved.customerId,
+    );
     subject = {
       ...subject,
       customerId: resolved.customerId ?? undefined,
@@ -1656,7 +1769,7 @@ export async function processCustomerRedactStep(
     if (owners.length === 0) {
       return {
         completed: false,
-        phase: "scrub_customer_identity",
+        phase: "scrub_customer_delivery",
         cursor: Prisma.DbNull,
       };
     }
@@ -1724,6 +1837,25 @@ export async function processCustomerRedactStep(
       completed: false,
       phase: result.hasMore
         ? "scrub_customer_reviews"
+        : "scrub_customer_delivery",
+      cursor: Prisma.DbNull,
+    };
+  }
+
+  if (request.phase === "scrub_customer_delivery") {
+    const identities = deriveAllShopifyCustomerPrivacyIdentities({
+      storeId: request.storeId,
+      shopifyCustomerId: subject.customerId,
+      email: subject.customerEmail,
+    });
+    const result = await eraseShopperDeliveryBatch({
+      storeId: request.storeId,
+      identities,
+    });
+    return {
+      completed: false,
+      phase: result.hasMore
+        ? "scrub_customer_delivery"
         : "scrub_customer_identity",
       cursor: Prisma.DbNull,
     };
@@ -3025,7 +3157,18 @@ export async function processShopRedactStep(request: any): Promise<StepState> {
     const result = await purgeNativeReviewsBatch(request.storeId);
     return {
       completed: false,
-      phase: result.hasMore ? "purge_native_reviews" : "purge_catalog",
+      phase: result.hasMore ? "purge_native_reviews" : "purge_shopper_delivery",
+      cursor: Prisma.DbNull,
+    };
+  }
+
+  if (request.phase === "purge_shopper_delivery") {
+    const result = await eraseShopperDeliveryBatch({
+      storeId: request.storeId,
+    });
+    return {
+      completed: false,
+      phase: result.hasMore ? "purge_shopper_delivery" : "purge_catalog",
       cursor: Prisma.DbNull,
     };
   }

@@ -27,6 +27,7 @@ const AUDIT_SOURCES = [
   "webhook_events",
   "pending_installations",
   "review_owner_identities",
+  "delivery_budget_identities",
 ] as const;
 
 type AuditSource = (typeof AUDIT_SOURCES)[number];
@@ -72,6 +73,12 @@ async function loadAuditPage({
   lastId?: string;
 }): Promise<AuditRecord[]> {
   const page = auditPage(batchSize, lastId);
+  if (source === "delivery_budget_identities") {
+    return prisma.weleticShopperDeliveryIdentity.findMany({
+      ...page,
+      select: { id: true, identityKeyId: true },
+    });
+  }
   if (source === "review_owner_identities") {
     // Read identity rows directly, including orphaned rows: relationMode=prisma
     // does not make SQL joins proof that every retained key was audited.

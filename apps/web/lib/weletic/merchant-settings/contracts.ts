@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { shopperDeliveryPolicySchema } from "./delivery-policy";
+import { merchantTimeZoneSchema } from "./time-zone";
+export { merchantTimeZoneSchema } from "./time-zone";
 
 const cleanText = (maximum: number) =>
   z
@@ -37,18 +40,6 @@ export const merchantLogoUrlSchema = z
     );
   }, "Use a public HTTPS logo URL");
 
-export const merchantTimeZoneSchema = cleanText(100).refine((value) => {
-  // Require a named IANA zone (or UTC), never infer a zone from currency/locale.
-  if (value !== "UTC" && !/^[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+$/.test(value))
-    return false;
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-}, "Use an IANA timezone");
-
 const merchantSettingsFieldsSchema = z
   .object({
     brandName: cleanText(100).nullable().optional(),
@@ -62,6 +53,7 @@ const merchantSettingsFieldsSchema = z
     defaultLocale: z.enum(["en", "ja", "vi"]).optional(),
     timeZone: merchantTimeZoneSchema.nullable().optional(),
     shopperEmailPaused: z.boolean().optional(),
+    shopperDeliveryPolicy: shopperDeliveryPolicySchema.nullable().optional(),
   })
   .strict();
 
@@ -94,9 +86,13 @@ export type MerchantAppearanceUpdate = z.infer<
 >;
 
 export class MerchantSettingsError extends Error {
-  constructor(readonly code: "not_found" | "conflict" | "forbidden") {
+  constructor(
+    readonly code: "not_found" | "conflict" | "forbidden" | "bad_request",
+  ) {
     super(
       {
+        bad_request:
+          "A configured delivery policy requires valid settings and an explicit timezone",
         not_found: "Merchant settings are unavailable for this workspace",
         conflict: "Settings changed. Reload before saving again",
         forbidden: "Only workspace owners may update shared merchant settings",

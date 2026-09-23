@@ -142,7 +142,12 @@ it("bounds writes and returns a private scope-bound checkpoint without source id
   expect(mocks.owners).toHaveBeenCalledWith({
     where: {
       storeId: "store-a",
-      nativeReviews: { some: { storeId: "store-a" } },
+      OR: [
+        { nativeReviews: { some: { storeId: "store-a" } } },
+        { reviewRequests: { some: { storeId: "store-a" } } },
+        { storeReviews: { some: { storeId: "store-a" } } },
+        { storeReviewRequests: { some: { storeId: "store-a" } } },
+      ],
     },
     select: { id: true },
     orderBy: { id: "asc" },

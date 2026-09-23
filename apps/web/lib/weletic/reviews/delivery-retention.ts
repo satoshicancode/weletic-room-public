@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { Prisma } from "@prisma/client";
+import { eraseReviewReminderMaterialInTransaction } from "./reminder-retention";
 
 /** Erasure only, including retired installations and dead-lettered requests.
  * No send, enrollment, financial mutation or installation activation authority.
@@ -25,6 +26,17 @@ export async function clearExpiredReviewDeliveryEvidence({
           { tokenHash: { not: null } },
           { encryptedDeliveryToken: { not: null } },
           { encryptedDeliverySnapshot: { not: null } },
+          { encryptedReminderToken: { not: null } },
+          {
+            reminders: {
+              some: {
+                OR: [
+                  { encryptedDeliverySnapshot: { not: null } },
+                  { status: { in: ["queued", "sending", "failed"] } },
+                ],
+              },
+            },
+          },
         ],
       },
       {
@@ -88,7 +100,12 @@ export async function clearExpiredReviewDeliveryEvidence({
             deliveryLeaseExpiresAt: null,
           },
         });
-        if (result.count === 1)
+        if (result.count === 1) {
+          await eraseReviewReminderMaterialInTransaction(tx, {
+            storeId: candidate.storeId,
+            requestIds: [candidate.id],
+            reason: "expired",
+          });
           await tx.weleticLoyaltyOutboxJob.updateMany({
             where: {
               storeId: candidate.storeId,
@@ -98,6 +115,7 @@ export async function clearExpiredReviewDeliveryEvidence({
             },
             data: { status: "cancelled", lockedAt: null, lockedBy: null },
           });
+        }
         return result.count;
       });
     cleared += candidate.shopper.shopifyCustomerId

@@ -6,6 +6,8 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  storeRedact: vi.fn(),
+  storePurge: vi.fn(),
   openMediaList: vi.fn(),
   openMediaUpdate: vi.fn(),
   openMediaCount: vi.fn(),
@@ -40,6 +42,10 @@ const mocks = vi.hoisted(() => ({
   translationCount: vi.fn(),
   translationAuditList: vi.fn(),
   translationAuditDelete: vi.fn(),
+}));
+vi.mock("@/lib/weletic/reviews/store-privacy", () => ({
+  redactStoreReviewsBatch: mocks.storeRedact,
+  purgeStoreReviewsBatch: mocks.storePurge,
 }));
 vi.mock("@/lib/prisma", () => {
   const db = {
@@ -111,6 +117,39 @@ vi.mock("@/lib/weletic/reviews/media", () => ({ cleanupReviewPhoto: vi.fn() }));
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({ enqueueOutboxJob: vi.fn() }));
 
 describe("review moderation audit privacy", () => {
+  it("keeps source erasure incomplete while store-review batches remain", async () => {
+    mocks.storeRedact.mockResolvedValue({ hasMore: true });
+    expect(await redactNativeReviewsBatch("store-1", "shopper-1")).toEqual({
+      hasMore: true,
+    });
+    expect(mocks.storeRedact).toHaveBeenCalledWith(expect.anything(), {
+      kind: "customer",
+      storeId: "store-1",
+      shopperId: "shopper-1",
+    });
+  });
+  it("uses explicit frozen-store scope for whole-shop source erasure", async () => {
+    await redactNativeReviewsBatch("store-1");
+    expect(mocks.storeRedact).toHaveBeenCalledWith(expect.anything(), {
+      kind: "frozen_store",
+      storeId: "store-1",
+    });
+  });
+  it("propagates store-review schema failures rather than completing privacy", async () => {
+    mocks.storeRedact.mockRejectedValue(
+      new Error("store review schema missing"),
+    );
+    await expect(
+      redactNativeReviewsBatch("store-1", "shopper-1"),
+    ).rejects.toThrow("schema missing");
+    expect(mocks.contentList).not.toHaveBeenCalled();
+  });
+  it("drains store-review children before native policy or catalog purge", async () => {
+    mocks.storePurge.mockResolvedValue({ hasMore: true });
+    expect(await purgeNativeReviewsBatch("store-1")).toEqual({ hasMore: true });
+    expect(mocks.storePurge).toHaveBeenCalledWith(expect.anything(), "store-1");
+    expect(mocks.openPolicyList).not.toHaveBeenCalled();
+  });
   it("refuses frozen purge of abandoned media until actual deletion", async () => {
     mocks.mediaList.mockResolvedValue([
       { id: "abandoned", status: "deletion_pending" },
@@ -165,6 +204,8 @@ describe("review moderation audit privacy", () => {
   });
   beforeEach(() => {
     vi.resetAllMocks();
+    mocks.storeRedact.mockResolvedValue({ hasMore: false });
+    mocks.storePurge.mockResolvedValue({ hasMore: false });
     mocks.openMediaList.mockResolvedValue([]);
     mocks.openMediaCount.mockResolvedValue(0);
     mocks.openMediaUpdate.mockResolvedValue({ count: 1 });

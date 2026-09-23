@@ -58,6 +58,11 @@ export interface DurableComplianceSubject {
   shopperId?: string;
   accountId?: string;
   referralEmailDigests?: string[];
+  deliveryPrivacyIdentities?: Array<{
+    identityKind: "customer_id" | "customer_email";
+    identityKeyId: string;
+    customerDigest: string;
+  }>;
   installationGeneration?: string;
   redactedAt?: string;
   orderExternalIds: string[];

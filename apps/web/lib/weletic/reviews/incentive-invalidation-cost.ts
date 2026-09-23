@@ -4,6 +4,7 @@ import { DIRECT_REVIEW_REWARD_SOURCE } from "@/lib/weletic/loyalty/reward-owners
 import { z } from "zod";
 import {
   reviewInvalidationAwardSchema,
+  reviewInvalidationRevision,
   reviewInvalidationSnapshotSchema,
 } from "./incentive-decision";
 import {
@@ -64,6 +65,9 @@ export async function readInvalidatedReviewCouponCost({
     if (
       invalidation.claim.storeId !== storeId ||
       invalidation.claim.policyId !== snapshot.policyId ||
+      !["product", "store"].includes(invalidation.claim.subjectType) ||
+      snapshot.revision !==
+        reviewInvalidationRevision(invalidation.claim.subjectType) ||
       invalidation.claim.sourceReviewId !== snapshot.sourceReviewId ||
       invalidation.claim.policy.storeId !== storeId ||
       invalidation.claim.policy.contentDigest !== snapshot.policyDigest ||

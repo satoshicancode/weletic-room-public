@@ -14,6 +14,9 @@ import { openReviewSubmissionRoute } from "@/lib/weletic/reviews/open-submission
 import { getPublicProductReviews } from "@/lib/weletic/reviews/public";
 import { getReviewRequestPreview } from "@/lib/weletic/reviews/requests";
 import { submitNativeReview } from "@/lib/weletic/reviews/service";
+import { storeAccountInvitationsRoute } from "@/lib/weletic/reviews/store-account-invitations-route";
+import { getPublicStoreReviews } from "@/lib/weletic/reviews/store-public";
+import { storeReviewSubmissionRoute } from "@/lib/weletic/reviews/store-submission-route";
 import {
   readWeleticShopifyRequestBodyBytes,
   verifyWeleticShopifyRequest,
@@ -42,9 +45,12 @@ async function handle(request: Request, context: Context) {
       return openReviewSubmissionRoute(request, "prepare");
     if (action === "open-upload")
       return openReviewSubmissionRoute(request, "upload");
+    if (action === "store-submit") return storeReviewSubmissionRoute(request);
+    if (action === "store-invitations")
+      return storeAccountInvitationsRoute(request);
     const allowed =
       request.method === "GET"
-        ? ["list", "photo", "health"]
+        ? ["list", "store-list", "photo", "health"]
         : ["request", "submit", "upload"];
     if (!allowed.includes(action))
       throw new ReviewError("not_found", "Review route unavailable");
@@ -105,6 +111,14 @@ async function handle(request: Request, context: Context) {
         ),
       );
       return reviewJson(await getPublicProductReviews(storeId, query));
+    }
+    if (action === "store-list") {
+      const query = Object.fromEntries(
+        [...url.searchParams].filter(([key]) =>
+          ["rating", "limit", "cursor"].includes(key),
+        ),
+      );
+      return reviewJson(await getPublicStoreReviews(storeId, query));
     }
     if (action === "photo") {
       const mediaId = z
