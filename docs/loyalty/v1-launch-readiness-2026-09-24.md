@@ -55,6 +55,10 @@ the public app's extension identities and confirm ownership, grants and placemen
 against the actual Shopify app and company store. The default-config build does
 not establish those facts for `loyalty-public`.
 
+A fresh [13-extension public staging build](public-extension-build-2026-09-24.md)
+passed local validation on the same source SHA; its unique candidate UIDs remain
+unowned until the public-app mapping and deployment gate are accepted.
+
 ## Migration and runtime inventory
 
 The repository has [29 checked-in Shopify-development SQL files](../../infra/shopify-development/migrations/).
