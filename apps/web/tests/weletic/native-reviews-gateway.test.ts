@@ -18,6 +18,41 @@ afterEach(() => {
 });
 
 describe("native review production proxy gateway", () => {
+  it("does not expose account-only store submission to the app proxy", async () => {
+    const response = await reviewProxyResponse(
+      new Request(
+        "https://shop.example.test/apps/weletic/reviews/store-submit",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
+      ),
+      "verified.myshopify.com",
+      "reviews/store-submit",
+      "123",
+    );
+    expect(response.status).toBe(404);
+    expect(transport).not.toHaveBeenCalled();
+  });
+  it("forwards only bounded store-summary inputs with the verified shop", async () => {
+    await reviewProxyResponse(
+      new Request(
+        "https://shop.example.test/apps/weletic/reviews/store-list?shop=attacker.myshopify.com&storeId=attacker&rating=5&limit=10",
+      ),
+      "verified.myshopify.com",
+      "reviews/store-list",
+    );
+    const [url, init] = transport.mock.calls[0];
+    const signed = new Request(String(url), init);
+    const forwarded = new URL(signed.url);
+    expect(forwarded.searchParams.get("shop")).toBe("verified.myshopify.com");
+    expect(forwarded.searchParams.get("storeId")).toBeNull();
+    expect(forwarded.searchParams.get("rating")).toBe("5");
+    expect(verifyWeleticInternalRequest({ request: signed, body: "" })).toBe(
+      true,
+    );
+  });
   it.each([
     ["open-upload", 400, "invalid_open_photo", "invalid_open_photo"],
     ["open-upload", 400, "bad_request", "review_error"],

@@ -492,9 +492,23 @@ authenticated client changes, rejects mismatched write acknowledgments and
 requires explicit reload after an uncertain result. Disabled store-review
 settings still prevent moderation.
 
+The authenticated Shopify App Proxy now forwards a public `store-list` GET
+through the signed core gateway. The core resolves the verified shop to its
+store ID and admits only rating, limit and cursor into the existing privacy
+checked live summary reader; caller-supplied store/product IDs are ignored.
+The gateway regression passed alongside 28 existing native gateway cases.
+Authenticated customer-account sessions can now submit an owned store-review
+invitation through a separate signed `store-submit` route. The Shopify SDK
+supplies shop and numeric customer ID; the core resolves only that store's
+numeric/GID shopper mapping, rejects ambiguous mappings and body identity
+fields, rate-limits by a hashed store/customer key, and passes the current
+installation generation into the existing transactional writer. The App Proxy
+cannot call this account-only action. Focused routing tests covered forged
+query/body identity, ambiguous mappings and duplicate signed context keys.
+
 Focused service, browser-client and panel regressions passed (five cases),
 including authority denial, privacy uncertainty, scoped cursors, acknowledgment
 version/status and old-client response races. Web and Shopify typechecks passed.
-This local UI test does not establish installed Shopify acceptance. The public
-storefront gateway, authenticated shopper submission path, prospective invitation
+This local UI test does not establish installed Shopify acceptance. Storefront
+rendering, account submission UI and invitation discovery, prospective invitation
 writer/settings and live merchant/shopper journey remain open; PR #101 stays draft.

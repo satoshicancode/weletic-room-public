@@ -36,6 +36,7 @@ export async function reviewCustomerAccountResponse(
       "reviews/open-prepare",
       "reviews/open-submit",
       "reviews/open-upload",
+      "reviews/store-submit",
     ].includes(subpath)
   )
     return privateCustomerJson(
@@ -61,6 +62,8 @@ async function reviewGatewayResponse(
   const vary = source === "customer_account" ? "Authorization" : "Cookie";
   try {
     const action = subpath.slice("reviews/".length);
+    if (action === "store-submit" && source !== "customer_account")
+      throw new WeleticGatewayError("Review route unavailable", 404);
     if (request.method === "GET" && action === "open-write")
       return reviewFormResponse(
         new URL(request.url).searchParams.get("locale"),
@@ -72,7 +75,7 @@ async function reviewGatewayResponse(
       );
     const allowed =
       request.method === "GET"
-        ? ["list", "photo"]
+        ? ["list", "store-list", "photo"]
         : request.method === "POST"
           ? [
               "request",
@@ -81,12 +84,17 @@ async function reviewGatewayResponse(
               "open-submit",
               "open-prepare",
               "open-upload",
+              "store-submit",
             ]
           : [];
     if (!allowed.includes(action))
       throw new WeleticGatewayError("Review route unavailable", 404);
     const query = new URLSearchParams({ shop });
-    if (["open-submit", "open-prepare", "open-upload"].includes(action)) {
+    if (
+      ["open-submit", "open-prepare", "open-upload", "store-submit"].includes(
+        action,
+      )
+    ) {
       if (
         !authenticatedCustomerId ||
         !/^[1-9][0-9]{0,19}$/.test(authenticatedCustomerId)
