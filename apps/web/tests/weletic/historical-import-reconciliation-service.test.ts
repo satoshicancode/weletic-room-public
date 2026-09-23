@@ -41,6 +41,7 @@ function fixture() {
     },
   };
   const tx = {
+    $queryRaw: vi.fn().mockResolvedValue([entry]),
     weleticLoyaltyAccount: {
       findMany: vi.fn().mockResolvedValue([
         {
@@ -139,17 +140,16 @@ describe("stored import reconciliation", () => {
       f.tx.weleticPointsLedgerEntry.findMany.mockImplementation(
         async (query: {
           where: {
-            metadata?: unknown;
             id?: { in: string[] };
             referenceId?: { in: string[] };
           };
         }) => {
-          if (query.where.metadata) return entries;
           const ids = query.where.id?.in ?? query.where.referenceId!.in;
           expect(ids.length).toBeLessThanOrEqual(1000);
           return ids.map((id) => byId.get(id.replace("snapshot-", "ledger-"))!);
         },
       );
+      f.tx.$queryRaw.mockResolvedValue(entries);
       expect(await f.run()).toMatchObject({
         reconciled: true,
         fullyCommitted: true,
@@ -160,7 +160,7 @@ describe("stored import reconciliation", () => {
         Math.ceil(count / 1000),
       );
       expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(
-        1 + Math.ceil(count / 1000),
+        Math.ceil(count / 1000),
       );
       // Algorithmic bound, not a wall-clock benchmark or database load claim.
       expect(accountReads).toBeLessThanOrEqual(count * 6);
@@ -228,12 +228,11 @@ describe("stored import reconciliation", () => {
       })),
     });
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
+    f.tx.$queryRaw.mockResolvedValue([]);
     f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValue([]);
     expect((await f.run()).reconciled).toBe(true);
-    expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(4);
-    for (const [
-      query,
-    ] of f.tx.weleticPointsLedgerEntry.findMany.mock.calls.slice(1)) {
+    expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(3);
+    for (const [query] of f.tx.weleticPointsLedgerEntry.findMany.mock.calls) {
       expect(query.where.referenceId.in.length).toBeLessThanOrEqual(1000);
     }
   });
@@ -247,11 +246,14 @@ describe("stored import reconciliation", () => {
       observedNetPoints: "10",
     });
     expect(JSON.stringify(result)).not.toMatch(/snapshot|account|Customer/);
+    expect(f.tx.$queryRaw).toHaveBeenCalledOnce();
     expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        take: 3,
         where: {
-          metadata: { path: "$.sourceId", equals: "source" },
+          referenceId: { in: ["snapshot"] },
+          referenceType: {
+            in: ["LOYALTY_IMPORT_OPENING_BALANCE", "LOYALTY_IMPORT_ROLLBACK"],
+          },
         },
       }),
     );
@@ -263,6 +265,7 @@ describe("stored import reconciliation", () => {
     expect(
       f.tx.weleticLoyaltyImportRowExecution.findMany,
     ).not.toHaveBeenCalled();
+    expect(f.tx.$queryRaw).not.toHaveBeenCalled();
     expect(f.tx.weleticPointsLedgerEntry.findMany).not.toHaveBeenCalled();
   });
   it.each(["foreign", "orphan", "duplicate"])(
@@ -288,13 +291,13 @@ describe("stored import reconciliation", () => {
   it("finds a reference-linked orphan even when its source metadata is absent", async () => {
     const f = fixture();
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
+    f.tx.$queryRaw.mockResolvedValue([]);
     f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: f.entry.id }])
       .mockResolvedValueOnce([{ ...f.entry, metadata: {} }]);
     expect((await f.run()).reconciled).toBe(false);
     expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenNthCalledWith(
-      2,
+      1,
       expect.objectContaining({
         where: {
           referenceId: { in: ["snapshot"] },
@@ -307,8 +310,8 @@ describe("stored import reconciliation", () => {
   });
   it("rejects a claimed ledger entry belonging to another store", async () => {
     const f = fixture();
+    f.tx.$queryRaw.mockResolvedValue([]);
     f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ ...f.entry, storeId: "other" }])
       .mockResolvedValueOnce([]);
     await expect(f.run()).rejects.toThrow();
@@ -316,8 +319,8 @@ describe("stored import reconciliation", () => {
   it("rejects a foreign reference-only orphan without metadata or claims", async () => {
     const f = fixture();
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
+    f.tx.$queryRaw.mockResolvedValue([]);
     f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: f.entry.id }])
       .mockResolvedValueOnce([{ ...f.entry, storeId: "other", metadata: {} }]);
     await expect(f.run()).rejects.toThrow();
@@ -328,7 +331,7 @@ describe("stored import reconciliation", () => {
       reconciled: true,
       observedNetPoints: "10",
     });
-    expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(2);
+    expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(1);
     for (const [query] of f.tx.weleticPointsLedgerEntry.findMany.mock.calls) {
       expect(query.where).not.toHaveProperty("storeId");
       expect(query.take).toBe(3);
@@ -337,8 +340,8 @@ describe("stored import reconciliation", () => {
   it("rejects a discovered reference that cannot be hydrated", async () => {
     const f = fixture();
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
+    f.tx.$queryRaw.mockResolvedValue([]);
     f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: "orphan" }])
       .mockResolvedValueOnce([]);
     await expect(f.run()).rejects.toThrow();
@@ -347,8 +350,8 @@ describe("stored import reconciliation", () => {
     "hydrates a %s claim absent from metadata discovery",
     async (kind) => {
       const f = fixture();
+      f.tx.$queryRaw.mockResolvedValue([]);
       f.tx.weleticPointsLedgerEntry.findMany
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce(
           kind === "missing"
             ? []
@@ -367,7 +370,7 @@ describe("stored import reconciliation", () => {
       if (kind === "corrupt")
         expect(result.issues).toContain("ledger_provenance_mismatch");
       expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenNthCalledWith(
-        2,
+        1,
         expect.objectContaining({ where: { id: { in: ["ledger"] } } }),
       );
     },
@@ -403,9 +406,11 @@ describe("stored import reconciliation", () => {
   });
   it("enforces the cumulative overflow bound across separate discovery paths", async () => {
     const f = fixture();
-    f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([f.entry])
-      .mockResolvedValueOnce([{ id: "second" }, { id: "third" }]);
+    f.tx.$queryRaw.mockResolvedValue([f.entry]);
+    f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValueOnce([
+      { id: "second" },
+      { id: "third" },
+    ]);
     await expect(f.run()).rejects.toThrow();
   });
   it("projects all required execution and ownership evidence without restoration blobs", async () => {
@@ -441,6 +446,10 @@ describe("stored import reconciliation", () => {
   });
   it("detects an unclaimed foreign write with this source provenance", async () => {
     const f = fixture();
+    f.tx.$queryRaw.mockResolvedValue([
+      f.entry,
+      { ...f.entry, id: "foreign-ledger", storeId: "other" },
+    ]);
     f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValue([
       f.entry,
       { ...f.entry, id: "foreign-ledger", storeId: "other" },
@@ -449,7 +458,7 @@ describe("stored import reconciliation", () => {
   });
   it("fails closed when discovered evidence exceeds two entries per row", async () => {
     const f = fixture();
-    f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValue(
+    f.tx.$queryRaw.mockResolvedValue(
       ["one", "two", "three"].map((id) => ({ ...f.entry, id })),
     );
     await expect(f.run()).rejects.toThrow();
@@ -488,6 +497,7 @@ describe("stored import reconciliation", () => {
   it("detects a completed source with pending rows", async () => {
     const f = fixture();
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
+    f.tx.$queryRaw.mockResolvedValue([]);
     f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValue([]);
     expect(await f.run()).toMatchObject({
       reconciled: false,
