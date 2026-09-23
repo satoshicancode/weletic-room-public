@@ -43,6 +43,15 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 | S05 | Privacy/retention           | implemented                                  | Foundations and store/delivery consumers merged                                                                                                                                                                                                                                    | Schema compatibility and live export/erase races                            | M1/M3     |
 | S06 | Listing/production          | missing acceptance                           | [Reviewer packet draft](app-store-reviewer-packet.md)                                                                                                                                                                                                                              | Accepted build, listing/reviewer approval and controlled activation         | M4        |
 
+Read-only Shopify CLI check on September 24 at `037e80fe`: CLI 4.7.0 accepted
+both app configurations with zero validation issues. `shopify app info --json`
+reported 15 selected extensions for the default configuration and zero for
+`loyalty-public`; the two configurations have distinct client IDs. No extension
+was deployed or installed by this check. Before installed acceptance, reconcile
+the public app's extension identities and confirm ownership, grants and placement
+against the actual Shopify app and company store. The default-config build does
+not establish those facts for `loyalty-public`.
+
 ## Migration and runtime inventory
 
 The repository has [29 checked-in Shopify-development SQL files](../../infra/shopify-development/migrations/).
