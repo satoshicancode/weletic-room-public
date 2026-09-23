@@ -1,0 +1,61 @@
+weletic-store-reviews {
+  display: block;
+  min-width: 0;
+  max-width: 960px;
+  margin: 32px auto;
+  padding: 20px;
+  color: inherit;
+  font: inherit;
+  overflow-wrap: anywhere;
+}
+weletic-store-reviews article {
+  border-top: 1px solid #ddd;
+  padding: 24px 0;
+}
+weletic-store-reviews h3 {
+  margin: 8px 0;
+  font-size: 1.1em;
+}
+weletic-store-reviews p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+weletic-store-reviews .wsr-meta {
+  font-size: 0.875em;
+  opacity: 0.8;
+}
+weletic-store-reviews .wsr-summary {
+  font-size: 1.125em;
+  font-weight: 600;
+}
+weletic-store-reviews .wsr-reply {
+  margin: 16px 0 0 16px;
+  padding: 12px;
+  border-left: 3px solid #ddd;
+}
+weletic-store-reviews .wsr-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+weletic-store-reviews select,
+weletic-store-reviews button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid #999;
+  border-radius: 5px;
+  padding: 8px 12px;
+}
+weletic-store-reviews button {
+  cursor: pointer;
+}
+weletic-store-reviews button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+weletic-store-reviews :focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}

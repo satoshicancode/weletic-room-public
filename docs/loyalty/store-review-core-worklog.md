@@ -510,5 +510,16 @@ Focused service, browser-client and panel regressions passed (five cases),
 including authority denial, privacy uncertainty, scoped cursors, acknowledgment
 version/status and old-client response races. Web and Shopify typechecks passed.
 This local UI test does not establish installed Shopify acceptance. Storefront
-rendering, account submission UI and invitation discovery, prospective invitation
+rendering now has a separate theme section block using the signed `store-list`
+route, with EN/JA/VI text and no cached review state across failed page reads.
+Four local jsdom cases passed, including safe text rendering and clearing
+previously visible content after a later privacy/unavailability failure.
+Shopify CLI configuration validation passed for both the default and
+`loyalty-public` app configurations. The new theme JavaScript is 7,259 bytes
+and Theme Check raised no finding for it. A full `shopify app build` remains
+blocked by the existing product-review JavaScript at 11,344 bytes versus the
+10,000-byte threshold and by the free-product function's unavailable
+`graphql-code-generator` executable. The CLI inserted four unrelated Flow UIDs
+locally; these generated changes were reverted before staging.
+Account submission UI and invitation discovery, prospective invitation
 writer/settings and live merchant/shopper journey remain open; PR #101 stays draft.

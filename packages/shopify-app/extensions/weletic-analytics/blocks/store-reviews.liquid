@@ -1,0 +1,12 @@
+<weletic-store-reviews data-locale="{{ request.locale.iso_code | escape }}" data-proxy="/apps/weletic/reviews" {{ block.shopify_attributes }}>
+  <p role="status">Loading store reviews…</p>
+</weletic-store-reviews>
+{% schema %}
+{
+  "name": "Weletic store reviews",
+  "target": "section",
+  "javascript": "weletic-store-reviews.js",
+  "stylesheet": "weletic-store-reviews.css",
+  "settings": []
+}
+{% endschema %}
