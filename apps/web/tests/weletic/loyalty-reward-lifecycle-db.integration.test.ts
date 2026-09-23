@@ -10,13 +10,22 @@ const transport = vi.hoisted(() => ({
   credentials: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: database }));
-vi.mock("@/lib/weletic/shopify/customer-settlement-lock", () => ({
-  withShopifyCustomerSettlementLocks: ({
-    fn,
-  }: {
-    fn: () => Promise<unknown>;
-  }) => fn(),
+vi.mock("@/lib/weletic/redis-lock", () => ({
+  withDistributedLock: ({ fn }: { fn: () => Promise<unknown> }) => fn(),
 }));
+vi.mock(
+  "@/lib/weletic/shopify/customer-settlement-lock",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@/lib/weletic/shopify/customer-settlement-lock")
+    >()),
+    withShopifyCustomerSettlementLocks: ({
+      fn,
+    }: {
+      fn: () => Promise<unknown>;
+    }) => fn(),
+  }),
+);
 vi.mock("@/lib/weletic/loyalty/shopify-discounts", async (importOriginal) => ({
   ...(await importOriginal<
     typeof import("@/lib/weletic/loyalty/shopify-discounts")
@@ -46,7 +55,7 @@ function requireDisposableTarget() {
     process.env.LOYALTY_REWARD_DATABASE_INTEGRATION !== "1" ||
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
-    url.port !== "3307" ||
+    url.port !== "3309" ||
     !match ||
     url.username !== `wr_${match[1]}` ||
     !url.password ||
@@ -115,6 +124,7 @@ describe("loyalty reward lifecycle on isolated MySQL", () => {
       await database.$queryRaw`SELECT DATABASE() AS databaseName, CURRENT_USER() AS principal`,
     ).toEqual([target]);
     expect(await database.weleticShopifyStore.count()).toBe(0);
+    expect(await database.weleticFxRateSnapshot.count()).toBe(0);
     verified = true;
     vi.stubEnv(
       "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS",
@@ -188,6 +198,10 @@ describe("loyalty reward lifecycle on isolated MySQL", () => {
       await database.weleticRewardDefinition.deleteMany({ where: { storeId } });
       await database.weleticPointsLedgerEntry.deleteMany({
         where: { storeId },
+      });
+      await database.weleticCommerceOrder.deleteMany({ where: { storeId } });
+      await database.weleticFxRateSnapshot.deleteMany({
+        where: { provider: "order-snapshot:gid://shopify/Order/2001" },
       });
       await database.weleticLoyaltyAccount.deleteMany({ where: { storeId } });
       await database.weleticShopper.deleteMany({ where: { storeId } });
@@ -547,6 +561,254 @@ describe("loyalty reward lifecycle on isolated MySQL", () => {
       (
         await database.weleticLoyaltyAccount.findUniqueOrThrow({
           where: { id: accountId },
+        })
+      ).cachedPointsBalance,
+    ).toBe(await sumPersistedLedgerPoints());
+  }, 120_000);
+
+  it("claws back order earnings after coupon use without recrediting the reward", async () => {
+    const { appendPointsLedgerEntry } = await import(
+      "@/lib/weletic/loyalty/ledger"
+    );
+    const { provisionDiscountSaga } = await import(
+      "@/lib/weletic/loyalty/saga"
+    );
+    const { settleRewardRedemptionsUsedByOrder } = await import(
+      "@/lib/weletic/loyalty/redemption-settlement"
+    );
+    const { recordWeleticRefund } = await import(
+      "@/lib/weletic/commerce/record-refund"
+    );
+    const orderId = "gid://shopify/Order/2001";
+    const orderLineId = `refund_line_${suffix}`;
+    const grantId = `refund_grant_${suffix}`;
+    const rewardDefinitionId = `refund_reward_${suffix}`;
+    const discountCode = `WL-${suffix.toUpperCase()}-REFUND`;
+    transport.create
+      .mockReset()
+      .mockImplementation(
+        async ({
+          discountCode: requestedCode,
+          rewardDefinition,
+        }: {
+          discountCode: string;
+          rewardDefinition: { discountValue: number | string | null };
+        }) => {
+          expect(requestedCode).toBe(discountCode);
+          expect(String(rewardDefinition.discountValue)).toMatch(
+            /^1(?:\.0+)?$/,
+          );
+          return {
+            id: `gid://shopify/DiscountCodeNode/${suffix}-refund`,
+            code: discountCode,
+            title: "Isolated refund reward",
+            status: "ACTIVE",
+          };
+        },
+      );
+    transport.lookup.mockReset().mockResolvedValue(null);
+    transport.credentials.mockReset().mockResolvedValue({
+      shopDomain: `${suffix}.myshopify.com`,
+      accessToken: "test-only-token",
+      source: "app_session",
+    });
+    await database.weleticRewardDefinition.create({
+      data: {
+        id: rewardDefinitionId,
+        storeId,
+        name: "Refund order amount off",
+        rewardType: "amount_off",
+        exchangeType: "fixed",
+        pointsCost: BigInt(100),
+        discountValue: 1,
+      },
+    });
+    const issued = await provisionDiscountSaga({
+      storeId,
+      accountId,
+      rewardDefinitionId,
+      idempotencyKey: `reward-${suffix}-refund`,
+      discountCode,
+      shopDomain: `${suffix}.myshopify.com`,
+      accessToken: "test-only-token",
+    });
+    expect(issued).toEqual(
+      expect.objectContaining({ success: true, status: "issued" }),
+    );
+
+    await database.weleticCommerceOrder.create({
+      data: {
+        id: orderId,
+        storeId,
+        programId: affiliateProgramId,
+        shopperId,
+        externalId: "2001",
+        presentmentCurrency: "USD",
+        presentmentSubtotal: BigInt(1_000),
+        presentmentDiscount: BigInt(100),
+        presentmentNet: BigInt(900),
+        presentmentTotal: BigInt(900),
+        shopCurrency: "USD",
+        shopSubtotal: BigInt(1_000),
+        shopDiscount: BigInt(100),
+        shopNet: BigInt(900),
+        shopTotal: BigInt(900),
+        accountingCurrency: "USD",
+        accountingNet: BigInt(900),
+        accountingTotal: BigInt(900),
+        accountingFxRate: "1.0",
+        occurredAt: new Date("2026-09-24T12:00:00Z"),
+      },
+    });
+    await database.weleticCommerceOrderLine.create({
+      data: {
+        id: orderLineId,
+        orderId,
+        externalId: "20011",
+        title: "Two-unit reward order",
+        quantity: 2,
+        presentmentGross: BigInt(1_000),
+        presentmentDiscount: BigInt(100),
+        presentmentNet: BigInt(900),
+        shopGross: BigInt(1_000),
+        shopDiscount: BigInt(100),
+        shopNet: BigInt(900),
+        accountingNet: BigInt(900),
+        commissionableAccountingAmount: BigInt(900),
+      },
+    });
+    expect(
+      await settleRewardRedemptionsUsedByOrder({
+        storeId,
+        discountCodes: [discountCode],
+        orderId,
+        shopifyCustomerId: `gid://shopify/Customer/${suffix}`,
+        usedAt: new Date("2026-09-24T12:00:00Z"),
+      }),
+    ).toMatchObject({ markedUsed: 1 });
+    const redemption = await database.weleticRewardRedemption.findUniqueOrThrow(
+      { where: { id: issued.redemptionId } },
+    );
+    expect(redemption.status).toBe("used");
+    expect(redemption.orderId).toBe(orderId);
+    const balanceBeforeEarn = await sumPersistedLedgerPoints();
+    await database.weleticLoyaltyEarnGrant.create({
+      data: {
+        id: grantId,
+        storeId,
+        programId: loyaltyProgramId,
+        accountId,
+        shopperId,
+        orderId,
+        status: "settled",
+        currency: "USD",
+        eligibleSubtotalAmount: BigInt(900),
+        orderTotalAmount: BigInt(900),
+        grossPoints: BigInt(180),
+        settledPoints: BigInt(180),
+        availableAt: new Date("2026-09-24T12:00:00Z"),
+        settledAt: new Date("2026-09-24T12:00:00Z"),
+        pointsPerCurrencyUnit: "20.0",
+        effectiveMultiplier: "1.0",
+      },
+    });
+    await database.weleticLoyaltyOrderLineEarn.create({
+      data: {
+        id: `refund_line_earn_${suffix}`,
+        grantId,
+        orderLineId,
+        storeId,
+        quantity: 2,
+        lineNetAmount: BigInt(900),
+        awardedPoints: BigInt(180),
+      },
+    });
+    await appendPointsLedgerEntry({
+      storeId,
+      accountId,
+      entryType: WeleticPointsLedgerEntryType.EARN_ORDER,
+      pointsDelta: BigInt(180),
+      grantId,
+      idempotencyKey: `refund_order_earn:${suffix}`,
+    });
+    expect(await sumPersistedLedgerPoints()).toBe(
+      balanceBeforeEarn + BigInt(180),
+    );
+
+    for (const [index, expectedReversed] of [90, 180].entries()) {
+      const event = {
+        id: 3001 + index,
+        order_id: 2001,
+        created_at: `2026-09-25T0${index}:00:00Z`,
+        refund_line_items: [
+          {
+            id: 4001 + index,
+            line_item_id: 20011,
+            quantity: 1,
+            subtotal_set: {
+              shop_money: { amount: "4.50", currency_code: "USD" },
+            },
+          },
+        ],
+      };
+      const first = await recordWeleticRefund({
+        event,
+        workspaceId,
+      });
+      expect(first.duplicate).toBe(false);
+      if (!first.loyaltyLedgerEntryId)
+        throw new Error("Refund ingestion did not post an earn reversal");
+      expect(
+        await database.weleticPointsLedgerEntry.findUniqueOrThrow({
+          where: { id: first.loyaltyLedgerEntryId },
+          select: { entryType: true, pointsDelta: true },
+        }),
+      ).toEqual({ entryType: "REFUND_REVERSAL", pointsDelta: BigInt(-90) });
+      const replay = await recordWeleticRefund({ event, workspaceId });
+      expect(replay.duplicate).toBe(true);
+      expect(replay.loyaltyLedgerEntryId).toBe(first.loyaltyLedgerEntryId);
+      expect(
+        await database.weleticLoyaltyEarnGrant.findUniqueOrThrow({
+          where: { id: grantId },
+          select: { reversedPoints: true },
+        }),
+      ).toEqual({ reversedPoints: BigInt(expectedReversed) });
+      expect(await sumPersistedLedgerPoints()).toBe(
+        balanceBeforeEarn + BigInt(180 - expectedReversed),
+      );
+      expect(
+        await database.weleticRewardRedemption.findUniqueOrThrow({
+          where: { id: redemption.id },
+          select: { status: true, orderId: true },
+        }),
+      ).toEqual({ status: "used", orderId });
+    }
+
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: {
+          storeId,
+          accountId,
+          grantId,
+          entryType: "REFUND_REVERSAL",
+        },
+      }),
+    ).toBe(2);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: {
+          storeId,
+          accountId,
+          referenceId: redemption.id,
+          referenceType: "REDEMPTION_REFUND",
+        },
+      }),
+    ).toBe(0);
+    expect(
+      (
+        await database.weleticLoyaltyAccount.findUniqueOrThrow({
+          where: { id: accountId },
+          select: { cachedPointsBalance: true },
         })
       ).cachedPointsBalance,
     ).toBe(await sumPersistedLedgerPoints());
