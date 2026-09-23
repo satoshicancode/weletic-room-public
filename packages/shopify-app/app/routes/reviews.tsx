@@ -33,6 +33,7 @@ import { ReviewDeliveryHistory } from "../components/ReviewDeliveryHistory";
 import { ReviewIncentivesPanel } from "../components/ReviewIncentivesPanel";
 import { ReviewModerationForm } from "../components/ReviewModerationForm";
 import { ReviewTranslationsPanel } from "../components/ReviewTranslationsPanel";
+import { StoreReviewSettingsPanel } from "../components/StoreReviewSettingsPanel";
 import { StoreReviewsPanel } from "../components/StoreReviewsPanel";
 import { createMerchantOpenReviewPolicyClient } from "../merchant-open-review-policy-client";
 import { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
@@ -41,6 +42,7 @@ import { createMerchantReviewModerationClient } from "../merchant-review-moderat
 import { createMerchantReviewTranslationsClient } from "../merchant-review-translations-client";
 import { createMerchantReviewsClient } from "../merchant-reviews-client";
 import { merchantReviewsCopy } from "../merchant-reviews-copy";
+import { createMerchantStoreReviewSettingsClient } from "../merchant-store-review-settings-client";
 import { createMerchantStoreReviewsClient } from "../merchant-store-reviews-client";
 import { reviewModerationCopy } from "../review-moderation-copy";
 import { reviewTranslationCopy } from "../review-translation-copy";
@@ -97,6 +99,10 @@ export default function ReviewsPage() {
   );
   const storeReviewsClient = useMemo(
     () => createMerchantStoreReviewsClient(() => shopify.idToken()),
+    [shopify],
+  );
+  const storeReviewSettingsClient = useMemo(
+    () => createMerchantStoreReviewSettingsClient(() => shopify.idToken()),
     [shopify],
   );
   const copy = merchantReviewsCopy[locale];
@@ -279,6 +285,12 @@ export default function ReviewsPage() {
                 locale={locale}
                 acquireOperation={acquireTranslationOperation}
                 onDirtyChange={policyDirtyChanged}
+              />
+            </Card>
+            <Card>
+              <StoreReviewSettingsPanel
+                client={storeReviewSettingsClient}
+                locale={locale}
               />
             </Card>
             <Card>

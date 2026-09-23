@@ -35,6 +35,7 @@ export type WeleticIdPrefix =
   | "wreferral_"
   | "wreviewint_"
   | "wstorerev_"
+  | "wstorset_"
   | "wstoreaudit_"
   | "wreview_"
   | "wrevreq_"

@@ -20,6 +20,7 @@ model WeleticStoreReviewSettings {
   revision            Int      @default(1)
   enabled             Boolean  @default(false)
   requestEmailEnabled Boolean  @default(false)
+  activatedAt         DateTime?
   autoPublish         Boolean  @default(false)
   sendAfterDays       Int      @default(7)
   expiresAfterDays    Int      @default(30)

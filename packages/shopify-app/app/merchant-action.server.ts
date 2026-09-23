@@ -17,6 +17,10 @@ import {
 } from "../../../apps/web/lib/weletic/reviews/open-policy-contract";
 import { storeMerchantListInputSchema } from "../../../apps/web/lib/weletic/reviews/store-merchant-contract";
 import {
+  storeReviewSettingsReadInputSchema,
+  storeReviewSettingsWriteInputSchema,
+} from "../../../apps/web/lib/weletic/reviews/store-settings-contract";
+import {
   manualReviewTranslationInputSchema,
   manualReviewTranslationReadInputSchema,
 } from "../../../apps/web/lib/weletic/reviews/translation-contract";
@@ -83,6 +87,14 @@ const operations = {
   "store-reviews": {
     schema: storeMerchantListInputSchema,
     path: "reviews/store/list",
+  },
+  "store-review-settings-read": {
+    schema: storeReviewSettingsReadInputSchema,
+    path: "reviews/store/settings/read",
+  },
+  "store-review-settings-write": {
+    schema: storeReviewSettingsWriteInputSchema,
+    path: "reviews/store/settings/write",
   },
   customers: { schema: merchantShopperListInputSchema, path: "customers/list" },
   "customer-profile": {

@@ -523,3 +523,25 @@ blocked by the existing product-review JavaScript at 11,344 bytes versus the
 locally; these generated changes were reverted before staging.
 Account submission UI and invitation discovery, prospective invitation
 writer/settings and live merchant/shopper journey remain open; PR #101 stays draft.
+
+## September 23: prospective store-review controls
+
+The still-unapplied five-table draft now includes nullable
+`WeleticStoreReviewSettings.activatedAt`; its exact Prisma-generated DDL matches
+the draft SQL. Signed merchant settings require `reviews.configure`, current
+store/installation authority and revision compare-and-swap. Both the store
+module and invitation email start disabled. Enabling email records the cutoff;
+ordinary edits preserve it, while disabling and re-enabling advances it. The
+future invitation collector must require fulfillment at or after this cutoff
+and the parent Reviews activation cutoff. An EN/JA/VI editor requires explicit
+confirmation, validates bounded delays, rejects mismatched acknowledgments,
+clears stale authenticated-client data, and forces reload after an uncertain
+save. Parent Reviews must be active to enable store reviews, while the merchant
+can always turn an already-enabled store policy off.
+
+The schema test and focused settings tests passed. The exact five-table and
+collection/reminder SQL migrations were rehearsed again in a disposable MySQL
+database, with four selected store-review privacy cases passing. Exact fixture
+database and principal cleanup left the retained ledger count at 16. No shared
+schema or live settings were changed. Invitation production/delivery and
+installed activation are still missing, so PR #101 remains draft.

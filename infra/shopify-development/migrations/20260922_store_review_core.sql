@@ -7,6 +7,7 @@ CREATE TABLE `WeleticStoreReviewSettings` (
     `revision` INTEGER NOT NULL DEFAULT 1,
     `enabled` BOOLEAN NOT NULL DEFAULT false,
     `requestEmailEnabled` BOOLEAN NOT NULL DEFAULT false,
+    `activatedAt` DATETIME(3) NULL,
     `autoPublish` BOOLEAN NOT NULL DEFAULT false,
     `sendAfterDays` INTEGER NOT NULL DEFAULT 7,
     `expiresAfterDays` INTEGER NOT NULL DEFAULT 30,
