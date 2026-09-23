@@ -1,6 +1,9 @@
 # Persistent acceptance resource packet — draft inventory
 
 Status: incomplete proposal, **not provisioning or spending approval**.
+The [separate acceptance and production budget models](release-budget-model-2026-09-24.md)
+reconcile newer public rates and expose the remaining unpriced lines; neither
+model is an approval-ready quote.
 Scope: S04/S06 under the approved company-store Loyalty and Reviews plan.
 Source baseline: public main `a6965d65079cd57fc15f558d977bace14790f4c0`.
 
