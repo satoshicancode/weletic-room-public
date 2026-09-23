@@ -216,7 +216,8 @@ The default remains the loyalty-only route inventory. After separate release
 approval, `WELETIC_RELEASE_REVIEW_ROUTES=1` admits the exact existing signed
 review service and merchant endpoints from `reviewRoutes` in `loyalty-routes.mjs`.
 Missing or `0` keeps them denied; other values fail runtime admission. Read-only
-shopper service actions use GET; invitation/submission/upload and all merchant
+shopper list, account-invitation list, photo and health actions use GET;
+invitation request, submission, upload and all merchant
 operations use POST. New actions are not admitted through prefix matching.
 
 This switch changes **ingress admission only**. It does not enable a store's
@@ -232,11 +233,12 @@ remains `loyalty-only` to retain its narrow Shopify maintenance scope; it is not
 the module enablement selector. Review jobs already use the store-scoped outbox,
 which requires separate worker/provider acceptance.
 
-Preparation boundary: this inventory is based on public main at PR #87. Draft
-collection routes, future store-review/Q&A/video/import routes, processing workers
-and their resource/media policies must be integrated explicitly when implemented;
-none is silently exposed by this flag. This is not complete Reviews release
-packaging, a container-image acceptance result, or deployment authorization.
+The exact inventory now includes the merged store-review submission, public
+summary, account invitation, merchant moderation/settings and prospective
+collection gateways. It still excludes future Q&A, video and import routes;
+processing workers and their resource/media policies require separate review.
+This is not complete Reviews release packaging, a container-image acceptance
+result, or deployment authorization.
 
 ## September 17: loyalty-only web boundary
 

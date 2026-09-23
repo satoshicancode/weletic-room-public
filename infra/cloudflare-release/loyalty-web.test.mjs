@@ -138,7 +138,25 @@ test("review admission requires explicit opt-in and the exact supported method",
         `/api/internal/shopify/merchant/reviews/translations/${action}`,
       ),
     );
+    assert.ok(
+      reviewRoutes.includes(
+        `/api/internal/shopify/merchant/reviews/collection/${action}`,
+      ),
+    );
+    assert.ok(
+      reviewRoutes.includes(
+        `/api/internal/shopify/merchant/reviews/store/settings/${action}`,
+      ),
+    );
   }
+  for (const path of [
+    "/api/internal/shopify/reviews/store-list",
+    "/api/internal/shopify/reviews/store-submit",
+    "/api/internal/shopify/reviews/store-invitations",
+    "/api/internal/shopify/merchant/reviews/store/list",
+    "/api/internal/shopify/merchant/reviews/store/moderate",
+  ])
+    assert.ok(reviewRoutes.includes(path), path);
   assert.equal(
     admitsLoyaltyRequest(
       {
@@ -151,9 +169,12 @@ test("review admission requires explicit opt-in and the exact supported method",
   );
   assert.equal(new Set(reviewRoutes).size, reviewRoutes.length);
   for (const url of reviewRoutes) {
-    const method = /\/shopify\/reviews\/(list|photo|health)$/.test(url)
-      ? "GET"
-      : "POST";
+    const method =
+      /\/shopify\/reviews\/(list|store-list|store-invitations|photo|health)$/.test(
+        url,
+      )
+        ? "GET"
+        : "POST";
     const req = { ...input(url), method };
     assert.equal(admitsLoyaltyRequest(req), false);
     assert.equal(admitsLoyaltyRequest(req, { reviewsEnabled: "1" }), false);
@@ -191,7 +212,9 @@ test("review admission requires explicit opt-in and the exact supported method",
   }
   for (const url of [
     "/api/internal/shopify/reviews/new-action",
-    "/api/internal/shopify/merchant/reviews/collection/write",
+    "/api/internal/shopify/reviews/store-delete",
+    "/api/internal/shopify/merchant/reviews/collection/delete",
+    "/api/internal/shopify/merchant/reviews/store/settings/delete",
     "/api/auth/signin",
   ])
     assert.equal(
