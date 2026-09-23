@@ -144,7 +144,10 @@ it("rejects a blank delay instead of treating it as immediate delivery", async (
     'input[id$="-send"]',
   ) as HTMLInputElement;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(delay, "");
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(delay, "");
     delay.dispatchEvent(new Event("input", { bubbles: true }));
     delay.dispatchEvent(new Event("change", { bubbles: true }));
   });
