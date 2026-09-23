@@ -114,8 +114,8 @@ orders/sends or a different recipient, revise the packet before execution.
   enrollment recovery and activation gates pass. No incentives may be enabled
   merely to exercise collection.
 - A local CLI tunnel is not persistent Cloudflare supervision or release proof.
-  The current restricted release ingress does not admit the collection routes;
-  explicit route review and complete review worker/media packaging remain open.
+  Verify exact review-route admission on the release candidate; complete review
+  worker/media packaging and provider operation remain open.
 - Exact supported suppression, expiry and remaining invitation schedules require
   recorded cases beyond the two happy-path fixtures; do not claim universal
   collection completion from this packet alone.
