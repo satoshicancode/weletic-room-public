@@ -16,7 +16,11 @@ const en = {
   exportNote: "Financial exports are available to the store owner only.",
   tierHistoryTitle: "Recorded VIP tier history",
   tierHistoryCsv: "Export tier events CSV",
-  tooMany: "More than 2,000 tier events match. Choose a shorter date range.",
+  ledgerRowsTitle: "Recorded points transactions",
+  ledgerRowsCsv: "Export points transactions CSV",
+  ledgerRowsSemantics:
+    "Owner-only export of up to 2,000 retained, non-redacted ledger entries within 366 UTC days. Select both dates first. Points, pending points and balances are exact integer strings in the file. Import numeric columns as text in spreadsheet apps to avoid rounding long values. Account IDs are pseudonyms; shopper, order, grant and raw reference fields are omitted. Missing or erased history is unavailable.",
+  tooMany: "More than 2,000 rows match. Choose a shorter date range.",
   tierHistorySemantics:
     "Owner-only export of up to 2,000 retained, non-redacted tier events within 366 UTC days. Select both dates first. Larger results require a shorter date range; no partial file is downloaded. Account IDs are pseudonyms; tier names are their current labels, not labels captured when the event occurred. Missing or erased history and past membership are unavailable.",
   semantics:
@@ -175,8 +179,11 @@ const ja: Copy = {
   exportNote: "財務データの出力はストアオーナーのみ利用できます。",
   tierHistoryTitle: "記録されたVIPランク履歴",
   tierHistoryCsv: "ランク履歴CSVを出力",
-  tooMany:
-    "該当するランク履歴が2,000件を超えています。期間を短くしてください。",
+  ledgerRowsTitle: "記録されたポイント取引",
+  ledgerRowsCsv: "ポイント取引CSVを出力",
+  ledgerRowsSemantics:
+    "オーナー限定。UTCで最大366日間の保持済み・非削除の台帳記録を最大2,000件出力します。開始日と終了日を選択してください。ファイル内のポイント、保留ポイント、残高は正確な整数文字列です。表計算アプリで桁数の多い値が丸められないよう、数値列をテキストとして読み込んでください。アカウントIDは仮名化され、顧客・注文・付与・参照の生データは含まれません。欠損または削除済みの履歴は利用できません。",
+  tooMany: "該当する行が2,000件を超えています。期間を短くしてください。",
   tierHistorySemantics:
     "ストアオーナーのみ、最大366日間の保持中かつ非削除のランク履歴を2,000件まで出力できます。両方の日付を選択してください。超過した場合は期間を短くしてください。部分的なファイルは出力しません。アカウントIDは仮名化され、ランク名は変更当時ではなく現在の名称です。欠落・削除済みの履歴や過去の所属は利用できません。",
   semantics:
@@ -333,7 +340,11 @@ const vi: Copy = {
   exportNote: "Chỉ chủ cửa hàng có quyền xuất dữ liệu tài chính.",
   tierHistoryTitle: "Lịch sử hạng VIP đã ghi nhận",
   tierHistoryCsv: "Xuất CSV sự kiện hạng",
-  tooMany: "Có hơn 2.000 sự kiện hạng. Hãy chọn khoảng ngày ngắn hơn.",
+  ledgerRowsTitle: "Giao dịch điểm đã ghi nhận",
+  ledgerRowsCsv: "Xuất CSV giao dịch điểm",
+  ledgerRowsSemantics:
+    "Chỉ chủ cửa hàng được xuất tối đa 2.000 bút toán còn lưu và chưa bị xóa trong tối đa 366 ngày UTC. Chọn cả ngày bắt đầu và kết thúc. Điểm, điểm chờ và số dư là chuỗi số nguyên chính xác trong tệp. Hãy nhập các cột số dưới dạng văn bản trong ứng dụng bảng tính để tránh làm tròn số dài. ID tài khoản được thay bằng mã ẩn danh; không gồm dữ liệu gốc về khách hàng, đơn hàng, lần cấp hay tham chiếu. Lịch sử thiếu hoặc đã xóa không khả dụng.",
+  tooMany: "Có hơn 2.000 dòng phù hợp. Hãy chọn khoảng ngày ngắn hơn.",
   tierHistorySemantics:
     "Chỉ chủ cửa hàng được xuất tối đa 2.000 sự kiện hạng còn lưu, chưa bị xóa dữ liệu trong khoảng tối đa 366 ngày UTC. Hãy chọn cả hai ngày. Nếu vượt giới hạn, hãy thu hẹp khoảng ngày; hệ thống không tải tệp thiếu dữ liệu. ID tài khoản được thay bằng bút danh; tên hạng là tên hiện tại, không phải tên lúc xảy ra sự kiện. Lịch sử thiếu hoặc đã xóa và tư cách hạng trong quá khứ không khả dụng.",
   semantics:

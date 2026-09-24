@@ -1,6 +1,12 @@
 "use client";
 
 import React, { useRef, useState } from "react";
+import { merchantLedgerRowCsv } from "../../../lib/weletic/loyalty/ledger-row-csv";
+import {
+  merchantLedgerRowExportRequestSchema,
+  type MerchantLedgerRowExportRequest,
+  type MerchantLedgerRowExportResponse,
+} from "../../../lib/weletic/loyalty/ledger-row-export-contract";
 import {
   merchantAnalyticsFilterSchema,
   type MerchantAnalyticsRequest,
@@ -21,6 +27,9 @@ export type MerchantAnalyticsTransport = (
 export type MerchantTierHistoryTransport = (
   request: MerchantTierHistoryExportRequest,
 ) => Promise<MerchantTierHistoryExportResponse>;
+export type MerchantLedgerRowTransport = (
+  request: MerchantLedgerRowExportRequest,
+) => Promise<MerchantLedgerRowExportResponse>;
 
 function download(content: string, contentType: string, filename: string) {
   const url = URL.createObjectURL(new Blob([content], { type: contentType }));
@@ -34,9 +43,11 @@ function download(content: string, contentType: string, filename: string) {
 export function MerchantAnalyticsScreen({
   request,
   requestTierHistory,
+  requestLedgerRows,
 }: {
   request: MerchantAnalyticsTransport;
   requestTierHistory?: MerchantTierHistoryTransport;
+  requestLedgerRows?: MerchantLedgerRowTransport;
 }) {
   const [locale, setLocale] =
     useState<keyof typeof merchantAnalyticsCopy>("en");
@@ -146,6 +157,43 @@ export function MerchantAnalyticsScreen({
         merchantTierHistoryCsv(result.rows),
         "text/csv;charset=utf-8",
         `weletic-tier-history-${start}-${end}.csv`,
+      );
+    } catch {
+      if (version === epoch.current) setError("error");
+    } finally {
+      if (version === epoch.current) setBusy(false);
+    }
+  }
+  async function exportLedgerRows() {
+    if (!snapshot?.canExport || !requestLedgerRows || !start || !end) {
+      setError("invalid");
+      return;
+    }
+    const parsed = merchantLedgerRowExportRequestSchema.safeParse({
+      filter: {
+        startAt: `${start}T00:00:00.000Z`,
+        endAt: `${end}T23:59:59.999Z`,
+      },
+      expectedInstallationGeneration: snapshot.installationGeneration,
+    });
+    if (!parsed.success) {
+      setError("invalid");
+      return;
+    }
+    const version = ++epoch.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await requestLedgerRows(parsed.data);
+      if (version !== epoch.current) return;
+      if (result.status === "too_large") {
+        setError("tooMany");
+        return;
+      }
+      download(
+        merchantLedgerRowCsv(result.rows),
+        "text/csv;charset=utf-8",
+        `weletic-points-transactions-${start}-${end}.csv`,
       );
     } catch {
       if (version === epoch.current) setError("error");
@@ -337,6 +385,19 @@ export function MerchantAnalyticsScreen({
                 onClick={() => void exportTierHistory()}
               >
                 {copy.tierHistoryCsv}
+              </button>
+            </section>
+          )}
+          {requestLedgerRows && (
+            <section>
+              <h2>{copy.ledgerRowsTitle}</h2>
+              <p>{copy.ledgerRowsSemantics}</p>
+              <button
+                type="button"
+                disabled={busy || !snapshot.canExport || !start || !end}
+                onClick={() => void exportLedgerRows()}
+              >
+                {copy.ledgerRowsCsv}
               </button>
             </section>
           )}
