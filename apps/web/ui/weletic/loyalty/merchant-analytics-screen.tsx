@@ -308,6 +308,20 @@ export function MerchantAnalyticsScreen({
               </p>
             </section>
           )}
+          <p>{copy.recordedTierChangesSemantics}</p>
+          {snapshot.recordedTierChangesSeries.status === "available" ? (
+            table(
+              copy.recordedTierChangesSeries,
+              snapshot.recordedTierChangesSeries.rows,
+            )
+          ) : (
+            <section>
+              <h2>{copy.recordedTierChangesSeries}</h2>
+              <p role="status">
+                {copy[snapshot.recordedTierChangesSeries.status]}
+              </p>
+            </section>
+          )}
           <p>{copy.redemptionRateSemantics}</p>
           {snapshot.redemptionRateSeries.status === "available" ? (
             table(copy.redemptionRateSeries, snapshot.redemptionRateSeries.rows)

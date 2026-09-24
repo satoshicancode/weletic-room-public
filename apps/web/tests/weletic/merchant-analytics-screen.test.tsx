@@ -53,6 +53,12 @@ const response: MerchantAnalyticsResponse = {
       coverage: "retained_qualifying_ledger_accounts_only",
       rows: [],
     },
+    recordedTierChangesSeries: {
+      status: "range_required",
+      bucket: "utc_month",
+      coverage: "retained_tier_change_reasons_only",
+      rows: [],
+    },
     redemptionRateSeries: {
       status: "range_required",
       bucket: "utc_month",
@@ -262,6 +268,53 @@ it.each([
   expect(heading).toBeDefined();
   const section = heading!.closest("section")!;
   expect(section.textContent).toContain(firstLabel);
+  expect(section.textContent).toContain("9007199254740990");
+  expect(node.innerHTML).not.toContain("account_123");
+});
+
+it.each([
+  ["en", "Recorded VIP tier events by reason (UTC)", "Manual override"],
+  ["ja", "記録されたVIPランク変更理由（UTC）", "手動変更"],
+  ["vi", "Sự kiện hạng VIP đã ghi theo lý do (UTC)", "Điều chỉnh thủ công"],
+])("renders recorded VIP reasons in %s", async (locale, title, manualLabel) => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: {
+      ...response.snapshot,
+      recordedTierChangesSeries: {
+        status: "available",
+        bucket: "utc_month",
+        coverage: "retained_tier_change_reasons_only",
+        rows: [
+          {
+            month: "2026-09",
+            totalChanges: "9007199254740993",
+            thresholdReached: "9007199254740990",
+            bonusPromotion: "0",
+            annualDowngrade: "0",
+            gracePeriodExpired: "0",
+            programActivation: "0",
+            manualOverride: "3",
+            otherReasons: "0",
+          },
+        ],
+      },
+    },
+  } satisfies MerchantAnalyticsResponse);
+  await act(async () =>
+    root.render(createElement(MerchantAnalyticsScreen, { request })),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const heading = Array.from(node.querySelectorAll("h2")).find(
+    (element) => element.textContent === title,
+  );
+  expect(heading).toBeDefined();
+  const section = heading!.closest("section")!;
+  expect(section.textContent).toContain(manualLabel);
   expect(section.textContent).toContain("9007199254740990");
   expect(node.innerHTML).not.toContain("account_123");
 });

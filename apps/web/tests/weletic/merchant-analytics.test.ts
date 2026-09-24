@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   series: vi.fn(),
   ledgerNetSeries: vi.fn(),
   firstEarnersSeries: vi.fn(),
+  tierChangesSeries: vi.fn(),
   orderSeries: vi.fn(),
 }));
 vi.mock("../../lib/weletic/shopify/staff-authorization", () => ({
@@ -36,6 +37,9 @@ vi.mock("../../lib/weletic/loyalty/ledger-net-series", () => ({
 }));
 vi.mock("../../lib/weletic/loyalty/first-recorded-earners-series", () => ({
   readMerchantFirstRecordedEarnersSeries: mocks.firstEarnersSeries,
+}));
+vi.mock("../../lib/weletic/loyalty/recorded-tier-change-series", () => ({
+  readMerchantRecordedTierChangeSeries: mocks.tierChangesSeries,
 }));
 vi.mock("../../lib/weletic/loyalty/order-earning-series", () => ({
   readMerchantOrderEarningSeries: mocks.orderSeries,
@@ -167,6 +171,24 @@ beforeEach(() => {
       },
     ],
   });
+  mocks.tierChangesSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_tier_change_reasons_only",
+    rows: [
+      {
+        month: "2026-09",
+        totalChanges: "2",
+        thresholdReached: "1",
+        bonusPromotion: "0",
+        annualDowngrade: "0",
+        gracePeriodExpired: "0",
+        programActivation: "0",
+        manualOverride: "1",
+        otherReasons: "0",
+      },
+    ],
+  });
   mocks.orderSeries.mockResolvedValue({
     status: "available",
     bucket: "utc_day",
@@ -232,9 +254,20 @@ describe("merchant analytics", () => {
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
     });
+    expect(mocks.tierChangesSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
     expect(result.snapshot.firstRecordedEarnersSeries.rows[0]).toMatchObject({
       firstRecordedAccounts: "1",
       returningAccounts: "1",
+    });
+    expect(result.snapshot.recordedTierChangesSeries.rows[0]).toMatchObject({
+      totalChanges: "2",
+      manualOverride: "1",
+      otherReasons: "0",
     });
     expect(result.snapshot.ledgerNetSeries.openingNetPoints).toBe("-7");
     expect(mocks.orderSeries).toHaveBeenCalledWith({
@@ -269,6 +302,24 @@ describe("merchant analytics", () => {
           ledgerNetSeries: {
             ...result.snapshot.ledgerNetSeries,
             rows: result.snapshot.ledgerNetSeries.rows.slice(1),
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          recordedTierChangesSeries: {
+            ...result.snapshot.recordedTierChangesSeries,
+            rows: [
+              {
+                ...result.snapshot.recordedTierChangesSeries.rows[0],
+                manualOverride: "2",
+                otherReasons: "0",
+              },
+            ],
           },
         },
       }),
@@ -393,6 +444,9 @@ describe("merchant analytics", () => {
         expect(result.download!.content).toContain(huge.toString());
         expect(result.download!.content).toContain(
           "firstRecordedEarnersSeries.rows.0.firstRecordedAccounts,1",
+        );
+        expect(result.download!.content).toContain(
+          "recordedTierChangesSeries.rows.0.totalChanges,2",
         );
       }
     },
