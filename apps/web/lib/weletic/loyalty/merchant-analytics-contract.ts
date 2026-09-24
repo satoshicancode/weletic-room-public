@@ -235,6 +235,44 @@ export const merchantAnalyticsSnapshotSchema = z
       .refine(
         ({ status, rows }) => status === "available" || rows.length === 0,
       ),
+    recordedTierChangesSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("retained_tier_change_reasons_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                totalChanges: count,
+                thresholdReached: count,
+                bonusPromotion: count,
+                annualDowngrade: count,
+                gracePeriodExpired: count,
+                programActivation: count,
+                manualOverride: count,
+                otherReasons: count,
+              })
+              .strict()
+              .refine(
+                (row) =>
+                  BigInt(row.totalChanges) ===
+                  BigInt(row.thresholdReached) +
+                    BigInt(row.bonusPromotion) +
+                    BigInt(row.annualDowngrade) +
+                    BigInt(row.gracePeriodExpired) +
+                    BigInt(row.programActivation) +
+                    BigInt(row.manualOverride) +
+                    BigInt(row.otherReasons),
+              ),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
     referralEconomics: z
       .object({
         total: count,
@@ -311,28 +349,40 @@ export const merchantAnalyticsSnapshotSchema = z
         new Date(startDay + index * 86_400_000).toISOString().slice(0, 10),
     );
   })
-  .refine(({ filter, ledgerNetSeries, firstRecordedEarnersSeries }) => {
-    if (firstRecordedEarnersSeries.status !== ledgerNetSeries.status)
-      return false;
-    if (firstRecordedEarnersSeries.status !== "available") return true;
-    const cursor = new Date(filter.startAt!);
-    cursor.setUTCDate(1);
-    cursor.setUTCHours(0, 0, 0, 0);
-    const last = new Date(filter.endAt!);
-    last.setUTCDate(1);
-    last.setUTCHours(0, 0, 0, 0);
-    const months: string[] = [];
-    while (cursor <= last) {
-      months.push(cursor.toISOString().slice(0, 7));
-      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
-    }
-    return (
-      firstRecordedEarnersSeries.rows.length === months.length &&
-      firstRecordedEarnersSeries.rows.every(
-        (row, index) => row.month === months[index],
+  .refine(
+    ({
+      filter,
+      ledgerNetSeries,
+      firstRecordedEarnersSeries,
+      recordedTierChangesSeries,
+    }) => {
+      if (
+        firstRecordedEarnersSeries.status !== ledgerNetSeries.status ||
+        recordedTierChangesSeries.status !== ledgerNetSeries.status
       )
-    );
-  });
+        return false;
+      if (firstRecordedEarnersSeries.status !== "available") return true;
+      const cursor = new Date(filter.startAt!);
+      cursor.setUTCDate(1);
+      cursor.setUTCHours(0, 0, 0, 0);
+      const last = new Date(filter.endAt!);
+      last.setUTCDate(1);
+      last.setUTCHours(0, 0, 0, 0);
+      const months: string[] = [];
+      while (cursor <= last) {
+        months.push(cursor.toISOString().slice(0, 7));
+        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      }
+      return [
+        firstRecordedEarnersSeries.rows,
+        recordedTierChangesSeries.rows,
+      ].every(
+        (rows) =>
+          rows.length === months.length &&
+          rows.every((row, index) => row.month === months[index]),
+      );
+    },
+  );
 
 export const merchantAnalyticsResponseSchema = z
   .object({

@@ -2,8 +2,13 @@ import { prisma } from "@/lib/prisma";
 import { readMerchantPointActivitySeries } from "@/lib/weletic/loyalty/activity-series";
 import { readMerchantFirstRecordedEarnersSeries } from "@/lib/weletic/loyalty/first-recorded-earners-series";
 import { readMerchantLedgerNetSeries } from "@/lib/weletic/loyalty/ledger-net-series";
+import { readMerchantRecordedTierChangeSeries } from "@/lib/weletic/loyalty/recorded-tier-change-series";
 import { deriveMerchantRedemptionRateSeries } from "@/lib/weletic/loyalty/redemption-rate-series";
-import { WeleticPointsLedgerEntryType as Entry, Prisma } from "@prisma/client";
+import {
+  WeleticPointsLedgerEntryType as Entry,
+  Prisma,
+  WeleticLoyaltyTierChangeReason as TierReason,
+} from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
@@ -95,11 +100,26 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (initialized) {
+    await prisma.weleticLoyaltyTierHistory.deleteMany({
+      where: {
+        accountId: {
+          in: [
+            `account_0_${id}`,
+            `account_1_${id}`,
+            `earn_account_1_${id}`,
+            `earn_account_2_${id}`,
+          ],
+        },
+      },
+    });
     await prisma.weleticPointsLedgerEntry.deleteMany({
       where: { storeId: { in: storeIds } },
     });
     await prisma.weleticLoyaltyAccount.deleteMany({
       where: { storeId: { in: storeIds } },
+    });
+    await prisma.weleticLoyaltyTier.deleteMany({
+      where: { programId: { in: [`loyalty_0_${id}`, `loyalty_1_${id}`] } },
     });
     await prisma.weleticShopper.deleteMany({
       where: { storeId: { in: storeIds } },
@@ -447,4 +467,157 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
     [`earn_account_1_${id}`, "2026-09-02T14:00:00.000Z"],
     [`earn_account_2_${id}`, "2026-09-02T11:00:00.000Z"],
   ]);
+
+  const tierIds = [
+    `tier_bronze_${id}`,
+    `tier_silver_${id}`,
+    `tier_other_${id}`,
+  ];
+  await prisma.weleticLoyaltyTier.createMany({
+    data: [
+      {
+        id: tierIds[0],
+        programId: `loyalty_0_${id}`,
+        name: "Bronze",
+        slug: "bronze",
+        tierOrder: 1,
+      },
+      {
+        id: tierIds[1],
+        programId: `loyalty_0_${id}`,
+        name: "Silver",
+        slug: "silver",
+        tierOrder: 2,
+      },
+      {
+        id: tierIds[2],
+        programId: `loyalty_1_${id}`,
+        name: "Other Bronze",
+        slug: "bronze",
+        tierOrder: 1,
+      },
+    ],
+  });
+  const events = [
+    {
+      accountId: `account_0_${id}`,
+      sequenceNumber: 1,
+      fromTierId: tierIds[1],
+      toTierId: tierIds[0],
+      reason: TierReason.grace_period_expired,
+      at: "2026-09-02T11:00:00Z",
+    },
+    {
+      accountId: `account_0_${id}`,
+      sequenceNumber: 2,
+      fromTierId: tierIds[0],
+      toTierId: tierIds[1],
+      reason: TierReason.threshold_reached,
+      at: "2026-09-02T14:00:00Z",
+    },
+    {
+      accountId: `account_0_${id}`,
+      sequenceNumber: 3,
+      fromTierId: tierIds[1],
+      toTierId: tierIds[1],
+      reason: TierReason.manual_override,
+      at: "2026-09-03T10:00:00Z",
+    },
+    {
+      accountId: `account_0_${id}`,
+      sequenceNumber: 4,
+      fromTierId: tierIds[1],
+      toTierId: tierIds[0],
+      reason: TierReason.annual_downgrade,
+      at: "2026-10-01T10:00:00Z",
+    },
+    {
+      accountId: `earn_account_1_${id}`,
+      sequenceNumber: 1,
+      fromTierId: null,
+      toTierId: tierIds[0],
+      reason: TierReason.program_activation,
+      at: "2026-09-02T13:00:00Z",
+    },
+    {
+      accountId: `earn_account_1_${id}`,
+      sequenceNumber: 2,
+      fromTierId: tierIds[0],
+      toTierId: tierIds[1],
+      reason: TierReason.bonus_promotion,
+      at: "2026-10-01T11:00:00Z",
+    },
+    {
+      accountId: `account_1_${id}`,
+      sequenceNumber: 1,
+      fromTierId: tierIds[2],
+      toTierId: tierIds[2],
+      reason: TierReason.threshold_reached,
+      at: "2026-09-02T15:00:00Z",
+    },
+  ];
+  await prisma.weleticLoyaltyTierHistory.createMany({
+    data: events.map((event, index) => ({
+      id: `tier_event_${index}_${id}`,
+      accountId: event.accountId,
+      sequenceNumber: event.sequenceNumber,
+      fromTierId: event.fromTierId,
+      toTierId: event.toTierId,
+      changeReason: event.reason,
+      effectiveAt: new Date(event.at),
+    })),
+  });
+  const tierChanges = await prisma.$transaction((tx) =>
+    readMerchantRecordedTierChangeSeries({
+      tx,
+      storeId: storeIds[0],
+      startAt: cohortStart,
+      endAt: cohortEnd,
+    }),
+  );
+  expect(tierChanges).toEqual({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_tier_change_reasons_only",
+    rows: [
+      {
+        month: "2026-09",
+        totalChanges: "3",
+        thresholdReached: "1",
+        bonusPromotion: "0",
+        annualDowngrade: "0",
+        gracePeriodExpired: "0",
+        programActivation: "1",
+        manualOverride: "1",
+        otherReasons: "0",
+      },
+      {
+        month: "2026-10",
+        totalChanges: "2",
+        thresholdReached: "0",
+        bonusPromotion: "1",
+        annualDowngrade: "1",
+        gracePeriodExpired: "0",
+        programActivation: "0",
+        manualOverride: "0",
+        otherReasons: "0",
+      },
+    ],
+  });
+  const independentTierEvents = await prisma.$queryRaw<
+    Array<{ id: string; changeReason: string }>
+  >`
+    SELECT h.id, h.changeReason
+    FROM WeleticLoyaltyTierHistory h
+    JOIN WeleticLoyaltyAccount a ON a.id = h.accountId
+    WHERE a.storeId = ${storeIds[0]}
+      AND h.effectiveAt >= ${cohortStart} AND h.effectiveAt <= ${cohortEnd}
+    ORDER BY h.id
+  `;
+  expect(independentTierEvents).toEqual(
+    [1, 2, 3, 4, 5].map((index) => ({
+      id: `tier_event_${index}_${id}`,
+      changeReason: events[index].reason,
+    })),
+  );
 });
