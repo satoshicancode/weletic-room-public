@@ -59,6 +59,10 @@ const response: MerchantAnalyticsResponse = {
       coverage: "retained_tier_change_reasons_only",
       rows: [],
     },
+    earningSources: {
+      coverage: "retained_positive_earning_ledger_only",
+      rows: [],
+    },
     redemptionRateSeries: {
       status: "range_required",
       bucket: "utc_month",
@@ -318,6 +322,47 @@ it.each([
   expect(section.textContent).toContain("9007199254740990");
   expect(node.innerHTML).not.toContain("account_123");
 });
+
+it.each([
+  ["en", "Top recorded earning sources", "Order"],
+  ["ja", "記録済みポイント獲得源の順位", "注文"],
+  ["vi", "Nguồn tích điểm đã ghi nhận", "Đơn hàng"],
+])(
+  "renders exact recorded earning-source counts in %s",
+  async (locale, title, source) => {
+    const request = vi.fn().mockResolvedValue({
+      ...response,
+      snapshot: {
+        ...response.snapshot,
+        earningSources: {
+          coverage: "retained_positive_earning_ledger_only",
+          rows: [
+            {
+              entryType: "EARN_ORDER",
+              eventCount: "2",
+              pointsEarned: "9007199254740993",
+            },
+          ],
+        },
+      },
+    } satisfies MerchantAnalyticsResponse);
+    await act(async () =>
+      root.render(createElement(MerchantAnalyticsScreen, { request })),
+    );
+    await act(async () => {
+      const select = node.querySelector("select")!;
+      select.value = locale;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const heading = Array.from(node.querySelectorAll("h2")).find(
+      (element) => element.textContent === title,
+    );
+    expect(heading).toBeDefined();
+    const section = heading!.closest("section")!;
+    expect(section.textContent).toContain(source);
+    expect(section.textContent).toContain("9007199254740993");
+  },
+);
 
 it.each([
   ["en", "Recorded order earning rate (UTC)"],

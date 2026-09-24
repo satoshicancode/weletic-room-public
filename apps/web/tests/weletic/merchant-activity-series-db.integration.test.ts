@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { readMerchantPointActivitySeries } from "@/lib/weletic/loyalty/activity-series";
+import { readMerchantEarningSources } from "@/lib/weletic/loyalty/earning-sources";
 import { readMerchantFirstRecordedEarnersSeries } from "@/lib/weletic/loyalty/first-recorded-earners-series";
 import { readMerchantLedgerNetSeries } from "@/lib/weletic/loyalty/ledger-net-series";
 import { readMerchantRecordedTierChangeSeries } from "@/lib/weletic/loyalty/recorded-tier-change-series";
@@ -619,5 +620,111 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
       id: `tier_event_${index}_${id}`,
       changeReason: events[index].reason,
     })),
+  );
+  const sourceEntries = [
+    { store: 0, type: Entry.EARN_REFERRAL, delta: BigInt(20), at: cohortStart },
+    { store: 0, type: Entry.EARN_BONUS, delta: BigInt(7), at: cohortEnd },
+    {
+      store: 0,
+      type: Entry.TIER_BONUS,
+      delta: BigInt(100),
+      at: new Date("2026-09-02T11:59:59.999Z"),
+    },
+    {
+      store: 0,
+      type: Entry.MANUAL_ADJUSTMENT,
+      delta: BigInt(1000),
+      at: cohortStart,
+    },
+    { store: 0, type: Entry.BACKFILL, delta: huge, at: cohortStart },
+    { store: 0, type: Entry.EARN_ORDER, delta: BigInt(-5), at: cohortStart },
+    { store: 1, type: Entry.EARN_REFERRAL, delta: huge, at: cohortStart },
+  ];
+  await prisma.weleticPointsLedgerEntry.createMany({
+    data: sourceEntries.map((entry, index) => ({
+      id: `source_entry_${index}_${id}`,
+      storeId: storeIds[entry.store],
+      accountId: `account_${entry.store}_${id}`,
+      sequenceNumber: 50 + index,
+      entryType: entry.type,
+      pointsDelta: entry.delta,
+      balanceAfter: entry.delta,
+      idempotencyKey: `source_${index}_${id}`,
+      createdAt: entry.at,
+    })),
+  });
+  const sourcePlan = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    EXPLAIN SELECT entryType, COUNT(*)
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt >= ${cohortStart}
+      AND createdAt <= ${cohortEnd} AND pointsDelta > 0
+    GROUP BY entryType
+  `;
+  expect(Object.values(sourcePlan[0]).map(String).join(" ")).toContain(
+    "WeleticPointsLedgerEntry_storeId_createdAt_idx",
+  );
+  const sources = await prisma.$transaction((tx) =>
+    readMerchantEarningSources({
+      tx,
+      storeId: storeIds[0],
+      startAt: cohortStart,
+      endAt: cohortEnd,
+    }),
+  );
+  expect(sources).toEqual({
+    coverage: "retained_positive_earning_ledger_only",
+    rows: [
+      { entryType: Entry.EARN_REFERRAL, eventCount: "1", pointsEarned: "20" },
+      { entryType: Entry.EARN_BONUS, eventCount: "1", pointsEarned: "7" },
+      { entryType: Entry.EARN_ORDER, eventCount: "4", pointsEarned: "4" },
+    ],
+  });
+  const independentEntries = await prisma.weleticPointsLedgerEntry.findMany({
+    where: {
+      storeId: storeIds[0],
+      createdAt: { gte: cohortStart, lte: cohortEnd },
+    },
+    select: { entryType: true, pointsDelta: true },
+  });
+  const expected = new Map<Entry, { count: bigint; points: bigint }>();
+  for (const entry of independentEntries) {
+    if (
+      entry.pointsDelta <= BigInt(0) ||
+      !(
+        [
+          Entry.EARN_ORDER,
+          Entry.EARN_REFERRAL,
+          Entry.EARN_BONUS,
+          Entry.TIER_BONUS,
+        ] as Entry[]
+      ).includes(entry.entryType)
+    )
+      continue;
+    const current = expected.get(entry.entryType) ?? {
+      count: BigInt(0),
+      points: BigInt(0),
+    };
+    current.count += BigInt(1);
+    current.points += entry.pointsDelta;
+    expected.set(entry.entryType, current);
+  }
+  expect(
+    sources.rows.map((row) => [
+      row.entryType,
+      row.eventCount,
+      row.pointsEarned,
+    ]),
+  ).toEqual(
+    Array.from(expected, ([type, values]) => [
+      type,
+      values.count.toString(),
+      values.points.toString(),
+    ]).sort((a, b) =>
+      BigInt(b[2]) > BigInt(a[2])
+        ? 1
+        : BigInt(b[2]) < BigInt(a[2])
+          ? -1
+          : a[0].localeCompare(b[0]),
+    ),
   );
 });
