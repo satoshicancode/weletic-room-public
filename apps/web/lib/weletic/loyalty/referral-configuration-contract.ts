@@ -4,6 +4,7 @@ import {
   loyaltyPurchaseTypeSchema,
   loyaltySubscriptionCadenceSchema,
   loyaltySubscriptionPaymentLimitSchema,
+  requiresUnverifiedSubscriptionCycle,
 } from "./purchase-policy";
 import { MAX_REFERRALS_PER_ADVOCATE_LIMIT } from "./referral-rule-config";
 
@@ -81,7 +82,17 @@ export const referralConfigurationWriteSchema = z
     ruleId: id.nullable(),
     fields: referralConfigurationFieldsSchema,
   })
-  .strict();
+  .strict()
+  .superRefine(({ fields }, context) => {
+    if (fields.isActive && requiresUnverifiedSubscriptionCycle(fields)) {
+      context.addIssue({
+        code: "custom",
+        path: ["fields", "subscriptionCadence"],
+        message:
+          "First-payment and first-N referral qualification require verified subscription cycles",
+      });
+    }
+  });
 export const referralConfigurationPauseSchema = z.object(expected).strict();
 export const referralConfigurationRequestSchema = z.discriminatedUnion(
   "operation",

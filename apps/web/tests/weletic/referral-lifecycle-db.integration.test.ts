@@ -2,11 +2,13 @@ import { prisma } from "@/lib/prisma";
 import { recordWeleticRefund } from "@/lib/weletic/commerce/record-refund";
 import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
 import { getReferralCouponIdempotencyKey } from "@/lib/weletic/loyalty/referral-coupon-idempotency";
+import { writeReferralRuleInTransaction } from "@/lib/weletic/loyalty/referral-rule-write";
 import {
   bindShopperReferral,
   evaluateReferralQualification,
   reverseReferralPointsOnRefund,
 } from "@/lib/weletic/loyalty/referrals";
+import { Prisma } from "@prisma/client";
 import {
   afterAll,
   afterEach,
@@ -61,7 +63,7 @@ function guard() {
     process.env.LOYALTY_DATABASE_INTEGRATION !== "1" ||
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
-    url.port !== "3307" ||
+    !["3307", "3309"].includes(url.port) ||
     url.username !== "loyalty_dev" ||
     url.search ||
     !/^\/weletic_loyalty_it_referral_\d{8}_[a-z0-9]+$/.test(url.pathname)
@@ -557,30 +559,207 @@ describe("referral lifecycle on real isolated MySQL, synthetic orders", () => {
   );
 
   it.each([1, 2, null])(
-    "accepts only a known first subscription payment: %s",
+    "holds historical first-payment referral on subscription sequence %s and does not fraud-block later orders",
     async (subscriptionSequence) => {
       const f = await fixture();
       await f.bind();
+      await prisma.weleticLoyaltyReferralRule.update({
+        where: { id: f.ruleId },
+        data: {
+          purchasePolicy: {
+            purchaseType: "both",
+            subscriptionCadence: "first_payment",
+            subscriptionPaymentLimit: null,
+          },
+        },
+      });
       const orderId = await f.order();
       await prisma.weleticCommerceOrderLine.updateMany({
         where: { orderId },
         data: {
           sellingPlanId: "synthetic-plan",
-          subscriptionSeriesKey: "synthetic-series",
+          subscriptionSeriesKey: "selling-plan:synthetic:item:synthetic",
           subscriptionSequence,
         },
       });
-      expect((await f.qualify(orderId)).qualified).toBe(
-        subscriptionSequence === 1,
+      const result = await f.qualify(orderId);
+      expect(result.qualified).toBe(false);
+      expect(result.reason).toMatch(/verified subscription billing cycle/);
+      const referral = await prisma.weleticLoyaltyReferral.findFirstOrThrow({
+        where: { storeId: f.storeId, refereeAccountId: f.friend.accountId },
+      });
+      expect(referral.status).toBe("pending");
+      expect(referral.metadata).toMatchObject({
+        subscriptionCadenceHoldOrderId: orderId,
+      });
+      expect(
+        await prisma.weleticReconciliationIssue.findUnique({
+          where: {
+            storeId_kind_externalKey: {
+              storeId: f.storeId,
+              kind: "loyalty_referral_subscription_cycle_unverified",
+              externalKey: `${referral.id}:${orderId}`,
+            },
+          },
+        }),
+      ).toMatchObject({ severity: "critical", status: "open" });
+      const laterOrderId = await f.order(f.friend, BigInt(1000), "later");
+      await prisma.weleticShopper.update({
+        where: { id: f.friend.shopperId },
+        data: { ordersCount: 2 },
+      });
+      expect((await f.qualify(laterOrderId)).qualified).toBe(false);
+      expect((await f.qualify(orderId)).reason).toMatch(
+        /awaits verified subscription billing cycle/,
       );
-      await reconcile(
-        f.storeId,
-        subscriptionSequence === 1
-          ? [BigInt(100), BigInt(50)]
-          : [BigInt(0), BigInt(0)],
-      );
+      expect(
+        await prisma.weleticLoyaltyReferral.findUnique({
+          where: { id: referral.id },
+        }),
+      ).toMatchObject({ status: "pending" });
+      await reconcile(f.storeId, [BigInt(0), BigInt(0)]);
     },
   );
+
+  it("creates a safe one-time referral default when the runtime restores a missing rule", async () => {
+    const f = await fixture();
+    await prisma.weleticLoyaltyReferralRule.delete({
+      where: { id: f.ruleId },
+    });
+    await f.bind();
+    const restored = await prisma.weleticLoyaltyReferralRule.findFirstOrThrow({
+      where: { programId: f.loyaltyId, isActive: true },
+    });
+    expect(restored.purchasePolicy).toMatchObject({
+      purchaseType: "one_time",
+      subscriptionCadence: "first_payment",
+    });
+  });
+
+  it("holds a mixed historical first-payment cart when its one-time portion is below the referral minimum", async () => {
+    const f = await fixture();
+    await f.bind();
+    await prisma.weleticLoyaltyReferralRule.update({
+      where: { id: f.ruleId },
+      data: {
+        purchasePolicy: {
+          purchaseType: "both",
+          subscriptionCadence: "first_payment",
+          subscriptionPaymentLimit: null,
+        },
+      },
+    });
+    const orderId = await f.order();
+    await prisma.weleticCommerceOrderLine.updateMany({
+      where: { orderId },
+      data: { shopNet: BigInt(500), presentmentNet: BigInt(500) },
+    });
+    await prisma.weleticCommerceOrderLine.create({
+      data: {
+        id: `subscription_${orderId}`,
+        orderId,
+        externalId: `subscription_${orderId}`,
+        title: "Synthetic subscription",
+        quantity: 1,
+        shopGross: BigInt(500),
+        shopNet: BigInt(500),
+        presentmentGross: BigInt(500),
+        presentmentNet: BigInt(500),
+        accountingNet: BigInt(500),
+        commissionableAccountingAmount: BigInt(500),
+        sellingPlanId: "synthetic-plan",
+        subscriptionSeriesKey: "selling-plan:synthetic:item:synthetic",
+        subscriptionSequence: 1,
+      },
+    });
+    expect((await f.qualify(orderId)).reason).toMatch(
+      /verified subscription billing cycle/,
+    );
+    const laterOrderId = await f.order(f.friend, BigInt(1000), "later");
+    await prisma.weleticShopper.update({
+      where: { id: f.friend.shopperId },
+      data: { ordersCount: 2 },
+    });
+    expect((await f.qualify(laterOrderId)).qualified).toBe(false);
+    expect(
+      await prisma.weleticLoyaltyReferral.findFirstOrThrow({
+        where: { storeId: f.storeId, refereeAccountId: f.friend.accountId },
+      }),
+    ).toMatchObject({ status: "pending" });
+    await reconcile(f.storeId, [BigInt(0), BigInt(0)]);
+  });
+
+  it("holds an unprocessed subscription order after a later order raises the shopper count", async () => {
+    const f = await fixture();
+    await f.bind();
+    await prisma.weleticLoyaltyReferralRule.update({
+      where: { id: f.ruleId },
+      data: {
+        purchasePolicy: {
+          purchaseType: "both",
+          subscriptionCadence: "first_payment",
+          subscriptionPaymentLimit: null,
+        },
+      },
+    });
+    const firstOrderId = await f.order();
+    await prisma.weleticCommerceOrderLine.updateMany({
+      where: { orderId: firstOrderId },
+      data: {
+        sellingPlanId: "synthetic-plan",
+        subscriptionSeriesKey: null,
+        subscriptionSequence: null,
+      },
+    });
+    await f.order(f.friend, BigInt(1000), "later");
+    await prisma.weleticShopper.update({
+      where: { id: f.friend.shopperId },
+      data: { ordersCount: 2 },
+    });
+    expect((await f.qualify(firstOrderId)).reason).toMatch(
+      /first-order and subscription-cycle reconciliation/,
+    );
+    const referral = await prisma.weleticLoyaltyReferral.findFirstOrThrow({
+      where: { storeId: f.storeId, refereeAccountId: f.friend.accountId },
+    });
+    expect(referral).toMatchObject({
+      status: "pending",
+      metadata: { subscriptionCadenceHoldOrderId: firstOrderId },
+    });
+    await reconcile(f.storeId, [BigInt(0), BigInt(0)]);
+  });
+
+  it("rejects legacy activation of an unverified historical referral policy at the shared writer", async () => {
+    const f = await fixture();
+    await expect(
+      prisma.$transaction((tx) =>
+        writeReferralRuleInTransaction({
+          tx,
+          storeId: f.storeId,
+          ruleId: f.ruleId,
+          ruleData: {
+            advocatePointsReward: BigInt(100),
+            refereePointsReward: BigInt(50),
+            advocateRewardKind: "points",
+            refereeRewardKind: "points",
+            advocateRewardDefinitionId: null,
+            refereeRewardDefinitionId: null,
+            minQualifyingOrderSubtotal: new Prisma.Decimal("10"),
+            maxReferralsPerAdvocate: null,
+            fraudCheckSameIp: false,
+            isActive: true,
+          },
+        }),
+      ),
+    ).rejects.toThrow(/verified subscription cycles/);
+    const unchanged = await prisma.weleticLoyaltyReferralRule.findUniqueOrThrow(
+      {
+        where: { id: f.ruleId },
+      },
+    );
+    expect(unchanged.purchasePolicy).toBeNull();
+    expect(unchanged.isActive).toBe(true);
+  });
 
   it("claws back already-spent points as exact debt without minting replacements", async () => {
     const f = await fixture();
