@@ -14,7 +14,9 @@ QStash Free instance is in US East. No account resource was changed. The public 
 customer data request remains a draft with **0 of 9 data-protection questions
 completed**. The questions include merchant privacy agreements, customer
 consent/opt-out handling, retention and encryption; answer them from verified
-release evidence before listing submission.
+release evidence before listing submission. The
+[question-by-question evidence packet](protected-customer-data-evidence-2026-09-25.md)
+records the current gaps without preselecting unsupported answers.
 
 The [combined completion checklist](company-store-completion.md) defines the
 capability contracts and T1–T4 evidence classes. This index names each
