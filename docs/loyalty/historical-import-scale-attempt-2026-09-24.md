@@ -102,5 +102,7 @@ gates for the next candidate.
 
 The [bounded group-size investigation](historical-import-rollback-group-2026-09-24.md)
 measured repeated full-source reads and tested a 50-row atomic group without
-changing the timeout or proof assertions. Full-scale and recovery gates remain
-open until that candidate is independently verified on a quiet host.
+changing the timeout or proof assertions. The subsequent quiet-host candidate
+passed 50,000 actual commits and rollbacks with independent zero-net SQL; this
+dated section remains the failed-attempt record. Full-scale process restart and
+provider/installed recovery remain open.

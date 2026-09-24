@@ -48,6 +48,7 @@ stores. Log: `/tmp/weletic-import-pr140-full-sql-20260925.log`, SHA-256
 The fixture was `weletic_loyalty_it_import_pr140_20260925` on loopback port
 3313 with the explicit dedicated-instance opt-in; it was removed afterward.
 
-The concurrent 50,000-row full lifecycle uses a separate MySQL container and
-fixture. Its result, independent 50,000-row reconciliation, provider read plan,
-installed worker supervision and restore remain separate open gates.
+The separate [50,000-row isolated lifecycle](historical-import-rollback-group-2026-09-24.md)
+subsequently passed both worker phases and independent SQL reconciliation. This
+51-row test does not prove a process restart during a full-scale run. Provider
+read plans, installed worker supervision and restore remain open gates.
