@@ -1,8 +1,8 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 25, 2026 JST: public `main` at
-[`595e3f0d`](https://github.com/satoshicancode/weletic-room-public/commit/595e3f0db5494af6094e958a062920f4a0c0090c)
-(PR #141; [PR-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36043421711)).
+[`e55ce9a2`](https://github.com/satoshicancode/weletic-room-public/commit/e55ce9a2edf820b1d3e1c38418720704072c603d)
+(PR #143; [PR-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36051051525)).
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
@@ -55,6 +55,13 @@ It gives the current owner pseudonymous entries and exact decimal point strings,
 excluding raw customer, order and free-text fields. Historical gaps, the
 provider-scale read plan and installed acceptance remain open. Its signed route
 adds no schema migration.
+
+L09's [S10 recorded points-redemption export](https://github.com/satoshicancode/weletic-room-public/pull/143)
+is merged with [bounded SQL, privacy-race and exact-point evidence](recorded-redemption-rows-s10-2026-09-25.md).
+It gives the current owner pseudonymous account and redemption rows, current
+status and exact points spent without codes or customer/order identifiers.
+Missing transition and remote-use history, provider-scale read plans and
+installed acceptance remain open. Its signed route adds no schema migration.
 
 L02's [isolated used-reward refund and replay evidence](https://github.com/satoshicancode/weletic-room-public/pull/116) is merged; it does not establish installed Shopify acceptance.
 
