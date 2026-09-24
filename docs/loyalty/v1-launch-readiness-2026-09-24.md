@@ -45,6 +45,8 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 
 L02 has additional [isolated used-reward refund and replay evidence](https://github.com/satoshicancode/weletic-room-public/pull/116) at a green PR head. PR #116 is open, so this evidence is not shipped or installed acceptance.
 
+L09 has a [recorded-order earning-rate candidate](https://github.com/satoshicancode/weletic-room-public/pull/117) at an open draft PR head. It excludes missing Shopify orders, and its additive index has not been applied to a shared database. This is neither a whole-store rate nor installed acceptance.
+
 Read-only Shopify CLI check on September 24 at `037e80fe`: CLI 4.7.0 accepted
 both app configurations with zero validation issues. `shopify app info --json`
 reported 15 selected extensions for the default configuration and zero for
@@ -73,6 +75,7 @@ with every candidate file and the current Prisma schema.
 | Change                                                       | Source state                                              | Required before deployment                                                                                                                                                                                             |
 | ------------------------------------------------------------ | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Loyalty daily activity `(storeId, createdAt)` index          | Merged in PR #102; shared application unverified          | Exact target metadata, reviewed DDL and read-plan acceptance                                                                                                                                                           |
+| Loyalty recorded-order earning `(storeId, occurredAt)` index | Draft PR #117; isolated SQL only                          | Exact target metadata, reviewed DDL and read-plan acceptance before deploying the S16 reader                                                                                                                           |
 | Store-review five-table core                                 | Merged PR #101; only disposable SQL rehearsed             | Create all five before privacy readers; retain export-phase-compatible workers                                                                                                                                         |
 | Review collection/reminder settings and history              | Merged PR #101; only disposable SQL rehearsed             | Schema before readers/jobs; retain reminder export phase                                                                                                                                                               |
 | Shared shopper delivery tables, settings and outbox labels   | Merged PR #101; only disposable SQL rehearsed             | Schema before sender/privacy workers; reconcile old exports and uncertain sends                                                                                                                                        |
