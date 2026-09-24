@@ -247,6 +247,38 @@ export const merchantAnalyticsSnapshotSchema = z
       .refine(
         ({ status, rows }) => status === "available" || rows.length === 0,
       ),
+    firstRecordedRedemptionDebitsSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("retained_reward_debit_accounts_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                debitAccounts: count,
+                firstRecordedDebitAccounts: count,
+                returningDebitAccounts: count,
+              })
+              .strict()
+              .refine(
+                ({
+                  debitAccounts,
+                  firstRecordedDebitAccounts,
+                  returningDebitAccounts,
+                }) =>
+                  BigInt(debitAccounts) ===
+                  BigInt(firstRecordedDebitAccounts) +
+                    BigInt(returningDebitAccounts),
+              ),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
     retainedEnrollmentSeries: z
       .object({
         status: z.enum(["available", "range_required", "range_too_wide"]),
@@ -493,11 +525,13 @@ export const merchantAnalyticsSnapshotSchema = z
       filter,
       ledgerNetSeries,
       firstRecordedEarnersSeries,
+      firstRecordedRedemptionDebitsSeries,
       retainedEnrollmentSeries,
       recordedTierChangesSeries,
     }) => {
       if (
         firstRecordedEarnersSeries.status !== ledgerNetSeries.status ||
+        firstRecordedRedemptionDebitsSeries.status !== ledgerNetSeries.status ||
         retainedEnrollmentSeries.status !== ledgerNetSeries.status ||
         recordedTierChangesSeries.status !== ledgerNetSeries.status
       )
@@ -516,6 +550,7 @@ export const merchantAnalyticsSnapshotSchema = z
       }
       return [
         firstRecordedEarnersSeries.rows,
+        firstRecordedRedemptionDebitsSeries.rows,
         retainedEnrollmentSeries.rows,
         recordedTierChangesSeries.rows,
       ].every(

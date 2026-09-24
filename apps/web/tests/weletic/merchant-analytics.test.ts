@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   series: vi.fn(),
   ledgerNetSeries: vi.fn(),
   firstEarnersSeries: vi.fn(),
+  firstRedemptionDebitsSeries: vi.fn(),
   retainedEnrollmentSeries: vi.fn(),
   tierChangesSeries: vi.fn(),
   earningSources: vi.fn(),
@@ -41,6 +42,13 @@ vi.mock("../../lib/weletic/loyalty/ledger-net-series", () => ({
 vi.mock("../../lib/weletic/loyalty/first-recorded-earners-series", () => ({
   readMerchantFirstRecordedEarnersSeries: mocks.firstEarnersSeries,
 }));
+vi.mock(
+  "../../lib/weletic/loyalty/first-recorded-redemption-debits-series",
+  () => ({
+    readMerchantFirstRecordedRedemptionDebitsSeries:
+      mocks.firstRedemptionDebitsSeries,
+  }),
+);
 vi.mock("../../lib/weletic/loyalty/retained-enrollment-series", () => ({
   readMerchantRetainedEnrollmentSeries: mocks.retainedEnrollmentSeries,
 }));
@@ -183,6 +191,19 @@ beforeEach(() => {
       },
     ],
   });
+  mocks.firstRedemptionDebitsSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_reward_debit_accounts_only",
+    rows: [
+      {
+        month: "2026-09",
+        debitAccounts: "2",
+        firstRecordedDebitAccounts: "1",
+        returningDebitAccounts: "1",
+      },
+    ],
+  });
   mocks.retainedEnrollmentSeries.mockResolvedValue({
     status: "available",
     bucket: "utc_month",
@@ -309,6 +330,18 @@ describe("merchant analytics", () => {
       storeId: "store-a",
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
+    });
+    expect(mocks.firstRedemptionDebitsSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(
+      result.snapshot.firstRecordedRedemptionDebitsSeries.rows[0],
+    ).toMatchObject({
+      firstRecordedDebitAccounts: "1",
+      returningDebitAccounts: "1",
     });
     expect(result.snapshot.retainedEnrollmentSeries.rows[0]).toMatchObject({
       newRetainedAccounts: "1",
@@ -504,6 +537,25 @@ describe("merchant analytics", () => {
         ...result,
         snapshot: {
           ...result.snapshot,
+          firstRecordedRedemptionDebitsSeries: {
+            ...result.snapshot.firstRecordedRedemptionDebitsSeries,
+            rows: [
+              {
+                month: "2026-09",
+                debitAccounts: "2",
+                firstRecordedDebitAccounts: "2",
+                returningDebitAccounts: "1",
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
           redemptionRateSeries: {
             ...result.snapshot.redemptionRateSeries,
             rows: [
@@ -584,6 +636,9 @@ describe("merchant analytics", () => {
         expect(result.download!.content).toContain(huge.toString());
         expect(result.download!.content).toContain(
           "firstRecordedEarnersSeries.rows.0.firstRecordedAccounts,1",
+        );
+        expect(result.download!.content).toContain(
+          "firstRecordedRedemptionDebitsSeries.rows.0.firstRecordedDebitAccounts,1",
         );
         expect(result.download!.content).toContain(
           "retainedEnrollmentSeries.rows.0.cumulativeRetainedAccounts,2",

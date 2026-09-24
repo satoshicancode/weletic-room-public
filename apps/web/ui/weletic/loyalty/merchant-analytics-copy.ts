@@ -26,6 +26,13 @@ const en = {
     "First recorded and returning earn accounts (UTC)",
   firstRecordedEarnersSemantics:
     "Counts distinct accounts with positive recorded order, referral, bonus or tier earnings in each UTC month. First means the account's earliest retained qualifying earn is inside the selected instants; later months are returning. An earlier earn in the same month but before the selected start makes the account returning. Imports and manual adjustments do not qualify. Missing pre-Weletic or erased history and multiple accounts cannot be reconstructed; these are not lifetime customer cohorts.",
+  firstRecordedRedemptionDebitsSeries:
+    "First recorded and repeat reward-debit accounts (UTC)",
+  firstRecordedRedemptionDebitsSemantics:
+    "Counts distinct currently retained accounts with a negative recorded reward-redemption debit in each UTC month. First means no earlier retained debit before the selected instant or month; a debit before the range, even in the same month, makes the account repeat. A debit can occur during provisioning and later be compensated, so this does not prove successful issuance or use. Erased or pre-Weletic history and multiple accounts cannot be reconstructed; these are not lifetime shopper cohorts.",
+  debitAccounts: "Accounts with recorded debits",
+  firstRecordedDebitAccounts: "First recorded debit accounts",
+  returningDebitAccounts: "Repeat debit accounts",
   retainedEnrollmentSeries: "Retained account enrollments over time (UTC)",
   retainedEnrollmentOpening: "Retained accounts before selected range",
   retainedEnrollmentSemantics:
@@ -172,6 +179,13 @@ const ja: Copy = {
   firstRecordedEarnersSeries: "初回記録と再獲得のアカウント（UTC）",
   firstRecordedEarnersSemantics:
     "各UTC月に注文、紹介、ボーナス、ランクによる正の獲得が記録されたアカウントを重複なく数えます。初回は保存された対象履歴の最初の獲得が選択期間内にある場合です。同じ月でも期間開始前に獲得があれば再獲得に分類します。過去分補填と手動調整は対象外です。Weletic導入前や削除済みの履歴、複数アカウントの統合は復元できず、生涯の顧客コホートではありません。",
+  firstRecordedRedemptionDebitsSeries:
+    "初回記録と再記録の報酬ポイント引落アカウント（UTC）",
+  firstRecordedRedemptionDebitsSemantics:
+    "各UTC月に報酬交換の負のポイント引落が記録された、現在保持中のアカウントを重複なく数えます。初回は選択時点または月より前に保存された同種の引落がない場合です。同じ月でも期間開始前に引落があれば再記録に分類します。引落は発行処理中に記録され、後で補償されることもあるため、発行や利用の成功を示しません。削除済み・Weletic導入前の履歴や複数アカウントの統合は復元できず、生涯の顧客コホートではありません。",
+  debitAccounts: "引落が記録されたアカウント",
+  firstRecordedDebitAccounts: "初回引落記録のアカウント",
+  returningDebitAccounts: "再引落記録のアカウント",
   retainedEnrollmentSeries: "保持中アカウントの登録推移（UTC）",
   retainedEnrollmentOpening: "選択期間前の保持中アカウント",
   retainedEnrollmentSemantics:
@@ -317,6 +331,13 @@ const vi: Copy = {
   firstRecordedEarnersSeries: "Tài khoản tích điểm lần đầu và quay lại (UTC)",
   firstRecordedEarnersSemantics:
     "Đếm mỗi tài khoản một lần trong từng tháng UTC khi có điểm dương từ đơn hàng, giới thiệu, thưởng hoặc hạng. Lần đầu nghĩa là khoản tích điểm đủ điều kiện sớm nhất còn lưu nằm trong khoảng đã chọn; các tháng sau là quay lại. Nếu khoản đầu tiên nằm trước thời điểm bắt đầu dù cùng tháng, tài khoản được tính là quay lại. Không tính điểm nhập lịch sử hoặc điều chỉnh thủ công. Không thể khôi phục lịch sử trước Weletic, lịch sử đã xóa hay hợp nhất nhiều tài khoản; đây không phải nhóm khách hàng theo toàn bộ vòng đời.",
+  firstRecordedRedemptionDebitsSeries:
+    "Tài khoản ghi nhận lần đầu và lặp lại khoản trừ điểm đổi thưởng (UTC)",
+  firstRecordedRedemptionDebitsSemantics:
+    "Đếm mỗi tài khoản hiện còn lưu một lần trong từng tháng UTC khi có bút toán trừ điểm âm để đổi thưởng. Lần đầu nghĩa là không có khoản trừ cùng loại còn lưu trước thời điểm hoặc tháng đã chọn; khoản trừ trước đầu khoảng, dù cùng tháng, được tính là lặp lại. Khoản trừ có thể ghi khi đang cấp thưởng rồi được hoàn bù, nên không chứng minh phát hành hay sử dụng thành công. Không thể khôi phục lịch sử đã xóa, trước Weletic hoặc hợp nhất nhiều tài khoản; đây không phải nhóm khách hàng theo toàn bộ vòng đời.",
+  debitAccounts: "Tài khoản có khoản trừ đã ghi",
+  firstRecordedDebitAccounts: "Tài khoản ghi nhận trừ điểm lần đầu",
+  returningDebitAccounts: "Tài khoản ghi nhận trừ điểm lặp lại",
   retainedEnrollmentSeries: "Tài khoản còn lưu theo thời điểm đăng ký (UTC)",
   retainedEnrollmentOpening: "Tài khoản còn lưu trước khoảng đã chọn",
   retainedEnrollmentSemantics:
