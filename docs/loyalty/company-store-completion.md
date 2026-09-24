@@ -2,9 +2,9 @@
 
 **September 24 release baseline:** [The v1 launch readiness index](v1-launch-readiness-2026-09-24.md)
 tracks every L01–L10, R01–R10 and S01–S06 capability, its next blocker and
-milestone. Public `main` is `037e80febde2b6ccedb67ddd5b0285d30f63f7c7`
-(PR #112); its [post-merge CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/35924317916)
-passed. PR #101 merged store reviews, prospective collection and shared
+milestone. Public `main` is `117dcb7c9a7b714d36cc5c1e391375e18b6fb0fa`
+(PR #113; [exact-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/35959111101)). PR #101 merged store
+reviews, prospective collection and shared
 anonymous/authenticated email capacity. Schemas, installation, provider delivery
 and activation remain gated. This checklist defines the
 capability contracts and evidence rules; dated worklogs retain their exact test
@@ -20,7 +20,7 @@ evidence link states the boundary. A date/source revision is required before a
 live result can close a gate. Untested behavior remains open even when adjacent
 code exists. No module is complete at this checkpoint.
 
-Shipped: public-main implementations through PR #112; its post-merge CI passed.
+Shipped: public-main implementations through PR #116, plus the PR #113 budget record; installed acceptance remains open.
 Live accepted: only the bounded journeys below. Hiro approved finishing the
 active store-review slice first on September 22, then prioritizing Loyalty
 acceptance. Store-review persistence, privacy/export, public reads, shared incentives and
@@ -28,6 +28,9 @@ internal authenticated submission/moderation merged in [PR #101](https://github.
 The [storefront build](store-review-storefront-build-2026-09-24.md) and
 [explicit release route tests](https://github.com/satoshicancode/weletic-room-public/pull/112)
 passed locally. Neither proves installed public-app extension ownership.
+The [scoped web/outbox image fix](https://github.com/satoshicancode/weletic-room-public/pull/120)
+passed local Linux/amd64 builds and guarded no-network smokes; provider image
+admission and installed operation remain open.
 Hiro approved a shared Loyalty + Reviews delivery policy in [ADR 0042](../adr/0042-shared-shopper-delivery-policy.md).
 Its scheduling, [durable admission, existing producer integration and merchant controls](shared-shopper-delivery-policy.md) and prospective collector integration are merged with local verification. ADR 0043 resolves anonymous-recipient identity; installed acceptance remains open.
 External execution remains gated where approval/resources are absent.
