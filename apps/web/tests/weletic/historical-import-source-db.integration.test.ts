@@ -1,5 +1,8 @@
 import { Prisma } from "@prisma/client";
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { prisma as database } from "../../lib/prisma";
 import { processHistoricalImportCommitBatch } from "../../lib/weletic/loyalty/historical-import-commit-batch";
@@ -38,6 +41,40 @@ import {
   pollImportWorkerUntilEligible,
   sanitizeImportPollEvidence,
 } from "./helpers/import-worker-poll";
+
+const execFileAsync = promisify(execFile);
+const webRoot = fileURLToPath(new URL("../../", import.meta.url));
+
+async function runIsolatedOutboxProcess(shopDomain: string) {
+  if (!process.env.DATABASE_URL)
+    throw new Error(
+      "The isolated worker needs the explicit fixture DATABASE_URL",
+    );
+  const { stdout, stderr } = await execFileAsync(
+    process.execPath,
+    [
+      "--conditions=react-server",
+      "--import=tsx",
+      "--import=./scripts/runtime/async-local-storage.cjs",
+      "scripts/loyalty/run-outbox-worker.ts",
+      `--store=${shopDomain}`,
+      "--once",
+    ],
+    {
+      cwd: webRoot,
+      env: process.env,
+      encoding: "utf8",
+      timeout: 120_000,
+      maxBuffer: 1_000_000,
+    },
+  );
+  expect(stderr).not.toContain("fatal worker error");
+  expect(stdout).toContain("processed=1");
+  expect(stdout).toContain("failed=0 deadLettered=0");
+  const workerId = stdout.match(/\[loyalty-outbox\] worker (\S+) started/)?.[1];
+  if (!workerId) throw new Error("The isolated worker did not report its ID");
+  return workerId;
+}
 
 const stageDiagnostics = vi.hoisted(() => ({ active: false, emitted: 0 }));
 function reportImportStage(record: {
@@ -298,6 +335,10 @@ beforeAll(async () => {
     !(
       url.port === "3307" ||
       (url.port === "3308" &&
+        process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE === "1" &&
+        fixtureDatabase !== undefined) ||
+      (url.port === "3313" &&
+        process.env.HISTORICAL_IMPORT_PROCESS_RESTART_INTEGRATION === "1" &&
         process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE === "1" &&
         fixtureDatabase !== undefined)
     ) ||
@@ -2690,6 +2731,119 @@ it("continues a real 50-row rollback without treating the partial source as comp
   });
   expect(balances._sum.cachedPointsBalance).toBe(BigInt(0));
 }, 60000);
+it.skipIf(process.env.HISTORICAL_IMPORT_PROCESS_RESTART_INTEGRATION !== "1")(
+  "recovers commit and rollback with a new real worker process after each durable continuation",
+  async () => {
+    // One delivery processes at most 50 rows, so 51 requires a real handoff.
+    const fixture = await queuedWorkerFixture(51);
+    const shopDomain = `${fixture.source.storeId}.myshopify.com`;
+    await releaseFixtureJobToRealWorker(fixture.job.id);
+
+    const firstCommitWorker = await runIsolatedOutboxProcess(shopDomain);
+    const committedAfterFirstProcess =
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: fixture.source.id, status: "committed" },
+      });
+    expect(committedAfterFirstProcess).toBeGreaterThan(0);
+    expect(committedAfterFirstProcess).toBeLessThanOrEqual(50);
+    expect(
+      await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id: fixture.job.id },
+      }),
+    ).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      lockedBy: null,
+      lockedAt: null,
+    });
+
+    const secondCommitWorker = await runIsolatedOutboxProcess(shopDomain);
+    expect(secondCommitWorker).not.toBe(firstCommitWorker);
+    expect(
+      await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+        where: { id: fixture.source.id },
+      }),
+    ).toMatchObject({ status: "committed" });
+    expect(
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: fixture.source.id, status: "committed" },
+      }),
+    ).toBe(51);
+
+    const source = await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+      where: { id: fixture.source.id },
+    });
+    await database.$transaction(
+      (tx) =>
+        queueHistoricalImportRollbackInTransaction({
+          tx,
+          request: {
+            ...fixture.request,
+            expectedRevision: historicalImportRevision({
+              storeId: source.storeId,
+              programId: source.programId,
+              installationGeneration: source.installationGeneration,
+              normalizedSha256: source.normalizedSha256,
+              source,
+            }),
+          },
+        }),
+      options,
+    );
+    const rollbackJob = await database.weleticLoyaltyOutboxJob.findFirstOrThrow(
+      {
+        where: {
+          storeId: source.storeId,
+          jobType: "HISTORICAL_IMPORT_ROLLBACK",
+        },
+      },
+    );
+    await database.weleticLoyaltyImportSource.update({
+      where: { id: source.id },
+      data: { leaseExpiresAt: new Date(0) },
+    });
+    await releaseFixtureJobToRealWorker(rollbackJob.id);
+
+    const firstRollbackWorker = await runIsolatedOutboxProcess(shopDomain);
+    expect(
+      await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id: rollbackJob.id },
+      }),
+    ).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      lockedBy: null,
+      lockedAt: null,
+    });
+    const secondRollbackWorker = await runIsolatedOutboxProcess(shopDomain);
+    expect(secondRollbackWorker).not.toBe(firstRollbackWorker);
+    expect(
+      await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+        where: { id: source.id },
+      }),
+    ).toMatchObject({ status: "rolled_back" });
+
+    const ledger = await database.$queryRaw<
+      Array<{ entries: string; net: string }>
+    >`
+      SELECT CAST(COUNT(*) AS CHAR) AS entries,
+        CAST(COALESCE(SUM(pointsDelta), 0) AS CHAR) AS net
+      FROM WeleticPointsLedgerEntry
+      WHERE storeId = ${source.storeId}
+    `;
+    expect(ledger).toEqual([{ entries: "102", net: "0" }]);
+    expect(
+      await database.weleticLoyaltyAccount.count({
+        where: {
+          storeId: source.storeId,
+          cachedPointsBalance: BigInt(0),
+          ledgerVersion: 2,
+        },
+      }),
+    ).toBe(51);
+  },
+  180_000,
+);
 it("dead letters a contained rollback immediately instead of acknowledging or automatically retrying it", async () => {
   const fixture = await queuedRollbackWorkerFixture();
   const account = await database.weleticLoyaltyAccount.findFirstOrThrow({
