@@ -2,8 +2,8 @@
 
 **September 24 release baseline:** [The v1 launch readiness index](v1-launch-readiness-2026-09-24.md)
 tracks every L01–L10, R01–R10 and S01–S06 capability, its next blocker and
-milestone. Public `main` is `117dcb7c9a7b714d36cc5c1e391375e18b6fb0fa`
-(PR #113; [exact-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/35959111101)). PR #101 merged store
+milestone. The reconciled public `main` is `e2ee111d3f9cae7f66488c304b0b0dcd874485e6`
+(PR #110; [exact-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/35960398143)). PR #101 merged store
 reviews, prospective collection and shared
 anonymous/authenticated email capacity. Schemas, installation, provider delivery
 and activation remain gated. This checklist defines the
@@ -20,7 +20,7 @@ evidence link states the boundary. A date/source revision is required before a
 live result can close a gate. Untested behavior remains open even when adjacent
 code exists. No module is complete at this checkpoint.
 
-Shipped: public-main implementations through PR #116, plus the PR #113 budget record; installed acceptance remains open.
+Shipped: implementations reflected by the `e2ee111d` baseline; installed acceptance remains open.
 Live accepted: only the bounded journeys below. Hiro approved finishing the
 active store-review slice first on September 22, then prioritizing Loyalty
 acceptance. Store-review persistence, privacy/export, public reads, shared incentives and
