@@ -61,3 +61,20 @@ Until those conditions pass, L03 first-payment/first-N points and referrals
 are **not accepted**. Every-payment earning and Shopify-native recurring
 discounts remain separate acceptance paths; neither is certified by this
 source audit. No app configuration, scope, database or live store changed.
+
+## Containment boundary under verification
+
+The follow-up implementation disables new cadence-specific points/referral
+promises and separates new one-time referral defaults from historical null
+policies. Existing subscription orders with unverified or incomplete cycle
+identity retain an open critical reconciliation issue without consuming the
+unique points-grant key. Referral claims remain pending, including a mixed cart
+whose one-time subtotal is below the threshold; a later order cannot turn a
+held claim into a fraud rejection. These are local controls, not cycle proof.
+
+The held original referral order has no authorized adjudication/replay route.
+Clearing a hold in the database would not prove its billing cycle and could
+collide with the current first-order check. Do not manually clear or settle
+these holds; the provider-source and fenced adjudication work remains an L03
+release blocker. No historical award is reinterpreted as one-time by the new
+default.

@@ -2397,9 +2397,11 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
           }),
         }),
       );
-      expect(
-        prisma.weleticLoyaltyReferralRule.findFirst,
-      ).not.toHaveBeenCalled();
+      expect(prisma.weleticLoyaltyReferralRule.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { programId: "program_repeat", isActive: true },
+        }),
+      );
     });
 
     it("lets a merchant unblock a reviewed referral without paying rewards early", async () => {

@@ -105,6 +105,35 @@ describe("strict earning-rule wire contract", () => {
       }).success,
     ).toBe(false);
   });
+  it("retains existing cadence terms but refuses to activate unverified point promises", () => {
+    const firstPayment = {
+      ...purchase,
+      subscriptionCadence: "first_payment" as const,
+      isActive: true,
+    };
+    expect(earningRuleFieldsSchema.safeParse(firstPayment).success).toBe(true);
+    const write = (rule: EarningRuleFields) =>
+      earningRuleWriteSchema.safeParse({
+        expectedInstallationGeneration: "g1",
+        expectedRevision: null,
+        ruleId: null,
+        rule,
+      }).success;
+    expect(write(firstPayment)).toBe(false);
+    expect(write({ ...firstPayment, isActive: false })).toBe(true);
+    expect(
+      write({
+        ...firstPayment,
+        subscriptionCadence: "every_payment",
+      }),
+    ).toBe(true);
+    expect(
+      write({
+        ...firstPayment,
+        purchaseType: "one_time",
+      }),
+    ).toBe(true);
+  });
   it.each([
     { multiplier: 1 },
     { multiplier: "1e2" },

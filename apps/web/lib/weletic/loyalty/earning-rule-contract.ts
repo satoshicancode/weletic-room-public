@@ -9,6 +9,7 @@ import {
   loyaltyPurchaseTypeSchema,
   loyaltySubscriptionCadenceSchema,
   loyaltySubscriptionPaymentLimitSchema,
+  requiresUnverifiedSubscriptionCycle,
 } from "./purchase-policy";
 
 const identifier = z.string().min(1).max(191);
@@ -174,7 +175,21 @@ export const earningRuleWriteSchema = z
     ruleId: identifier.nullable(),
     rule: earningRuleFieldsSchema,
   })
-  .strict();
+  .strict()
+  .superRefine(({ rule }, context) => {
+    if (
+      rule.isActive &&
+      rule.triggerCode === "order_paid" &&
+      requiresUnverifiedSubscriptionCycle(rule)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["rule", "subscriptionCadence"],
+        message:
+          "First-payment and first-N point earning require verified subscription cycles",
+      });
+    }
+  });
 
 export const earningRuleRetireSchema = z
   .object({

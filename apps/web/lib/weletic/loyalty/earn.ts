@@ -41,8 +41,10 @@ import { enqueuePurchasePointsCommunication } from "./points-communication-produ
 import {
   classifyLoyaltyPurchaseLine,
   DEFAULT_EARNING_PURCHASE_POLICY,
+  hasLoyaltySubscriptionEvidence,
   isLoyaltyPurchaseLineEligible,
   readLoyaltyPurchasePolicy,
+  requiresUnverifiedSubscriptionCycle,
   type LoyaltyPurchasePolicy,
 } from "./purchase-policy";
 
@@ -2303,6 +2305,56 @@ export async function processOrderPointsEarn({
     return persistNoAwardOutcome({
       reason: "invalid_order_paid_rule_configuration",
     });
+  }
+  const cadenceRuleIds = scheduledRules
+    .filter((rule) =>
+      requiresUnverifiedSubscriptionCycle(purchasePolicies.get(rule.id)!),
+    )
+    .map((rule) => rule.id);
+  if (
+    cadenceRuleIds.length > 0 &&
+    orderLines.some(hasLoyaltySubscriptionEvidence)
+  ) {
+    if (!reconciliationDelegate?.upsert) {
+      throw new Error("Subscription cadence reconciliation is unavailable.");
+    }
+    const details = {
+      orderId: order.id,
+      ruleIds: cadenceRuleIds,
+      policyRevision: policyRevisionSnapshot,
+      occurredAt: occurredAt.toISOString(),
+      reason: "subscription_billing_cycle_unverified",
+      resolution:
+        "Verify the contract billing cycle from an authorized source, then replay this order against its original policy revision before settling any award.",
+    };
+    await reconciliationDelegate.upsert({
+      where: {
+        storeId_kind_externalKey: {
+          storeId,
+          kind: "loyalty_subscription_cycle_unverified",
+          externalKey: legacyRecoveryIssueKey,
+        },
+      },
+      create: {
+        id: `wrecon_${nanoid(20)}`,
+        storeId,
+        externalKey: legacyRecoveryIssueKey,
+        kind: "loyalty_subscription_cycle_unverified",
+        severity: "critical",
+        status: "open",
+        details,
+      },
+      update: {
+        severity: "critical",
+        status: "open",
+        resolvedAt: null,
+        detectedAt: new Date(),
+        details,
+      },
+    });
+    // The historical policy may still promise points. A zero-point grant
+    // would consume the unique order key and make later replay impossible.
+    return null;
   }
   const eligibleRules = scheduledRules.filter((rule) => {
     if (

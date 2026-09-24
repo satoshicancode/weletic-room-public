@@ -38,7 +38,7 @@ beforeAll(async () => {
     process.env.POINTS_ACCOUNTING_DATABASE_INTEGRATION !== "1" ||
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
-    url.port !== "3307" ||
+    !["3307", "3309"].includes(url.port) ||
     url.username !== "loyalty_dev" ||
     !/^\/weletic_loyalty_it_points_[a-z0-9_]+$/.test(url.pathname)
   ) {
@@ -406,6 +406,64 @@ it("P01: purchase multi-line earn, duplicate delivery and partial/full refund co
     await prisma.weleticLoyaltyEarnGrant.count({ where: { storeId: f.id } }),
   ).toBe(1);
 });
+
+it.each([true, false])(
+  "P01b: historical first-payment subscription promise with complete identity %s stays replayable without a zero grant",
+  async (completeIdentity) => {
+    const f = await seed();
+    await prisma.weleticLoyaltyEarningRule.update({
+      where: { id: `purchase-${f.id}` },
+      data: {
+        purchasePolicy: {
+          purchaseType: "both",
+          subscriptionCadence: "first_payment",
+          subscriptionPaymentLimit: null,
+        },
+      },
+    });
+    await prisma.$transaction((tx) =>
+      publishLoyaltyEarnPolicyRevision({
+        tx,
+        storeId: f.id,
+        programId: f.id,
+        effectiveAt: new Date("2026-01-03T00:00:00Z"),
+        reason: "Historical first-payment promise",
+      }),
+    );
+    const id = await order(f, [BigInt("10000")]);
+    await prisma.weleticCommerceOrderLine.updateMany({
+      where: { orderId: id },
+      data: {
+        sellingPlanId: "synthetic-plan",
+        subscriptionSeriesKey: completeIdentity
+          ? "selling-plan:synthetic:item:synthetic"
+          : null,
+        subscriptionSequence: 1,
+      },
+    });
+
+    expect(await earn(f, id)).toBeNull();
+    expect(await earn(f, id)).toBeNull();
+    expect(
+      await prisma.weleticReconciliationIssue.findUnique({
+        where: {
+          storeId_kind_externalKey: {
+            storeId: f.id,
+            kind: "loyalty_subscription_cycle_unverified",
+            externalKey: id,
+          },
+        },
+      }),
+    ).toMatchObject({ severity: "critical", status: "open" });
+    expect(
+      await prisma.weleticLoyaltyEarnGrant.count({ where: { orderId: id } }),
+    ).toBe(0);
+    expect(
+      await prisma.weleticPointsLedgerEntry.count({ where: { storeId: f.id } }),
+    ).toBe(0);
+    await balance(f, BigInt(0));
+  },
+);
 
 async function campaign(f: Fixture, targeted = false) {
   const result = await prisma.weleticLoyaltyBonusCampaign.create({
