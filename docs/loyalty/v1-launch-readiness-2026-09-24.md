@@ -1,8 +1,8 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 25, 2026 JST: public `main` at
-[`e55ce9a2`](https://github.com/satoshicancode/weletic-room-public/commit/e55ce9a2edf820b1d3e1c38418720704072c603d)
-(PR #143; [PR-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36051051525)).
+[`5266d588`](https://github.com/satoshicancode/weletic-room-public/commit/5266d58833269bb6b59b57ac065f7b39eddfbda8)
+(PR #144; [post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36053456006)).
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
@@ -95,6 +95,15 @@ not establish those facts for `loyalty-public`.
 A fresh [13-extension public staging build](public-extension-build-2026-09-24.md)
 passed local validation on the same source SHA; its unique candidate UIDs remain
 unowned until the public-app mapping and deployment gate are accepted.
+
+The [September 25 public-app runtime inventory](public-app-runtime-inventory-2026-09-25.md)
+found that the active remote version still uses `https://example.com`, whereas
+the local public configuration selects no extensions. The current-install table
+shows one **We Dev** installation, not a yamaxdev public-app acceptance. A
+historical test webhook to an obsolete tunnel returned “Invalid webhook URL”;
+Shopify's seven-day webhook failure view was 93.4%. Reconcile the active version,
+extension/subscription ownership and durable webhook destination before an
+installed candidate is proposed. This read-only check changed no remote app.
 
 The merged [Shopify runtime-image fix](https://github.com/satoshicancode/weletic-room-public/pull/119)
 reduces the local image from the previous recipe's 4.47 GB to 980 MB unpacked
