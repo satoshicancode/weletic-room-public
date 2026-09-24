@@ -24,16 +24,20 @@ inferred. EN/JA/VI copy explains the calculation and limits.
 
 The series shares the signed merchant read, installation/store checks and
 owner-only JSON/CSV export. It adds no SQL read or schema change beyond S24's
-existing activity query and index gate. On this reconciled branch, 38 focused
-S16/S17 service, UI and arithmetic tests pass, along with TypeScript using the CI heap
-setting, full web lint, Prisma validation and formatting. Current-head CI, a
-standalone production build and isolated SQL rerun are separate checks. The
-earlier stacked candidate passed a complete web unit suite, production build
-and isolated SQL reconciliation; those results do not certify this branch.
-Neither implementation establishes a named installed journey or complete
-Smile parity.
+existing activity query and index gate. On code SHA `03945ffa`, 38 focused
+combined S16/S17 service, UI and arithmetic tests passed. Full web TypeScript,
+lint, Prisma validation and formatting passed, as did the
+[Fast quality gate](https://github.com/satoshicancode/weletic-room-public/actions/runs/35973405985).
+The bounded `loyalty-only` production web build passed with separate CI type and
+lint validation. A fresh MySQL 8.0 schema on loopback port 3312 passed the
+isolated SQL test, including independent ledger and rate reconciliation. Its
+ledger was empty after the test; the disposable schema, principal and container
+were removed. The local SQL log is
+`/tmp/weletic-s17-standalone-sql-20260924.log` (SHA-256
+`020b121f75db835b5c4748de4fb73d12adbfe52b52ab074ef4ff60cc745ffbdc`).
+These checks do not establish a named installed journey or complete Smile parity.
 
 The inherited isolated SQL test accepts disposable loopback MySQL on the
 standard port 3307 or the alternate port 3312. It still requires an exact
 isolated schema and matching principal. No shared or provider database was used
-by this standalone branch's focused checks.
+by this standalone branch's checks.
