@@ -22,6 +22,7 @@ export const loyaltyRoutes = Object.freeze([
     "loyalty/checkout/reserve",
     "loyalty/checkout/release",
     "merchant/analytics",
+    "merchant/analytics/tier-history",
     "merchant/communications",
     "merchant/customers/list",
     "merchant/customers/profile",

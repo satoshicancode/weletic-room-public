@@ -7,16 +7,36 @@ import {
   type MerchantAnalyticsResponse,
   type MerchantAnalyticsSnapshot,
 } from "../../../lib/weletic/loyalty/merchant-analytics-contract";
+import { merchantTierHistoryCsv } from "../../../lib/weletic/loyalty/tier-history-csv";
+import type {
+  MerchantTierHistoryExportRequest,
+  MerchantTierHistoryExportResponse,
+} from "../../../lib/weletic/loyalty/tier-history-export-contract";
+import { merchantTierHistoryExportRequestSchema } from "../../../lib/weletic/loyalty/tier-history-export-contract";
 import { merchantAnalyticsCopy } from "./merchant-analytics-copy";
 
 export type MerchantAnalyticsTransport = (
   request: MerchantAnalyticsRequest,
 ) => Promise<MerchantAnalyticsResponse>;
+export type MerchantTierHistoryTransport = (
+  request: MerchantTierHistoryExportRequest,
+) => Promise<MerchantTierHistoryExportResponse>;
+
+function download(content: string, contentType: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: contentType }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export function MerchantAnalyticsScreen({
   request,
+  requestTierHistory,
 }: {
   request: MerchantAnalyticsTransport;
+  requestTierHistory?: MerchantTierHistoryTransport;
 }) {
   const [locale, setLocale] =
     useState<keyof typeof merchantAnalyticsCopy>("en");
@@ -27,7 +47,9 @@ export function MerchantAnalyticsScreen({
     null,
   );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<"invalid" | "error" | null>(null);
+  const [error, setError] = useState<"invalid" | "error" | "tooMany" | null>(
+    null,
+  );
   const epoch = useRef(0);
   React.useEffect(() => {
     const fence = epoch;
@@ -82,17 +104,49 @@ export function MerchantAnalyticsScreen({
       if (version !== epoch.current) return;
       setSnapshot(result.snapshot);
       if (result.download) {
-        const url = URL.createObjectURL(
-          new Blob([result.download.content], {
-            type: result.download.contentType,
-          }),
+        download(
+          result.download.content,
+          result.download.contentType,
+          result.download.filename,
         );
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = result.download.filename;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
+    } catch {
+      if (version === epoch.current) setError("error");
+    } finally {
+      if (version === epoch.current) setBusy(false);
+    }
+  }
+  async function exportTierHistory() {
+    if (!snapshot?.canExport || !requestTierHistory || !start || !end) {
+      setError("invalid");
+      return;
+    }
+    const parsed = merchantTierHistoryExportRequestSchema.safeParse({
+      filter: {
+        startAt: `${start}T00:00:00.000Z`,
+        endAt: `${end}T23:59:59.999Z`,
+      },
+      expectedInstallationGeneration: snapshot.installationGeneration,
+    });
+    if (!parsed.success) {
+      setError("invalid");
+      return;
+    }
+    const version = ++epoch.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await requestTierHistory(parsed.data);
+      if (version !== epoch.current) return;
+      if (result.status === "too_large") {
+        setError("tooMany");
+        return;
+      }
+      download(
+        merchantTierHistoryCsv(result.rows),
+        "text/csv;charset=utf-8",
+        `weletic-tier-history-${start}-${end}.csv`,
+      );
     } catch {
       if (version === epoch.current) setError("error");
     } finally {
@@ -273,6 +327,19 @@ export function MerchantAnalyticsScreen({
             {copy.json}
           </button>
           {!snapshot.canExport && <p>{copy.exportNote}</p>}
+          {requestTierHistory && (
+            <section>
+              <h2>{copy.tierHistoryTitle}</h2>
+              <p>{copy.tierHistorySemantics}</p>
+              <button
+                type="button"
+                disabled={busy || !snapshot.canExport || !start || !end}
+                onClick={() => void exportTierHistory()}
+              >
+                {copy.tierHistoryCsv}
+              </button>
+            </section>
+          )}
           {metrics(copy.liability, snapshot.liability)}
           {metrics(copy.activity, snapshot.activity)}
           {snapshot.activitySeries.status === "available" ? (

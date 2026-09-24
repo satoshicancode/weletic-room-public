@@ -14,6 +14,11 @@ const en = {
   csv: "Export CSV",
   json: "Export JSON",
   exportNote: "Financial exports are available to the store owner only.",
+  tierHistoryTitle: "Recorded VIP tier history",
+  tierHistoryCsv: "Export tier events CSV",
+  tooMany: "More than 2,000 tier events match. Choose a shorter date range.",
+  tierHistorySemantics:
+    "Owner-only export of up to 2,000 retained, non-redacted tier events within 366 UTC days. Select both dates first. Larger results require a shorter date range; no partial file is downloaded. Account IDs are pseudonyms; tier names are their current labels, not labels captured when the event occurred. Missing or erased history and past membership are unavailable.",
   semantics:
     "Balances and VIP distribution are current snapshots. Point activity uses the selected date range. Reward and referral statuses describe records created in that range, not a sequence of completed funnel steps. Empty dates include all history. Monetary values are exact minor units of the displayed currency (for example, cents for USD; yen for JPY).",
   financial:
@@ -168,6 +173,12 @@ const ja: Copy = {
   csv: "CSVを出力",
   json: "JSONを出力",
   exportNote: "財務データの出力はストアオーナーのみ利用できます。",
+  tierHistoryTitle: "記録されたVIPランク履歴",
+  tierHistoryCsv: "ランク履歴CSVを出力",
+  tooMany:
+    "該当するランク履歴が2,000件を超えています。期間を短くしてください。",
+  tierHistorySemantics:
+    "ストアオーナーのみ、最大366日間の保持中かつ非削除のランク履歴を2,000件まで出力できます。両方の日付を選択してください。超過した場合は期間を短くしてください。部分的なファイルは出力しません。アカウントIDは仮名化され、ランク名は変更当時ではなく現在の名称です。欠落・削除済みの履歴や過去の所属は利用できません。",
   semantics:
     "残高とVIP分布は現在の状態です。ポイント履歴には選択した期間を適用します。特典と紹介のステータスは、その期間に作成された記録の現在の状態であり、順番に完了したファネルの段階ではありません。日付が空欄の場合は全期間です。金額は表示通貨の最小単位の正確な値です（USDはセント、JPYは円）。",
   financial:
@@ -320,6 +331,11 @@ const vi: Copy = {
   csv: "Xuất CSV",
   json: "Xuất JSON",
   exportNote: "Chỉ chủ cửa hàng có quyền xuất dữ liệu tài chính.",
+  tierHistoryTitle: "Lịch sử hạng VIP đã ghi nhận",
+  tierHistoryCsv: "Xuất CSV sự kiện hạng",
+  tooMany: "Có hơn 2.000 sự kiện hạng. Hãy chọn khoảng ngày ngắn hơn.",
+  tierHistorySemantics:
+    "Chỉ chủ cửa hàng được xuất tối đa 2.000 sự kiện hạng còn lưu, chưa bị xóa dữ liệu trong khoảng tối đa 366 ngày UTC. Hãy chọn cả hai ngày. Nếu vượt giới hạn, hãy thu hẹp khoảng ngày; hệ thống không tải tệp thiếu dữ liệu. ID tài khoản được thay bằng bút danh; tên hạng là tên hiện tại, không phải tên lúc xảy ra sự kiện. Lịch sử thiếu hoặc đã xóa và tư cách hạng trong quá khứ không khả dụng.",
   semantics:
     "Số dư và phân bố VIP phản ánh trạng thái hiện tại. Hoạt động điểm được lọc theo khoảng ngày đã chọn. Trạng thái phần thưởng và giới thiệu phản ánh các bản ghi được tạo trong khoảng đó, không phải các bước liên tiếp đã hoàn thành. Để trống ngày để xem toàn bộ lịch sử. Giá trị tiền là số chính xác theo đơn vị nhỏ nhất của đồng tiền hiển thị (ví dụ: cent với USD, yên với JPY).",
   financial:
