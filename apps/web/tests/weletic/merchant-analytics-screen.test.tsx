@@ -151,6 +151,111 @@ it.each([
   },
 );
 
+it("downloads one owner-authorized tier snapshot only after an explicit date refresh", async () => {
+  const ownerResponse = {
+    ...response,
+    snapshot: { ...response.snapshot, canExport: true },
+  } satisfies MerchantAnalyticsResponse;
+  const request = vi.fn().mockResolvedValue(ownerResponse);
+  const requestTierHistory = vi.fn().mockResolvedValue({
+    status: "available",
+    coverage: "retained_nonredacted_tier_events_only",
+    installationGeneration: "private-generation",
+    filter: {
+      startAt: "2026-09-01T00:00:00.000Z",
+      endAt: "2026-09-30T23:59:59.999Z",
+    },
+    rows: [
+      {
+        accountPseudonym: `account_${"a".repeat(32)}`,
+        effectiveAt: "2026-09-02T00:00:00.000Z",
+        fromTierCurrentName: "Silver",
+        toTierCurrentName: "Gold",
+        changeReason: "threshold_reached",
+      },
+    ],
+  });
+  const createObjectURL = vi.fn().mockReturnValue("blob:fixture");
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: createObjectURL,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: vi.fn(),
+  });
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  try {
+    await act(async () =>
+      root.render(
+        createElement(MerchantAnalyticsScreen, {
+          request,
+          requestTierHistory,
+        }),
+      ),
+    );
+    const dates = node.querySelectorAll<HTMLInputElement>('input[type="date"]');
+    const exportButton = () =>
+      Array.from(node.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("Export tier events CSV"),
+      );
+    expect(exportButton()!.disabled).toBe(true);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(dates[0], "2026-09-01");
+      dates[0].dispatchEvent(new Event("input", { bubbles: true }));
+      dates[0].dispatchEvent(new Event("change", { bubbles: true }));
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(dates[1], "2026-09-30");
+      dates[1].dispatchEvent(new Event("input", { bubbles: true }));
+      dates[1].dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(exportButton()).toBeUndefined();
+    await act(async () => {
+      node
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        );
+    });
+    expect(exportButton()!.disabled).toBe(false);
+    await act(async () => exportButton()!.click());
+    expect(requestTierHistory).toHaveBeenCalledTimes(1);
+    expect(requestTierHistory.mock.calls[0][0]).toEqual({
+      filter: {
+        startAt: "2026-09-01T00:00:00.000Z",
+        endAt: "2026-09-30T23:59:59.999Z",
+      },
+      expectedInstallationGeneration: "private-generation",
+    });
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    requestTierHistory.mockResolvedValueOnce({
+      status: "too_large",
+      coverage: "retained_nonredacted_tier_events_only",
+      installationGeneration: "private-generation",
+      filter: {
+        startAt: "2026-09-01T00:00:00.000Z",
+        endAt: "2026-09-30T23:59:59.999Z",
+      },
+      rows: [],
+    });
+    await act(async () => exportButton()!.click());
+    expect(node.querySelector('[role="alert"]')?.textContent).toContain(
+      "More than 2,000",
+    );
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+  } finally {
+    click.mockRestore();
+  }
+});
+
 it.each([
   ["en", "Daily point activity (UTC)", "UTC date"],
   ["ja", "日別ポイント履歴（UTC）", "UTCの日付"],
