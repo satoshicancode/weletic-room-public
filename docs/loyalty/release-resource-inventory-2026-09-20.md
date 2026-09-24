@@ -38,7 +38,8 @@ September 25 read-only console inventory supersedes the Cloudflare/Upstash
 
 - The accessible Cloudflare account has **Workers Free** and **R2 Paid** active.
   Its Containers page requires a Workers Paid purchase before any container can
-  run. The account has an existing `weletic-private` R2 bucket in APAC with zero
+  run. Workers & Pages shows no existing projects in this account. The account
+  has an existing `weletic-private` R2 bucket in APAC with zero
   objects, no public development URL or custom domain, and no CORS policy;
   `weletic-public` has three objects. The private bucket's existing purpose,
   credentials, retention and isolation are not yet certified for this release.
