@@ -4,8 +4,8 @@ import { currencyMinorUnits } from "../money";
 import { projectEarningRuleCurrency } from "./earning-rule-projection";
 import {
   DEFAULT_REFERRAL_PURCHASE_POLICY,
-  NEW_REFERRAL_PURCHASE_POLICY,
   loyaltyPurchasePolicySchema,
+  NEW_REFERRAL_PURCHASE_POLICY,
 } from "./purchase-policy";
 import {
   canonicalReferralFields,
