@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   series: vi.fn(),
   ledgerNetSeries: vi.fn(),
   firstEarnersSeries: vi.fn(),
+  retainedEnrollmentSeries: vi.fn(),
   tierChangesSeries: vi.fn(),
   earningSources: vi.fn(),
   redemptionSources: vi.fn(),
@@ -39,6 +40,9 @@ vi.mock("../../lib/weletic/loyalty/ledger-net-series", () => ({
 }));
 vi.mock("../../lib/weletic/loyalty/first-recorded-earners-series", () => ({
   readMerchantFirstRecordedEarnersSeries: mocks.firstEarnersSeries,
+}));
+vi.mock("../../lib/weletic/loyalty/retained-enrollment-series", () => ({
+  readMerchantRetainedEnrollmentSeries: mocks.retainedEnrollmentSeries,
 }));
 vi.mock("../../lib/weletic/loyalty/recorded-tier-change-series", () => ({
   readMerchantRecordedTierChangeSeries: mocks.tierChangesSeries,
@@ -179,6 +183,19 @@ beforeEach(() => {
       },
     ],
   });
+  mocks.retainedEnrollmentSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_account_enrollments_only",
+    openingRetainedAccounts: "1",
+    rows: [
+      {
+        month: "2026-09",
+        newRetainedAccounts: "1",
+        cumulativeRetainedAccounts: "2",
+      },
+    ],
+  });
   mocks.tierChangesSeries.mockResolvedValue({
     status: "available",
     bucket: "utc_month",
@@ -287,6 +304,16 @@ describe("merchant analytics", () => {
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
     });
+    expect(mocks.retainedEnrollmentSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(result.snapshot.retainedEnrollmentSeries.rows[0]).toMatchObject({
+      newRetainedAccounts: "1",
+      cumulativeRetainedAccounts: "2",
+    });
     expect(mocks.tierChangesSeries).toHaveBeenCalledWith({
       tx,
       storeId: "store-a",
@@ -387,6 +414,24 @@ describe("merchant analytics", () => {
             rows: [
               result.snapshot.earningSources.rows[0],
               result.snapshot.earningSources.rows[0],
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          retainedEnrollmentSeries: {
+            ...result.snapshot.retainedEnrollmentSeries,
+            rows: [
+              {
+                month: "2026-09",
+                newRetainedAccounts: "1",
+                cumulativeRetainedAccounts: "3",
+              },
             ],
           },
         },
@@ -539,6 +584,9 @@ describe("merchant analytics", () => {
         expect(result.download!.content).toContain(huge.toString());
         expect(result.download!.content).toContain(
           "firstRecordedEarnersSeries.rows.0.firstRecordedAccounts,1",
+        );
+        expect(result.download!.content).toContain(
+          "retainedEnrollmentSeries.rows.0.cumulativeRetainedAccounts,2",
         );
         expect(result.download!.content).toContain(
           "recordedTierChangesSeries.rows.0.totalChanges,2",

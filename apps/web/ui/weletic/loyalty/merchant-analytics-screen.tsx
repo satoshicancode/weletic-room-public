@@ -311,6 +311,26 @@ export function MerchantAnalyticsScreen({
               </p>
             </section>
           )}
+          <p>{copy.retainedEnrollmentSemantics}</p>
+          {snapshot.retainedEnrollmentSeries.status === "available" ? (
+            <>
+              {metrics(copy.retainedEnrollmentOpening, {
+                openingRetainedAccounts:
+                  snapshot.retainedEnrollmentSeries.openingRetainedAccounts,
+              })}
+              {table(
+                copy.retainedEnrollmentSeries,
+                snapshot.retainedEnrollmentSeries.rows,
+              )}
+            </>
+          ) : (
+            <section>
+              <h2>{copy.retainedEnrollmentSeries}</h2>
+              <p role="status">
+                {copy[snapshot.retainedEnrollmentSeries.status]}
+              </p>
+            </section>
+          )}
           <p>{copy.recordedTierChangesSemantics}</p>
           {snapshot.recordedTierChangesSeries.status === "available" ? (
             table(

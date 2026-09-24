@@ -247,6 +247,35 @@ export const merchantAnalyticsSnapshotSchema = z
       .refine(
         ({ status, rows }) => status === "available" || rows.length === 0,
       ),
+    retainedEnrollmentSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("retained_account_enrollments_only"),
+        openingRetainedAccounts: count.nullable(),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                newRetainedAccounts: count,
+                cumulativeRetainedAccounts: count,
+              })
+              .strict(),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(({ status, openingRetainedAccounts, rows }) => {
+        if (status !== "available")
+          return openingRetainedAccounts === null && rows.length === 0;
+        if (openingRetainedAccounts === null) return false;
+        let running = BigInt(openingRetainedAccounts);
+        return rows.every((row) => {
+          running += BigInt(row.newRetainedAccounts);
+          return row.cumulativeRetainedAccounts === running.toString();
+        });
+      }),
     recordedTierChangesSeries: z
       .object({
         status: z.enum(["available", "range_required", "range_too_wide"]),
@@ -464,10 +493,12 @@ export const merchantAnalyticsSnapshotSchema = z
       filter,
       ledgerNetSeries,
       firstRecordedEarnersSeries,
+      retainedEnrollmentSeries,
       recordedTierChangesSeries,
     }) => {
       if (
         firstRecordedEarnersSeries.status !== ledgerNetSeries.status ||
+        retainedEnrollmentSeries.status !== ledgerNetSeries.status ||
         recordedTierChangesSeries.status !== ledgerNetSeries.status
       )
         return false;
@@ -485,6 +516,7 @@ export const merchantAnalyticsSnapshotSchema = z
       }
       return [
         firstRecordedEarnersSeries.rows,
+        retainedEnrollmentSeries.rows,
         recordedTierChangesSeries.rows,
       ].every(
         (rows) =>

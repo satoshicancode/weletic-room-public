@@ -26,6 +26,13 @@ const en = {
     "First recorded and returning earn accounts (UTC)",
   firstRecordedEarnersSemantics:
     "Counts distinct accounts with positive recorded order, referral, bonus or tier earnings in each UTC month. First means the account's earliest retained qualifying earn is inside the selected instants; later months are returning. An earlier earn in the same month but before the selected start makes the account returning. Imports and manual adjustments do not qualify. Missing pre-Weletic or erased history and multiple accounts cannot be reconstructed; these are not lifetime customer cohorts.",
+  retainedEnrollmentSeries: "Retained account enrollments over time (UTC)",
+  retainedEnrollmentOpening: "Retained accounts before selected range",
+  retainedEnrollmentSemantics:
+    "Counts Loyalty accounts still retained now by their recorded enrollment time. Each cumulative count adds enrollments within the selected instants to the retained accounts enrolled before the start; boundary months may be partial. Erased accounts and missing pre-Weletic history cannot be reconstructed. This is not past active membership or a Shopify customer total.",
+  openingRetainedAccounts: "Retained accounts before range",
+  newRetainedAccounts: "New recorded enrollments",
+  cumulativeRetainedAccounts: "Cumulative retained accounts",
   earningSources: "Top recorded earning sources",
   earningSourcesSemantics:
     "Ranks retained positive earning-ledger entries by gross points in the selected instants. Event count is ledger entries, not unique customers or orders. Later refunds stay separate, so this is not net points or a lifetime store measure. Historical imports and manual adjustments are excluded; missing or erased history is unavailable.",
@@ -165,6 +172,13 @@ const ja: Copy = {
   firstRecordedEarnersSeries: "初回記録と再獲得のアカウント（UTC）",
   firstRecordedEarnersSemantics:
     "各UTC月に注文、紹介、ボーナス、ランクによる正の獲得が記録されたアカウントを重複なく数えます。初回は保存された対象履歴の最初の獲得が選択期間内にある場合です。同じ月でも期間開始前に獲得があれば再獲得に分類します。過去分補填と手動調整は対象外です。Weletic導入前や削除済みの履歴、複数アカウントの統合は復元できず、生涯の顧客コホートではありません。",
+  retainedEnrollmentSeries: "保持中アカウントの登録推移（UTC）",
+  retainedEnrollmentOpening: "選択期間前の保持中アカウント",
+  retainedEnrollmentSemantics:
+    "現在保持されているロイヤルティアカウントを記録された登録日時で数えます。開始前の件数に、選択期間内の各UTC月の新規登録を加えた累計です。境界月は一部のみです。削除済みアカウントやWeletic導入前の履歴は復元できず、過去時点の有効会員数やShopify顧客総数ではありません。",
+  openingRetainedAccounts: "期間開始前の保持中アカウント",
+  newRetainedAccounts: "記録された新規登録",
+  cumulativeRetainedAccounts: "保持中アカウントの累計",
   earningSources: "記録済みポイント獲得源の順位",
   earningSourcesSemantics:
     "選択した期間の正の獲得台帳を、総獲得ポイントで並べます。件数は台帳の記録数で、顧客数や注文数ではありません。後の返金は別に記録するため、純増減やストアの生涯値ではありません。過去分補填と手動調整は除外し、欠損または削除済みの履歴は利用できません。",
@@ -303,6 +317,13 @@ const vi: Copy = {
   firstRecordedEarnersSeries: "Tài khoản tích điểm lần đầu và quay lại (UTC)",
   firstRecordedEarnersSemantics:
     "Đếm mỗi tài khoản một lần trong từng tháng UTC khi có điểm dương từ đơn hàng, giới thiệu, thưởng hoặc hạng. Lần đầu nghĩa là khoản tích điểm đủ điều kiện sớm nhất còn lưu nằm trong khoảng đã chọn; các tháng sau là quay lại. Nếu khoản đầu tiên nằm trước thời điểm bắt đầu dù cùng tháng, tài khoản được tính là quay lại. Không tính điểm nhập lịch sử hoặc điều chỉnh thủ công. Không thể khôi phục lịch sử trước Weletic, lịch sử đã xóa hay hợp nhất nhiều tài khoản; đây không phải nhóm khách hàng theo toàn bộ vòng đời.",
+  retainedEnrollmentSeries: "Tài khoản còn lưu theo thời điểm đăng ký (UTC)",
+  retainedEnrollmentOpening: "Tài khoản còn lưu trước khoảng đã chọn",
+  retainedEnrollmentSemantics:
+    "Đếm các tài khoản Loyalty hiện còn lưu theo thời điểm đăng ký đã ghi. Tổng lũy kế cộng số đăng ký trong từng tháng UTC thuộc khoảng đã chọn vào số tài khoản đăng ký trước lúc bắt đầu; tháng đầu và cuối có thể chỉ gồm một phần. Không thể khôi phục tài khoản đã xóa hoặc lịch sử trước Weletic. Đây không phải số hội viên hoạt động trong quá khứ hay tổng khách hàng Shopify.",
+  openingRetainedAccounts: "Tài khoản còn lưu trước khoảng chọn",
+  newRetainedAccounts: "Đăng ký mới đã ghi",
+  cumulativeRetainedAccounts: "Lũy kế tài khoản còn lưu",
   earningSources: "Nguồn tích điểm đã ghi nhận",
   earningSourcesSemantics:
     "Xếp hạng các bút toán tích điểm dương còn lưu theo tổng điểm trong khoảng thời gian đã chọn. Số lượt là số bút toán, không phải số khách hay đơn hàng. Hoàn tiền sau đó được ghi riêng nên đây không phải điểm ròng hoặc toàn bộ vòng đời cửa hàng. Loại trừ điểm nhập lịch sử và điều chỉnh thủ công; lịch sử thiếu hoặc đã xóa không khả dụng.",
