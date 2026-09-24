@@ -74,3 +74,28 @@ cleaned after the profile.
 **The full-scale lifecycle remains failed/unaccepted.** The profile did not
 execute 50,000 worker commits and 50,000 rollbacks, restart recovery or the final
 independent reconciliation. Those unchanged gates still precede release.
+
+## Later unchanged-assertion run after the proof-reader joins
+
+A second isolated full-lifecycle run reached **50,000/50,000 actual commits**
+through 1,001 deliveries. Rollback reached 11,970 rows in 241 successful
+deliveries, then delivery 242 failed with Prisma `P2028` in `rollback_batch`.
+The failure poll showed the source still `rolling_back` with 11,980 completed
+rows and a failed job awaiting retry; ten rows from that delivery were durable.
+The strict test assertion failed. No complete rollback, restart recovery or
+final independent reconciliation was executed. The local log is
+`/tmp/weletic-import-full-after-122-20260924.log` (SHA-256
+`afb277e926387f7a431f34b023178366620c0af4d7fd0de7f0a28340e94a5085`).
+The harness did not stamp the runner SHA; this is diagnostic rather than named
+release evidence. The run overlapped heavy local verification, so it does not
+isolate contention from query growth as the sole cause. It is not release
+acceptance.
+
+A quiet bounded profile against 50,000 synthetically committed rows rolled
+back 50 real rows in 32.071 seconds. Across eight full-source proofs, snapshot,
+execution and ledger reads consumed 7.276, 10.242 and 12.557 seconds. Its
+local log is `/tmp/weletic-import-rollback-profile-after-122-20260924.log`
+(SHA-256 `682befd03db1d4463b5161bed2e8b50160eea732c13167138d8a26a26c180272`).
+This identifies the repeated-proof hot path; it does not prove that a quiet
+50,000-row lifecycle will complete. Keep the unchanged assertions and recovery
+gates for the next candidate.

@@ -1,6 +1,8 @@
 # Recorded redemption debit sources (S26)
 
-Status: implementation candidate, September 24, 2026. This is a partial
+Status: merged implementation in [PR #133](https://github.com/satoshicancode/weletic-room-public/pull/133)
+at [`58663b0e`](https://github.com/satoshicancode/weletic-room-public/commit/58663b0ecc72667857a08a010a6d521ae9389537),
+September 24, 2026. This is a partial
 Weletic-defined breakdown, not the unknown Smile `Total` formula or installed
 acceptance.
 
@@ -32,4 +34,6 @@ port 3312 independently reconciles the exact debit total above JavaScript
 number precision, two captured names for one reward ID, unknown provenance,
 case/accent-sensitive grouping, inclusive partial instants, cross-store
 exclusion and the top-ten overflow bucket. That is not a provider-scale read
-plan. Exact-head CI and named installed merchant acceptance remain open.
+plan. [Exact PR-head CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/36000991575)
+and [post-merge CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/36002511432)
+passed. Named installed merchant acceptance remains open.
