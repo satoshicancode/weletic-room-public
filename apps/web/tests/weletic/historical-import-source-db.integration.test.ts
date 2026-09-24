@@ -1,5 +1,8 @@
 import { Prisma } from "@prisma/client";
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { prisma as database } from "../../lib/prisma";
 import { processHistoricalImportCommitBatch } from "../../lib/weletic/loyalty/historical-import-commit-batch";
@@ -38,6 +41,40 @@ import {
   pollImportWorkerUntilEligible,
   sanitizeImportPollEvidence,
 } from "./helpers/import-worker-poll";
+
+const execFileAsync = promisify(execFile);
+const webRoot = fileURLToPath(new URL("../../", import.meta.url));
+
+async function runIsolatedOutboxProcess(shopDomain: string) {
+  if (!process.env.DATABASE_URL)
+    throw new Error(
+      "The isolated worker needs the explicit fixture DATABASE_URL",
+    );
+  const { stdout, stderr } = await execFileAsync(
+    process.execPath,
+    [
+      "--conditions=react-server",
+      "--import=tsx",
+      "--import=./scripts/runtime/async-local-storage.cjs",
+      "scripts/loyalty/run-outbox-worker.ts",
+      `--store=${shopDomain}`,
+      "--once",
+    ],
+    {
+      cwd: webRoot,
+      env: process.env,
+      encoding: "utf8",
+      timeout: 120_000,
+      maxBuffer: 1_000_000,
+    },
+  );
+  expect(stderr).not.toContain("fatal worker error");
+  expect(stdout).toContain("processed=1");
+  expect(stdout).toContain("failed=0 deadLettered=0");
+  const workerId = stdout.match(/\[loyalty-outbox\] worker (\S+) started/)?.[1];
+  if (!workerId) throw new Error("The isolated worker did not report its ID");
+  return workerId;
+}
 
 const stageDiagnostics = vi.hoisted(() => ({ active: false, emitted: 0 }));
 function reportImportStage(record: {
@@ -295,9 +332,17 @@ beforeAll(async () => {
       (url.port !== "3308" ||
         process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE !== "1" ||
         fixtureDatabase === undefined)) ||
+    (process.env.HISTORICAL_IMPORT_PROCESS_RESTART_INTEGRATION === "1" &&
+      (url.port !== "3313" ||
+        process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE !== "1" ||
+        fixtureDatabase === undefined)) ||
     !(
       url.port === "3307" ||
       (url.port === "3308" &&
+        process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE === "1" &&
+        fixtureDatabase !== undefined) ||
+      (url.port === "3313" &&
+        process.env.HISTORICAL_IMPORT_PROCESS_RESTART_INTEGRATION === "1" &&
         process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE === "1" &&
         fixtureDatabase !== undefined)
     ) ||
@@ -738,46 +783,49 @@ async function rollbackFixture(withFields = false, rowCount = 1) {
   return { ...fixture, source, execution, snapshots, lease: claimed.lease };
 }
 
-it("rolls back a ten-row transaction and replays it without duplicate corrections", async () => {
-  const fixture = await rollbackFixture(true, 10);
-  const input = {
-    lease: fixture.lease,
-    snapshotIds: fixture.snapshots.map((row) => row.id),
-  };
-  const first = await rollbackHistoricalImportRows(input);
-  expect(first.contained).toBe(false);
-  expect(first.results).toHaveLength(10);
-  expect(first.results.every((row) => !row.replayed)).toBe(true);
-  const replay = await rollbackHistoricalImportRows(input);
-  expect(replay.results.every((row) => row.replayed)).toBe(true);
-  expect(
-    await database.weleticPointsLedgerEntry.count({
-      where: { storeId: fixture.source.storeId },
-    }),
-  ).toBe(20);
-  const accounts = await database.weleticLoyaltyAccount.findMany({
-    where: { storeId: fixture.source.storeId },
-  });
-  expect(accounts).toHaveLength(10);
-  for (const account of accounts)
-    expect(account).toMatchObject({
-      cachedPointsBalance: BigInt(0),
-      ledgerVersion: 2,
-      currentTierId: null,
-    });
-  const proof = await database.$transaction(
-    (tx) =>
-      readHistoricalImportExecutionProofInTransaction({
-        tx,
-        sourceId: fixture.source.id,
-        storeId: fixture.source.storeId,
-        programId: fixture.source.programId,
+it.each([10, 50])(
+  "rolls back a %i-row transaction and replays it without duplicate corrections",
+  async (rowCount) => {
+    const fixture = await rollbackFixture(true, rowCount);
+    const input = {
+      lease: fixture.lease,
+      snapshotIds: fixture.snapshots.map((row) => row.id),
+    };
+    const first = await rollbackHistoricalImportRows(input);
+    expect(first.contained).toBe(false);
+    expect(first.results).toHaveLength(rowCount);
+    expect(first.results.every((row) => !row.replayed)).toBe(true);
+    const replay = await rollbackHistoricalImportRows(input);
+    expect(replay.results.every((row) => row.replayed)).toBe(true);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: fixture.source.storeId },
       }),
-    options,
-  );
-  expect(proof.rowsFullyRolledBack).toBe(true);
-  expect(proof.summary.reconciled).toBe(true);
-});
+    ).toBe(rowCount * 2);
+    const accounts = await database.weleticLoyaltyAccount.findMany({
+      where: { storeId: fixture.source.storeId },
+    });
+    expect(accounts).toHaveLength(rowCount);
+    for (const account of accounts)
+      expect(account).toMatchObject({
+        cachedPointsBalance: BigInt(0),
+        ledgerVersion: 2,
+        currentTierId: null,
+      });
+    const proof = await database.$transaction(
+      (tx) =>
+        readHistoricalImportExecutionProofInTransaction({
+          tx,
+          sourceId: fixture.source.id,
+          storeId: fixture.source.storeId,
+          programId: fixture.source.programId,
+        }),
+      options,
+    );
+    expect(proof.rowsFullyRolledBack).toBe(true);
+    expect(proof.summary.reconciled).toBe(true);
+  },
+);
 
 it("shares proof only within a group and supports mixed replay and new rows", async () => {
   const fixture = await rollbackFixture(false, 2);
@@ -859,7 +907,7 @@ it("aborts all group corrections when the final database lease check expires", a
 it.each([
   [],
   ["same", "same"],
-  Array.from({ length: 11 }, (_, index) => `row${index}`),
+  Array.from({ length: 51 }, (_, index) => `row${index}`),
 ])(
   "rejects invalid group identifiers %# before transaction entry",
   async (...snapshotIds) => {
@@ -869,58 +917,61 @@ it.each([
   },
 );
 
-it("aborts earlier rows in a group before containing a later account conflict", async () => {
-  const fixture = await rollbackFixture(true, 2);
-  const last =
-    await database.weleticLoyaltyImportRowExecution.findUniqueOrThrow({
-      where: { snapshotId: fixture.snapshots[1].id },
+it.each([2, 50])(
+  "aborts earlier rows in a %i-row group before containing a later account conflict",
+  async (rowCount) => {
+    const fixture = await rollbackFixture(true, rowCount);
+    const last =
+      await database.weleticLoyaltyImportRowExecution.findUniqueOrThrow({
+        where: { snapshotId: fixture.snapshots[rowCount - 1].id },
+      });
+    await appendPointsLedgerEntry({
+      storeId: fixture.source.storeId,
+      accountId: last.accountId,
+      entryType: "MANUAL_ADJUSTMENT",
+      pointsDelta: 1,
+      pendingDelta: 0,
+      idempotencyKey: `later-group-${fixture.source.id}`,
     });
-  await appendPointsLedgerEntry({
-    storeId: fixture.source.storeId,
-    accountId: last.accountId,
-    entryType: "MANUAL_ADJUSTMENT",
-    pointsDelta: 1,
-    pendingDelta: 0,
-    idempotencyKey: `later-group-${fixture.source.id}`,
-  });
-  const before = await database.weleticLoyaltyAccount.findMany({
-    where: { storeId: fixture.source.storeId },
-    orderBy: { id: "asc" },
-  });
-  const result = await rollbackHistoricalImportRows({
-    lease: fixture.lease,
-    snapshotIds: fixture.snapshots.map((row) => row.id),
-  });
-  expect(result.contained).toBe(true);
-  expect(result.results).toEqual([
-    { executionId: last.id, replayed: false, contained: true },
-  ]);
-  expect(
-    await database.weleticLoyaltyAccount.findMany({
+    const before = await database.weleticLoyaltyAccount.findMany({
       where: { storeId: fixture.source.storeId },
       orderBy: { id: "asc" },
-    }),
-  ).toEqual(before);
-  expect(
-    await database.weleticPointsLedgerEntry.count({
-      where: { storeId: fixture.source.storeId },
-    }),
-  ).toBe(3);
-  expect(
-    await database.weleticLoyaltyImportRowExecution.findUniqueOrThrow({
-      where: { snapshotId: fixture.snapshots[0].id },
-    }),
-  ).toMatchObject({ status: "committed", reversalLedgerEntryId: null });
-  expect(
-    await database.weleticLoyaltyOutboxJob.count({
-      where: {
-        storeId: fixture.source.storeId,
-        jobType: "BIRTHDAY_REWARD",
-        status: "cancelled",
-      },
-    }),
-  ).toBe(0);
-});
+    });
+    const result = await rollbackHistoricalImportRows({
+      lease: fixture.lease,
+      snapshotIds: fixture.snapshots.map((row) => row.id),
+    });
+    expect(result.contained).toBe(true);
+    expect(result.results).toEqual([
+      { executionId: last.id, replayed: false, contained: true },
+    ]);
+    expect(
+      await database.weleticLoyaltyAccount.findMany({
+        where: { storeId: fixture.source.storeId },
+        orderBy: { id: "asc" },
+      }),
+    ).toEqual(before);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId: fixture.source.storeId },
+      }),
+    ).toBe(rowCount + 1);
+    expect(
+      await database.weleticLoyaltyImportRowExecution.findUniqueOrThrow({
+        where: { snapshotId: fixture.snapshots[0].id },
+      }),
+    ).toMatchObject({ status: "committed", reversalLedgerEntryId: null });
+    expect(
+      await database.weleticLoyaltyOutboxJob.count({
+        where: {
+          storeId: fixture.source.storeId,
+          jobType: "BIRTHDAY_REWARD",
+          status: "cancelled",
+        },
+      }),
+    ).toBe(0);
+  },
+);
 
 it("aborts earlier corrections when a later group ID belongs to another store", async () => {
   const own = await rollbackFixture(false, 2);
@@ -2684,6 +2735,130 @@ it("continues a real 50-row rollback without treating the partial source as comp
   });
   expect(balances._sum.cachedPointsBalance).toBe(BigInt(0));
 }, 60000);
+it.skipIf(process.env.HISTORICAL_IMPORT_PROCESS_RESTART_INTEGRATION !== "1")(
+  "recovers commit and rollback with a new real worker process after each durable continuation",
+  async () => {
+    // One delivery processes at most 50 rows, so 51 requires a real handoff.
+    const fixture = await queuedWorkerFixture(51);
+    const shopDomain = `${fixture.source.storeId}.myshopify.com`;
+    await releaseFixtureJobToRealWorker(fixture.job.id);
+
+    const firstCommitWorker = await runIsolatedOutboxProcess(shopDomain);
+    const committedAfterFirstProcess =
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: fixture.source.id, status: "committed" },
+      });
+    expect(committedAfterFirstProcess).toBeGreaterThan(0);
+    expect(committedAfterFirstProcess).toBeLessThanOrEqual(50);
+    expect(
+      await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id: fixture.job.id },
+      }),
+    ).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      lockedBy: null,
+      lockedAt: null,
+    });
+
+    const secondCommitWorker = await runIsolatedOutboxProcess(shopDomain);
+    expect(secondCommitWorker).not.toBe(firstCommitWorker);
+    expect(
+      await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+        where: { id: fixture.source.id },
+      }),
+    ).toMatchObject({ status: "committed" });
+    expect(
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: fixture.source.id, status: "committed" },
+      }),
+    ).toBe(51);
+
+    const source = await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+      where: { id: fixture.source.id },
+    });
+    await database.$transaction(
+      (tx) =>
+        queueHistoricalImportRollbackInTransaction({
+          tx,
+          request: {
+            ...fixture.request,
+            expectedRevision: historicalImportRevision({
+              storeId: source.storeId,
+              programId: source.programId,
+              installationGeneration: source.installationGeneration,
+              normalizedSha256: source.normalizedSha256,
+              source,
+            }),
+          },
+        }),
+      options,
+    );
+    const rollbackJob = await database.weleticLoyaltyOutboxJob.findFirstOrThrow(
+      {
+        where: {
+          storeId: source.storeId,
+          jobType: "HISTORICAL_IMPORT_ROLLBACK",
+        },
+      },
+    );
+    await database.weleticLoyaltyImportSource.update({
+      where: { id: source.id },
+      data: { leaseExpiresAt: new Date(0) },
+    });
+    await releaseFixtureJobToRealWorker(rollbackJob.id);
+
+    const firstRollbackWorker = await runIsolatedOutboxProcess(shopDomain);
+    const rolledBackAfterFirstProcess =
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: source.id, status: "rolled_back" },
+      });
+    expect(rolledBackAfterFirstProcess).toBeGreaterThan(0);
+    expect(rolledBackAfterFirstProcess).toBeLessThanOrEqual(50);
+    expect(
+      await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: { id: rollbackJob.id },
+      }),
+    ).toMatchObject({
+      status: "pending",
+      attempts: 0,
+      lockedBy: null,
+      lockedAt: null,
+    });
+    const secondRollbackWorker = await runIsolatedOutboxProcess(shopDomain);
+    expect(secondRollbackWorker).not.toBe(firstRollbackWorker);
+    expect(
+      await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+        where: { id: source.id },
+      }),
+    ).toMatchObject({ status: "rolled_back" });
+    expect(
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: source.id, status: "rolled_back" },
+      }),
+    ).toBe(51);
+
+    const ledger = await database.$queryRaw<
+      Array<{ entries: string; net: string }>
+    >`
+      SELECT CAST(COUNT(*) AS CHAR) AS entries,
+        CAST(COALESCE(SUM(pointsDelta), 0) AS CHAR) AS net
+      FROM WeleticPointsLedgerEntry
+      WHERE storeId = ${source.storeId}
+    `;
+    expect(ledger).toEqual([{ entries: "102", net: "0" }]);
+    expect(
+      await database.weleticLoyaltyAccount.count({
+        where: {
+          storeId: source.storeId,
+          cachedPointsBalance: BigInt(0),
+          ledgerVersion: 2,
+        },
+      }),
+    ).toBe(51);
+  },
+  180_000,
+);
 it("dead letters a contained rollback immediately instead of acknowledging or automatically retrying it", async () => {
   const fixture = await queuedRollbackWorkerFixture();
   const account = await database.weleticLoyaltyAccount.findFirstOrThrow({

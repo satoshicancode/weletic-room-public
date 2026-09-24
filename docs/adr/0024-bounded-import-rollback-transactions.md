@@ -1,7 +1,7 @@
 # ADR 0024: Bounded import rollback transactions
 
 - Date: 2026-09-09
-- Status: Accepted; draft/merge hold superseded by ADR 0031
+- Status: Superseded by ADR 0044; draft/merge hold superseded by ADR 0031
 - Stakeholders: Hiro (PO), Codex (impl)
 
 ## Context
