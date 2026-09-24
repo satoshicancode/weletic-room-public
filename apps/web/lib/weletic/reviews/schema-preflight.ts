@@ -1,4 +1,4 @@
-/** Read-only, necessary release checks for the three PR #101 additive migrations.
+/** Read-only, necessary release checks for review readers and privacy workers.
  * A passing result still requires target-specific DDL review, mixed-version
  * worker rehearsal and application-level SQL acceptance before writers start.
  */
@@ -11,6 +11,9 @@ export const REVIEW_RELEASE_MODELS = [
   "WeleticReviewReminder",
   "WeleticShopperDeliveryReservation",
   "WeleticShopperDeliveryIdentity",
+  "WeleticReviewPrivacyBackfillAudit",
+  "WeleticReviewOwnerPrivacyCoverage",
+  "WeleticReviewOwnerPrivacyIdentity",
 ] as const;
 
 export const REVIEW_RELEASE_TABLES = [
@@ -53,6 +56,7 @@ const additiveColumns: Record<
   WeleticReviewRequest: {
     reminderSnapshot: { type: "json", nullable: "YES" },
     encryptedReminderToken: { type: "text", nullable: "YES" },
+    encryptedDeliverySnapshot: { type: "mediumtext", nullable: "YES" },
   },
   WeleticMerchantSettings: {
     shopperDeliveryPolicy: { type: "json", nullable: "YES" },
@@ -78,6 +82,7 @@ const criticalColumns: Record<
       nullable: "NO",
     },
     tokenHash: { type: "varchar(64)", nullable: "YES" },
+    encryptedDeliveryToken: { type: "text", nullable: "YES" },
     encryptedDeliverySnapshot: { type: "mediumtext", nullable: "YES" },
   },
   WeleticStoreReview: {
@@ -129,6 +134,26 @@ const criticalColumns: Record<
     },
     identityKeyId: { type: "varchar(64)", nullable: "NO" },
     customerDigest: { type: "varchar(64)", nullable: "NO" },
+  },
+  WeleticReviewPrivacyBackfillAudit: {
+    installationGeneration: { type: "varchar(64)", nullable: "NO" },
+    operatorReference: { type: "varchar(64)", nullable: "NO" },
+    outcome: { type: "varchar(16)", nullable: "NO" },
+  },
+  WeleticReviewOwnerPrivacyCoverage: {
+    installationGeneration: { type: "varchar(64)", nullable: "YES" },
+    state: { type: "enum('active','redacted')", nullable: "NO" },
+    keySetDigest: { type: "char(64)", nullable: "YES" },
+    sourceDigest: { type: "char(64)", nullable: "YES" },
+    identityCount: { type: "int", nullable: "NO", defaultValue: "0" },
+  },
+  WeleticReviewOwnerPrivacyIdentity: {
+    identityKind: {
+      type: "enum('customer_id','customer_email')",
+      nullable: "NO",
+    },
+    identityKeyId: { type: "varchar(64)", nullable: "NO" },
+    customerDigest: { type: "char(64)", nullable: "NO" },
   },
 };
 
@@ -185,6 +210,30 @@ const requiredIndexes: Record<
       columns: ["storeId", "identityKind", "identityKeyId", "customerDigest"],
       unique: false,
     },
+  ],
+  WeleticReviewPrivacyBackfillAudit: [
+    { columns: ["storeId", "runId"], unique: false },
+  ],
+  WeleticReviewOwnerPrivacyCoverage: [
+    { columns: ["storeId", "state", "keySetDigest"], unique: false },
+  ],
+  WeleticReviewOwnerPrivacyIdentity: [
+    {
+      columns: ["storeId", "identityKind", "identityKeyId", "customerDigest"],
+      unique: false,
+    },
+    { columns: ["identityKeyId"], unique: false },
+  ],
+  WeleticReviewRequest: [{ columns: ["expiresAt", "id"], unique: false }],
+};
+
+const primaryColumns: Record<string, string[]> = {
+  WeleticReviewOwnerPrivacyCoverage: ["storeId", "shopperId"],
+  WeleticReviewOwnerPrivacyIdentity: [
+    "storeId",
+    "shopperId",
+    "identityKind",
+    "identityKeyId",
   ],
 };
 
@@ -276,7 +325,14 @@ export function auditReviewReleaseSchema({
   )
     issues.push("outbox:jobType:unknown_lineage");
   for (const [table, additional] of Object.entries(requiredIndexes)) {
-    const expected = [{ columns: ["id"], unique: true }, ...additional];
+    const expected = [
+      ...(REVIEW_RELEASE_MODELS.includes(
+        table as (typeof REVIEW_RELEASE_MODELS)[number],
+      )
+        ? [{ columns: primaryColumns[table] ?? ["id"], unique: true }]
+        : []),
+      ...additional,
+    ];
     const groups = new Map<string, ReviewSchemaIndex[]>();
     for (const row of indexes.filter((item) => item.tableName === table))
       groups.set(row.indexName, [...(groups.get(row.indexName) ?? []), row]);

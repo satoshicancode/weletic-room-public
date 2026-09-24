@@ -13,6 +13,8 @@ import {
 
 const files = [
   "20260920_review_collection_settings.sql",
+  "20260920_review_delivery_snapshot.sql",
+  "20260920_review_owner_privacy.sql",
   "20260922_store_review_core.sql",
   "20260923_shopper_delivery_budget.sql",
 ];
@@ -97,6 +99,23 @@ function migrationMetadata() {
           nullable: /\bNOT NULL\b/.test(column[3]) ? "NO" : "YES",
           defaultValue: defaultFromSql(column[3]),
         });
+      for (const index of alter[2].matchAll(
+        /ADD INDEX `([^`]+)` \(([^)]+)\)/g,
+      )) {
+        const keyColumns = [...index[2].matchAll(/`([^`]+)`/g)].map(
+          (part) => part[1],
+        );
+        keyColumns.forEach((columnName, ordinal) =>
+          indexes.push({
+            tableName: table,
+            indexName: index[1],
+            columnName,
+            nonUnique: 1,
+            sequence: ordinal + 1,
+            prefixLength: null,
+          }),
+        );
+      }
       const jobType = alter[2].match(
         /MODIFY COLUMN `jobType` (ENUM\([^;]+\)) NOT NULL/,
       );
@@ -122,7 +141,7 @@ function migrationMetadata() {
 }
 
 describe("review release schema preflight", () => {
-  it("accepts metadata derived from all three checked-in migrations and current Prisma models", () => {
+  it("accepts metadata derived from all five checked-in migrations and current Prisma models", () => {
     expect(auditReviewReleaseSchema(migrationMetadata())).toEqual({
       ready: true,
       issues: [],
@@ -157,6 +176,58 @@ describe("review release schema preflight", () => {
     );
     expect(result.issues).toContain(
       "column:WeleticStoreReview:body:incompatible",
+    );
+  });
+
+  it("rejects missing owner privacy and product delivery evidence", () => {
+    const metadata = migrationMetadata();
+    metadata.tables = metadata.tables.filter(
+      (row) => row.tableName !== "WeleticReviewOwnerPrivacyCoverage",
+    );
+    metadata.columns = metadata.columns.filter(
+      (row) =>
+        !(
+          row.tableName === "WeleticReviewRequest" &&
+          row.columnName === "encryptedDeliverySnapshot"
+        ),
+    );
+    const token = metadata.columns.find(
+      (row) =>
+        row.tableName === "WeleticStoreReviewRequest" &&
+        row.columnName === "encryptedDeliveryToken",
+    );
+    if (!token) throw new Error("Expected private token column missing");
+    token.columnType = "varchar(64)";
+    metadata.indexes = metadata.indexes.filter(
+      (row) => row.indexName !== "review_request_retention_expiry",
+    );
+    const result = auditReviewReleaseSchema(metadata);
+    expect(result.ready).toBe(false);
+    expect(result.issues).toContain(
+      "table:WeleticReviewOwnerPrivacyCoverage:innodb_required",
+    );
+    expect(result.issues).toContain(
+      "column:WeleticReviewRequest:encryptedDeliverySnapshot:incompatible",
+    );
+    expect(result.issues).toContain(
+      "column:WeleticStoreReviewRequest:encryptedDeliveryToken:incompatible",
+    );
+    expect(result.issues).toContain(
+      "index:WeleticReviewRequest:expiresAt,id:missing_or_incompatible",
+    );
+  });
+
+  it.each([
+    "WeleticReviewPrivacyBackfillAudit",
+    "WeleticReviewOwnerPrivacyCoverage",
+    "WeleticReviewOwnerPrivacyIdentity",
+  ])("requires the %s owner-privacy table", (tableName) => {
+    const metadata = migrationMetadata();
+    metadata.tables = metadata.tables.filter(
+      (row) => row.tableName !== tableName,
+    );
+    expect(auditReviewReleaseSchema(metadata).issues).toContain(
+      `table:${tableName}:innodb_required`,
     );
   });
 
@@ -235,7 +306,7 @@ describe("review release schema preflight", () => {
     );
   });
 
-  it("requires every index declared by the three new-table migrations", () => {
+  it("requires every index declared by the five reviewed migrations", () => {
     const baseline = migrationMetadata();
     const keys = new Set(
       baseline.indexes.map((row) => `${row.tableName}\0${row.indexName}`),
