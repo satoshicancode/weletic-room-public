@@ -1,14 +1,23 @@
 # Review collection — proposed live acceptance packet
 
-Updated September 23, 2026. **Not approved, not executed.** This packet covers
+Updated September 24, 2026. **Not approved, not executed.** This packet covers
 R01/R02 collection, reminders and delivery history only. It cannot close all
 Reviews, incentive fulfillment, production or Cloudflare gates.
 
+The prospective collection, reminder and shared-delivery implementation merged
+in [PR #101](https://github.com/satoshicancode/weletic-room-public/pull/101).
+The [local storefront build](store-review-storefront-build-2026-09-24.md)
+passed for the default app configuration. Neither result proves deployment,
+installed Shopify behavior or provider delivery.
+The [explicit review-route admission](https://github.com/satoshicancode/weletic-room-public/pull/112)
+and [read-only schema preflight](https://github.com/satoshicancode/weletic-room-public/pull/115) are also
+merged local gates. The preflight has not inspected a release target.
+
 ## Preconditions and stop conditions
 
-- Collection/reminder implementation must be committed, independently reviewed,
-  merged with successful CI and deployed to the approved local acceptance runtime.
-  The current draft is not that candidate. Record its exact eventual commit.
+- Record the exact release commit and image deployed to the approved local
+  acceptance runtime. PR #101 and its CI establish code evidence only; the
+  installed candidate and its migration compatibility remain unverified.
 - The approved policy is one shared store/email budget across Loyalty and Reviews,
   including anonymous confirmations and later authenticated messages, with an
   independent customer limit and explicit IANA timezone. Verify the installed
@@ -108,8 +117,8 @@ orders/sends or a different recipient, revise the packet before execution.
   enrollment recovery and activation gates pass. No incentives may be enabled
   merely to exercise collection.
 - A local CLI tunnel is not persistent Cloudflare supervision or release proof.
-  PR #89 admits existing routes only; collection routes and complete review worker/
-  media packaging still require release integration.
+  Recheck PR #112's exact review-route admission on the release candidate;
+  complete review worker/media packaging and provider operation remain open.
 - Exact supported suppression, expiry and remaining invitation schedules require
   recorded cases beyond the two happy-path fixtures; do not claim universal
   collection completion from this packet alone.
