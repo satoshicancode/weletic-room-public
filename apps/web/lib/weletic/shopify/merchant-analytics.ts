@@ -16,6 +16,7 @@ import { readMerchantOrderEarningSeries } from "../loyalty/order-earning-series"
 import { readMerchantRecordedTierChangeSeries } from "../loyalty/recorded-tier-change-series";
 import { deriveMerchantRedemptionRateSeries } from "../loyalty/redemption-rate-series";
 import { readMerchantRedemptionSources } from "../loyalty/redemption-sources";
+import { readMerchantRetainedEnrollmentSeries } from "../loyalty/retained-enrollment-series";
 import {
   authorizeShopifyMerchantInTransaction,
   ShopifyStaffAuthorizationError,
@@ -112,6 +113,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     ledgerNetSeries,
     orderEarningSeries,
     firstRecordedEarnersSeries,
+    retainedEnrollmentSeries,
     recordedTierChangesSeries,
     earningSources,
     redemptionSources,
@@ -148,6 +150,12 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       endAt: dateRange.endDate ?? null,
     }),
     readMerchantFirstRecordedEarnersSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantRetainedEnrollmentSeries({
       tx,
       storeId: actor.storeId,
       startAt: dateRange.startDate ?? null,
@@ -220,6 +228,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     redemptionRateSeries: deriveMerchantRedemptionRateSeries(activitySeries),
     orderEarningSeries,
     firstRecordedEarnersSeries,
+    retainedEnrollmentSeries,
     recordedTierChangesSeries,
     earningSources,
     redemptionSources,

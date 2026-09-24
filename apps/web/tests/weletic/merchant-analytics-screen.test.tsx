@@ -53,6 +53,13 @@ const response: MerchantAnalyticsResponse = {
       coverage: "retained_qualifying_ledger_accounts_only",
       rows: [],
     },
+    retainedEnrollmentSeries: {
+      status: "range_required",
+      bucket: "utc_month",
+      coverage: "retained_account_enrollments_only",
+      openingRetainedAccounts: null,
+      rows: [],
+    },
     recordedTierChangesSeries: {
       status: "range_required",
       bucket: "utc_month",
@@ -281,6 +288,57 @@ it.each([
   expect(section.textContent).toContain(firstLabel);
   expect(section.textContent).toContain("9007199254740990");
   expect(node.innerHTML).not.toContain("account_123");
+});
+
+it.each([
+  [
+    "en",
+    "Retained account enrollments over time (UTC)",
+    "Cumulative retained accounts",
+  ],
+  ["ja", "保持中アカウントの登録推移（UTC）", "保持中アカウントの累計"],
+  [
+    "vi",
+    "Tài khoản còn lưu theo thời điểm đăng ký (UTC)",
+    "Lũy kế tài khoản còn lưu",
+  ],
+])("renders retained enrollment counts in %s", async (locale, title, label) => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: {
+      ...response.snapshot,
+      retainedEnrollmentSeries: {
+        status: "available",
+        bucket: "utc_month",
+        coverage: "retained_account_enrollments_only",
+        openingRetainedAccounts: "9007199254740993",
+        rows: [
+          {
+            month: "2026-09",
+            newRetainedAccounts: "2",
+            cumulativeRetainedAccounts: "9007199254740995",
+          },
+        ],
+      },
+    },
+  } satisfies MerchantAnalyticsResponse);
+  await act(async () =>
+    root.render(createElement(MerchantAnalyticsScreen, { request })),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const heading = Array.from(node.querySelectorAll("h2")).find(
+    (element) => element.textContent === title,
+  );
+  expect(heading).toBeDefined();
+  expect(heading!.closest("section")!.textContent).toContain(label);
+  expect(heading!.closest("section")!.textContent).toContain(
+    "9007199254740995",
+  );
+  expect(node.innerHTML).not.toContain("shopper_123");
 });
 
 it.each([
