@@ -21,6 +21,13 @@ const en = {
   liability: "Current balances and liability",
   activity: "Point activity",
   activitySeries: "Daily point activity (UTC)",
+  redemptionRateSeries: "Monthly redemption-to-earn rate (UTC)",
+  redemptionRateSemantics:
+    "Within the selected interval in each UTC month, recorded reward-spend points are divided by recorded earned points; boundary months may be partial. Earned points exclude backfills; refund reversals, expiry and manual adjustments stay separate. Canceled rewards remain in gross spend while restoration credits stay in manual adjustments. Spending earlier earnings can make this rate exceed 100%. A month with no qualifying earned points has no rate. This is not discount usage or a whole-store measure.",
+  month: "UTC month",
+  earnedPoints: "Earned points, excluding backfill",
+  redeemedPoints: "Reward-spend points",
+  redemptionRateBasisPoints: "Redemption-to-earn rate",
   orderEarningSeries: "Recorded order earning rate (UTC)",
   orderEarningSemantics:
     "Only orders recorded by Weletic are counted, including pending and voided records. Dates use the order timestamp. A positive recorded purchase-points grant counts once, including backfills and later-refunded grants; this is not a measure of points still held. Missing Shopify orders are outside this report, so it does not establish a whole-store rate.",
@@ -102,6 +109,13 @@ const ja: Copy = {
   liability: "現在の残高と負債",
   activity: "ポイント履歴",
   activitySeries: "日別ポイント履歴（UTC）",
+  redemptionRateSeries: "月別ポイント利用・獲得比率（UTC）",
+  redemptionRateSemantics:
+    "選択した期間内の各UTC月に記録された特典交換の使用ポイントを、同じ期間の獲得ポイントで割った比率です。期間の端にある月は一部の日付のみを含む場合があります。獲得ポイントに過去分補填は含めず、返金による取戻し、失効、手動調整は別に扱います。取り消された特典の元の使用ポイントは残り、返還分は手動調整に分けて記録されます。以前に獲得したポイントを使うと100%を超える場合があります。対象の獲得がない月は比率を表示しません。割引の利用率やストア全体の指標ではありません。",
+  month: "UTC月",
+  earnedPoints: "獲得ポイント（過去分補填を除く）",
+  redeemedPoints: "特典交換の使用ポイント",
+  redemptionRateBasisPoints: "ポイント利用・獲得比率",
   orderEarningSeries: "記録済み注文のポイント獲得率（UTC）",
   orderEarningSemantics:
     "Weleticに記録された注文のみを集計し、保留中と無効の注文も含めます。日付は注文日時です。正の購入ポイント付与が記録された注文は、過去分補填や後で返金された付与も1件として数えます。現在保有するポイント数の指標ではありません。記録のない注文は含まれないため、ストア全体の獲得率は示しません。",
@@ -182,6 +196,13 @@ const vi: Copy = {
   liability: "Số dư và nghĩa vụ hiện tại",
   activity: "Hoạt động điểm",
   activitySeries: "Hoạt động điểm theo ngày (UTC)",
+  redemptionRateSeries: "Tỷ lệ dùng điểm trên điểm tích lũy theo tháng (UTC)",
+  redemptionRateSemantics:
+    "Trong khoảng thời gian đã chọn của từng tháng UTC, điểm đã dùng đổi thưởng được chia cho điểm đã tích lũy theo sổ điểm; tháng đầu và cuối có thể chỉ gồm một phần tháng. Mẫu số không gồm điểm bổ sung lịch sử; hoàn điểm, hết hạn và điều chỉnh thủ công được tách riêng. Điểm đã dùng ban đầu của thưởng bị hủy vẫn được tính; điểm trả lại nằm trong điều chỉnh thủ công. Tỷ lệ có thể vượt 100% khi dùng điểm tích lũy từ trước. Tháng không có điểm tích lũy đủ điều kiện thì không có tỷ lệ. Đây không phải tỷ lệ sử dụng mã giảm giá hay chỉ số của toàn cửa hàng.",
+  month: "Tháng UTC",
+  earnedPoints: "Điểm tích lũy, không gồm bổ sung lịch sử",
+  redeemedPoints: "Điểm đã dùng đổi thưởng",
+  redemptionRateBasisPoints: "Tỷ lệ dùng điểm trên điểm tích lũy",
   orderEarningSeries: "Tỷ lệ tích điểm của đơn đã ghi nhận (UTC)",
   orderEarningSemantics:
     "Chỉ tính các đơn hàng Weletic đã ghi nhận, gồm cả đơn đang chờ và đã vô hiệu, theo thời điểm đặt hàng. Đơn có khoản cấp điểm mua hàng dương được tính một lần, kể cả điểm bổ sung lịch sử hoặc bị thu hồi sau đó; đây không phải số điểm còn giữ. Đơn Shopify chưa ghi nhận nằm ngoài báo cáo, nên đây không phải tỷ lệ của toàn cửa hàng.",

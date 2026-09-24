@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { readMerchantPointActivitySeries } from "@/lib/weletic/loyalty/activity-series";
+import { deriveMerchantRedemptionRateSeries } from "@/lib/weletic/loyalty/redemption-rate-series";
 import { WeleticPointsLedgerEntryType as Entry, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
@@ -12,14 +13,32 @@ let initialized = false;
 
 beforeAll(async () => {
   const url = new URL(process.env.DATABASE_URL || "invalid:");
+  const target = /^\/weletic_loyalty_it_activity_([a-f0-9]{12})$/.exec(
+    url.pathname,
+  );
   if (
     process.env.LOYALTY_DATABASE_INTEGRATION !== "1" ||
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
-    url.port !== "3307" ||
-    !/^\/weletic_loyalty_it_activity_[a-z0-9]+$/.test(url.pathname)
+    url.port !== "3312" ||
+    !target ||
+    url.username !== `wac_${target[1]}` ||
+    !url.password ||
+    url.hash ||
+    [...url.searchParams].some(
+      ([key, value]) =>
+        key !== "connection_limit" || !/^(?:[1-9]|1[0-9]|20)$/.test(value),
+    )
   )
     throw new Error("Refusing non-isolated activity database");
+  expect(
+    await prisma.$queryRaw`SELECT DATABASE() AS databaseName, CURRENT_USER() AS principal`,
+  ).toEqual([
+    {
+      databaseName: url.pathname.slice(1),
+      principal: `${url.username}@%`,
+    },
+  ]);
   expect(await prisma.weleticPointsLedgerEntry.count()).toBe(0);
   initialized = true;
   for (const [index, storeId] of storeIds.entries()) {
@@ -109,6 +128,12 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
     {
       store: 0,
       day: "2026-09-01T23:59:59.999Z",
+      type: Entry.EARN_ORDER,
+      delta: BigInt(10),
+    },
+    {
+      store: 0,
+      day: "2026-09-01T23:59:59.999Z",
       type: Entry.MANUAL_ADJUSTMENT,
       delta: BigInt(-3),
     },
@@ -179,7 +204,7 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
   ).toEqual([
     {
       date: "2026-09-01",
-      earned: huge.toString(),
+      earned: (huge + BigInt(10)).toString(),
       redeemed: "0",
       refundReversed: "0",
       manualDebits: "3",
@@ -217,4 +242,29 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
     BigInt(0),
   );
   expect(net.toString()).toBe(independent[0].net.toFixed(0));
+  const redemption = deriveMerchantRedemptionRateSeries(result);
+  expect(redemption.rows).toEqual([
+    {
+      month: "2026-09",
+      earnedPoints: "10",
+      redeemedPoints: "5",
+      redemptionRateBasisPoints: "5000",
+    },
+  ]);
+  const independentRate = await prisma.$queryRaw<
+    Array<{ earned: Prisma.Decimal; redeemed: Prisma.Decimal }>
+  >`
+    SELECT SUM(CASE WHEN entryType IN ('EARN_ORDER', 'EARN_REFERRAL', 'EARN_BONUS', 'TIER_BONUS')
+                      AND pointsDelta > 0 THEN CAST(pointsDelta AS DECIMAL(65, 0)) ELSE 0 END) AS earned,
+           SUM(CASE WHEN entryType = 'REDEEM_REWARD' AND pointsDelta < 0
+                    THEN -CAST(pointsDelta AS DECIMAL(65, 0)) ELSE 0 END) AS redeemed
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt >= ${startAt} AND createdAt <= ${endAt}
+  `;
+  expect(redemption.rows[0].earnedPoints).toBe(
+    independentRate[0].earned.toFixed(0),
+  );
+  expect(redemption.rows[0].redeemedPoints).toBe(
+    independentRate[0].redeemed.toFixed(0),
+  );
 });

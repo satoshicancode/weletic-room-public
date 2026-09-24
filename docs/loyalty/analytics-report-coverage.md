@@ -61,7 +61,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | S14 | List of top earning customers all-time        | **Decision / missing.** Reference minimum points was visible; rows were empty. A01 must define legitimate earns versus imports/manual credits and tie ordering.                                                                                                                                             |
 | S15 | List of VIP tier changes                      | **Decision / missing.** Persisted tier history exists, not an owner-authorized row report. A01, A05.                                                                                                                                                                                                        |
 | S16 | Order earning rate over time                  | **Implementation candidate / partial.** [Recorded-order daily series](order-earning-rate-s16-2026-09-24.md) has exact numerator/denominator and a source-coverage label, but missing Shopify history prevents a whole-store rate. Index rollout, provider and installed acceptance remain open. A02.        |
-| S17 | Redemption rate over time                     | **Partial.** Point activity totals and a legacy rate exist; no merchant time series or displayed denominator. A02 must specify imports/refunds/zero denominator explicitly.                                                                                                                                 |
+| S17 | Redemption rate over time                     | **Implementation candidate / partial.** [Recorded-ledger monthly series](redemption-rate-s17-2026-09-24.md) derives a displayed numerator and denominator from S24 activity, excluding backfill from earned points. Historical coverage and installed acceptance remain open. A02.                          |
 | S18 | Reward usage rate over time                   | **Partial.** Current redemption-status counts are not observed discount usage over time. A02, A08 must reconcile issued/used dates, source and untracked usage.                                                                                                                                             |
 | S19 | Sales influenced by Smile over time           | **Missing.** Aggregate referral economics cannot establish the deduplicated union of points/VIP/referral-influenced orders. A06.                                                                                                                                                                            |
 | S20 | Smile benchmarks                              | **Unavailable / decision.** No proprietary peer dataset exists for company stores. A09: no fabricated peer comparison; historical target replacement requires a product decision.                                                                                                                           |
@@ -115,8 +115,9 @@ S24 has a first implementation: explicit inclusive instants, up to 366 UTC
 calendar days, zero-filled days and exact ledger categories. An omitted endpoint
 or wider range returns an explicit unavailable state. This series reports
 movements, not historical balance or order/reward rates. S16 now has a
-recorded-order implementation candidate with explicit partial coverage; S17,
-S18 and S23 remain unimplemented. S16 and S24 merchant journeys await named
+recorded-order implementation candidate with explicit partial coverage. S17 has
+a recorded-ledger monthly candidate with an explicit earned denominator; S18
+and S23 remain unimplemented. S16, S17 and S24 merchant journeys await named
 acceptance. The accompanying
 `(storeId, createdAt)` ledger index needs its separate shared-schema migration
 gate before this report is enabled in a deployed environment.

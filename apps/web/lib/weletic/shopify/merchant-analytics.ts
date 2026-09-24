@@ -10,6 +10,7 @@ import {
   type MerchantAnalyticsSnapshot,
 } from "../loyalty/merchant-analytics-contract";
 import { readMerchantOrderEarningSeries } from "../loyalty/order-earning-series";
+import { deriveMerchantRedemptionRateSeries } from "../loyalty/redemption-rate-series";
 import {
   authorizeShopifyMerchantInTransaction,
   ShopifyStaffAuthorizationError,
@@ -171,6 +172,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       manualDebits: String(health.totalManualAdjustmentDebits),
     },
     activitySeries,
+    redemptionRateSeries: deriveMerchantRedemptionRateSeries(activitySeries),
     orderEarningSeries,
     referralEconomics: {
       total: String(health.referralMetrics.totalReferrals),
