@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { readMerchantPointActivitySeries } from "@/lib/weletic/loyalty/activity-series";
+import { readMerchantFirstRecordedEarnersSeries } from "@/lib/weletic/loyalty/first-recorded-earners-series";
 import { readMerchantLedgerNetSeries } from "@/lib/weletic/loyalty/ledger-net-series";
 import { deriveMerchantRedemptionRateSeries } from "@/lib/weletic/loyalty/redemption-rate-series";
 import { WeleticPointsLedgerEntryType as Entry, Prisma } from "@prisma/client";
@@ -329,4 +330,121 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
   expect(redemption.rows[0].redeemedPoints).toBe(
     independentRate[0].redeemed.toFixed(0),
   );
+  for (const suffix of [1, 2]) {
+    await prisma.weleticShopper.create({
+      data: {
+        id: `earn_shopper_${suffix}_${id}`,
+        storeId: storeIds[0],
+        shopifyCustomerId: `earn_customer_${suffix}_${id}`,
+      },
+    });
+    await prisma.weleticLoyaltyAccount.create({
+      data: {
+        id: `earn_account_${suffix}_${id}`,
+        storeId: storeIds[0],
+        programId: `loyalty_0_${id}`,
+        shopperId: `earn_shopper_${suffix}_${id}`,
+      },
+    });
+  }
+  const cohortEntries = [
+    {
+      store: 0,
+      accountId: `account_0_${id}`,
+      sequenceNumber: 6,
+      at: "2026-09-02T13:00:00Z",
+    },
+    {
+      store: 0,
+      accountId: `earn_account_1_${id}`,
+      sequenceNumber: 1,
+      at: "2026-09-02T14:00:00Z",
+    },
+    {
+      store: 0,
+      accountId: `earn_account_1_${id}`,
+      sequenceNumber: 2,
+      at: "2026-10-01T10:00:00Z",
+    },
+    {
+      store: 0,
+      accountId: `earn_account_2_${id}`,
+      sequenceNumber: 1,
+      at: "2026-09-02T11:00:00Z",
+    },
+    {
+      store: 0,
+      accountId: `earn_account_2_${id}`,
+      sequenceNumber: 2,
+      at: "2026-09-02T15:00:00Z",
+    },
+    {
+      store: 1,
+      accountId: `account_1_${id}`,
+      sequenceNumber: 7,
+      at: "2026-09-02T13:00:00Z",
+    },
+  ];
+  await prisma.weleticPointsLedgerEntry.createMany({
+    data: cohortEntries.map((entry, index) => ({
+      id: `cohort_entry_${index}_${id}`,
+      storeId: storeIds[entry.store],
+      accountId: entry.accountId,
+      sequenceNumber: entry.sequenceNumber,
+      entryType: Entry.EARN_ORDER,
+      pointsDelta: BigInt(1),
+      balanceAfter: BigInt(1),
+      idempotencyKey: `cohort_${index}_${id}`,
+      createdAt: new Date(entry.at),
+    })),
+  });
+  const cohortStart = new Date("2026-09-02T12:00:00Z");
+  const cohortEnd = new Date("2026-10-02T23:59:59.999Z");
+  const cohorts = await prisma.$transaction((tx) =>
+    readMerchantFirstRecordedEarnersSeries({
+      tx,
+      storeId: storeIds[0],
+      startAt: cohortStart,
+      endAt: cohortEnd,
+    }),
+  );
+  expect(cohorts).toEqual({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_qualifying_ledger_accounts_only",
+    rows: [
+      {
+        month: "2026-09",
+        activeAccounts: "3",
+        firstRecordedAccounts: "1",
+        returningAccounts: "2",
+      },
+      {
+        month: "2026-10",
+        activeAccounts: "1",
+        firstRecordedAccounts: "0",
+        returningAccounts: "1",
+      },
+    ],
+  });
+  const independentCohort = await prisma.$queryRaw<
+    Array<{ accountId: string; firstAt: Date }>
+  >`
+    SELECT accountId, MIN(createdAt) AS firstAt
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]}
+      AND entryType IN ('EARN_ORDER', 'EARN_REFERRAL', 'EARN_BONUS', 'TIER_BONUS')
+      AND pointsDelta > 0
+    GROUP BY accountId ORDER BY accountId
+  `;
+  expect(
+    independentCohort.map(({ accountId, firstAt }) => [
+      accountId,
+      firstAt.toISOString(),
+    ]),
+  ).toEqual([
+    [`account_0_${id}`, "2026-09-01T23:59:59.999Z"],
+    [`earn_account_1_${id}`, "2026-09-02T14:00:00.000Z"],
+    [`earn_account_2_${id}`, "2026-09-02T11:00:00.000Z"],
+  ]);
 });
