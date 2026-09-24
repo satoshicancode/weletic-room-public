@@ -100,6 +100,11 @@ export function MerchantAnalyticsScreen({
     }
   }
   const label = (key: string) => copy[key as keyof typeof copy] ?? key;
+  const rate = new Intl.NumberFormat(locale, {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
   function table(title: string, rows: Record<string, string | null>[]) {
     const keys = rows[0] ? Object.keys(rows[0]) : [];
     return (
@@ -129,11 +134,13 @@ export function MerchantAnalyticsScreen({
                       <td key={key}>
                         {row[key] === null
                           ? copy.unavailable
-                          : key === "status" || key === "artifact"
-                            ? row[key] === "expired"
-                              ? copy.expiredStatus
-                              : label(row[key]!)
-                            : row[key]}
+                          : key === "rateBasisPoints"
+                            ? rate.format(Number(row[key]) / 10_000)
+                            : key === "status" || key === "artifact"
+                              ? row[key] === "expired"
+                                ? copy.expiredStatus
+                                : label(row[key]!)
+                              : row[key]}
                       </td>
                     ))}
                   </tr>
@@ -254,6 +261,15 @@ export function MerchantAnalyticsScreen({
             <section>
               <h2>{copy.activitySeries}</h2>
               <p role="status">{copy[snapshot.activitySeries.status]}</p>
+            </section>
+          )}
+          <p>{copy.orderEarningSemantics}</p>
+          {snapshot.orderEarningSeries.status === "available" ? (
+            table(copy.orderEarningSeries, snapshot.orderEarningSeries.rows)
+          ) : (
+            <section>
+              <h2>{copy.orderEarningSeries}</h2>
+              <p role="status">{copy[snapshot.orderEarningSeries.status]}</p>
             </section>
           )}
           {metrics(copy.referralEconomics, snapshot.referralEconomics)}

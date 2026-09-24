@@ -40,6 +40,12 @@ const response: MerchantAnalyticsResponse = {
       manualDebits: "0",
     },
     activitySeries: { status: "range_required", bucket: "utc_day", rows: [] },
+    orderEarningSeries: {
+      status: "range_required",
+      bucket: "utc_day",
+      coverage: "recorded_orders_only",
+      rows: [],
+    },
     referralEconomics: {
       total: "0",
       successful: "0",
@@ -140,6 +146,49 @@ it.each([
   expect(section.querySelector("th")?.textContent).toBe(dateLabel);
   expect(section.textContent).toContain("2026-09-01");
   expect(section.textContent).toContain("9007199254740993");
+});
+
+it.each([
+  ["en", "Recorded order earning rate (UTC)"],
+  ["ja", "記録済み注文のポイント獲得率（UTC）"],
+  ["vi", "Tỷ lệ tích điểm của đơn đã ghi nhận (UTC)"],
+])("renders bounded recorded-order rates in %s", async (locale, title) => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: {
+      ...response.snapshot,
+      orderEarningSeries: {
+        status: "available",
+        bucket: "utc_day",
+        coverage: "recorded_orders_only",
+        rows: [
+          {
+            date: "2026-09-01",
+            recordedOrders: "3",
+            earningOrders: "2",
+            rateBasisPoints: "6667",
+          },
+        ],
+      },
+    },
+  } satisfies MerchantAnalyticsResponse);
+  await act(async () =>
+    root.render(createElement(MerchantAnalyticsScreen, { request })),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const heading = Array.from(node.querySelectorAll("h2")).find(
+    (element) => element.textContent === title,
+  );
+  const section = heading!.closest("section")!;
+  expect(section.textContent).toContain("2026-09-01");
+  expect(section.textContent).toContain("3");
+  expect(section.textContent).toContain("2");
+  expect(section.textContent).toMatch(/66[,.]67\s?%/);
+  expect(node.innerHTML).not.toContain("private-store-id");
 });
 
 it("ignores a late old-scope response after changing the authenticated transport", async () => {

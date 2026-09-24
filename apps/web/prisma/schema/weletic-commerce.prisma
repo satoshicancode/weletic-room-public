@@ -563,6 +563,7 @@ model WeleticCommerceOrder {
   storeReviewRequests  WeleticStoreReviewRequest[]
 
   @@unique([storeId, externalId])
+  @@index([storeId, occurredAt])
   @@index([programId, partnerId, occurredAt])
   @@index([status, occurredAt])
   @@index(partnerId)
