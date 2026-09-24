@@ -40,6 +40,12 @@ const response: MerchantAnalyticsResponse = {
       manualDebits: "0",
     },
     activitySeries: { status: "range_required", bucket: "utc_day", rows: [] },
+    redemptionRateSeries: {
+      status: "range_required",
+      bucket: "utc_month",
+      coverage: "recorded_ledger_only",
+      rows: [],
+    },
     orderEarningSeries: {
       status: "range_required",
       bucket: "utc_day",
@@ -189,6 +195,73 @@ it.each([
   expect(section.textContent).toContain("2");
   expect(section.textContent).toMatch(/66[,.]67\s?%/);
   expect(node.innerHTML).not.toContain("private-store-id");
+});
+
+it.each([
+  ["en", "Monthly redemption-to-earn rate (UTC)"],
+  ["ja", "月別ポイント利用・獲得比率（UTC）"],
+  ["vi", "Tỷ lệ dùng điểm trên điểm tích lũy theo tháng (UTC)"],
+])("renders an exact monthly redemption rate in %s", async (locale, title) => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: {
+      ...response.snapshot,
+      redemptionRateSeries: {
+        status: "available",
+        bucket: "utc_month",
+        coverage: "recorded_ledger_only",
+        rows: [
+          {
+            month: "2026-09",
+            earnedPoints: "100",
+            redeemedPoints: "150",
+            redemptionRateBasisPoints: "15000",
+          },
+        ],
+      },
+    },
+  } satisfies MerchantAnalyticsResponse);
+  await act(async () =>
+    root.render(createElement(MerchantAnalyticsScreen, { request })),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const heading = Array.from(node.querySelectorAll("h2")).find(
+    (element) => element.textContent === title,
+  );
+  const section = heading!.closest("section")!;
+  expect(section.textContent).toContain("2026-09");
+  expect(section.textContent).toMatch(/150[,.]00\s?%/);
+  expect(node.innerHTML).not.toContain("private-store-id");
+});
+
+it("renders a rate above Number precision without losing digits", async () => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: {
+      ...response.snapshot,
+      redemptionRateSeries: {
+        status: "available",
+        bucket: "utc_month",
+        coverage: "recorded_ledger_only",
+        rows: [
+          {
+            month: "2026-09",
+            earnedPoints: "1",
+            redeemedPoints: "9007199254740993",
+            redemptionRateBasisPoints: "90071992547409930000",
+          },
+        ],
+      },
+    },
+  } satisfies MerchantAnalyticsResponse);
+  await act(async () =>
+    root.render(createElement(MerchantAnalyticsScreen, { request })),
+  );
+  expect(node.textContent).toContain("900,719,925,474,099,300.00%");
 });
 
 it("ignores a late old-scope response after changing the authenticated transport", async () => {
