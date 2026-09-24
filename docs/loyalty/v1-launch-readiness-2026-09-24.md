@@ -1,8 +1,8 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 24, 2026: public `main` at
-[`037e80fe`](https://github.com/satoshicancode/weletic-room-public/commit/037e80febde2b6ccedb67ddd5b0285d30f63f7c7)
-(PR #112, [green post-merge CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/35924317916)).
+[`373cdbe2`](https://github.com/satoshicancode/weletic-room-public/commit/373cdbe26768d29d425adbfa1d0e5dce6cb3a3f6)
+(PR #119; [post-merge CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/35949823469)).
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
@@ -65,9 +65,9 @@ A fresh [13-extension public staging build](public-extension-build-2026-09-24.md
 passed local validation on the same source SHA; its unique candidate UIDs remain
 unowned until the public-app mapping and deployment gate are accepted.
 
-An unmerged [Shopify runtime-image candidate](https://github.com/satoshicancode/weletic-room-public/pull/119)
-reduces the current-main local image from 4.47 GB to 980 MB unpacked and passes
-a no-network guarded startup smoke. It provides local headroom for the proposed
+The merged [Shopify runtime-image fix](https://github.com/satoshicancode/weletic-room-public/pull/119)
+reduces the local image from the previous recipe's 4.47 GB to 980 MB unpacked
+and passes a no-network guarded startup smoke. It provides local headroom for the proposed
 4 GB `basic` disk, not Cloudflare admission, deployed memory proof or installed
 acceptance. The [draft budget models](https://github.com/satoshicancode/weletic-room-public/pull/113) still need
 account-specific pricing and web/outbox image checks.

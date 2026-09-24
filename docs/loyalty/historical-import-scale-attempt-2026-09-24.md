@@ -24,8 +24,12 @@ Docker image build overlapped the failure, but the evidence does not isolate
 whether contention, query growth or both caused the transaction error. Do not
 raise the timeout or weaken the assertion as a substitute for diagnosis.
 
+After test exit, a read-only query against that disposable MySQL database
+returned zero source, snapshot, execution, ledger, account, shopper and outbox
+rows. This checks fixture cleanup only; it does not change the failed result.
+
 Next: profile the exact failing rollback transaction and source-proof query on
 the isolated database, identify a bounded recovery-safe change, then rerun a
 fresh 50,000-commit **and** 50,000-rollback lifecycle without competing heavy
 builds. Keep the original replay, restart, tenant-isolation and independent SQL
-assertions. Verify fixture cleanup separately before reusing the test target.
+assertions.
