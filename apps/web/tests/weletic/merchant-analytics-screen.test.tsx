@@ -40,6 +40,13 @@ const response: MerchantAnalyticsResponse = {
       manualDebits: "0",
     },
     activitySeries: { status: "range_required", bucket: "utc_day", rows: [] },
+    ledgerNetSeries: {
+      status: "range_required",
+      bucket: "utc_day",
+      coverage: "recorded_ledger_net_only",
+      openingNetPoints: null,
+      rows: [],
+    },
     redemptionRateSeries: {
       status: "range_required",
       bucket: "utc_month",
@@ -153,6 +160,55 @@ it.each([
   expect(section.textContent).toContain("2026-09-01");
   expect(section.textContent).toContain("9007199254740993");
 });
+
+it.each([
+  ["en", "Recorded ledger net over time (UTC)", "Daily net change"],
+  ["ja", "記録済み台帳の累積純増減（UTC）", "日別の純増減"],
+  [
+    "vi",
+    "Biến động ròng tích lũy theo sổ điểm (UTC)",
+    "Thay đổi ròng theo ngày",
+  ],
+])(
+  "renders exact recorded-ledger net in %s",
+  async (locale, title, changeLabel) => {
+    const request = vi.fn().mockResolvedValue({
+      ...response,
+      snapshot: {
+        ...response.snapshot,
+        ledgerNetSeries: {
+          status: "available",
+          bucket: "utc_day",
+          coverage: "recorded_ledger_net_only",
+          openingNetPoints: "9007199254740993",
+          rows: [
+            {
+              date: "2026-09-01",
+              netChangePoints: "-4",
+              cumulativeNetPoints: "9007199254740989",
+            },
+          ],
+        },
+      },
+    } satisfies MerchantAnalyticsResponse);
+    await act(async () =>
+      root.render(createElement(MerchantAnalyticsScreen, { request })),
+    );
+    await act(async () => {
+      const select = node.querySelector("select")!;
+      select.value = locale;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const heading = Array.from(node.querySelectorAll("h2")).find(
+      (element) => element.textContent === title,
+    );
+    expect(heading).toBeDefined();
+    const section = heading!.closest("section")!;
+    expect(section.textContent).toContain(changeLabel);
+    expect(section.textContent).toContain("9007199254740989");
+    expect(node.textContent).toContain("9007199254740993");
+  },
+);
 
 it.each([
   ["en", "Recorded order earning rate (UTC)"],

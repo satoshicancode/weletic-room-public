@@ -21,6 +21,13 @@ const en = {
   liability: "Current balances and liability",
   activity: "Point activity",
   activitySeries: "Daily point activity (UTC)",
+  ledgerNetSeries: "Recorded ledger net over time (UTC)",
+  ledgerNetOpening: "Recorded net before the selected range",
+  ledgerNetSemantics:
+    "This is the signed sum of retained point-ledger entries before and within the selected instants. The first and last UTC days may be partial. It is not historical outstanding liability: missing pre-Weletic history and account-level debt are not reconstructed.",
+  openingNetPoints: "Opening recorded net points",
+  netChangePoints: "Daily net change",
+  cumulativeNetPoints: "Cumulative recorded net",
   redemptionRateSeries: "Monthly redemption-to-earn rate (UTC)",
   redemptionRateSemantics:
     "Within the selected interval in each UTC month, recorded reward-spend points are divided by recorded earned points; boundary months may be partial. Earned points exclude backfills; refund reversals, expiry and manual adjustments stay separate. Canceled rewards remain in gross spend while restoration credits stay in manual adjustments. Spending earlier earnings can make this rate exceed 100%. A month with no qualifying earned points has no rate. This is not discount usage or a whole-store measure.",
@@ -109,6 +116,13 @@ const ja: Copy = {
   liability: "現在の残高と負債",
   activity: "ポイント履歴",
   activitySeries: "日別ポイント履歴（UTC）",
+  ledgerNetSeries: "記録済み台帳の累積純増減（UTC）",
+  ledgerNetOpening: "選択期間前の記録済み純増減",
+  ledgerNetSemantics:
+    "保存されたポイント台帳の増減を、選択した期間の前と期間内で合計します。期間の最初と最後のUTC日は一部のみを含む場合があります。Weletic導入前の履歴や会員ごとのマイナス残高は復元していないため、過去の未履行債務を示すものではありません。",
+  openingNetPoints: "開始前の記録済み純増減ポイント",
+  netChangePoints: "日別の純増減",
+  cumulativeNetPoints: "記録済み累積純増減",
   redemptionRateSeries: "月別ポイント利用・獲得比率（UTC）",
   redemptionRateSemantics:
     "選択した期間内の各UTC月に記録された特典交換の使用ポイントを、同じ期間の獲得ポイントで割った比率です。期間の端にある月は一部の日付のみを含む場合があります。獲得ポイントに過去分補填は含めず、返金による取戻し、失効、手動調整は別に扱います。取り消された特典の元の使用ポイントは残り、返還分は手動調整に分けて記録されます。以前に獲得したポイントを使うと100%を超える場合があります。対象の獲得がない月は比率を表示しません。割引の利用率やストア全体の指標ではありません。",
@@ -196,6 +210,13 @@ const vi: Copy = {
   liability: "Số dư và nghĩa vụ hiện tại",
   activity: "Hoạt động điểm",
   activitySeries: "Hoạt động điểm theo ngày (UTC)",
+  ledgerNetSeries: "Biến động ròng tích lũy theo sổ điểm (UTC)",
+  ledgerNetOpening: "Biến động ròng đã ghi trước khoảng chọn",
+  ledgerNetSemantics:
+    "Đây là tổng có dấu của các bút toán điểm còn lưu trước và trong khoảng thời gian đã chọn. Ngày UTC đầu và cuối có thể chỉ được tính một phần. Chỉ số này không phải nghĩa vụ điểm còn tồn trong quá khứ vì không khôi phục lịch sử trước Weletic hoặc khoản nợ theo từng tài khoản.",
+  openingNetPoints: "Điểm ròng đã ghi trước khoảng chọn",
+  netChangePoints: "Thay đổi ròng theo ngày",
+  cumulativeNetPoints: "Biến động ròng tích lũy đã ghi",
   redemptionRateSeries: "Tỷ lệ dùng điểm trên điểm tích lũy theo tháng (UTC)",
   redemptionRateSemantics:
     "Trong khoảng thời gian đã chọn của từng tháng UTC, điểm đã dùng đổi thưởng được chia cho điểm đã tích lũy theo sổ điểm; tháng đầu và cuối có thể chỉ gồm một phần tháng. Mẫu số không gồm điểm bổ sung lịch sử; hoàn điểm, hết hạn và điều chỉnh thủ công được tách riêng. Điểm đã dùng ban đầu của thưởng bị hủy vẫn được tính; điểm trả lại nằm trong điều chỉnh thủ công. Tỷ lệ có thể vượt 100% khi dùng điểm tích lũy từ trước. Tháng không có điểm tích lũy đủ điều kiện thì không có tỷ lệ. Đây không phải tỷ lệ sử dụng mã giảm giá hay chỉ số của toàn cửa hàng.",

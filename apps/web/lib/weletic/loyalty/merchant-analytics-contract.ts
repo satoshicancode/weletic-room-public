@@ -96,6 +96,39 @@ export const merchantAnalyticsSnapshotSchema = z
       .refine(
         ({ status, rows }) => status === "available" || rows.length === 0,
       ),
+    ledgerNetSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_day"),
+        coverage: z.literal("recorded_ledger_net_only"),
+        openingNetPoints: integer.nullable(),
+        rows: z
+          .array(
+            z
+              .object({
+                date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                netChangePoints: integer,
+                cumulativeNetPoints: integer,
+              })
+              .strict(),
+          )
+          .max(366),
+      })
+      .strict()
+      .refine(({ status, openingNetPoints, rows }) => {
+        if (status !== "available")
+          return openingNetPoints === null && rows.length === 0;
+        if (openingNetPoints === null || rows.length === 0) return false;
+        let running = BigInt(openingNetPoints);
+        let previous = "";
+        for (const row of rows) {
+          if (row.date <= previous) return false;
+          running += BigInt(row.netChangePoints);
+          if (row.cumulativeNetPoints !== running.toString()) return false;
+          previous = row.date;
+        }
+        return true;
+      }),
     redemptionRateSeries: z
       .object({
         status: z.enum(["available", "range_required", "range_too_wide"]),
@@ -223,7 +256,30 @@ export const merchantAnalyticsSnapshotSchema = z
         .strict(),
     ),
   })
-  .strict();
+  .strict()
+  .refine(({ filter, ledgerNetSeries }) => {
+    if (!filter.startAt || !filter.endAt)
+      return ledgerNetSeries.status === "range_required";
+    const startDay = Date.parse(
+      `${new Date(filter.startAt).toISOString().slice(0, 10)}T00:00:00Z`,
+    );
+    const endDay = Date.parse(
+      `${new Date(filter.endAt).toISOString().slice(0, 10)}T00:00:00Z`,
+    );
+    const days = Math.floor((endDay - startDay) / 86_400_000) + 1;
+    if (days < 1 || days > 366)
+      return ledgerNetSeries.status === "range_too_wide";
+    if (
+      ledgerNetSeries.status !== "available" ||
+      ledgerNetSeries.rows.length !== days
+    )
+      return false;
+    return ledgerNetSeries.rows.every(
+      (row, index) =>
+        row.date ===
+        new Date(startDay + index * 86_400_000).toISOString().slice(0, 10),
+    );
+  });
 
 export const merchantAnalyticsResponseSchema = z
   .object({

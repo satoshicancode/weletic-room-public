@@ -3,6 +3,7 @@ import { readMerchantPointActivitySeries } from "../loyalty/activity-series";
 import { getLoyaltyDashboardOverview } from "../loyalty/analytics";
 import { resolveLoyaltyFinancialConfiguration } from "../loyalty/analytics-financial";
 import { escapeCsvUntrustedTextCell } from "../loyalty/csv";
+import { readMerchantLedgerNetSeries } from "../loyalty/ledger-net-series";
 import {
   merchantAnalyticsRequestSchema,
   merchantAnalyticsResponseSchema,
@@ -100,34 +101,45 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     dateRange,
     now,
   });
-  const [rewards, referrals, activitySeries, orderEarningSeries] =
-    await Promise.all([
-      tx.weleticRewardRedemption.groupBy({
-        by: ["status", "artifactKind"],
-        where,
-        _count: { _all: true },
-        _sum: { pointsSpent: true },
-        orderBy: [{ status: "asc" }, { artifactKind: "asc" }],
-      }),
-      tx.weleticLoyaltyReferral.groupBy({
-        by: ["status"],
-        where,
-        _count: { _all: true },
-        orderBy: { status: "asc" },
-      }),
-      readMerchantPointActivitySeries({
-        tx,
-        storeId: actor.storeId,
-        startAt: dateRange.startDate ?? null,
-        endAt: dateRange.endDate ?? null,
-      }),
-      readMerchantOrderEarningSeries({
-        tx,
-        storeId: actor.storeId,
-        startAt: dateRange.startDate ?? null,
-        endAt: dateRange.endDate ?? null,
-      }),
-    ]);
+  const [
+    rewards,
+    referrals,
+    activitySeries,
+    ledgerNetSeries,
+    orderEarningSeries,
+  ] = await Promise.all([
+    tx.weleticRewardRedemption.groupBy({
+      by: ["status", "artifactKind"],
+      where,
+      _count: { _all: true },
+      _sum: { pointsSpent: true },
+      orderBy: [{ status: "asc" }, { artifactKind: "asc" }],
+    }),
+    tx.weleticLoyaltyReferral.groupBy({
+      by: ["status"],
+      where,
+      _count: { _all: true },
+      orderBy: { status: "asc" },
+    }),
+    readMerchantPointActivitySeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantLedgerNetSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantOrderEarningSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+  ]);
   const { liability, healthMetrics: health } = overview;
   const moneyAvailable = financial.valuation !== null;
   const referralMoneyAvailable =
@@ -172,6 +184,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       manualDebits: String(health.totalManualAdjustmentDebits),
     },
     activitySeries,
+    ledgerNetSeries,
     redemptionRateSeries: deriveMerchantRedemptionRateSeries(activitySeries),
     orderEarningSeries,
     referralEconomics: {

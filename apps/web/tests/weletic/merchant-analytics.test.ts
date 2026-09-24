@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   rewards: vi.fn(),
   referrals: vi.fn(),
   series: vi.fn(),
+  ledgerNetSeries: vi.fn(),
   orderSeries: vi.fn(),
 }));
 vi.mock("../../lib/weletic/shopify/staff-authorization", () => ({
@@ -28,6 +29,9 @@ vi.mock("../../lib/weletic/loyalty/analytics", () => ({
 }));
 vi.mock("../../lib/weletic/loyalty/activity-series", () => ({
   readMerchantPointActivitySeries: mocks.series,
+}));
+vi.mock("../../lib/weletic/loyalty/ledger-net-series", () => ({
+  readMerchantLedgerNetSeries: mocks.ledgerNetSeries,
 }));
 vi.mock("../../lib/weletic/loyalty/order-earning-series", () => ({
   readMerchantOrderEarningSeries: mocks.orderSeries,
@@ -135,6 +139,17 @@ beforeEach(() => {
       },
     ],
   });
+  mocks.ledgerNetSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_day",
+    coverage: "recorded_ledger_net_only",
+    openingNetPoints: "-7",
+    rows: Array.from({ length: 30 }, (_, index) => ({
+      date: `2026-09-${String(index + 1).padStart(2, "0")}`,
+      netChangePoints: index === 8 ? huge.toString() : "0",
+      cumulativeNetPoints: index < 8 ? "-7" : (huge - BigInt(7)).toString(),
+    })),
+  });
   mocks.orderSeries.mockResolvedValue({
     status: "available",
     bucket: "utc_day",
@@ -188,6 +203,13 @@ describe("merchant analytics", () => {
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
     });
+    expect(mocks.ledgerNetSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(result.snapshot.ledgerNetSeries.openingNetPoints).toBe("-7");
     expect(mocks.orderSeries).toHaveBeenCalledWith({
       tx,
       storeId: "store-a",
@@ -212,6 +234,34 @@ describe("merchant analytics", () => {
     });
     expect(result.download).toBeNull();
     expect(verifyMerchantAnalyticsResponse(read, result)).toEqual(result);
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          ledgerNetSeries: {
+            ...result.snapshot.ledgerNetSeries,
+            rows: result.snapshot.ledgerNetSeries.rows.slice(1),
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          ledgerNetSeries: {
+            ...result.snapshot.ledgerNetSeries,
+            rows: result.snapshot.ledgerNetSeries.rows.map((row, index) =>
+              index === 8
+                ? { ...row, cumulativeNetPoints: huge.toString() }
+                : row,
+            ),
+          },
+        },
+      }),
+    ).toThrow();
     expect(() =>
       verifyMerchantAnalyticsResponse(read, {
         ...result,
