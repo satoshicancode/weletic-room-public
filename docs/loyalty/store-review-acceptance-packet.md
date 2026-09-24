@@ -18,19 +18,26 @@ installed runtime acceptance remain open.
    Anonymous and authenticated messages share email
    capacity; customer limits also apply. Never infer timezone from locale/currency
    or schedule historical invitations automatically.
-3. Review and explicitly approve the target migration/runtime bundle. All five
-   tables in `20260922_store_review_core.sql` must exist before deploying these
-   privacy readers, even with collection disabled. Retain a compatible worker
-   for persisted `export_store_reviews`, `export_store_review_requests` and
-   `export_store_review_audits` phases. Do not roll workers back to an incompatible
-   binary or remove tables while export/privacy work remains. Also apply the two
-   delivery tables, settings JSON and appended job enum in
-   `20260923_shopper_delivery_budget.sql`. Retain workers for
+3. Review and explicitly approve the target migration/runtime bundle. Compare
+   exact target metadata with the prerequisite product-review settings, requests,
+   outbox enum and privacy tables before choosing DDL. The PR #101 candidate
+   files are `20260920_review_collection_settings.sql` (settings/request fields
+   and the reminder table), `20260922_store_review_core.sql` (five store-review
+   tables), and `20260923_shopper_delivery_budget.sql` (policy, reservations,
+   identities and the appended outbox label). Rehearse the selected order and
+   mixed-version readers/workers on isolated SQL; no file's presence proves it
+   was applied to the target. All five store-review tables and the reminder table
+   must exist before deploying their privacy readers, even with collection
+   disabled. Retain a compatible worker for persisted `export_store_reviews`,
+   `export_store_review_requests`, `export_store_review_audits` and
+   `export_review_reminders` phases. Do not roll workers back to an incompatible
+   binary or remove tables while export/privacy work remains. Retain workers for
    `export_shopper_delivery`, `scrub_customer_delivery`, `purge_shopper_delivery`
    and `ANONYMOUS_REFERRAL_EMAIL`. Drain/reconcile old exports without saved
    delivery identities and uncertain sends without a matching reservation.
-   Public `main` also includes the unapplied Loyalty activity index migration
-   `20260923_loyalty_activity_store_date_index.sql`; track its separate schema
+   Public `main` also includes the Loyalty activity index migration
+   `20260923_loyalty_activity_store_date_index.sql`, whose target application is
+   unverified; track its separate schema
    gate in the same deployment inventory without treating this Reviews packet
    as approval to apply it.
 4. Identify the installation generation, staff identities/permissions, controlled

@@ -61,6 +61,14 @@ test("fresh web and scoped outbox image recipes preserve guarded startup and dep
   assert.match(docker, /pnpm install --frozen-lockfile/);
   assert.match(
     docker,
+    /pnpm --frozen-lockfile --store-dir \/pnpm\/store --filter web deploy \/opt\/web-runtime/,
+  );
+  assert.match(
+    docker,
+    /RUN --network=none cd \/opt\/web-runtime && pnpm exec prisma generate --schema=\.\/prisma\/schema/,
+  );
+  assert.match(
+    docker,
     /RUN --network=none mkdir -p \/opt\/weletic-release-build && node infra\/cloudflare-release\/web-build.mjs/,
   );
   assert.doesNotMatch(
@@ -69,6 +77,11 @@ test("fresh web and scoped outbox image recipes preserve guarded startup and dep
   );
   const runtime = docker.split(" AS runtime\n")[1];
   assert.ok(runtime);
+  assert.match(
+    runtime,
+    /COPY --from=runtime-dependencies \/opt\/web-runtime\/node_modules \.\/apps\/web\/node_modules/,
+  );
+  assert.doesNotMatch(runtime, /COPY --from=source \/workspace\/node_modules/);
   assert.match(runtime, /^USER node$/m);
   assert.match(runtime, /^STOPSIGNAL SIGTERM$/m);
   assert.match(
