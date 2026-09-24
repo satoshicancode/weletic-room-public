@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   firstEarnersSeries: vi.fn(),
   tierChangesSeries: vi.fn(),
   earningSources: vi.fn(),
+  redemptionSources: vi.fn(),
   orderSeries: vi.fn(),
 }));
 vi.mock("../../lib/weletic/shopify/staff-authorization", () => ({
@@ -44,6 +45,9 @@ vi.mock("../../lib/weletic/loyalty/recorded-tier-change-series", () => ({
 }));
 vi.mock("../../lib/weletic/loyalty/earning-sources", () => ({
   readMerchantEarningSources: mocks.earningSources,
+}));
+vi.mock("../../lib/weletic/loyalty/redemption-sources", () => ({
+  readMerchantRedemptionSources: mocks.redemptionSources,
 }));
 vi.mock("../../lib/weletic/loyalty/order-earning-series", () => ({
   readMerchantOrderEarningSeries: mocks.orderSeries,
@@ -203,6 +207,21 @@ beforeEach(() => {
       },
     ],
   });
+  mocks.redemptionSources.mockResolvedValue({
+    coverage: "retained_redemption_debits_only",
+    rows: [
+      {
+        rewardDefinitionId: "reward-one",
+        capturedName: "=Voucher",
+        rewardType: "amount_off",
+        eventCount: "1",
+        pointsSpent: "200",
+      },
+    ],
+    other: { eventCount: "0", pointsSpent: "0" },
+    unknown: { eventCount: "1", pointsSpent: "50" },
+    total: { eventCount: "2", pointsSpent: "250" },
+  });
   mocks.orderSeries.mockResolvedValue({
     status: "available",
     bucket: "utc_day",
@@ -279,6 +298,16 @@ describe("merchant analytics", () => {
       storeId: "store-a",
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
+    });
+    expect(mocks.redemptionSources).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(result.snapshot.redemptionSources).toMatchObject({
+      unknown: { eventCount: "1", pointsSpent: "50" },
+      total: { eventCount: "2", pointsSpent: "250" },
     });
     expect(result.snapshot.earningSources.rows[0]).toMatchObject({
       eventCount: "2",
@@ -358,6 +387,33 @@ describe("merchant analytics", () => {
             rows: [
               result.snapshot.earningSources.rows[0],
               result.snapshot.earningSources.rows[0],
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          redemptionSources: {
+            ...result.snapshot.redemptionSources,
+            total: { eventCount: "2", pointsSpent: "249" },
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          redemptionSources: {
+            ...result.snapshot.redemptionSources,
+            rows: [
+              result.snapshot.redemptionSources.rows[0],
+              result.snapshot.redemptionSources.rows[0],
             ],
           },
         },
@@ -489,6 +545,12 @@ describe("merchant analytics", () => {
         );
         expect(result.download!.content).toContain(
           `earningSources.rows.0.pointsEarned,${huge.toString()}`,
+        );
+        expect(result.download!.content).toContain(
+          "redemptionSources.rows.0.capturedName,'=Voucher",
+        );
+        expect(result.download!.content).toContain(
+          "redemptionSources.unknown.pointsSpent,50",
         );
       }
     },

@@ -155,7 +155,8 @@ export function MerchantAnalyticsScreen({
                             ? formatBasisPoints(row[key]!)
                             : key === "status" ||
                                 key === "artifact" ||
-                                key === "entryType"
+                                key === "entryType" ||
+                                key === "rewardType"
                               ? row[key] === "expired"
                                 ? copy.expiredStatus
                                 : label(row[key]!)
@@ -326,6 +327,49 @@ export function MerchantAnalyticsScreen({
           )}
           <p>{copy.earningSourcesSemantics}</p>
           {table(copy.earningSources, snapshot.earningSources.rows)}
+          <p>{copy.redemptionSourcesSemantics}</p>
+          {table(copy.redemptionSources, [
+            ...snapshot.redemptionSources.rows.map((row) => ({
+              group: copy.recordedReward,
+              rewardDefinitionId: row.rewardDefinitionId,
+              capturedName: row.capturedName,
+              rewardType: row.rewardType,
+              redemptionEvents: row.eventCount,
+              grossRedemptionPoints: row.pointsSpent,
+            })),
+            ...(snapshot.redemptionSources.other.eventCount !== "0"
+              ? [
+                  {
+                    group: copy.otherRewards,
+                    rewardDefinitionId: null,
+                    capturedName: null,
+                    rewardType: null,
+                    redemptionEvents:
+                      snapshot.redemptionSources.other.eventCount,
+                    grossRedemptionPoints:
+                      snapshot.redemptionSources.other.pointsSpent,
+                  },
+                ]
+              : []),
+            ...(snapshot.redemptionSources.unknown.eventCount !== "0"
+              ? [
+                  {
+                    group: copy.unknownReward,
+                    rewardDefinitionId: null,
+                    capturedName: null,
+                    rewardType: null,
+                    redemptionEvents:
+                      snapshot.redemptionSources.unknown.eventCount,
+                    grossRedemptionPoints:
+                      snapshot.redemptionSources.unknown.pointsSpent,
+                  },
+                ]
+              : []),
+          ])}
+          {metrics(copy.redemptionSourcesTotal, {
+            redemptionEvents: snapshot.redemptionSources.total.eventCount,
+            grossRedemptionPoints: snapshot.redemptionSources.total.pointsSpent,
+          })}
           <p>{copy.redemptionRateSemantics}</p>
           {snapshot.redemptionRateSeries.status === "available" ? (
             table(copy.redemptionRateSeries, snapshot.redemptionRateSeries.rows)
