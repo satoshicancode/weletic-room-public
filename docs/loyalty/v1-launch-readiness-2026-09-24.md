@@ -43,6 +43,14 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 | S05 | Privacy/retention           | implemented                                  | Foundations and store/delivery consumers merged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Schema compatibility and live export/erase races                                                                                                                                                                                          | M1/M3     |
 | S06 | Listing/production          | missing acceptance                           | [Reviewer packet draft](app-store-reviewer-packet.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Accepted build, listing/reviewer approval and controlled activation                                                                                                                                                                       | M4        |
 
+L03 has a [subscription cadence source blocker](subscription-cadence-source-audit-2026-09-25.md):
+the local `subscriptionSequence` counts retained orders by selling plan and
+item, not by an authoritative subscription contract. Distinct contracts or
+missing history can cross first-payment/first-N boundaries. Cadence-specific
+points and referral promises need fail-closed merchant/runtime containment and
+an approved contract-level evidence source before activation. Native Shopify
+discount limits and every-payment earning require their own installed proof.
+
 L09's [S15 bounded owner tier-event export](https://github.com/satoshicancode/weletic-room-public/pull/138)
 is merged with [isolated SQL redaction and row-cap evidence](tier-history-row-export-s15-2026-09-25.md).
 It exports retained, pseudonymous tier-change events with current tier labels;
