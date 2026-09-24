@@ -1,8 +1,8 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 24, 2026: public `main` at
-[`63280435`](https://github.com/satoshicancode/weletic-room-public/commit/63280435b0a54e5ef6e9ab4d5f9cabf0b85bfe9d)
-(PR #131; [post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/35994793709)).
+[`fb85870c`](https://github.com/satoshicancode/weletic-room-public/commit/fb85870cbabc0ec746e780f29da1f361788f0c3d)
+(PR #132; [post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/35996526004)).
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
