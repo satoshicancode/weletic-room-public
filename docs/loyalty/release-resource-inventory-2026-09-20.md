@@ -38,8 +38,11 @@ September 24 local image check: the unchanged Shopify image at public `main`
 merged [production-dependency recipe](https://github.com/satoshicancode/weletic-room-public/pull/119)
 unpacked to 980 MB and passed a no-network guarded startup smoke. This resolves
 only the local Shopify image-size question. The actual Cloudflare account,
-upload/admission, memory and installed
-runtime remain unverified; web and outbox images need current-SHA checks.
+upload/admission, memory and installed runtime remain unverified. The
+[merged scoped web/outbox image fix](https://github.com/satoshicancode/weletic-room-public/pull/120)
+measured 3.15 GB and 2.84 GB unpacked and passed no-network startup smokes.
+Those measurements establish local disk headroom only; exact release-SHA builds
+and Cloudflare admission remain open.
 
 ## Proposed acceptance footprint
 
@@ -75,8 +78,8 @@ These are public rate inputs, not account-specific quotes or total estimates:
   CPU bills active usage. [Provider pricing](https://developers.cloudflare.com/containers/platform/pricing/)
 - `basic` is 1/4 vCPU, 1 GiB memory and 4 GB disk. Custom instances require at
   least 1 vCPU and 3 GiB per vCPU. Image size must fit instance disk. The
-  Shopify candidate has local disk headroom; web/outbox and deployed instance
-  fit remain open.
+  Shopify and PR #120 web/outbox images have local disk headroom; deployed
+  instance fit remains open.
   [Provider limits](https://developers.cloudflare.com/containers/platform/limits/)
 - Redis pay-as-you-go advertises $0.20 per 100K commands. A configured budget
   cap can rate-limit the database, so reaching it must fail closed and alert,
