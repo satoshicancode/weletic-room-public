@@ -63,6 +63,13 @@ const response: MerchantAnalyticsResponse = {
       coverage: "retained_positive_earning_ledger_only",
       rows: [],
     },
+    redemptionSources: {
+      coverage: "retained_redemption_debits_only",
+      rows: [],
+      other: { eventCount: "0", pointsSpent: "0" },
+      unknown: { eventCount: "0", pointsSpent: "0" },
+      total: { eventCount: "0", pointsSpent: "0" },
+    },
     redemptionRateSeries: {
       status: "range_required",
       bucket: "utc_month",
@@ -361,6 +368,54 @@ it.each([
     const section = heading!.closest("section")!;
     expect(section.textContent).toContain(source);
     expect(section.textContent).toContain("9007199254740993");
+  },
+);
+
+it.each([
+  ["en", "Top recorded redemption debits", "Unknown provenance"],
+  ["ja", "記録された特典交換のポイント引落上位", "情報不明"],
+  ["vi", "Nguồn đổi thưởng đã ghi theo điểm trừ", "Không rõ nguồn gốc"],
+])(
+  "renders bounded redemption sources and unknown provenance in %s",
+  async (locale, title, unknown) => {
+    const request = vi.fn().mockResolvedValue({
+      ...response,
+      snapshot: {
+        ...response.snapshot,
+        redemptionSources: {
+          coverage: "retained_redemption_debits_only",
+          rows: [
+            {
+              rewardDefinitionId: "reward-one",
+              capturedName: "=Voucher",
+              rewardType: "amount_off",
+              eventCount: "1",
+              pointsSpent: "9007199254740993",
+            },
+          ],
+          other: { eventCount: "0", pointsSpent: "0" },
+          unknown: { eventCount: "1", pointsSpent: "50" },
+          total: { eventCount: "2", pointsSpent: "9007199254741043" },
+        },
+      },
+    } satisfies MerchantAnalyticsResponse);
+    await act(async () =>
+      root.render(createElement(MerchantAnalyticsScreen, { request })),
+    );
+    await act(async () => {
+      const select = node.querySelector("select")!;
+      select.value = locale;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const heading = Array.from(node.querySelectorAll("h2")).find(
+      (element) => element.textContent === title,
+    );
+    expect(heading).toBeDefined();
+    const section = heading!.closest("section")!;
+    expect(section.textContent).toContain("=Voucher");
+    expect(section.textContent).toContain(unknown);
+    expect(section.textContent).toContain("9007199254740993");
+    expect(section.textContent).not.toContain("shopper_");
   },
 );
 

@@ -2,6 +2,18 @@ import { z } from "zod";
 
 const integer = z.string().regex(/^-?(?:0|[1-9]\d*)$/);
 const count = z.string().regex(/^(?:0|[1-9]\d*)$/);
+const redemptionSourceTotalsFields = {
+  eventCount: count,
+  pointsSpent: count,
+};
+const redemptionSourceTotals = z
+  .object(redemptionSourceTotalsFields)
+  .strict()
+  .refine(
+    ({ eventCount, pointsSpent }) =>
+      (BigInt(eventCount) === BigInt(0)) ===
+      (BigInt(pointsSpent) === BigInt(0)),
+  );
 const instant = z.string().datetime({ offset: true });
 export const merchantAnalyticsFilterSchema = z
   .object({ startAt: instant.nullable(), endAt: instant.nullable() })
@@ -310,6 +322,67 @@ export const merchantAnalyticsSnapshotSchema = z
                 rows[index - 1].entryType < row.entryType),
           ),
       ),
+    redemptionSources: z
+      .object({
+        coverage: z.literal("retained_redemption_debits_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                ...redemptionSourceTotalsFields,
+                rewardDefinitionId: z.string().min(1).max(191),
+                capturedName: z.string().min(1).max(255),
+                rewardType: z.enum([
+                  "amount_off",
+                  "percentage_off",
+                  "free_shipping",
+                  "free_product",
+                  "gift_card",
+                  "store_credit",
+                ]),
+              })
+              .strict()
+              .refine(
+                ({ eventCount, pointsSpent }) =>
+                  BigInt(eventCount) > BigInt(0) &&
+                  BigInt(pointsSpent) > BigInt(0),
+              ),
+          )
+          .max(10),
+        other: redemptionSourceTotals,
+        unknown: redemptionSourceTotals,
+        total: redemptionSourceTotals,
+      })
+      .strict()
+      .refine(({ rows, other, unknown, total }) => {
+        const keys = rows.map((row) =>
+          JSON.stringify([
+            row.rewardDefinitionId,
+            row.capturedName,
+            row.rewardType,
+          ]),
+        );
+        if (new Set(keys).size !== keys.length) return false;
+        if (
+          rows.some(
+            (row, index) =>
+              index > 0 &&
+              BigInt(rows[index - 1].pointsSpent) < BigInt(row.pointsSpent),
+          ) ||
+          (BigInt(other.eventCount) > BigInt(0) && rows.length !== 10)
+        )
+          return false;
+        return (
+          rows.reduce(
+            (sum, row) => sum + BigInt(row.eventCount),
+            BigInt(other.eventCount) + BigInt(unknown.eventCount),
+          ) === BigInt(total.eventCount) &&
+          rows.reduce(
+            (sum, row) => sum + BigInt(row.pointsSpent),
+            BigInt(other.pointsSpent) + BigInt(unknown.pointsSpent),
+          ) === BigInt(total.pointsSpent)
+        );
+      }),
     referralEconomics: z
       .object({
         total: count,

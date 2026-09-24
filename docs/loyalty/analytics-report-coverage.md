@@ -1,7 +1,7 @@
 # Loyalty analytics report coverage
 
 Inventory originally inspected September 13, 2026 through public PR #32.
-Updated September 24 against public main `63280435` (S25 merged). **Analytics is not accepted live.** The report dispositions distinguish
+Updated September 24 against public main `fb85870c` (S25 status reconciled) and the S26 implementation candidate. **Analytics is not accepted live.** The report dispositions distinguish
 merged code from local candidate work and do not certify Smile parity.
 
 The [preserved benchmark](benchmark-smile-2026-09-08.md) identifies 34 included
@@ -17,7 +17,8 @@ from titles. No renewed Smile access is required to start the tasks below.
   economics/current statuses, reward current statuses and current VIP assignments.
   S24 daily point activity, partial S16/S17 rates, S23 recorded-ledger net,
   S21 retained earning cohorts and S33 recorded tier-change reasons are merged.
-  S25 adds a partial recorded earning-source ranking. There are no sequential
+  S25 adds a partial recorded earning-source ranking; S26 proposes a bounded
+  recorded redemption-debit ranking. There are no sequential
   funnel stages or member-comparison fields.
 - [Signed merchant service](../../apps/web/lib/weletic/shopify/merchant-analytics.ts):
   authenticated store scope and repeatable-read transaction; exports require the
@@ -71,7 +72,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | S23 | Outstanding points over time                  | **Candidate / partial.** Exact opening, daily and cumulative **recorded-ledger net** have isolated SQL evidence. They do not reconstruct historical outstanding liability, missing pre-Weletic history or account-level debt. Installed acceptance and index rollout remain open. A02.                                    |
 | S24 | Points activity over time                     | **Implementation candidate.** A bounded UTC daily ledger series now preserves exact strings and separate imports, corrections and manual movements in the signed merchant snapshot, CSV/JSON and EN/JA/VI UI. Isolated SQL verification exists; named merchant acceptance and release evidence remain open.               |
 | S25 | Top ways to earn                              | **Merged implementation / partial.** [Recorded earning sources](recorded-earning-sources-s25-2026-09-24.md) rank retained positive earning-ledger types by exact gross points and ledger-entry counts. The reference Total formula remains unknown; missing/erased history and installed acceptance remain open. A04.     |
-| S26 | Top ways to redeem                            | **Unknown / partial.** Status/artifact grouping is not reward-name ranking; reference Total is undefined. A04.                                                                                                                                                                                                            |
+| S26 | Top ways to redeem                            | **Candidate / partial.** [Recorded redemption debits](recorded-redemption-sources-s26-2026-09-24.md) rank captured reward debit groups by exact points and entry counts, with explicit unknown and overflow totals. Remote discount use, missing history and the reference Total formula remain unavailable. A04.         |
 | S27 | Total members over time                       | **Partial.** Current total exists, without joining dates/cumulative membership history. A05.                                                                                                                                                                                                                              |
 | S28 | Referral conversion rate over time            | **Missing.** Legacy successful-referrals/total-referrals rate is not completed-referrals/link-clicks. A06 requires an actual traffic denominator and sequential evidence.                                                                                                                                                 |
 | S29 | Referral traffic over time                    | **Missing.** No dedicated referral-click collector/aggregate was found in the inspected loyalty paths. Do not substitute referral records or repeated page opens without a tracking/privacy contract. A06.                                                                                                                |
@@ -150,8 +151,8 @@ Scope: S25/S26. Group immutable action/reward revision provenance, not mutable
 display names alone; expose separately named event counts and exact point totals.
 The reference's undefined Total column is not a formula specification. S25 now has
 a partial Weletic-defined gross ledger ranking with separate event counts
-and points; it does not use mutable rule names or claim parity. S26 remains
-open.
+and points; it does not use mutable rule names or claim parity. S26 has a
+partial captured-debit candidate; full reward-revision economics remain open.
 
 Dependencies: source provenance for historical records; use an explicit unknown
 group instead of guessing. Tests: renamed/deleted rules, shared names, correction

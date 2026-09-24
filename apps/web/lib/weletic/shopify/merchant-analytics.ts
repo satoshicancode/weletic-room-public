@@ -15,6 +15,7 @@ import {
 import { readMerchantOrderEarningSeries } from "../loyalty/order-earning-series";
 import { readMerchantRecordedTierChangeSeries } from "../loyalty/recorded-tier-change-series";
 import { deriveMerchantRedemptionRateSeries } from "../loyalty/redemption-rate-series";
+import { readMerchantRedemptionSources } from "../loyalty/redemption-sources";
 import {
   authorizeShopifyMerchantInTransaction,
   ShopifyStaffAuthorizationError,
@@ -113,6 +114,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     firstRecordedEarnersSeries,
     recordedTierChangesSeries,
     earningSources,
+    redemptionSources,
   ] = await Promise.all([
     tx.weleticRewardRedemption.groupBy({
       by: ["status", "artifactKind"],
@@ -158,6 +160,12 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       endAt: dateRange.endDate ?? null,
     }),
     readMerchantEarningSources({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantRedemptionSources({
       tx,
       storeId: actor.storeId,
       startAt: dateRange.startDate ?? null,
@@ -214,6 +222,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     firstRecordedEarnersSeries,
     recordedTierChangesSeries,
     earningSources,
+    redemptionSources,
     referralEconomics: {
       total: String(health.referralMetrics.totalReferrals),
       successful: String(health.referralMetrics.successfulReferrals),
