@@ -35,10 +35,10 @@ bucket, queue or other paid resource was created.
 
 September 24 local image check: the unchanged Shopify image at public `main`
 `037e80fe` unpacked to 4.47 GB, above the proposed `basic` 4 GB disk. The
-unmerged [production-dependency candidate](https://github.com/satoshicancode/weletic-room-public/pull/119)
+merged [production-dependency recipe](https://github.com/satoshicancode/weletic-room-public/pull/119)
 unpacked to 980 MB and passed a no-network guarded startup smoke. This resolves
-only the local Shopify image-size question if that candidate passes CI and is
-merged. The actual Cloudflare account, upload/admission, memory and installed
+only the local Shopify image-size question. The actual Cloudflare account,
+upload/admission, memory and installed
 runtime remain unverified; web and outbox images need current-SHA checks.
 
 ## Proposed acceptance footprint

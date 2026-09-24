@@ -13,8 +13,8 @@ remains the account and compatibility gate.
   PS-10/PS-20 compute figures below are **stale provisional inputs**, not an
   account quote. Storage, backups, branches and network remain unpriced.
 - Cloudflare account, Upstash account and Resend sender/plan ownership are
-  unverified. An unmerged [Shopify runtime image candidate](https://github.com/satoshicancode/weletic-room-public/pull/119)
-  built from public `main` `037e80fe` plus its focused Dockerfile change is
+  unverified. The merged [Shopify runtime-image fix](https://github.com/satoshicancode/weletic-room-public/pull/119)
+  at `373cdbe2` was built locally from the same source content and is
   980 MB unpacked and passed a no-network local startup smoke. The previous
   current-main image was 4.47 GB and exceeded the `basic` 4 GB disk. This
   establishes local Shopify image-size headroom only; web/outbox current-image
