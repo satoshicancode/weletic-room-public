@@ -1,8 +1,8 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 25, 2026 JST: public `main` at
-[`d06d2ce6`](https://github.com/satoshicancode/weletic-room-public/commit/d06d2ce622b659fdd9cc5af7ff41c071337d6aa9)
-(PR #137; [post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36017361558)).
+[`0d0c78fb`](https://github.com/satoshicancode/weletic-room-public/commit/0d0c78fba6f27a176e3bb84c70dbeb6daa3aa792)
+(PR #138; [PR-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36029737360)).
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
@@ -42,6 +42,12 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 | S04 | Runtime/operations          | locally verified                             | [Isolated container proof](../../infra/cloudflare-release/ISOLATED-VERIFICATION.md); [explicit review route admission](https://github.com/satoshicancode/weletic-room-public/pull/112)                                                                                                                                                                                                                                                                                                                                                                                                                         | Provider compatibility, supervision, alerts and restore                                                                                                                                                                     | M3        |
 | S05 | Privacy/retention           | implemented                                  | Foundations and store/delivery consumers merged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Schema compatibility and live export/erase races                                                                                                                                                                            | M1/M3     |
 | S06 | Listing/production          | missing acceptance                           | [Reviewer packet draft](app-store-reviewer-packet.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Accepted build, listing/reviewer approval and controlled activation                                                                                                                                                         | M4        |
+
+L09's [S15 bounded owner tier-event export](https://github.com/satoshicancode/weletic-room-public/pull/138)
+is merged with [isolated SQL redaction and row-cap evidence](tier-history-row-export-s15-2026-09-25.md).
+It exports retained, pseudonymous tier-change events with current tier labels;
+historical labels, membership reconstruction, provider-scale latency and installed
+acceptance remain open. Its owner-only route adds no schema migration.
 
 L02's [isolated used-reward refund and replay evidence](https://github.com/satoshicancode/weletic-room-public/pull/116) is merged; it does not establish installed Shopify acceptance.
 
