@@ -24,8 +24,8 @@ inferred. EN/JA/VI copy explains the calculation and limits.
 
 The series shares the signed merchant read, installation/store checks and
 owner-only JSON/CSV export. It adds no SQL read or schema change beyond S24's
-existing activity query and index gate. On this standalone branch, 32 focused
-service, UI and arithmetic tests pass, along with TypeScript using the CI heap
+existing activity query and index gate. On this reconciled branch, 38 focused
+S16/S17 service, UI and arithmetic tests pass, along with TypeScript using the CI heap
 setting, full web lint, Prisma validation and formatting. Current-head CI, a
 standalone production build and isolated SQL rerun are separate checks. The
 earlier stacked candidate passed a complete web unit suite, production build
