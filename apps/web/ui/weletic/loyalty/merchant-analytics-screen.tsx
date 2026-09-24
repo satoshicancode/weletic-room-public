@@ -311,6 +311,21 @@ export function MerchantAnalyticsScreen({
               </p>
             </section>
           )}
+          <p>{copy.firstRecordedRedemptionDebitsSemantics}</p>
+          {snapshot.firstRecordedRedemptionDebitsSeries.status ===
+          "available" ? (
+            table(
+              copy.firstRecordedRedemptionDebitsSeries,
+              snapshot.firstRecordedRedemptionDebitsSeries.rows,
+            )
+          ) : (
+            <section>
+              <h2>{copy.firstRecordedRedemptionDebitsSeries}</h2>
+              <p role="status">
+                {copy[snapshot.firstRecordedRedemptionDebitsSeries.status]}
+              </p>
+            </section>
+          )}
           <p>{copy.retainedEnrollmentSemantics}</p>
           {snapshot.retainedEnrollmentSeries.status === "available" ? (
             <>

@@ -18,9 +18,9 @@ from titles. No renewed Smile access is required to start the tasks below.
   economics/current statuses, reward current statuses and current VIP assignments.
   S24 daily point activity, partial S16/S17 rates, S23 recorded-ledger net,
   S21 retained earning cohorts and S33 recorded tier-change reasons are merged.
-  S25 adds a partial recorded earning-source ranking; S26 adds a bounded
-  recorded redemption-debit ranking. S27 adds partial retained-account
-  enrollments in this change. There are no sequential
+  S25 recorded earning-source ranking, S26 bounded recorded redemption-debit
+  ranking and S27 partial retained-account enrollments are merged. S22 retained
+  reward-debit cohorts are a local partial candidate. There are no sequential
   funnel stages or member-comparison fields.
 - [Signed merchant service](../../apps/web/lib/weletic/shopify/merchant-analytics.ts):
   authenticated store scope and repeatable-read transaction; exports require the
@@ -70,7 +70,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | S19 | Sales influenced by Smile over time           | **Missing.** Aggregate referral economics cannot establish the deduplicated union of points/VIP/referral-influenced orders. A06.                                                                                                                                                                                               |
 | S20 | Smile benchmarks                              | **Unavailable / decision.** No proprietary peer dataset exists for company stores. A09: no fabricated peer comparison; historical target replacement requires a product decision.                                                                                                                                              |
 | S21 | First time vs repeat earners over time        | **Candidate / partial.** [First recorded earn accounts](first-recorded-earners-s21-2026-09-24.md) use retained qualifying ledger history before the selected range. Erasure, missing pre-Weletic history and multiple accounts prevent a lifetime customer cohort. Installed acceptance remains open. A03.                     |
-| S22 | First time vs repeat redeemers over time      | **Missing.** Current status totals cannot identify first-ever successful redemption. A03.                                                                                                                                                                                                                                      |
+| S22 | First time vs repeat redeemers over time      | **Candidate / partial.** [First recorded reward-debit accounts](first-recorded-redemption-debits-s22-2026-09-24.md) count retained negative `REDEEM_REWARD` ledger-account events, including provisioning that may later be compensated. Successful issuance/use and lifetime shopper history remain unavailable. A03.         |
 | S23 | Outstanding points over time                  | **Candidate / partial.** Exact opening, daily and cumulative **recorded-ledger net** have isolated SQL evidence. They do not reconstruct historical outstanding liability, missing pre-Weletic history or account-level debt. Installed acceptance and index rollout remain open. A02.                                         |
 | S24 | Points activity over time                     | **Implementation candidate.** A bounded UTC daily ledger series now preserves exact strings and separate imports, corrections and manual movements in the signed merchant snapshot, CSV/JSON and EN/JA/VI UI. Isolated SQL verification exists; named merchant acceptance and release evidence remain open.                    |
 | S25 | Top ways to earn                              | **Merged implementation / partial.** [Recorded earning sources](recorded-earning-sources-s25-2026-09-24.md) rank retained positive earning-ledger types by exact gross points and ledger-entry counts. The reference Total formula remains unknown; missing/erased history and installed acceptance remain open. A04.          |
@@ -140,6 +140,9 @@ Scope: S21/S22. Determine each shopper's first-ever eligible earn/redemption
 before applying the report window; group distinct shoppers per bucket. Define
 whether reversed/failed/pending events qualify from existing lifecycle evidence,
 not from an account's current balance or membership alone.
+S21 is a retained positive-earner implementation; this change excludes retained
+redaction tombstones from its account-month set. S22 adds a separately labeled
+recorded-debit cohort, not a completed successful-redemption cohort.
 
 Dependencies: documented eligible-event rules and retained event history; erased
 or missing history must not silently become first-time activity. Tests: first
