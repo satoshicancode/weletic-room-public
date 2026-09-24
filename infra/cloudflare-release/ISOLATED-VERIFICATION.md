@@ -126,3 +126,36 @@ Docker context remained `desktop-linux`, and its socket stayed absent. The
 dedicated Lima instance shut down successfully at 14:24 JST on September 17;
 its installation, disk and cache were retained, with no running application
 services. The original historical-import worktree was not modified.
+
+## September 24 Shopify runtime footprint
+
+Source: public `main` `037e80febde2b6ccedb67ddd5b0285d30f63f7c7` plus
+the Shopify Dockerfile/runtime-copy change in this branch. The unchanged recipe
+built an unpacked 4.47 GB Docker image, dominated by a 3.43 GB root
+`node_modules` layer. This exceeds the proposed Cloudflare `basic` instance's
+[4 GB disk](https://developers.cloudflare.com/containers/platform/limits/).
+The full workspace dependency store is not needed by the packaged Remix server.
+
+The revised Dockerfile resolves a lockfile-frozen production dependency graph
+in a dependency-only stage before copying application source. It copies that
+graph into the final Shopify package, alongside the compiled server and both
+runtime-policy modules. Application builds remain network-disabled. No package
+manifest or lockfile dependency was removed or downgraded.
+
+- Linux/amd64 local image ID:
+  `sha256:a5fc42269875f3dd0b0cb3313b043d65492074855465ad12a8d88147444c13e7`.
+- Docker's unpacked image-list size after build and execution: **980 MB**.
+  `image inspect .Size` reports 190,345,356 bytes on this Docker Engine; use
+  the unpacked figure for the local disk comparison. Neither
+  figure is a Cloudflare deployment/startup measurement.
+- Five static Shopify image-policy tests passed. The no-network, read-only
+  smoke passed missing-configuration rejection, real Remix HTTP readiness and
+  rejection of the excluded path, and SIGTERM without OOM. It used synthetic
+  configuration, published no port and removed its exact containers.
+- The first slim image failed boot because the recipe had omitted the policy's
+  local `preview-origins.mjs` import; the final image includes it and passed the
+  same smoke. No provider connection or live Shopify journey was exercised.
+
+The 4 GB disk candidate now has local image-size headroom. Runtime memory,
+Cloudflare image admission, provider compatibility, authenticated installation,
+extension ownership and worker supervision remain separate release gates.

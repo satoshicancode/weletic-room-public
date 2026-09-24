@@ -101,21 +101,22 @@ ordinary package start scripts do not use this new wrapper.
 
 `Shopify.Dockerfile` is a fresh-build recipe, not a promoted local probe image.
 Its dedicated context excludes dotenv/credential files, host dependencies and
-build outputs. Dependency installation is lockfile-frozen; subsequent build
-steps use `--network=none`. No application secret or live provider endpoint is
-supplied at build time. The explicit `WELETIC_SHOPIFY_BUILD_TARGET=node` selector
+build outputs. The full dependency install and a separate production-only
+Shopify dependency deployment run before application source is copied; the
+subsequent application build steps use `--network=none`. No application secret
+or live provider endpoint is supplied at build time. The explicit
+`WELETIC_SHOPIFY_BUILD_TARGET=node` selector
 chooses standard Remix Node output without the Vercel preset. Ordinary builds
 still use Vercel, and existing local-probe opt-in behavior remains compatible.
 The build selector is rejected if supplied to the runtime guard.
 
 The fresh final stage copies the compiled Shopify build, package manifest,
-pnpm dependency directories and the three startup-policy files. It does not
-inherit the builder environment or copy first-party web/application source.
-It runs as the unprivileged `node` user with the fixed guarded Shopify entrypoint.
-Dependencies currently retain the full lockfile-installed root store, including
-development dependencies. Dependency pruning, image size and vulnerability
-inventory need actual image evidence before deployment; this is not a claim of
-a minimal runtime image. No dependency or lockfile was changed for this recipe.
+production-only pnpm dependency directory and the two runtime-policy modules
+needed by the guarded entrypoint. It does not inherit the builder environment
+or copy first-party web/application source. It runs as the unprivileged `node`
+user. The source package manifest and lockfile are unchanged. Production-only
+packaging removes the full workspace dependency store from this image; it does
+not establish vulnerability inventory or Cloudflare deployment compatibility.
 
 After local container execution is resumed, build a local-only candidate from
 the reviewed revision, with the prior two-CPU/2 GiB/no-swap Shopify build bounds:
