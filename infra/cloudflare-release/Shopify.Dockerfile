@@ -22,6 +22,11 @@ ENV CI=true NEXT_TELEMETRY_DISABLED=1 DOTENV_FLOW_SILENT=true
 RUN --mount=type=cache,id=weletic-cloudflare-release-pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile --store-dir /pnpm/store
 
+FROM dependencies AS runtime-dependencies
+# Resolve only the Shopify production graph before application source is copied.
+RUN --mount=type=cache,id=weletic-cloudflare-release-pnpm,target=/pnpm/store \
+    pnpm --frozen-lockfile --store-dir /pnpm/store --filter @weletic/shopify-app deploy --prod /opt/shopify-runtime
+
 FROM dependencies AS build
 COPY apps/web apps/web
 COPY packages packages
@@ -34,11 +39,10 @@ RUN --network=none WELETIC_SHOPIFY_BUILD_TARGET=node pnpm --filter @weletic/shop
 FROM node:22-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3ebafdd95eaf7767a7e5 AS shopify
 WORKDIR /workspace
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0 HOSTNAME=0.0.0.0
-COPY --from=build /workspace/node_modules ./node_modules
-COPY --from=build /workspace/packages/shopify-app/node_modules ./packages/shopify-app/node_modules
+COPY --from=runtime-dependencies /opt/shopify-runtime/node_modules ./packages/shopify-app/node_modules
 COPY --from=build /workspace/packages/shopify-app/package.json ./packages/shopify-app/package.json
 COPY --from=build /workspace/packages/shopify-app/build ./packages/shopify-app/build
-COPY packages/shopify-app/app/public-runtime-policy.mjs ./packages/shopify-app/app/public-runtime-policy.mjs
+COPY packages/shopify-app/app/public-runtime-policy.mjs packages/shopify-app/app/preview-origins.mjs ./packages/shopify-app/app/
 COPY infra/cloudflare-release/start.mjs infra/cloudflare-release/runtime-policy.mjs ./infra/cloudflare-release/
 USER node
 EXPOSE 3000
