@@ -81,18 +81,49 @@ whose lifetime is unknown. Complete these journeys before offering them:
 - Privacy/support: reachable policy/contact links, data access/erasure evidence,
   revoked authority, uninstall containment and no private identifiers in UI/logs.
 
+## Protected customer data gate
+
+The public-app manifest requests `read_orders` and subscribes to customer, order
+and refund events; the account and delivery journeys can use customer names or
+email. Treat [Shopify's level 2 protected customer data requirements](https://shopify.dev/docs/apps/launch/protected-customer-data)
+as the expected submission gate unless an exact deployed-field inventory proves
+a narrower use. Development-store access does not establish approval for a
+published public app. This packet has not verified the Partner Dashboard grants.
+
+Before freezing the reviewer build, record the exact public app/client ID,
+version, release SHA and installation generation. Compare its granted scopes and
+protected fields with the deployed Admin API queries, Customer Account API calls,
+webhooks and enabled module journeys. Request protected customer data access and
+each necessary identifying field in the Partner Dashboard, with its specific
+purpose and data protection details. Keep fields that lack an approved purpose
+out of queries and payloads. Test the accepted app's actual response to an
+unapproved or redacted field: Shopify can return HTTP 200 with GraphQL errors or
+null fields, and the journey must fail safely rather than silently use partial
+identity. Capture grant status and the real response as evidence.
+
+The submission evidence must point to the implemented controls for minimum data
+use, merchant notice and stated purposes, applicable consent/opt-out handling,
+retention and erasure, encryption in transit and at rest, encrypted backups,
+separate test/production data, data-loss prevention, restricted staff access,
+access logs and incident response. Verify provider and backup settings in the
+release environment; local code and a development-store grant alone do not
+close this gate. Keep the app ready to supply this evidence if Shopify requests
+a data protection review. The [review process](https://shopify.dev/docs/apps/launch/app-store-review/review-process)
+applies the same app requirements to limited-visibility listings.
+
 ## Submission blockers and evidence required
 
-| Gate                | Required evidence                                                                                      | Current disposition                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
-| Persistent release  | Isolated providers, production manifests, HTTPS origins, backup/restore, monitoring                    | Open; see resource inventory                                        |
-| Reviewer admission  | Exact audited install/bootstrap/auth/approval/reinstall journey                                        | Not executed by this packet                                         |
-| Enabled modules     | Named live matrix per submitted capability, including failure/privacy paths                            | Incomplete; bounded loyalty evidence is not whole-module acceptance |
-| Shopify permissions | Least-privilege manifest/runtime agreement, extension ownership, protected-data/network approvals      | Not certified here                                                  |
-| Public materials    | Approved entity/contact, hosted privacy/support URLs, accurate data/retention/subprocessor disclosures | Not verified or published                                           |
-| Listing assets      | Original Weletic screenshots/assets matching the accepted build, no shopper identifiers                | Not prepared/accepted                                               |
-| Submission          | Final metadata/screenshots/reviewer instructions checked against current Shopify requirements          | Requires separate explicit execution approval                       |
-| Production          | Separate weletic.com module rollout and rollback packet                                                | Not authorized by App Store submission                              |
+| Gate                | Required evidence                                                                                       | Current disposition                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Persistent release  | Isolated providers, production manifests, HTTPS origins, backup/restore, monitoring                     | Open; see resource inventory                                        |
+| Reviewer admission  | Exact audited install/bootstrap/auth/approval/reinstall journey                                         | Not executed by this packet                                         |
+| Enabled modules     | Named live matrix per submitted capability, including failure/privacy paths                             | Incomplete; bounded loyalty evidence is not whole-module acceptance |
+| Shopify permissions | Least-privilege manifest/runtime agreement, extension ownership, protected-data/network approvals       | Not certified here                                                  |
+| Protected data      | Exact approved fields, data-protection controls and redaction/error journey on the submitted public app | Dashboard grants and release-environment controls unverified        |
+| Public materials    | Approved entity/contact, hosted privacy/support URLs, accurate data/retention/subprocessor disclosures  | Not verified or published                                           |
+| Listing assets      | Original Weletic screenshots/assets matching the accepted build, no shopper identifiers                 | Not prepared/accepted                                               |
+| Submission          | Final metadata/screenshots/reviewer instructions checked against current Shopify requirements           | Requires separate explicit execution approval                       |
+| Production          | Separate weletic.com module rollout and rollback packet                                                 | Not authorized by App Store submission                              |
 
 No credentials, customer data, provider sends, listing edits or live store changes
 were made while preparing this draft. No gate is closed by this document alone.
