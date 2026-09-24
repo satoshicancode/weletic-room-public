@@ -1,8 +1,7 @@
 # Loyalty analytics report coverage
 
 Inventory originally inspected September 13, 2026 through public PR #32.
-Updated September 24 against public main `7c95b708` (S33 merged) and the
-S25 implementation candidate. **Analytics is not accepted live.** The report dispositions distinguish
+Updated September 24 against public main `63280435` (S25 merged). **Analytics is not accepted live.** The report dispositions distinguish
 merged code from local candidate work and do not certify Smile parity.
 
 The [preserved benchmark](benchmark-smile-2026-09-08.md) identifies 34 included
@@ -71,7 +70,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | S22 | First time vs repeat redeemers over time      | **Missing.** Current status totals cannot identify first-ever successful redemption. A03.                                                                                                                                                                                                                                 |
 | S23 | Outstanding points over time                  | **Candidate / partial.** Exact opening, daily and cumulative **recorded-ledger net** have isolated SQL evidence. They do not reconstruct historical outstanding liability, missing pre-Weletic history or account-level debt. Installed acceptance and index rollout remain open. A02.                                    |
 | S24 | Points activity over time                     | **Implementation candidate.** A bounded UTC daily ledger series now preserves exact strings and separate imports, corrections and manual movements in the signed merchant snapshot, CSV/JSON and EN/JA/VI UI. Isolated SQL verification exists; named merchant acceptance and release evidence remain open.               |
-| S25 | Top ways to earn                              | **Candidate / partial.** [Recorded earning sources](recorded-earning-sources-s25-2026-09-24.md) rank retained positive earning-ledger types by exact gross points and ledger-entry counts. The reference Total formula remains unknown; missing/erased history and installed acceptance remain open. A04.                 |
+| S25 | Top ways to earn                              | **Merged implementation / partial.** [Recorded earning sources](recorded-earning-sources-s25-2026-09-24.md) rank retained positive earning-ledger types by exact gross points and ledger-entry counts. The reference Total formula remains unknown; missing/erased history and installed acceptance remain open. A04.     |
 | S26 | Top ways to redeem                            | **Unknown / partial.** Status/artifact grouping is not reward-name ranking; reference Total is undefined. A04.                                                                                                                                                                                                            |
 | S27 | Total members over time                       | **Partial.** Current total exists, without joining dates/cumulative membership history. A05.                                                                                                                                                                                                                              |
 | S28 | Referral conversion rate over time            | **Missing.** Legacy successful-referrals/total-referrals rate is not completed-referrals/link-clicks. A06 requires an actual traffic denominator and sequential evidence.                                                                                                                                                 |
