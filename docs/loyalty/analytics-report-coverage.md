@@ -1,7 +1,7 @@
 # Loyalty analytics report coverage
 
 Inventory originally inspected September 13, 2026 through public PR #32.
-Updated September 25 from public main `20d62176` and the S15 change.
+Updated September 25 from public main `595e3f0d` and the S11 export.
 **Analytics is not accepted live.** The report dispositions distinguish
 code coverage from installed acceptance and do not certify Smile parity.
 
@@ -32,6 +32,12 @@ from titles. No renewed Smile access is required to start the tasks below.
   account references. It excludes redacted accounts and free-text notes. Tier
   labels are current names, not historical snapshots. [Isolated SQL evidence](tier-history-row-export-s15-2026-09-25.md)
   exists; installed acceptance remains open.
+- [S11 ledger-row export implementation](../../apps/web/lib/weletic/shopify/merchant-ledger-row-export.ts):
+  a separate signed, audited owner-only CSV path with strict UTC range,
+  a 2,000-row cap, installation fencing and pseudonymous account keys. It
+  excludes erased accounts and raw identities, orders and free-text metadata.
+  [Isolated SQL evidence](recorded-ledger-rows-s11-2026-09-25.md) exists;
+  provider-scale and installed acceptance remain open.
 - [Existing calculations](../../apps/web/lib/weletic/loyalty/analytics.ts):
   reusable liability, health, referral economics and tier helpers, plus legacy
   cohort/extended-export functions. Function presence does not establish merchant
@@ -65,7 +71,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | S08 | List of orders by VIP tier                    | **Decision / missing.** Current VIP assignment cannot establish a tier at order time. A01, A05 require preserved temporal evidence.                                                                                                                                                                                                        |
 | S09 | List of orders placed by referred customers   | **Unknown / missing.** Empty reference grid. A01, A06 must distinguish qualifying order from subsequent referred-customer orders.                                                                                                                                                                                                          |
 | S10 | List of points redemptions                    | **Decision / partial.** Aggregate points/status/artifact counts exist, not event rows and channel/date filters. A01.                                                                                                                                                                                                                       |
-| S11 | List of points transactions                   | **Implementation candidate / partial.** [Owner-only recorded ledger-row CSV](recorded-ledger-rows-s11-2026-09-25.md) preserves exact point strings, entry types and account sequence without raw identities. Missing/erased history, provider-scale read plans and installed acceptance remain open. A01.                                  |
+| S11 | List of points transactions                   | **Merged implementation / partial.** [Owner-only recorded ledger-row CSV](recorded-ledger-rows-s11-2026-09-25.md) preserves exact point strings, entry types and account sequence without raw identities. Missing/erased history, provider-scale read plans and installed acceptance remain open. A01.                                     |
 | S12 | List of referrals                             | **Unknown / missing.** Empty reference grid; current status totals are not referral rows or historical transitions. A01, A06.                                                                                                                                                                                                              |
 | S13 | List of Smile influenced orders               | **Unknown / missing.** No complete reference schema or signed equivalent. A01, A06 need unique order attribution before exposing this label.                                                                                                                                                                                               |
 | S14 | List of top earning customers all-time        | **Decision / missing.** Reference minimum points was visible; rows were empty. A01 must define legitimate earns versus imports/manual credits and tie ordering.                                                                                                                                                                            |
