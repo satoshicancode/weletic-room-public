@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   ledgerNetSeries: vi.fn(),
   firstEarnersSeries: vi.fn(),
   tierChangesSeries: vi.fn(),
+  earningSources: vi.fn(),
   orderSeries: vi.fn(),
 }));
 vi.mock("../../lib/weletic/shopify/staff-authorization", () => ({
@@ -40,6 +41,9 @@ vi.mock("../../lib/weletic/loyalty/first-recorded-earners-series", () => ({
 }));
 vi.mock("../../lib/weletic/loyalty/recorded-tier-change-series", () => ({
   readMerchantRecordedTierChangeSeries: mocks.tierChangesSeries,
+}));
+vi.mock("../../lib/weletic/loyalty/earning-sources", () => ({
+  readMerchantEarningSources: mocks.earningSources,
 }));
 vi.mock("../../lib/weletic/loyalty/order-earning-series", () => ({
   readMerchantOrderEarningSeries: mocks.orderSeries,
@@ -189,6 +193,16 @@ beforeEach(() => {
       },
     ],
   });
+  mocks.earningSources.mockResolvedValue({
+    coverage: "retained_positive_earning_ledger_only",
+    rows: [
+      {
+        entryType: "EARN_ORDER",
+        eventCount: "2",
+        pointsEarned: huge.toString(),
+      },
+    ],
+  });
   mocks.orderSeries.mockResolvedValue({
     status: "available",
     bucket: "utc_day",
@@ -260,6 +274,16 @@ describe("merchant analytics", () => {
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
     });
+    expect(mocks.earningSources).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(result.snapshot.earningSources.rows[0]).toMatchObject({
+      eventCount: "2",
+      pointsEarned: huge.toString(),
+    });
     expect(result.snapshot.firstRecordedEarnersSeries.rows[0]).toMatchObject({
       firstRecordedAccounts: "1",
       returningAccounts: "1",
@@ -319,6 +343,21 @@ describe("merchant analytics", () => {
                 manualOverride: "2",
                 otherReasons: "0",
               },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          earningSources: {
+            ...result.snapshot.earningSources,
+            rows: [
+              result.snapshot.earningSources.rows[0],
+              result.snapshot.earningSources.rows[0],
             ],
           },
         },
@@ -447,6 +486,9 @@ describe("merchant analytics", () => {
         );
         expect(result.download!.content).toContain(
           "recordedTierChangesSeries.rows.0.totalChanges,2",
+        );
+        expect(result.download!.content).toContain(
+          `earningSources.rows.0.pointsEarned,${huge.toString()}`,
         );
       }
     },

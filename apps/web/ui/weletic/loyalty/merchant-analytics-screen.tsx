@@ -153,7 +153,9 @@ export function MerchantAnalyticsScreen({
                           : key === "rateBasisPoints" ||
                               key === "redemptionRateBasisPoints"
                             ? formatBasisPoints(row[key]!)
-                            : key === "status" || key === "artifact"
+                            : key === "status" ||
+                                key === "artifact" ||
+                                key === "entryType"
                               ? row[key] === "expired"
                                 ? copy.expiredStatus
                                 : label(row[key]!)
@@ -322,6 +324,8 @@ export function MerchantAnalyticsScreen({
               </p>
             </section>
           )}
+          <p>{copy.earningSourcesSemantics}</p>
+          {table(copy.earningSources, snapshot.earningSources.rows)}
           <p>{copy.redemptionRateSemantics}</p>
           {snapshot.redemptionRateSeries.status === "available" ? (
             table(copy.redemptionRateSeries, snapshot.redemptionRateSeries.rows)

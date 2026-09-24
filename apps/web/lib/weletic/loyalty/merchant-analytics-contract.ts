@@ -273,6 +273,43 @@ export const merchantAnalyticsSnapshotSchema = z
       .refine(
         ({ status, rows }) => status === "available" || rows.length === 0,
       ),
+    earningSources: z
+      .object({
+        coverage: z.literal("retained_positive_earning_ledger_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                entryType: z.enum([
+                  "EARN_ORDER",
+                  "EARN_REFERRAL",
+                  "EARN_BONUS",
+                  "TIER_BONUS",
+                ]),
+                eventCount: count,
+                pointsEarned: count,
+              })
+              .strict()
+              .refine(
+                ({ eventCount, pointsEarned }) =>
+                  BigInt(eventCount) > BigInt(0) &&
+                  BigInt(pointsEarned) > BigInt(0),
+              ),
+          )
+          .max(4),
+      })
+      .strict()
+      .refine(
+        ({ rows }) =>
+          new Set(rows.map((row) => row.entryType)).size === rows.length &&
+          rows.every(
+            (row, index) =>
+              index === 0 ||
+              BigInt(rows[index - 1].pointsEarned) > BigInt(row.pointsEarned) ||
+              (rows[index - 1].pointsEarned === row.pointsEarned &&
+                rows[index - 1].entryType < row.entryType),
+          ),
+      ),
     referralEconomics: z
       .object({
         total: count,

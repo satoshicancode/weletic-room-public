@@ -1,8 +1,8 @@
 # Loyalty analytics report coverage
 
 Inventory originally inspected September 13, 2026 through public PR #32.
-Updated September 24 against public main `e96953bd` (S16/S17 merged) and the
-S23 implementation candidate. **Analytics is not accepted live.** The report dispositions distinguish
+Updated September 24 against public main `7c95b708` (S33 merged) and the
+S25 implementation candidate. **Analytics is not accepted live.** The report dispositions distinguish
 merged code from local candidate work and do not certify Smile parity.
 
 The [preserved benchmark](benchmark-smile-2026-09-08.md) identifies 34 included
@@ -16,9 +16,10 @@ from titles. No renewed Smile access is required to start the tasks below.
 - [Merchant contract](../../apps/web/lib/weletic/loyalty/merchant-analytics-contract.ts):
   one strict aggregate snapshot with liability, point activity, referral
   economics/current statuses, reward current statuses and current VIP assignments.
-  S24 daily point activity and the partial S16/S17 rates are
-  merged; S23 adds a partial recorded-ledger net series. There are no sequential funnel stages or
-  member-comparison fields.
+  S24 daily point activity, partial S16/S17 rates, S23 recorded-ledger net,
+  S21 retained earning cohorts and S33 recorded tier-change reasons are merged.
+  S25 adds a partial recorded earning-source ranking. There are no sequential
+  funnel stages or member-comparison fields.
 - [Signed merchant service](../../apps/web/lib/weletic/shopify/merchant-analytics.ts):
   authenticated store scope and repeatable-read transaction; exports require the
   current owner and installation generation. CSV walks the same snapshot as JSON.
@@ -70,7 +71,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | S22 | First time vs repeat redeemers over time      | **Missing.** Current status totals cannot identify first-ever successful redemption. A03.                                                                                                                                                                                                                                 |
 | S23 | Outstanding points over time                  | **Candidate / partial.** Exact opening, daily and cumulative **recorded-ledger net** have isolated SQL evidence. They do not reconstruct historical outstanding liability, missing pre-Weletic history or account-level debt. Installed acceptance and index rollout remain open. A02.                                    |
 | S24 | Points activity over time                     | **Implementation candidate.** A bounded UTC daily ledger series now preserves exact strings and separate imports, corrections and manual movements in the signed merchant snapshot, CSV/JSON and EN/JA/VI UI. Isolated SQL verification exists; named merchant acceptance and release evidence remain open.               |
-| S25 | Top ways to earn                              | **Unknown / missing.** Reference shows Comment/Total but Total's meaning is unknown. A04 must publish Weletic's own count/point measures and provenance.                                                                                                                                                                  |
+| S25 | Top ways to earn                              | **Candidate / partial.** [Recorded earning sources](recorded-earning-sources-s25-2026-09-24.md) rank retained positive earning-ledger types by exact gross points and ledger-entry counts. The reference Total formula remains unknown; missing/erased history and installed acceptance remain open. A04.                 |
 | S26 | Top ways to redeem                            | **Unknown / partial.** Status/artifact grouping is not reward-name ranking; reference Total is undefined. A04.                                                                                                                                                                                                            |
 | S27 | Total members over time                       | **Partial.** Current total exists, without joining dates/cumulative membership history. A05.                                                                                                                                                                                                                              |
 | S28 | Referral conversion rate over time            | **Missing.** Legacy successful-referrals/total-referrals rate is not completed-referrals/link-clicks. A06 requires an actual traffic denominator and sequential evidence.                                                                                                                                                 |
@@ -148,7 +149,10 @@ proven source coverage and signed aggregate exposure with no shopper IDs.
 
 Scope: S25/S26. Group immutable action/reward revision provenance, not mutable
 display names alone; expose separately named event counts and exact point totals.
-The reference's undefined Total column is not a formula specification.
+The reference's undefined Total column is not a formula specification. S25 now has
+a partial Weletic-defined gross ledger ranking with separate event counts
+and points; it does not use mutable rule names or claim parity. S26 remains
+open.
 
 Dependencies: source provenance for historical records; use an explicit unknown
 group instead of guessing. Tests: renamed/deleted rules, shared names, correction
