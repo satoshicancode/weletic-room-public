@@ -33,6 +33,25 @@ there, and no resource or account setting was changed. Their ownership, plans,
 regions, R2/Redis/QStash resources and billing remain unverified. No database,
 bucket, queue or other paid resource was created.
 
+September 25 read-only console inventory supersedes the Cloudflare/Upstash
+"unverified" account statements above, but does not authorize reuse or spending:
+
+- The accessible Cloudflare account has **Workers Free** and **R2 Paid** active.
+  Its Containers page requires a Workers Paid purchase before any container can
+  run. The account has an existing `weletic-private` R2 bucket in APAC with zero
+  objects, no public development URL or custom domain, and no CORS policy;
+  `weletic-public` has three objects. The private bucket's existing purpose,
+  credentials, retention and isolation are not yet certified for this release.
+- The accessible Upstash personal workspace has one `weletic_partners` Redis
+  database on Free Tier in AWS Tokyo. That database belongs to a different
+  workload and is **not** the proposed isolated Room Redis. Its QStash instance
+  is Free in AWS US East, with a 1,000-message daily limit shown in the console.
+  A Room queue, separate credentials, chosen security pack, retention and
+  acceptable processing region remain unverified.
+- No Workers plan was upgraded, resource created, bucket changed, credential
+  copied or provider workload executed. The acceptance and production models
+  remain incomplete; an active R2 subscription is not a complete cost quote.
+
 September 24 local image check: the unchanged Shopify image at public `main`
 `037e80fe` unpacked to 4.47 GB, above the proposed `basic` 4 GB disk. The
 merged [production-dependency recipe](https://github.com/satoshicancode/weletic-room-public/pull/119)
