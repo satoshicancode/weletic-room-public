@@ -101,21 +101,22 @@ ordinary package start scripts do not use this new wrapper.
 
 `Shopify.Dockerfile` is a fresh-build recipe, not a promoted local probe image.
 Its dedicated context excludes dotenv/credential files, host dependencies and
-build outputs. Dependency installation is lockfile-frozen; subsequent build
-steps use `--network=none`. No application secret or live provider endpoint is
-supplied at build time. The explicit `WELETIC_SHOPIFY_BUILD_TARGET=node` selector
+build outputs. The full dependency install and a separate production-only
+Shopify dependency deployment run before application source is copied; the
+subsequent application build steps use `--network=none`. No application secret
+or live provider endpoint is supplied at build time. The explicit
+`WELETIC_SHOPIFY_BUILD_TARGET=node` selector
 chooses standard Remix Node output without the Vercel preset. Ordinary builds
 still use Vercel, and existing local-probe opt-in behavior remains compatible.
 The build selector is rejected if supplied to the runtime guard.
 
 The fresh final stage copies the compiled Shopify build, package manifest,
-pnpm dependency directories and the three startup-policy files. It does not
-inherit the builder environment or copy first-party web/application source.
-It runs as the unprivileged `node` user with the fixed guarded Shopify entrypoint.
-Dependencies currently retain the full lockfile-installed root store, including
-development dependencies. Dependency pruning, image size and vulnerability
-inventory need actual image evidence before deployment; this is not a claim of
-a minimal runtime image. No dependency or lockfile was changed for this recipe.
+production-only pnpm dependency directory and the two runtime-policy modules
+needed by the guarded entrypoint. It does not inherit the builder environment
+or copy first-party web/application source. It runs as the unprivileged `node`
+user. The source package manifest and lockfile are unchanged. Production-only
+packaging removes the full workspace dependency store from this image; it does
+not establish vulnerability inventory or Cloudflare deployment compatibility.
 
 After local container execution is resumed, build a local-only candidate from
 the reviewed revision, with the prior two-CPU/2 GiB/no-swap Shopify build bounds:
@@ -290,12 +291,15 @@ Run `node --test infra/cloudflare-release/*.test.mjs` and the web Vitest tests
 ## Web/outbox candidate recipes (not image acceptance)
 
 `Web.Dockerfile` now defines separate `web` and `outbox` targets, sharing a frozen
-dependency install and Linux-generated Prisma client. Fresh runtime stages retain
-OpenSSL/CA certificates, full workspace dependencies and package sources. They
-run as `node` and use guarded startup. This deliberately favors compatibility
-over image minimization; dependency pruning, vulnerability review and actual
-image-size evidence are outstanding. Worker source includes UI utilities needed
-by transitive server imports, but starts no HTTP listener or unrelated workflow.
+dependency install and Linux-generated Prisma client. A scoped web deployment
+copies the web workspace dependency graph into each fresh runtime and generates
+its Prisma client there; the full root workspace dependency store stays in the
+builder. Runtime stages retain OpenSSL/CA certificates and package sources.
+They run as `node` and use guarded startup. The scoped graph retains the web
+development tools needed by the TSX outbox; further dependency pruning,
+vulnerability review and provider image admission remain outstanding. Worker
+source includes UI utilities needed by transitive server imports, but starts no
+HTTP listener or unrelated workflow.
 
 The web builder receives a fixed, non-inherited environment: approved public-dev
 origins, explicit disabled `.invalid` admin/partner origins and loopback-only
@@ -347,6 +351,8 @@ separately gated.
 The original recipe checkpoint had source-level tests only. Subsequent bounded
 Linux image results, resource limits and cleanup are recorded in
 [isolated verification](ISOLATED-VERIFICATION.md), under [ADR 0037](../../docs/adr/0037-isolated-local-release-verification.md).
+The September 24 scoped-image measurements and real no-network startup results
+are recorded in the [runtime footprint](../../docs/loyalty/release-runtime-footprint-2026-09-24.md).
 That evidence does not establish real authentication, provider-connected delivery,
 complete layer/secret auditing or Cloudflare deployment readiness.
 
