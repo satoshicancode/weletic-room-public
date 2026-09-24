@@ -1,8 +1,9 @@
 # Loyalty analytics report coverage
 
-Checkpoint: September 13, 2026; inspected public main through PR #32
-(`6e6c46882602ae72e7991fa32eea3211f1e2652f`). **Analytics is not accepted live.**
-This fulfills the report-disposition inventory, not the report implementations.
+Inventory originally inspected September 13, 2026 through public PR #32.
+Updated September 24 against public main `037e80fe` and this unmerged S16
+candidate. **Analytics is not accepted live.** The report dispositions distinguish
+merged code from local candidate work and do not certify Smile parity.
 
 The [preserved benchmark](benchmark-smile-2026-09-08.md) identifies 34 included
 reports plus two separately locked Finance reports. Its September 9 supplement
@@ -15,7 +16,9 @@ from titles. No renewed Smile access is required to start the tasks below.
 - [Merchant contract](../../apps/web/lib/weletic/loyalty/merchant-analytics-contract.ts):
   one strict aggregate snapshot with liability, point activity, referral
   economics/current statuses, reward current statuses and current VIP assignments.
-  There are no time buckets, sequential funnel stages or member-comparison fields.
+  S24 daily point activity is merged; this branch adds a partial S16 daily
+  recorded-order rate. There are no sequential funnel stages or
+  member-comparison fields.
 - [Signed merchant service](../../apps/web/lib/weletic/shopify/merchant-analytics.ts):
   authenticated store scope and repeatable-read transaction; exports require the
   current owner and installation generation. CSV walks the same snapshot as JSON.
@@ -29,7 +32,8 @@ from titles. No renewed Smile access is required to start the tasks below.
   statuses are explicitly described as non-sequential; date boundaries are UTC.
 - [Merchant tests](../../apps/web/tests/weletic/merchant-analytics.test.ts) and
   [analytics matrix tests](../../apps/web/tests/weletic/loyalty-analytics-matrix.test.ts)
-  provide local service/calculation evidence, not named store SQL reconciliation.
+  provide local service/calculation evidence. S24 and this S16 candidate have
+  isolated SQL checks, not named-store acceptance.
   The [original checkpoint](merchant-analytics-implementation.md) records bounded
   UI/build evidence and its remaining gates.
 
@@ -56,7 +60,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | S13 | List of Smile influenced orders               | **Unknown / missing.** No complete reference schema or signed equivalent. A01, A06 need unique order attribution before exposing this label.                                                                                                                                                                |
 | S14 | List of top earning customers all-time        | **Decision / missing.** Reference minimum points was visible; rows were empty. A01 must define legitimate earns versus imports/manual credits and tie ordering.                                                                                                                                             |
 | S15 | List of VIP tier changes                      | **Decision / missing.** Persisted tier history exists, not an owner-authorized row report. A01, A05.                                                                                                                                                                                                        |
-| S16 | Order earning rate over time                  | **Missing.** No time-bucketed distinct earning-order/all-order numerator and denominator in merchant snapshot. A02.                                                                                                                                                                                         |
+| S16 | Order earning rate over time                  | **Implementation candidate / partial.** [Recorded-order daily series](order-earning-rate-s16-2026-09-24.md) has exact numerator/denominator and a source-coverage label, but missing Shopify history prevents a whole-store rate. Index rollout, provider and installed acceptance remain open. A02.        |
 | S17 | Redemption rate over time                     | **Partial.** Point activity totals and a legacy rate exist; no merchant time series or displayed denominator. A02 must specify imports/refunds/zero denominator explicitly.                                                                                                                                 |
 | S18 | Reward usage rate over time                   | **Partial.** Current redemption-status counts are not observed discount usage over time. A02, A08 must reconcile issued/used dates, source and untracked usage.                                                                                                                                             |
 | S19 | Sales influenced by Smile over time           | **Missing.** Aggregate referral economics cannot establish the deduplicated union of points/VIP/referral-influenced orders. A06.                                                                                                                                                                            |
@@ -110,8 +114,10 @@ derive event-time usage from a redemption's current status.
 S24 has a first implementation: explicit inclusive instants, up to 366 UTC
 calendar days, zero-filled days and exact ledger categories. An omitted endpoint
 or wider range returns an explicit unavailable state. This series reports
-movements, not historical balance or order/reward rates. S16–S18 and S23 remain
-open; the S24 merchant journey also awaits named acceptance. The accompanying
+movements, not historical balance or order/reward rates. S16 now has a
+recorded-order implementation candidate with explicit partial coverage; S17,
+S18 and S23 remain unimplemented. S16 and S24 merchant journeys await named
+acceptance. The accompanying
 `(storeId, createdAt)` ledger index needs its separate shared-schema migration
 gate before this report is enabled in a deployed environment.
 
