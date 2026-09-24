@@ -1,8 +1,8 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 24, 2026: public `main` at
-[`e2ee111d`](https://github.com/satoshicancode/weletic-room-public/commit/e2ee111d3f9cae7f66488c304b0b0dcd874485e6)
-(PR #110; [exact-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/35960398143)).
+[`cb58f386`](https://github.com/satoshicancode/weletic-room-public/commit/cb58f3861ca573525a1e95aba2ee2946bb3d8d44)
+(PR #122; [PR-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/35965134848)).
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
@@ -25,7 +25,7 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 | L07 | Shopper surfaces            | locally verified; bounded live subset        | Local components; bounded wallet live subset                                                                                                                                                                                                                                                                                                             | Installed authenticated journeys and failures across surfaces               | M2        |
 | L08 | Communications              | implemented                                  | [Local producer implementation](communications-implementation.md)                                                                                                                                                                                                                                                                                        | Approved actual delivery, suppression and worker recovery                   | M2/M3     |
 | L09 | Analytics/exports           | implemented; incomplete                      | [Report inventory](analytics-report-coverage.md); [S24 daily activity](https://github.com/satoshicancode/weletic-room-public/pull/102) merged, shared index unapplied                                                                                                                                                                                    | S16–S18/S23, private exports, installed reconciliation and S24 index gate   | M2        |
-| L10 | Historical imports          | locally verified at bounded scale            | [Latest 50,000-row failure](historical-import-scale-attempt-2026-09-24.md); [earlier 8,100-row failure](import-failure-evidence-2026-09-13.md); [current enum preflight](https://github.com/satoshicancode/weletic-room-public/pull/110)                                                                                                                 | Diagnose rollback transaction; then complete 50,000 commits and rollbacks   | M2        |
+| L10 | Historical imports          | locally verified at bounded scale            | [Latest 50,000-row failure and bounded proof profile](historical-import-scale-attempt-2026-09-24.md); [proof-reader joins](https://github.com/satoshicancode/weletic-room-public/pull/122); [current enum preflight](https://github.com/satoshicancode/weletic-room-public/pull/110)                                                                     | 50,000 real commits and rollbacks, restart and independent reconciliation   | M2        |
 | R01 | Invitations/submission      | locally verified                             | Local product path; prospective store path merged in PR #101; [bounded collection packet](review-collection-live-acceptance-packet.md) updated in PR #111                                                                                                                                                                                                | Installed fulfillment, inbox, scoped submit and retry                       | M1/M5     |
 | R02 | Moderation/display          | locally verified                             | Local product path; store controls/widget merged in PR #101                                                                                                                                                                                                                                                                                              | Installed staff/theme journey, totals and privacy                           | M1/M5     |
 | R03 | Open submissions            | implemented; account photos open             | Text gateway/account merged through PR #100                                                                                                                                                                                                                                                                                                              | Account photos and installed abuse/privacy journey                          | M5        |
@@ -44,6 +44,13 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 | S06 | Listing/production          | missing acceptance                           | [Reviewer packet draft](app-store-reviewer-packet.md)                                                                                                                                                                                                                                                                                                    | Accepted build, listing/reviewer approval and controlled activation         | M4        |
 
 L02's [isolated used-reward refund and replay evidence](https://github.com/satoshicancode/weletic-room-public/pull/116) is merged; it does not establish installed Shopify acceptance.
+
+L10's bounded 500-row worker lifecycle passed again on `cb58f386` in isolated
+MySQL: 500 commits, 500 rollbacks, final exact SQL reconciliation and disposable
+fixture cleanup. The run took 11 commit deliveries and 11 rollback deliveries;
+its local log is `/tmp/weletic-import-500-lifecycle-after-122.log` (SHA-256
+`b52157c3528ccf9b9bdfd73c989e1178d82aedc1c7defc367004c3027ebbad34`).
+This does not close the 50,000-row, restart or installed gates.
 
 L09 has a [recorded-order earning-rate candidate](https://github.com/satoshicancode/weletic-room-public/pull/117) at an open draft PR head. It excludes missing Shopify orders, and its additive index has not been applied to a shared database. This is neither a whole-store rate nor installed acceptance.
 
