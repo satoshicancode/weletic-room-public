@@ -1,8 +1,8 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 25, 2026 JST: public `main` at
-[`2bc7c59c`](https://github.com/satoshicancode/weletic-room-public/commit/2bc7c59c4b4fc4edbe9ecbeb64dc3d8dbacc8389)
-(PR #146; [post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36057914767)).
+[`f42949f4`](https://github.com/satoshicancode/weletic-room-public/commit/f42949f443f99f028f4d5f498b86bd5a48e5dae9)
+(PR #147; [post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36067134508)).
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
@@ -47,10 +47,11 @@ L03 has a [subscription cadence source blocker](subscription-cadence-source-audi
 the local `subscriptionSequence` counts retained orders by selling plan and
 item, not by an authoritative subscription contract. Distinct contracts or
 missing history can cross first-payment/first-N boundaries. Cadence-specific
-points and referral promises need fail-closed merchant/runtime containment and
-an approved contract-level evidence source before activation. Native Shopify
+points and referral promises are now contained; they still need an approved
+contract-level evidence source before activation. Native Shopify
 discount limits and every-payment earning require their own installed proof.
-Code containment preserves historical subscription promises as critical
+The merged [cadence containment](https://github.com/satoshicancode/weletic-room-public/pull/147)
+preserves historical subscription promises as critical
 reconciliation holds. It does not settle them; an authorized cycle source and
 fenced referral adjudication path remain necessary. L03 remains blocked.
 
