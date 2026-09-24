@@ -1,7 +1,8 @@
 # Historical import rollback group size (candidate)
 
-Status: isolated implementation candidate, September 24, 2026. No 50,000-row
-rollback, restart recovery or deployed provider acceptance is claimed.
+Status: isolated implementation candidate, September 25, 2026. A strict
+50,000-row commit-and-rollback lifecycle passed on the candidate. Full-scale
+restart recovery, provider read-plan and deployed acceptance remain open.
 
 The rollback worker keeps one full-source reconciliation proof inside each
 atomic correction transaction. With a ten-row transaction bound, a normal
@@ -38,9 +39,31 @@ transaction entry. The bounded profile also passed with the 50-row group.
 The SQL-test log is `/tmp/weletic-import-group50-containment-20260924.log`
 (SHA-256 `a95de8ade06f2c53600d47565a0c91c34879438c38b634ef715edf744a52ed00`).
 
+## Strict full-scale lifecycle on the candidate
+
+The opt-in isolated MySQL run at source commit `09ff8052a648919042ab908120fe7cda22370efa`
+passed its unchanged assertions: **50,000/50,000 actual commits** in 1,001
+worker deliveries and **50,000/50,000 actual rollbacks** in 1,001 deliveries.
+The final rollback delivery completed the job and marked the source rolled back.
+An independent SQL aggregation checked 50,000 ledger entries and the exact
+committed net, then 100,000 entries with net zero after rollback. The source
+proof, execution counts and 50,000 zero-balance accounts also passed. The
+test reported one pass, 62 opt-in skips and no failed delivery; it took
+26,646 seconds, including both phases and cleanup. The local log is
+`/tmp/weletic-import-50-full-lifecycle-20260925.log` (SHA-256
+`9c0100f4260e28f08a5357667b595c620f6ab551ad37af60ac3735e689a1c2e2`).
+After the test exited, a separate read-only SQL query found zero import
+sources, snapshots, executions, ledger entries, accounts, shoppers, outbox
+jobs and stores in the disposable database.
+
+This is a single quiet-machine isolated run, not a provider throughput or
+full-scale process-restart result. The separate 51-row real-process restart
+test covers durable continuation across new worker processes at a bounded
+scale. Exact-target schema, provider query plans and installed recovery still
+need their own evidence.
+
 One transaction now holds up to 50 account/ledger locks rather than ten and
 may redo up to 49 earlier corrections after a late conflict. Its timeout still
-fails closed. Concurrency, interruption/restart, 50,000 actual commits and
-50,000 actual rollbacks, independent final reconciliation and provider read-plan
-evidence remain gates. The group-size change alone does not approve the
+fails closed. Provider-scale interruption/restart and read-plan evidence remain
+gates. The group-size change and isolated lifecycle do not approve the
 generated-column provenance index or any shared migration.
