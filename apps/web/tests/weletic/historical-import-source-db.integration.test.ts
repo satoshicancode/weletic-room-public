@@ -3544,6 +3544,42 @@ it("executes competing row deliveries exactly once and finalizes from durable ev
   expect(await database.weleticPointsLedgerEntry.count({ where })).toBe(1);
 });
 
+it("finds a reference-only orphan with no source metadata in real SQL", async () => {
+  const { source, snapshot, lease } = await seedExecutableRow();
+  await executeHistoricalImportRow({ lease, snapshotId: snapshot.id });
+  const opening = await database.weleticPointsLedgerEntry.findFirstOrThrow({
+    where: { storeId: source.storeId, referenceId: snapshot.id },
+  });
+  await database.weleticPointsLedgerEntry.createMany({
+    data: [
+      {
+        ...opening,
+        id: `orphan-${snapshot.id}`,
+        sequenceNumber: 2,
+        idempotencyKey: `orphan:${snapshot.id}`,
+        metadata: {},
+      },
+    ],
+  });
+  const proof = await database.$transaction(
+    (tx) =>
+      readHistoricalImportExecutionProofInTransaction({
+        tx,
+        sourceId: source.id,
+        storeId: source.storeId,
+        programId: source.programId,
+      }),
+    options,
+  );
+  expect(proof.summary.reconciled).toBe(false);
+  expect(proof.summary.issues.length).toBeGreaterThan(0);
+  expect(
+    await database.weleticPointsLedgerEntry.count({
+      where: { storeId: source.storeId, referenceId: snapshot.id },
+    }),
+  ).toBe(2);
+});
+
 it("rolls back enrollment, birthday scheduling and ledger when the final execution insert collides", async () => {
   const existing = await seedExecutableRow();
   const committed = await executeHistoricalImportRow({

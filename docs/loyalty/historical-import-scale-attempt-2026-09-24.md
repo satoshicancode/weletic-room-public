@@ -56,3 +56,21 @@ orphan discovery, tenant checks and coherent transaction boundaries. Then run a
 fresh 50,000-commit **and** 50,000-rollback lifecycle without competing heavy
 builds. Keep the original replay, restart, tenant-isolation and independent SQL
 assertions.
+
+## Same-day proof-reader follow-up
+
+A local change replaced per-1,000 account and ledger-reference lookups with two
+source-bounded joins inside the existing transaction. The same isolated synthetic
+50,000-row committed profile passed: queueing took 9.5 seconds and one worker
+delivery rolled back 50 real rows in 33.5 seconds. The preceding account-only
+join profile took 46.3 seconds for 50 rows; the earlier mainline profile took
+50.5 seconds for 40 rows. These runs had different fixture and machine timing,
+so they show a useful bounded result, not a controlled throughput guarantee.
+The final run made eight metadata ledger reads rather than 408 reference-batch
+reads; account reads were also eliminated. A separate real-SQL test found a
+reference-only orphan with absent source metadata. The synthetic fixture was
+cleaned after the profile.
+
+**The full-scale lifecycle remains failed/unaccepted.** The profile did not
+execute 50,000 worker commits and 50,000 rollbacks, restart recovery or the final
+independent reconciliation. Those unchanged gates still precede release.
