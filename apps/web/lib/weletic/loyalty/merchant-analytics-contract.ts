@@ -96,6 +96,45 @@ export const merchantAnalyticsSnapshotSchema = z
       .refine(
         ({ status, rows }) => status === "available" || rows.length === 0,
       ),
+    redemptionRateSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("recorded_ledger_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                earnedPoints: count,
+                redeemedPoints: count,
+                redemptionRateBasisPoints: count.nullable(),
+              })
+              .strict()
+              .refine(
+                ({
+                  earnedPoints,
+                  redeemedPoints,
+                  redemptionRateBasisPoints,
+                }) => {
+                  const earned = BigInt(earnedPoints);
+                  const redeemed = BigInt(redeemedPoints);
+                  return earned === BigInt(0)
+                    ? redemptionRateBasisPoints === null
+                    : redemptionRateBasisPoints ===
+                        (
+                          (redeemed * BigInt(10_000) + earned / BigInt(2)) /
+                          earned
+                        ).toString();
+                },
+              ),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
     referralEconomics: z
       .object({
         total: count,

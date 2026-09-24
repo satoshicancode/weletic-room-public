@@ -171,8 +171,40 @@ describe("merchant analytics", () => {
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
     });
+    expect(result.snapshot.redemptionRateSeries).toEqual({
+      status: "available",
+      bucket: "utc_month",
+      coverage: "recorded_ledger_only",
+      rows: [
+        {
+          month: "2026-09",
+          earnedPoints: huge.toString(),
+          redeemedPoints: "0",
+          redemptionRateBasisPoints: "0",
+        },
+      ],
+    });
     expect(result.download).toBeNull();
     expect(verifyMerchantAnalyticsResponse(read, result)).toEqual(result);
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          redemptionRateSeries: {
+            ...result.snapshot.redemptionRateSeries,
+            rows: [
+              {
+                month: "2026-09",
+                earnedPoints: "3",
+                redeemedPoints: "2",
+                redemptionRateBasisPoints: "10000",
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
     expect(JSON.stringify(result)).not.toMatch(/shopperId|email|discountCode/);
   });
   it("fails closed on cross-workspace identity before analytics reads", async () => {

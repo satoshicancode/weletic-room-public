@@ -9,6 +9,7 @@ import {
   merchantAnalyticsSnapshotSchema,
   type MerchantAnalyticsSnapshot,
 } from "../loyalty/merchant-analytics-contract";
+import { deriveMerchantRedemptionRateSeries } from "../loyalty/redemption-rate-series";
 import {
   authorizeShopifyMerchantInTransaction,
   ShopifyStaffAuthorizationError,
@@ -163,6 +164,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       manualDebits: String(health.totalManualAdjustmentDebits),
     },
     activitySeries,
+    redemptionRateSeries: deriveMerchantRedemptionRateSeries(activitySeries),
     referralEconomics: {
       total: String(health.referralMetrics.totalReferrals),
       successful: String(health.referralMetrics.successfulReferrals),

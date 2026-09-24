@@ -100,6 +100,27 @@ export function MerchantAnalyticsScreen({
     }
   }
   const label = (key: string) => copy[key as keyof typeof copy] ?? key;
+  const rate = new Intl.NumberFormat(locale, {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const wholeRate = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  function formatBasisPoints(value: string) {
+    const basisPoints = BigInt(value);
+    const whole = wholeRate.format(basisPoints / BigInt(100));
+    const fraction = (basisPoints % BigInt(100)).toString().padStart(2, "0");
+    return rate
+      .formatToParts(1)
+      .map((part) =>
+        part.type === "integer"
+          ? whole
+          : part.type === "fraction"
+            ? fraction
+            : part.value,
+      )
+      .join("");
+  }
   function table(title: string, rows: Record<string, string | null>[]) {
     const keys = rows[0] ? Object.keys(rows[0]) : [];
     return (
@@ -129,11 +150,13 @@ export function MerchantAnalyticsScreen({
                       <td key={key}>
                         {row[key] === null
                           ? copy.unavailable
-                          : key === "status" || key === "artifact"
-                            ? row[key] === "expired"
-                              ? copy.expiredStatus
-                              : label(row[key]!)
-                            : row[key]}
+                          : key === "redemptionRateBasisPoints"
+                            ? formatBasisPoints(row[key]!)
+                            : key === "status" || key === "artifact"
+                              ? row[key] === "expired"
+                                ? copy.expiredStatus
+                                : label(row[key]!)
+                              : row[key]}
                       </td>
                     ))}
                   </tr>
@@ -254,6 +277,15 @@ export function MerchantAnalyticsScreen({
             <section>
               <h2>{copy.activitySeries}</h2>
               <p role="status">{copy[snapshot.activitySeries.status]}</p>
+            </section>
+          )}
+          <p>{copy.redemptionRateSemantics}</p>
+          {snapshot.redemptionRateSeries.status === "available" ? (
+            table(copy.redemptionRateSeries, snapshot.redemptionRateSeries.rows)
+          ) : (
+            <section>
+              <h2>{copy.redemptionRateSeries}</h2>
+              <p role="status">{copy[snapshot.redemptionRateSeries.status]}</p>
             </section>
           )}
           {metrics(copy.referralEconomics, snapshot.referralEconomics)}
