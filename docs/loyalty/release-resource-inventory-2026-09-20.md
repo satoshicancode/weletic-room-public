@@ -24,6 +24,15 @@ September 20, 2026 JST:
 - No login, credential creation, provider mutation, image upload, DNS change,
   schema application, subscription upgrade or external communication occurred.
 
+September 24 read-only recheck: the expired PlanetScale CLI login was refreshed
+through the existing account. The accessible organization still listed zero
+databases. This does not prove that another organization or account has none,
+and it supplies no acceptance SQL target or quote. Cloudflare and Upstash
+console navigation reached sign-in pages; no provider inventory was accessible
+there, and no resource or account setting was changed. Their ownership, plans,
+regions, R2/Redis/QStash resources and billing remain unverified. No database,
+bucket, queue or other paid resource was created.
+
 ## Proposed acceptance footprint
 
 Retain ADR 0034: Node containers and private R2, MySQL-compatible SQL with the
