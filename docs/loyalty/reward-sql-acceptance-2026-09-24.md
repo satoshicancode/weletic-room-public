@@ -1,13 +1,13 @@
 # Native discount SQL acceptance increment — September 24, 2026
 
 This is local M2 evidence for the redemption saga, not installed Shopify or
-release acceptance. The test calls the production saga with real Prisma
-transactions on a fresh, isolated MySQL 8 database. Only Shopify discount
-transport and the customer settlement lock are mocked. The test refuses a
-database outside `127.0.0.1:3307/weletic_loyalty_it_reward_<12 hex>` with its
+release acceptance. The suite calls the production redemption saga and refund
+ingestion with real Prisma transactions on a fresh, isolated MySQL 8 database.
+Shopify discount transport and distributed/customer locks are mocked. The suite refuses a
+database outside `127.0.0.1:3309/weletic_loyalty_it_reward_<12 hex>` with its
 matching restricted principal and an explicit opt-in variable.
 
-One end-to-end test passed on a disposable database after Prisma schema push. The runner
+The original saga case passed on a disposable database after Prisma schema push. The runner
 removed the fixture database and principal and verified the retained development
 ledger count stayed at 16 before and after. The test covers fixed and incremental
 amount, percentage, shipping and product discount issuance; identical-request
@@ -31,10 +31,25 @@ entry, and an independent SQL sum still equals the cached wallet. This proves
 the local order-settlement transition and late-use accounting, not that any
 Shopify checkout accepted these discounts or that refunds reached this path.
 
-The mocked customer lock means this test does not prove concurrent checkout or
-redaction ordering. It also does not cover actual checkout use, cancellation, order
-refund, actual remote creation/lookup/deactivation, stored-value issuance or
+The mocked distributed and customer locks mean this test does not prove concurrent checkout or
+redaction ordering. It also does not cover actual checkout use, cancellation,
+actual remote creation/lookup/deactivation, stored-value issuance or
 worker restart. Those and the named yamaxdev journeys remain open under L02.
+
+The independent refund case creates and settles a $1 discount on a $10 order,
+then runs the production refund-ingestion entry point twice with $4.50
+merchandise refunds. Each event claws back 90 points from a settled 180-point
+earn; webhook replay creates no additional debit. The previously used reward
+stays used and receives no reward points credit. The persisted refund and line
+each record $4.50; the cumulative refunded amount is $9.00 after two events,
+and the order moves from `partially_refunded` to `refunded`. Independent SQL
+summation still equals the cached wallet. This is a local persisted-state check; Shopify
+transport, actual checkout and webhook delivery remain unproved.
+
+The follow-up full-file run passed both SQL tests. After cleanup, independent
+SQL counts found zero stores, orders, refunds, FX snapshots and ledger entries
+in the disposable database; its container and credential file were removed.
+Web TypeScript, lint and Prisma validation passed.
 
 To reproduce, build workspace dependencies and generate Prisma, create a fresh
 restricted local database/principal matching the test guard, apply
