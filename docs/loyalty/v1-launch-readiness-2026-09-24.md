@@ -43,6 +43,8 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 | S05 | Privacy/retention           | implemented                                  | Foundations and store/delivery consumers merged                                                                                                                                                                                                                                    | Schema compatibility and live export/erase races                            | M1/M3     |
 | S06 | Listing/production          | missing acceptance                           | [Reviewer packet draft](app-store-reviewer-packet.md)                                                                                                                                                                                                                              | Accepted build, listing/reviewer approval and controlled activation         | M4        |
 
+L02 has additional [isolated used-reward refund and replay evidence](https://github.com/satoshicancode/weletic-room-public/pull/116) at a green PR head. PR #116 is open, so this evidence is not shipped or installed acceptance.
+
 Read-only Shopify CLI check on September 24 at `037e80fe`: CLI 4.7.0 accepted
 both app configurations with zero validation issues. `shopify app info --json`
 reported 15 selected extensions for the default configuration and zero for
