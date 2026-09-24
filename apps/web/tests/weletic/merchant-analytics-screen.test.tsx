@@ -256,6 +256,129 @@ it("downloads one owner-authorized tier snapshot only after an explicit date ref
   }
 });
 
+it("downloads recorded ledger rows only for an owner with applied dates", async () => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: { ...response.snapshot, canExport: true },
+  });
+  const requestLedgerRows = vi.fn().mockResolvedValue({
+    status: "available",
+    coverage: "retained_nonredacted_ledger_entries_only",
+    installationGeneration: "private-generation",
+    filter: {
+      startAt: "2026-09-01T00:00:00.000Z",
+      endAt: "2026-09-30T23:59:59.999Z",
+    },
+    rows: [
+      {
+        accountPseudonym: `account_${"a".repeat(32)}`,
+        sequenceNumber: 1,
+        createdAt: "2026-09-02T00:00:00.000Z",
+        entryType: "BACKFILL_CORRECTION",
+        pointsDelta: "-5",
+        pendingDelta: "0",
+        balanceAfter: "9007199254740997",
+      },
+    ],
+  });
+  const createObjectURL = vi.fn().mockReturnValue("blob:ledger-fixture");
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: createObjectURL,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: vi.fn(),
+  });
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  try {
+    await act(async () =>
+      root.render(
+        createElement(MerchantAnalyticsScreen, {
+          request,
+          requestLedgerRows,
+        }),
+      ),
+    );
+    const exportButton = () =>
+      Array.from(node.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("Export points transactions CSV"),
+      );
+    expect(exportButton()!.disabled).toBe(true);
+    const dates = node.querySelectorAll<HTMLInputElement>('input[type="date"]');
+    await act(async () => {
+      for (const [index, value] of ["2026-09-01", "2026-09-30"].entries()) {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )!.set!.call(dates[index], value);
+        dates[index].dispatchEvent(new Event("input", { bubbles: true }));
+        dates[index].dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    expect(exportButton()).toBeUndefined();
+    await act(async () =>
+      node
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+    expect(exportButton()!.disabled).toBe(false);
+    await act(async () => exportButton()!.click());
+    expect(requestLedgerRows).toHaveBeenCalledWith({
+      filter: {
+        startAt: "2026-09-01T00:00:00.000Z",
+        endAt: "2026-09-30T23:59:59.999Z",
+      },
+      expectedInstallationGeneration: "private-generation",
+    });
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    requestLedgerRows.mockResolvedValueOnce({
+      status: "too_large",
+      coverage: "retained_nonredacted_ledger_entries_only",
+      installationGeneration: "private-generation",
+      filter: {
+        startAt: "2026-09-01T00:00:00.000Z",
+        endAt: "2026-09-30T23:59:59.999Z",
+      },
+      rows: [],
+    });
+    await act(async () => exportButton()!.click());
+    expect(node.querySelector('[role="alert"]')?.textContent).toContain(
+      "More than 2,000",
+    );
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+  } finally {
+    click.mockRestore();
+  }
+});
+
+it.each([
+  ["en", "Recorded points transactions"],
+  ["ja", "記録されたポイント取引"],
+  ["vi", "Giao dịch điểm đã ghi nhận"],
+])("labels the ledger export in %s", async (locale, title) => {
+  const request = vi.fn().mockResolvedValue(response);
+  await act(async () =>
+    root.render(
+      createElement(MerchantAnalyticsScreen, {
+        request,
+        requestLedgerRows: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(node.textContent).toContain(title);
+});
+
 it.each([
   ["en", "Daily point activity (UTC)", "UTC date"],
   ["ja", "日別ポイント履歴（UTC）", "UTCの日付"],
