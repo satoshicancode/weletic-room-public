@@ -47,6 +47,8 @@ L02 has additional [isolated used-reward refund and replay evidence](https://git
 
 L09 has a [recorded-order earning-rate candidate](https://github.com/satoshicancode/weletic-room-public/pull/117) at an open draft PR head. It excludes missing Shopify orders, and its additive index has not been applied to a shared database. This is neither a whole-store rate nor installed acceptance.
 
+L09 also has a [recorded-ledger redemption-to-earn candidate](https://github.com/satoshicancode/weletic-room-public/pull/118) stacked on draft PR #117. Local arithmetic, UI, isolated SQL and production-build checks pass; current-head CI and installed acceptance remain open. Its monthly ratio excludes historical backfill from earned points and does not measure discount use or whole-store behavior. Neither draft is shipped.
+
 Read-only Shopify CLI check on September 24 at `037e80fe`: CLI 4.7.0 accepted
 both app configurations with zero validation issues. `shopify app info --json`
 reported 15 selected extensions for the default configuration and zero for
