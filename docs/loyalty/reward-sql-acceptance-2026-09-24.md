@@ -40,8 +40,10 @@ The independent refund case creates and settles a $1 discount on a $10 order,
 then runs the production refund-ingestion entry point twice with $4.50
 merchandise refunds. Each event claws back 90 points from a settled 180-point
 earn; webhook replay creates no additional debit. The previously used reward
-stays used and receives no reward points credit. Independent SQL summation still
-equals the cached wallet. This is a local persisted-state check; Shopify
+stays used and receives no reward points credit. The persisted refund and line
+each record $4.50; the cumulative refunded amount is $9.00 after two events,
+and the order moves from `partially_refunded` to `refunded`. Independent SQL
+summation still equals the cached wallet. This is a local persisted-state check; Shopify
 transport, actual checkout and webhook delivery remain unproved.
 
 The follow-up full-file run passed both SQL tests. After cleanup, independent

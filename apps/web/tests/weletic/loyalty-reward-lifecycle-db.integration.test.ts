@@ -768,6 +768,60 @@ describe("loyalty reward lifecycle on isolated MySQL", () => {
       expect(replay.duplicate).toBe(true);
       expect(replay.loyaltyLedgerEntryId).toBe(first.loyaltyLedgerEntryId);
       expect(
+        await database.weleticCommerceRefund.findUniqueOrThrow({
+          where: { id: first.refundId },
+          select: {
+            storeId: true,
+            orderId: true,
+            externalId: true,
+            presentmentAmount: true,
+            shopAmount: true,
+            accountingAmount: true,
+            lines: {
+              select: {
+                orderLineId: true,
+                quantity: true,
+                presentmentAmount: true,
+                shopAmount: true,
+                accountingAmount: true,
+              },
+            },
+          },
+        }),
+      ).toEqual({
+        storeId,
+        orderId,
+        externalId: String(event.id),
+        presentmentAmount: BigInt(450),
+        shopAmount: BigInt(450),
+        accountingAmount: BigInt(450),
+        lines: [
+          {
+            orderLineId,
+            quantity: 1,
+            presentmentAmount: BigInt(450),
+            shopAmount: BigInt(450),
+            accountingAmount: BigInt(450),
+          },
+        ],
+      });
+      expect(
+        await database.weleticCommerceRefund.aggregate({
+          where: { storeId, orderId },
+          _count: { _all: true },
+          _sum: { accountingAmount: true },
+        }),
+      ).toEqual({
+        _count: { _all: index + 1 },
+        _sum: { accountingAmount: BigInt((index + 1) * 450) },
+      });
+      expect(
+        await database.weleticCommerceOrder.findUniqueOrThrow({
+          where: { id: orderId },
+          select: { status: true },
+        }),
+      ).toEqual({ status: index === 0 ? "partially_refunded" : "refunded" });
+      expect(
         await database.weleticLoyaltyEarnGrant.findUniqueOrThrow({
           where: { id: grantId },
           select: { reversedPoints: true },
