@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import {
   HistoricalImportIntegrityError,
   readVerifiedHistoricalImportInTransaction,
@@ -56,52 +56,51 @@ export async function readHistoricalImportExecutionProofInTransaction({
     )
   )
     throw new HistoricalImportIntegrityError();
-  const executionsByAccount = new Map<string, typeof executions>();
-  for (const execution of executions) {
-    const group = executionsByAccount.get(execution.accountId);
-    if (group) group.push(execution);
-    else executionsByAccount.set(execution.accountId, [execution]);
-  }
-  const accountIds = [...executionsByAccount.keys()];
   const snapshotsById = new Map(snapshots.map((row) => [row.id, row]));
-  for (let offset = 0; offset < accountIds.length; offset += 1000) {
-    const ids = accountIds.slice(offset, offset + 1000);
-    const accounts = await tx.weleticLoyaltyAccount.findMany({
-      where: { id: { in: ids } },
-      select: {
-        id: true,
-        storeId: true,
-        programId: true,
-        shopper: {
-          select: { storeId: true, shopifyCustomerId: true },
-        },
-      },
-    });
-    const owners = new Map(accounts.map((account) => [account.id, account]));
-    for (const accountId of ids) {
-      const account = owners.get(accountId);
-      const shopper = account?.shopper;
-      if (
-        !shopper ||
-        shopper.storeId !== storeId ||
-        !account ||
-        account.storeId !== storeId ||
-        account.programId !== programId
-      )
-        throw new HistoricalImportIntegrityError();
-      // Visit each execution once, not the entire source for every 1,000-account
-      // query. Still validate every snapshot if malformed rows share an account.
-      for (const execution of executionsByAccount.get(accountId)!) {
-        const snapshot = snapshotsById.get(execution.snapshotId)!;
-        if (
-          ![
-            snapshot.shopifyCustomerId,
-            snapshot.shopifyCustomerId.slice("gid://shopify/Customer/".length),
-          ].includes(shopper.shopifyCustomerId)
-        )
-          throw new HistoricalImportIntegrityError();
-      }
-    }
+  // Read one owner projection per execution in the same coherent transaction.
+  // The source index bounds this join; selecting by account IDs in 1,000-row
+  // chunks made every full-source rollback proof spend most of its time in
+  // repeated account/shopper round trips at 50,000 rows.
+  const owners = await tx.$queryRaw<
+    Array<{
+      snapshotId: string;
+      accountId: string;
+      accountStoreId: string | null;
+      accountProgramId: string | null;
+      shopperStoreId: string | null;
+      shopifyCustomerId: string | null;
+    }>
+  >(Prisma.sql`
+    SELECT e.snapshotId, e.accountId,
+      a.storeId AS accountStoreId, a.programId AS accountProgramId,
+      s.storeId AS shopperStoreId, s.shopifyCustomerId
+    FROM WeleticLoyaltyImportRowExecution e
+    LEFT JOIN WeleticLoyaltyAccount a ON a.id = e.accountId
+    LEFT JOIN WeleticShopper s ON s.id = a.shopperId
+    WHERE e.sourceId = ${sourceId}
+    LIMIT ${snapshots.length + 1}
+  `);
+  const seenOwners = new Set<string>();
+  if (owners.length !== executions.length)
+    throw new HistoricalImportIntegrityError();
+  for (const owner of owners) {
+    const execution = bySnapshot.get(owner.snapshotId);
+    const snapshot = snapshotsById.get(owner.snapshotId);
+    if (
+      !execution ||
+      !snapshot ||
+      seenOwners.has(owner.snapshotId) ||
+      owner.accountId !== execution.accountId ||
+      owner.accountStoreId !== storeId ||
+      owner.accountProgramId !== programId ||
+      owner.shopperStoreId !== storeId ||
+      ![
+        snapshot.shopifyCustomerId,
+        snapshot.shopifyCustomerId.slice("gid://shopify/Customer/".length),
+      ].includes(owner.shopifyCustomerId ?? "")
+    )
+      throw new HistoricalImportIntegrityError();
+    seenOwners.add(owner.snapshotId);
   }
   const rows: ImportReconciliationRow[] = snapshots.map((snapshot) => {
     const execution = bySnapshot.get(snapshot.id);
@@ -129,7 +128,6 @@ export async function readHistoricalImportExecutionProofInTransaction({
     orderBy: { id: "asc" },
   });
   const byEntryId = new Map(discovered.map((entry) => [entry.id, entry]));
-  const references = [...snapshotIds];
   if (byEntryId.size > snapshots.length * 2)
     throw new HistoricalImportIntegrityError();
   async function loadMissingEntries(ids: string[]) {
@@ -148,35 +146,26 @@ export async function readHistoricalImportExecutionProofInTransaction({
   // The same coherent transaction already loaded metadata-linked entries.
   // Claims still discover entries whose metadata is absent or corrupt.
   await loadMissingEntries(claimedIds);
-  // Discover every reference globally, including orphan/foreign writes, but
-  // avoid retransferring full JSON evidence already loaded by another path.
-  // Keep the source-wide sentinel: one corrupt reference can have many entries.
-  {
-    const ids = references;
-    for (let offset = 0; offset < ids.length; offset += 1000) {
-      const chunk = ids.slice(offset, offset + 1000);
-      const selected = await tx.weleticPointsLedgerEntry.findMany({
-        where: {
-          referenceId: { in: chunk },
-          referenceType: {
-            in: ["LOYALTY_IMPORT_OPENING_BALANCE", "LOYALTY_IMPORT_ROLLBACK"],
-          },
-        },
-        select: { id: true },
-        take: snapshots.length * 2 + 1,
-        orderBy: { id: "asc" },
-      });
-      const discoveredIds = selected.map((entry) => entry.id);
-      if (
-        new Set([...byEntryId.keys(), ...discoveredIds]).size >
-        snapshots.length * 2
-      )
-        throw new HistoricalImportIntegrityError();
-      await loadMissingEntries(discoveredIds);
-      if (discoveredIds.some((id) => !byEntryId.has(id)))
-        throw new HistoricalImportIntegrityError();
-    }
-  }
+  // Discover every source snapshot's reference globally, including orphan and
+  // foreign writes with missing metadata or claims. The join uses the source
+  // and reference indexes rather than fifty separate IN-list round trips.
+  // Keep the source-wide sentinel: a corrupt reference may have many entries.
+  const referenced = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT l.id FROM WeleticLoyaltyImportRowSnapshot s
+    JOIN WeleticPointsLedgerEntry l ON l.referenceId = s.id
+      AND l.referenceType IN ('LOYALTY_IMPORT_OPENING_BALANCE', 'LOYALTY_IMPORT_ROLLBACK')
+    WHERE s.sourceId = ${sourceId}
+    LIMIT ${snapshots.length * 2 + 1}
+  `);
+  const discoveredIds = referenced.map((entry) => entry.id);
+  if (
+    new Set([...byEntryId.keys(), ...discoveredIds]).size >
+    snapshots.length * 2
+  )
+    throw new HistoricalImportIntegrityError();
+  await loadMissingEntries(discoveredIds);
+  if (discoveredIds.some((id) => !byEntryId.has(id)))
+    throw new HistoricalImportIntegrityError();
   const entries = [...byEntryId.values()];
   // Do not expose another tenant's amounts, even inside a failed summary.
   if (entries.some((entry) => entry.storeId !== storeId))
