@@ -9,6 +9,7 @@ import {
   merchantAnalyticsSnapshotSchema,
   type MerchantAnalyticsSnapshot,
 } from "../loyalty/merchant-analytics-contract";
+import { readMerchantOrderEarningSeries } from "../loyalty/order-earning-series";
 import { deriveMerchantRedemptionRateSeries } from "../loyalty/redemption-rate-series";
 import {
   authorizeShopifyMerchantInTransaction,
@@ -99,27 +100,34 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     dateRange,
     now,
   });
-  const [rewards, referrals, activitySeries] = await Promise.all([
-    tx.weleticRewardRedemption.groupBy({
-      by: ["status", "artifactKind"],
-      where,
-      _count: { _all: true },
-      _sum: { pointsSpent: true },
-      orderBy: [{ status: "asc" }, { artifactKind: "asc" }],
-    }),
-    tx.weleticLoyaltyReferral.groupBy({
-      by: ["status"],
-      where,
-      _count: { _all: true },
-      orderBy: { status: "asc" },
-    }),
-    readMerchantPointActivitySeries({
-      tx,
-      storeId: actor.storeId,
-      startAt: dateRange.startDate ?? null,
-      endAt: dateRange.endDate ?? null,
-    }),
-  ]);
+  const [rewards, referrals, activitySeries, orderEarningSeries] =
+    await Promise.all([
+      tx.weleticRewardRedemption.groupBy({
+        by: ["status", "artifactKind"],
+        where,
+        _count: { _all: true },
+        _sum: { pointsSpent: true },
+        orderBy: [{ status: "asc" }, { artifactKind: "asc" }],
+      }),
+      tx.weleticLoyaltyReferral.groupBy({
+        by: ["status"],
+        where,
+        _count: { _all: true },
+        orderBy: { status: "asc" },
+      }),
+      readMerchantPointActivitySeries({
+        tx,
+        storeId: actor.storeId,
+        startAt: dateRange.startDate ?? null,
+        endAt: dateRange.endDate ?? null,
+      }),
+      readMerchantOrderEarningSeries({
+        tx,
+        storeId: actor.storeId,
+        startAt: dateRange.startDate ?? null,
+        endAt: dateRange.endDate ?? null,
+      }),
+    ]);
   const { liability, healthMetrics: health } = overview;
   const moneyAvailable = financial.valuation !== null;
   const referralMoneyAvailable =
@@ -165,6 +173,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     },
     activitySeries,
     redemptionRateSeries: deriveMerchantRedemptionRateSeries(activitySeries),
+    orderEarningSeries,
     referralEconomics: {
       total: String(health.referralMetrics.totalReferrals),
       successful: String(health.referralMetrics.successfulReferrals),

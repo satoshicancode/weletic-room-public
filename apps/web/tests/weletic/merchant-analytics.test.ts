@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   rewards: vi.fn(),
   referrals: vi.fn(),
   series: vi.fn(),
+  orderSeries: vi.fn(),
 }));
 vi.mock("../../lib/weletic/shopify/staff-authorization", () => ({
   authorizeShopifyMerchantInTransaction: mocks.authorize,
@@ -27,6 +28,9 @@ vi.mock("../../lib/weletic/loyalty/analytics", () => ({
 }));
 vi.mock("../../lib/weletic/loyalty/activity-series", () => ({
   readMerchantPointActivitySeries: mocks.series,
+}));
+vi.mock("../../lib/weletic/loyalty/order-earning-series", () => ({
+  readMerchantOrderEarningSeries: mocks.orderSeries,
 }));
 const tx = {
   weleticShopifyStore: { findUnique: mocks.store },
@@ -131,6 +135,19 @@ beforeEach(() => {
       },
     ],
   });
+  mocks.orderSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_day",
+    coverage: "recorded_orders_only",
+    rows: [
+      {
+        date: "2026-09-09",
+        recordedOrders: "3",
+        earningOrders: "2",
+        rateBasisPoints: "6667",
+      },
+    ],
+  });
 });
 describe("merchant analytics", () => {
   it("uses one authorized store and transaction and retains exact values", async () => {
@@ -171,6 +188,15 @@ describe("merchant analytics", () => {
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
     });
+    expect(mocks.orderSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(result.snapshot.orderEarningSeries.rows[0].rateBasisPoints).toBe(
+      "6667",
+    );
     expect(result.snapshot.redemptionRateSeries).toEqual({
       status: "available",
       bucket: "utc_month",

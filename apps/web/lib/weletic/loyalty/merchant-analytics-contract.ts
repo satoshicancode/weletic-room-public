@@ -135,6 +135,42 @@ export const merchantAnalyticsSnapshotSchema = z
       .refine(
         ({ status, rows }) => status === "available" || rows.length === 0,
       ),
+    orderEarningSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_day"),
+        coverage: z.literal("recorded_orders_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                recordedOrders: count,
+                earningOrders: count,
+                rateBasisPoints: count.nullable(),
+              })
+              .strict()
+              .refine(({ recordedOrders, earningOrders, rateBasisPoints }) => {
+                const recorded = BigInt(recordedOrders);
+                const earning = BigInt(earningOrders);
+                return (
+                  earning <= recorded &&
+                  (recorded === BigInt(0)
+                    ? rateBasisPoints === null
+                    : rateBasisPoints ===
+                      (
+                        (earning * BigInt(10_000) + recorded / BigInt(2)) /
+                        recorded
+                      ).toString())
+                );
+              }),
+          )
+          .max(366),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
     referralEconomics: z
       .object({
         total: count,

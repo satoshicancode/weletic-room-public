@@ -150,7 +150,8 @@ export function MerchantAnalyticsScreen({
                       <td key={key}>
                         {row[key] === null
                           ? copy.unavailable
-                          : key === "redemptionRateBasisPoints"
+                          : key === "rateBasisPoints" ||
+                              key === "redemptionRateBasisPoints"
                             ? formatBasisPoints(row[key]!)
                             : key === "status" || key === "artifact"
                               ? row[key] === "expired"
@@ -286,6 +287,15 @@ export function MerchantAnalyticsScreen({
             <section>
               <h2>{copy.redemptionRateSeries}</h2>
               <p role="status">{copy[snapshot.redemptionRateSeries.status]}</p>
+            </section>
+          )}
+          <p>{copy.orderEarningSemantics}</p>
+          {snapshot.orderEarningSeries.status === "available" ? (
+            table(copy.orderEarningSeries, snapshot.orderEarningSeries.rows)
+          ) : (
+            <section>
+              <h2>{copy.orderEarningSeries}</h2>
+              <p role="status">{copy[snapshot.orderEarningSeries.status]}</p>
             </section>
           )}
           {metrics(copy.referralEconomics, snapshot.referralEconomics)}
