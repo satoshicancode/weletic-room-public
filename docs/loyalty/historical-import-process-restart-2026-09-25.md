@@ -22,6 +22,22 @@ sync was applied there only. The process-restart test passed in 17.36 seconds
 An independent post-test SQL query counted zero import sources, row executions,
 ledger entries, accounts and stores. The disposable container was removed.
 
+Current-main PR #140 adds an explicit opt-in guard for this process-restart
+test: loopback port 3313, a declared dedicated instance and an explicit fixture
+database are all required. A negative run using ordinary test port 3307 was
+rejected before connecting (`Refusing non-isolated import source database`).
+The strengthened test also directly counts 51 `rolled_back` row executions
+after the second worker process. It passed again against a fresh disposable
+MySQL 8.0.46 fixture at
+`weletic_loyalty_it_import_restart_review_20260925` (one passed, 63 skipped);
+independent post-test SQL again counted zero sources, executions, ledger rows,
+accounts and stores. Positive log:
+`/tmp/weletic-import-restart-review-20260925.log`, SHA-256
+`325e5ba39f279e969e472686200e9bc9239687f03c3078311c6a564899968848`.
+Guard log: `/tmp/weletic-import-restart-guard-20260925.log`, SHA-256
+`2fab86cf28c2de3caa1c16046aaa9f2a4e122fc407a746a3aa0f0423472aaae6`.
+The second disposable container was removed after the SQL check.
+
 The concurrent 50,000-row full lifecycle uses a separate MySQL container and
 fixture. Its result, independent 50,000-row reconciliation, provider read plan,
 installed worker supervision and restore remain separate open gates.

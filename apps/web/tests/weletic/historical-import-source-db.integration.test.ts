@@ -332,6 +332,10 @@ beforeAll(async () => {
       (url.port !== "3308" ||
         process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE !== "1" ||
         fixtureDatabase === undefined)) ||
+    (process.env.HISTORICAL_IMPORT_PROCESS_RESTART_INTEGRATION === "1" &&
+      (url.port !== "3313" ||
+        process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE !== "1" ||
+        fixtureDatabase === undefined)) ||
     !(
       url.port === "3307" ||
       (url.port === "3308" &&
@@ -2805,6 +2809,12 @@ it.skipIf(process.env.HISTORICAL_IMPORT_PROCESS_RESTART_INTEGRATION !== "1")(
     await releaseFixtureJobToRealWorker(rollbackJob.id);
 
     const firstRollbackWorker = await runIsolatedOutboxProcess(shopDomain);
+    const rolledBackAfterFirstProcess =
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: source.id, status: "rolled_back" },
+      });
+    expect(rolledBackAfterFirstProcess).toBeGreaterThan(0);
+    expect(rolledBackAfterFirstProcess).toBeLessThanOrEqual(50);
     expect(
       await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
         where: { id: rollbackJob.id },
@@ -2822,6 +2832,11 @@ it.skipIf(process.env.HISTORICAL_IMPORT_PROCESS_RESTART_INTEGRATION !== "1")(
         where: { id: source.id },
       }),
     ).toMatchObject({ status: "rolled_back" });
+    expect(
+      await database.weleticLoyaltyImportRowExecution.count({
+        where: { sourceId: source.id, status: "rolled_back" },
+      }),
+    ).toBe(51);
 
     const ledger = await database.$queryRaw<
       Array<{ entries: string; net: string }>
