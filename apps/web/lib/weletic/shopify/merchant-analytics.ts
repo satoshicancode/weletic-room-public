@@ -3,6 +3,7 @@ import { readMerchantPointActivitySeries } from "../loyalty/activity-series";
 import { getLoyaltyDashboardOverview } from "../loyalty/analytics";
 import { resolveLoyaltyFinancialConfiguration } from "../loyalty/analytics-financial";
 import { escapeCsvUntrustedTextCell } from "../loyalty/csv";
+import { readMerchantFirstRecordedEarnersSeries } from "../loyalty/first-recorded-earners-series";
 import { readMerchantLedgerNetSeries } from "../loyalty/ledger-net-series";
 import {
   merchantAnalyticsRequestSchema,
@@ -107,6 +108,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     activitySeries,
     ledgerNetSeries,
     orderEarningSeries,
+    firstRecordedEarnersSeries,
   ] = await Promise.all([
     tx.weleticRewardRedemption.groupBy({
       by: ["status", "artifactKind"],
@@ -134,6 +136,12 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       endAt: dateRange.endDate ?? null,
     }),
     readMerchantOrderEarningSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantFirstRecordedEarnersSeries({
       tx,
       storeId: actor.storeId,
       startAt: dateRange.startDate ?? null,
@@ -187,6 +195,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     ledgerNetSeries,
     redemptionRateSeries: deriveMerchantRedemptionRateSeries(activitySeries),
     orderEarningSeries,
+    firstRecordedEarnersSeries,
     referralEconomics: {
       total: String(health.referralMetrics.totalReferrals),
       successful: String(health.referralMetrics.successfulReferrals),

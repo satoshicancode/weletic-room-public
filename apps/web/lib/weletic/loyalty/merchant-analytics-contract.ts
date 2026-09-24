@@ -204,6 +204,37 @@ export const merchantAnalyticsSnapshotSchema = z
       .refine(
         ({ status, rows }) => status === "available" || rows.length === 0,
       ),
+    firstRecordedEarnersSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("retained_qualifying_ledger_accounts_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                activeAccounts: count,
+                firstRecordedAccounts: count,
+                returningAccounts: count,
+              })
+              .strict()
+              .refine(
+                ({
+                  activeAccounts,
+                  firstRecordedAccounts,
+                  returningAccounts,
+                }) =>
+                  BigInt(activeAccounts) ===
+                  BigInt(firstRecordedAccounts) + BigInt(returningAccounts),
+              ),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
     referralEconomics: z
       .object({
         total: count,
@@ -278,6 +309,28 @@ export const merchantAnalyticsSnapshotSchema = z
       (row, index) =>
         row.date ===
         new Date(startDay + index * 86_400_000).toISOString().slice(0, 10),
+    );
+  })
+  .refine(({ filter, ledgerNetSeries, firstRecordedEarnersSeries }) => {
+    if (firstRecordedEarnersSeries.status !== ledgerNetSeries.status)
+      return false;
+    if (firstRecordedEarnersSeries.status !== "available") return true;
+    const cursor = new Date(filter.startAt!);
+    cursor.setUTCDate(1);
+    cursor.setUTCHours(0, 0, 0, 0);
+    const last = new Date(filter.endAt!);
+    last.setUTCDate(1);
+    last.setUTCHours(0, 0, 0, 0);
+    const months: string[] = [];
+    while (cursor <= last) {
+      months.push(cursor.toISOString().slice(0, 7));
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+    return (
+      firstRecordedEarnersSeries.rows.length === months.length &&
+      firstRecordedEarnersSeries.rows.every(
+        (row, index) => row.month === months[index],
+      )
     );
   });
 

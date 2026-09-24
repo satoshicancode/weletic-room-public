@@ -47,6 +47,12 @@ const response: MerchantAnalyticsResponse = {
       openingNetPoints: null,
       rows: [],
     },
+    firstRecordedEarnersSeries: {
+      status: "range_required",
+      bucket: "utc_month",
+      coverage: "retained_qualifying_ledger_accounts_only",
+      rows: [],
+    },
     redemptionRateSeries: {
       status: "range_required",
       bucket: "utc_month",
@@ -209,6 +215,56 @@ it.each([
     expect(node.textContent).toContain("9007199254740993");
   },
 );
+
+it.each([
+  [
+    "en",
+    "First recorded and returning earn accounts (UTC)",
+    "First recorded earn accounts",
+  ],
+  ["ja", "初回記録と再獲得のアカウント（UTC）", "記録上の初回獲得アカウント"],
+  [
+    "vi",
+    "Tài khoản tích điểm lần đầu và quay lại (UTC)",
+    "Tài khoản tích điểm lần đầu ghi nhận",
+  ],
+])("renders retained earn cohorts in %s", async (locale, title, firstLabel) => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: {
+      ...response.snapshot,
+      firstRecordedEarnersSeries: {
+        status: "available",
+        bucket: "utc_month",
+        coverage: "retained_qualifying_ledger_accounts_only",
+        rows: [
+          {
+            month: "2026-09",
+            activeAccounts: "9007199254740993",
+            firstRecordedAccounts: "9007199254740990",
+            returningAccounts: "3",
+          },
+        ],
+      },
+    },
+  } satisfies MerchantAnalyticsResponse);
+  await act(async () =>
+    root.render(createElement(MerchantAnalyticsScreen, { request })),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const heading = Array.from(node.querySelectorAll("h2")).find(
+    (element) => element.textContent === title,
+  );
+  expect(heading).toBeDefined();
+  const section = heading!.closest("section")!;
+  expect(section.textContent).toContain(firstLabel);
+  expect(section.textContent).toContain("9007199254740990");
+  expect(node.innerHTML).not.toContain("account_123");
+});
 
 it.each([
   ["en", "Recorded order earning rate (UTC)"],

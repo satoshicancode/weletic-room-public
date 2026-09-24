@@ -294,6 +294,20 @@ export function MerchantAnalyticsScreen({
               <p role="status">{copy[snapshot.ledgerNetSeries.status]}</p>
             </section>
           )}
+          <p>{copy.firstRecordedEarnersSemantics}</p>
+          {snapshot.firstRecordedEarnersSeries.status === "available" ? (
+            table(
+              copy.firstRecordedEarnersSeries,
+              snapshot.firstRecordedEarnersSeries.rows,
+            )
+          ) : (
+            <section>
+              <h2>{copy.firstRecordedEarnersSeries}</h2>
+              <p role="status">
+                {copy[snapshot.firstRecordedEarnersSeries.status]}
+              </p>
+            </section>
+          )}
           <p>{copy.redemptionRateSemantics}</p>
           {snapshot.redemptionRateSeries.status === "available" ? (
             table(copy.redemptionRateSeries, snapshot.redemptionRateSeries.rows)

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   referrals: vi.fn(),
   series: vi.fn(),
   ledgerNetSeries: vi.fn(),
+  firstEarnersSeries: vi.fn(),
   orderSeries: vi.fn(),
 }));
 vi.mock("../../lib/weletic/shopify/staff-authorization", () => ({
@@ -32,6 +33,9 @@ vi.mock("../../lib/weletic/loyalty/activity-series", () => ({
 }));
 vi.mock("../../lib/weletic/loyalty/ledger-net-series", () => ({
   readMerchantLedgerNetSeries: mocks.ledgerNetSeries,
+}));
+vi.mock("../../lib/weletic/loyalty/first-recorded-earners-series", () => ({
+  readMerchantFirstRecordedEarnersSeries: mocks.firstEarnersSeries,
 }));
 vi.mock("../../lib/weletic/loyalty/order-earning-series", () => ({
   readMerchantOrderEarningSeries: mocks.orderSeries,
@@ -150,6 +154,19 @@ beforeEach(() => {
       cumulativeNetPoints: index < 8 ? "-7" : (huge - BigInt(7)).toString(),
     })),
   });
+  mocks.firstEarnersSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_qualifying_ledger_accounts_only",
+    rows: [
+      {
+        month: "2026-09",
+        activeAccounts: "2",
+        firstRecordedAccounts: "1",
+        returningAccounts: "1",
+      },
+    ],
+  });
   mocks.orderSeries.mockResolvedValue({
     status: "available",
     bucket: "utc_day",
@@ -209,6 +226,16 @@ describe("merchant analytics", () => {
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
     });
+    expect(mocks.firstEarnersSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(result.snapshot.firstRecordedEarnersSeries.rows[0]).toMatchObject({
+      firstRecordedAccounts: "1",
+      returningAccounts: "1",
+    });
     expect(result.snapshot.ledgerNetSeries.openingNetPoints).toBe("-7");
     expect(mocks.orderSeries).toHaveBeenCalledWith({
       tx,
@@ -258,6 +285,25 @@ describe("merchant analytics", () => {
                 ? { ...row, cumulativeNetPoints: huge.toString() }
                 : row,
             ),
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          firstRecordedEarnersSeries: {
+            ...result.snapshot.firstRecordedEarnersSeries,
+            rows: [
+              {
+                month: "2026-09",
+                activeAccounts: "2",
+                firstRecordedAccounts: "2",
+                returningAccounts: "1",
+              },
+            ],
           },
         },
       }),
@@ -345,6 +391,9 @@ describe("merchant analytics", () => {
       else {
         expect(result.download!.content).toContain("\"'=HYPERLINK");
         expect(result.download!.content).toContain(huge.toString());
+        expect(result.download!.content).toContain(
+          "firstRecordedEarnersSeries.rows.0.firstRecordedAccounts,1",
+        );
       }
     },
   );

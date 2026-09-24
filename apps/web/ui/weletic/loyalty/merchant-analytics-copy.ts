@@ -22,6 +22,13 @@ const en = {
   activity: "Point activity",
   activitySeries: "Daily point activity (UTC)",
   ledgerNetSeries: "Recorded ledger net over time (UTC)",
+  firstRecordedEarnersSeries:
+    "First recorded and returning earn accounts (UTC)",
+  firstRecordedEarnersSemantics:
+    "Counts distinct accounts with positive recorded order, referral, bonus or tier earnings in each UTC month. First means the account's earliest retained qualifying earn is inside the selected instants; later months are returning. An earlier earn in the same month but before the selected start makes the account returning. Imports and manual adjustments do not qualify. Missing pre-Weletic or erased history and multiple accounts cannot be reconstructed; these are not lifetime customer cohorts.",
+  activeAccounts: "Active earning accounts",
+  firstRecordedAccounts: "First recorded earn accounts",
+  returningAccounts: "Returning earn accounts",
   ledgerNetOpening: "Recorded net before the selected range",
   ledgerNetSemantics:
     "This is the signed sum of retained point-ledger entries before and within the selected instants. The first and last UTC days may be partial. It is not historical outstanding liability: missing pre-Weletic history and account-level debt are not reconstructed.",
@@ -117,6 +124,12 @@ const ja: Copy = {
   activity: "ポイント履歴",
   activitySeries: "日別ポイント履歴（UTC）",
   ledgerNetSeries: "記録済み台帳の累積純増減（UTC）",
+  firstRecordedEarnersSeries: "初回記録と再獲得のアカウント（UTC）",
+  firstRecordedEarnersSemantics:
+    "各UTC月に注文、紹介、ボーナス、ランクによる正の獲得が記録されたアカウントを重複なく数えます。初回は保存された対象履歴の最初の獲得が選択期間内にある場合です。同じ月でも期間開始前に獲得があれば再獲得に分類します。過去分補填と手動調整は対象外です。Weletic導入前や削除済みの履歴、複数アカウントの統合は復元できず、生涯の顧客コホートではありません。",
+  activeAccounts: "獲得したアカウント",
+  firstRecordedAccounts: "記録上の初回獲得アカウント",
+  returningAccounts: "再獲得アカウント",
   ledgerNetOpening: "選択期間前の記録済み純増減",
   ledgerNetSemantics:
     "保存されたポイント台帳の増減を、選択した期間の前と期間内で合計します。期間の最初と最後のUTC日は一部のみを含む場合があります。Weletic導入前の履歴や会員ごとのマイナス残高は復元していないため、過去の未履行債務を示すものではありません。",
@@ -211,6 +224,12 @@ const vi: Copy = {
   activity: "Hoạt động điểm",
   activitySeries: "Hoạt động điểm theo ngày (UTC)",
   ledgerNetSeries: "Biến động ròng tích lũy theo sổ điểm (UTC)",
+  firstRecordedEarnersSeries: "Tài khoản tích điểm lần đầu và quay lại (UTC)",
+  firstRecordedEarnersSemantics:
+    "Đếm mỗi tài khoản một lần trong từng tháng UTC khi có điểm dương từ đơn hàng, giới thiệu, thưởng hoặc hạng. Lần đầu nghĩa là khoản tích điểm đủ điều kiện sớm nhất còn lưu nằm trong khoảng đã chọn; các tháng sau là quay lại. Nếu khoản đầu tiên nằm trước thời điểm bắt đầu dù cùng tháng, tài khoản được tính là quay lại. Không tính điểm nhập lịch sử hoặc điều chỉnh thủ công. Không thể khôi phục lịch sử trước Weletic, lịch sử đã xóa hay hợp nhất nhiều tài khoản; đây không phải nhóm khách hàng theo toàn bộ vòng đời.",
+  activeAccounts: "Tài khoản có tích điểm",
+  firstRecordedAccounts: "Tài khoản tích điểm lần đầu ghi nhận",
+  returningAccounts: "Tài khoản quay lại tích điểm",
   ledgerNetOpening: "Biến động ròng đã ghi trước khoảng chọn",
   ledgerNetSemantics:
     "Đây là tổng có dấu của các bút toán điểm còn lưu trước và trong khoảng thời gian đã chọn. Ngày UTC đầu và cuối có thể chỉ được tính một phần. Chỉ số này không phải nghĩa vụ điểm còn tồn trong quá khứ vì không khôi phục lịch sử trước Weletic hoặc khoản nợ theo từng tài khoản.",
