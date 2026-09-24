@@ -74,12 +74,18 @@ it("returns distinct account cohorts with quiet months and exact counts", async 
   expect(raw).toHaveBeenCalledOnce();
   expect(raw.mock.calls[0].slice(1)).toEqual([
     storeId,
+    storeId,
     startAt,
     startAt,
     storeId,
+    storeId,
+    '$."shopifyCustomerRedaction"',
     startAt,
     endAt,
   ]);
+  expect((raw.mock.calls[0][0] as TemplateStringsArray).join("?")).toContain(
+    "JSON_CONTAINS_PATH(a.metadata",
+  );
 });
 
 it("rejects duplicate, foreign-month and inconsistent aggregate rows", async () => {

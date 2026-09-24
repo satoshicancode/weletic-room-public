@@ -53,6 +53,12 @@ const response: MerchantAnalyticsResponse = {
       coverage: "retained_qualifying_ledger_accounts_only",
       rows: [],
     },
+    firstRecordedRedemptionDebitsSeries: {
+      status: "range_required",
+      bucket: "utc_month",
+      coverage: "retained_reward_debit_accounts_only",
+      rows: [],
+    },
     retainedEnrollmentSeries: {
       status: "range_required",
       bucket: "utc_month",
@@ -287,6 +293,61 @@ it.each([
   const section = heading!.closest("section")!;
   expect(section.textContent).toContain(firstLabel);
   expect(section.textContent).toContain("9007199254740990");
+  expect(node.innerHTML).not.toContain("account_123");
+});
+
+it.each([
+  [
+    "en",
+    "First recorded and repeat reward-debit accounts (UTC)",
+    "First recorded debit accounts",
+  ],
+  [
+    "ja",
+    "初回記録と再記録の報酬ポイント引落アカウント（UTC）",
+    "初回引落記録のアカウント",
+  ],
+  [
+    "vi",
+    "Tài khoản ghi nhận lần đầu và lặp lại khoản trừ điểm đổi thưởng (UTC)",
+    "Tài khoản ghi nhận trừ điểm lần đầu",
+  ],
+])("renders recorded debit cohorts in %s", async (locale, title, label) => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: {
+      ...response.snapshot,
+      firstRecordedRedemptionDebitsSeries: {
+        status: "available",
+        bucket: "utc_month",
+        coverage: "retained_reward_debit_accounts_only",
+        rows: [
+          {
+            month: "2026-09",
+            debitAccounts: "9007199254740993",
+            firstRecordedDebitAccounts: "9007199254740990",
+            returningDebitAccounts: "3",
+          },
+        ],
+      },
+    },
+  } satisfies MerchantAnalyticsResponse);
+  await act(async () =>
+    root.render(createElement(MerchantAnalyticsScreen, { request })),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const heading = Array.from(node.querySelectorAll("h2")).find(
+    (element) => element.textContent === title,
+  );
+  expect(heading).toBeDefined();
+  expect(heading!.closest("section")!.textContent).toContain(label);
+  expect(heading!.closest("section")!.textContent).toContain(
+    "9007199254740990",
+  );
   expect(node.innerHTML).not.toContain("account_123");
 });
 

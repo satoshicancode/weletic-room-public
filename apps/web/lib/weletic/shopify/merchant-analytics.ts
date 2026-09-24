@@ -5,6 +5,7 @@ import { resolveLoyaltyFinancialConfiguration } from "../loyalty/analytics-finan
 import { escapeCsvUntrustedTextCell } from "../loyalty/csv";
 import { readMerchantEarningSources } from "../loyalty/earning-sources";
 import { readMerchantFirstRecordedEarnersSeries } from "../loyalty/first-recorded-earners-series";
+import { readMerchantFirstRecordedRedemptionDebitsSeries } from "../loyalty/first-recorded-redemption-debits-series";
 import { readMerchantLedgerNetSeries } from "../loyalty/ledger-net-series";
 import {
   merchantAnalyticsRequestSchema,
@@ -113,6 +114,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     ledgerNetSeries,
     orderEarningSeries,
     firstRecordedEarnersSeries,
+    firstRecordedRedemptionDebitsSeries,
     retainedEnrollmentSeries,
     recordedTierChangesSeries,
     earningSources,
@@ -150,6 +152,12 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       endAt: dateRange.endDate ?? null,
     }),
     readMerchantFirstRecordedEarnersSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantFirstRecordedRedemptionDebitsSeries({
       tx,
       storeId: actor.storeId,
       startAt: dateRange.startDate ?? null,
@@ -228,6 +236,7 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     redemptionRateSeries: deriveMerchantRedemptionRateSeries(activitySeries),
     orderEarningSeries,
     firstRecordedEarnersSeries,
+    firstRecordedRedemptionDebitsSeries,
     retainedEnrollmentSeries,
     recordedTierChangesSeries,
     earningSources,
