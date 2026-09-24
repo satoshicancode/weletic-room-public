@@ -71,6 +71,13 @@ export const DEFAULT_REFERRAL_PURCHASE_POLICY = {
   subscriptionPaymentLimit: null,
 } as const satisfies LoyaltyPurchasePolicy;
 
+/** Used only when creating a new referral rule; null legacy policies retain their old terms. */
+export const NEW_REFERRAL_PURCHASE_POLICY = {
+  purchaseType: "one_time",
+  subscriptionCadence: "first_payment",
+  subscriptionPaymentLimit: null,
+} as const satisfies LoyaltyPurchasePolicy;
+
 export function readLoyaltyPurchasePolicy(
   value: unknown,
   fallback: LoyaltyPurchasePolicy,
@@ -87,8 +94,28 @@ export type LoyaltyPurchaseLine = {
 
 export type LoyaltyPurchaseLineClassification =
   | { kind: "one_time" }
-  | { kind: "subscription"; sequence: number }
+  | { kind: "subscription" }
   | { kind: "unknown" };
+
+export function hasLoyaltySubscriptionEvidence(
+  line: LoyaltyPurchaseLine,
+): boolean {
+  return (
+    line.sellingPlanId != null ||
+    line.subscriptionSeriesKey != null ||
+    line.subscriptionSequence != null
+  );
+}
+
+/** The current order reader has no per-contract billing-cycle evidence. */
+export function requiresUnverifiedSubscriptionCycle(
+  policy: Pick<LoyaltyPurchasePolicy, "purchaseType" | "subscriptionCadence">,
+) {
+  return (
+    policy.purchaseType !== "one_time" &&
+    policy.subscriptionCadence !== "every_payment"
+  );
+}
 
 export function classifyLoyaltyPurchaseLine(
   line: LoyaltyPurchaseLine,
@@ -104,10 +131,12 @@ export function classifyLoyaltyPurchaseLine(
     sellingPlanId.length > 0 &&
     typeof seriesKey === "string" &&
     seriesKey.length > 0 &&
-    Number.isSafeInteger(sequence) &&
-    Number(sequence) > 0
+    (sequence === null ||
+      (Number.isSafeInteger(sequence) && Number(sequence) > 0))
   ) {
-    return { kind: "subscription", sequence: Number(sequence) };
+    // The persisted sequence counts locally retained orders by selling plan
+    // and item. It cannot prove a contract's first or Nth billing cycle.
+    return { kind: "subscription" };
   }
   return { kind: "unknown" };
 }
@@ -126,10 +155,7 @@ export function isLoyaltyPurchaseLineEligible({
   }
   if (policy.purchaseType === "one_time") return false;
   if (policy.subscriptionCadence === "every_payment") return true;
-  if (policy.subscriptionCadence === "first_payment") {
-    return classification.sequence === 1;
-  }
-  return classification.sequence <= policy.subscriptionPaymentLimit!;
+  return false;
 }
 
 export function getShopifyDiscountPurchaseFields(

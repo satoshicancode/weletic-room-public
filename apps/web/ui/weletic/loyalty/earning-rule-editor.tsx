@@ -2,6 +2,7 @@
 import React from "react";
 import { isCustomerIntentTriggerCode } from "../../../lib/weletic/loyalty/customer-intent-policy";
 import type { EarningRuleFields } from "../../../lib/weletic/loyalty/earning-rule-contract";
+import { requiresUnverifiedSubscriptionCycle } from "../../../lib/weletic/loyalty/purchase-policy";
 import { earningRuleCopy, type EarningRuleLocale } from "./earning-rule-copy";
 import {
   changeEarningRuleTrigger,
@@ -95,8 +96,14 @@ export function EarningRuleEditor({
           } else update(key, selected);
         }}
       >
-        {Object.entries<string>(options).map(([key, label]) => (
-          <option key={key} value={key}>
+        {Object.entries<string>(options).map(([optionKey, label]) => (
+          <option
+            key={optionKey}
+            value={optionKey}
+            disabled={
+              key === "subscriptionCadence" && optionKey !== "every_payment"
+            }
+          >
             {label}
           </option>
         ))}
@@ -140,6 +147,14 @@ export function EarningRuleEditor({
           );
           return;
         }
+        if (
+          parsed.data.triggerCode === "order_paid" &&
+          parsed.data.isActive &&
+          requiresUnverifiedSubscriptionCycle(parsed.data)
+        ) {
+          setInvalid(["subscriptionCadence"]);
+          return;
+        }
         onSubmit(parsed.data);
       }}
     >
@@ -157,6 +172,9 @@ export function EarningRuleEditor({
             {value.purchaseType !== "one_time" && (
               <>
                 {select("subscriptionCadence", copy.subscriptionCadences)}
+                <p className="text-sm text-amber-800">
+                  {copy.cadenceUnavailable}
+                </p>
                 {value.subscriptionCadence === "first_n_payments" &&
                   text("subscriptionPaymentLimit", true)}
               </>

@@ -14,6 +14,8 @@ const en = {
     "Legacy review earning rules depend on publication and provider eligibility, not star rating. Hiding, deleting or invalidating a review can reverse points. These settings do not configure participation-based incentives. Enable the selected reviews provider before activation.",
   purchase:
     "Taxes and shipping are excluded. Weletic interprets subscription orders produced by Shopify; it does not sell or manage subscriptions. Existing line-level refund allocation is preserved.",
+  cadenceUnavailable:
+    "First-payment and first-N point earning are unavailable until subscription billing cycles can be verified. Existing rules with these settings do not award subscription points; choose every payment or keep the rule inactive.",
   reset:
     "Changing the trigger resets earning settings and turns activation off.",
   fields: {
@@ -93,6 +95,8 @@ export const earningRuleCopy: Record<EarningRuleLocale, Copy> = {
       "従来のレビュー獲得ルールは星評価ではなく、公開状況と連携先の適格条件に基づきます。非表示・削除・無効化によりポイントが取り消される場合があります。この設定では参加型インセンティブは設定できません。有効化前に選択したレビュー連携を有効にしてください。",
     purchase:
       "税金と送料は対象外です。WeleticはShopifyが生成した定期購入注文を判定しますが、定期購入の販売・契約管理は行いません。既存の明細別返金配分を維持します。",
+    cadenceUnavailable:
+      "定期購入の請求回を確認できるまで、初回および最初のN回のポイント付与は利用できません。既存の該当ルールも定期購入ポイントを付与しません。すべての支払いを選ぶか、ルールを無効のままにしてください。",
     reset: "トリガーを変更すると獲得設定がリセットされ、無効になります。",
     fields: {
       name: "ルール名",
@@ -157,6 +161,8 @@ export const earningRuleCopy: Record<EarningRuleLocale, Copy> = {
       "Quy tắc tích điểm đánh giá cũ phụ thuộc trạng thái xuất bản và điều kiện của nhà cung cấp, không phụ thuộc số sao. Ẩn, xóa hoặc vô hiệu hóa đánh giá có thể thu hồi điểm. Các cài đặt này không cấu hình ưu đãi dựa trên việc tham gia. Cần bật nhà cung cấp đánh giá đã chọn trước khi kích hoạt.",
     purchase:
       "Không tính thuế và phí vận chuyển. Weletic diễn giải đơn đăng ký do Shopify tạo ra; ứng dụng không bán hay quản lý đăng ký. Giữ nguyên phân bổ hoàn tiền theo từng dòng hàng.",
+    cadenceUnavailable:
+      "Chưa thể tích điểm cho lần đầu hoặc N lần đầu đến khi xác minh được kỳ thanh toán đăng ký. Quy tắc hiện có với các lựa chọn này cũng không cấp điểm đăng ký. Hãy chọn mọi lần thanh toán hoặc giữ quy tắc ở trạng thái tắt.",
     reset:
       "Đổi điều kiện kích hoạt sẽ đặt lại cài đặt tích điểm và tắt quy tắc.",
     fields: {
