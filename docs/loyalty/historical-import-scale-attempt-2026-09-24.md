@@ -99,3 +99,8 @@ local log is `/tmp/weletic-import-rollback-profile-after-122-20260924.log`
 This identifies the repeated-proof hot path; it does not prove that a quiet
 50,000-row lifecycle will complete. Keep the unchanged assertions and recovery
 gates for the next candidate.
+
+The [bounded group-size investigation](historical-import-rollback-group-2026-09-24.md)
+measured repeated full-source reads and tested a 50-row atomic group without
+changing the timeout or proof assertions. Full-scale and recovery gates remain
+open until that candidate is independently verified on a quiet host.

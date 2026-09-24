@@ -1,5 +1,13 @@
 # Historical opening-balance import
 
+September 25 candidate checkpoint: [ADR 0044](../adr/0044-fifty-row-import-rollback-groups.md)
+raises the atomic rollback group bound from ten to fifty rows in the current
+unpublished worktree. The [bounded profile](historical-import-rollback-group-2026-09-24.md)
+and focused isolated SQL checks passed. The older ten-row section below records
+its dated implementation and failure evidence; it is not the proposed bound for
+this candidate. Full-size commit, rollback, restart and target-provider gates
+remain open until separately evidenced.
+
 ## Full real-worker lifecycle test harness
 
 The source database suite now shares one lifecycle harness between the existing
