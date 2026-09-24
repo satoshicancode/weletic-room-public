@@ -379,6 +379,124 @@ it.each([
   expect(node.textContent).toContain(title);
 });
 
+it("downloads recorded points redemptions only after owner date refresh and refuses partial files", async () => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: { ...response.snapshot, canExport: true },
+  });
+  const filter = {
+    startAt: "2026-09-01T00:00:00.000Z",
+    endAt: "2026-09-30T23:59:59.999Z",
+  };
+  const requestRedemptionRows = vi.fn().mockResolvedValue({
+    status: "available",
+    coverage: "retained_nonredacted_points_redemptions_only",
+    installationGeneration: "private-generation",
+    filter,
+    rows: [
+      {
+        accountPseudonym: `account_${"a".repeat(32)}`,
+        redemptionPseudonym: `redemption_${"b".repeat(32)}`,
+        createdAt: "2026-09-02T00:00:00.000Z",
+        currentStatus: "used",
+        artifactKind: "discount_code",
+        pointsSpent: "9007199254740997",
+        usedAt: "2026-10-02T00:00:00.000Z",
+      },
+    ],
+  });
+  const createObjectURL = vi.fn().mockReturnValue("blob:redemption-fixture");
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: createObjectURL,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: vi.fn(),
+  });
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  try {
+    await act(async () =>
+      root.render(
+        createElement(MerchantAnalyticsScreen, {
+          request,
+          requestRedemptionRows,
+        }),
+      ),
+    );
+    const exportButton = () =>
+      Array.from(node.querySelectorAll("button")).find((button) =>
+        button.textContent?.includes("Export recorded redemptions CSV"),
+      );
+    expect(exportButton()!.disabled).toBe(true);
+    const dates = node.querySelectorAll<HTMLInputElement>('input[type="date"]');
+    await act(async () => {
+      for (const [index, value] of ["2026-09-01", "2026-09-30"].entries()) {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )!.set!.call(dates[index], value);
+        dates[index].dispatchEvent(new Event("input", { bubbles: true }));
+        dates[index].dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    expect(exportButton()).toBeUndefined();
+    await act(async () =>
+      node
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+    expect(exportButton()!.disabled).toBe(false);
+    await act(async () => exportButton()!.click());
+    expect(requestRedemptionRows).toHaveBeenCalledWith({
+      filter,
+      expectedInstallationGeneration: "private-generation",
+    });
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    requestRedemptionRows.mockResolvedValueOnce({
+      status: "too_large",
+      coverage: "retained_nonredacted_points_redemptions_only",
+      installationGeneration: "private-generation",
+      filter,
+      rows: [],
+    });
+    await act(async () => exportButton()!.click());
+    expect(node.querySelector('[role="alert"]')?.textContent).toContain(
+      "More than 2,000",
+    );
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+  } finally {
+    click.mockRestore();
+  }
+});
+
+it.each([
+  ["en", "Recorded points redemptions"],
+  ["ja", "記録されたポイント交換"],
+  ["vi", "Lượt đổi điểm đã ghi nhận"],
+])("labels the redemption export in %s", async (locale, title) => {
+  const request = vi.fn().mockResolvedValue(response);
+  await act(async () =>
+    root.render(
+      createElement(MerchantAnalyticsScreen, {
+        request,
+        requestRedemptionRows: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(node.textContent).toContain(title);
+});
+
 it.each([
   ["en", "Daily point activity (UTC)", "UTC date"],
   ["ja", "日別ポイント履歴（UTC）", "UTCの日付"],

@@ -1,7 +1,7 @@
 # Loyalty analytics report coverage
 
 Inventory originally inspected September 13, 2026 through public PR #32.
-Updated September 25 from public main `595e3f0d` and the S11 export.
+Updated September 25 from public main `39bcd4c8` with the S10 candidate.
 **Analytics is not accepted live.** The report dispositions distinguish
 code coverage from installed acceptance and do not certify Smile parity.
 
@@ -38,6 +38,12 @@ from titles. No renewed Smile access is required to start the tasks below.
   excludes erased accounts and raw identities, orders and free-text metadata.
   [Isolated SQL evidence](recorded-ledger-rows-s11-2026-09-25.md) exists;
   provider-scale and installed acceptance remain open.
+- [S10 redemption-row export candidate](../../apps/web/lib/weletic/shopify/merchant-redemption-row-export.ts):
+  a separate signed, audited owner-only CSV of retained account-backed
+  positive-point redemptions. It exposes pseudonymous keys, exact points,
+  creation time, current status and optional use time without codes or orders.
+  [Isolated SQL evidence](recorded-redemption-rows-s10-2026-09-25.md) exists;
+  transition history, provider-scale and installed acceptance remain open.
 - [Existing calculations](../../apps/web/lib/weletic/loyalty/analytics.ts):
   reusable liability, health, referral economics and tier helpers, plus legacy
   cohort/extended-export functions. Function presence does not establish merchant
@@ -70,7 +76,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | S07 | List of orders                                | **Decision / missing.** No signed merchant order-row export. A01 must reconcile accounting currency, refund meaning and authorized order identifiers.                                                                                                                                                                                      |
 | S08 | List of orders by VIP tier                    | **Decision / missing.** Current VIP assignment cannot establish a tier at order time. A01, A05 require preserved temporal evidence.                                                                                                                                                                                                        |
 | S09 | List of orders placed by referred customers   | **Unknown / missing.** Empty reference grid. A01, A06 must distinguish qualifying order from subsequent referred-customer orders.                                                                                                                                                                                                          |
-| S10 | List of points redemptions                    | **Decision / partial.** Aggregate points/status/artifact counts exist, not event rows and channel/date filters. A01.                                                                                                                                                                                                                       |
+| S10 | List of points redemptions                    | **Implementation candidate / partial.** [Owner-only recorded points-redemption CSV](recorded-redemption-rows-s10-2026-09-25.md) adds bounded pseudonymous rows and creation-date filtering. Current status is not a transition history; remote use, missing history, provider-scale and installed acceptance remain open. A01.             |
 | S11 | List of points transactions                   | **Merged implementation / partial.** [Owner-only recorded ledger-row CSV](recorded-ledger-rows-s11-2026-09-25.md) preserves exact point strings, entry types and account sequence without raw identities. Missing/erased history, provider-scale read plans and installed acceptance remain open. A01.                                     |
 | S12 | List of referrals                             | **Unknown / missing.** Empty reference grid; current status totals are not referral rows or historical transitions. A01, A06.                                                                                                                                                                                                              |
 | S13 | List of Smile influenced orders               | **Unknown / missing.** No complete reference schema or signed equivalent. A01, A06 need unique order attribution before exposing this label.                                                                                                                                                                                               |

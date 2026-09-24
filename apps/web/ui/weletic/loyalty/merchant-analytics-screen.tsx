@@ -13,6 +13,12 @@ import {
   type MerchantAnalyticsResponse,
   type MerchantAnalyticsSnapshot,
 } from "../../../lib/weletic/loyalty/merchant-analytics-contract";
+import { merchantRedemptionRowCsv } from "../../../lib/weletic/loyalty/redemption-row-csv";
+import {
+  merchantRedemptionRowExportRequestSchema,
+  type MerchantRedemptionRowExportRequest,
+  type MerchantRedemptionRowExportResponse,
+} from "../../../lib/weletic/loyalty/redemption-row-export-contract";
 import { merchantTierHistoryCsv } from "../../../lib/weletic/loyalty/tier-history-csv";
 import type {
   MerchantTierHistoryExportRequest,
@@ -30,6 +36,9 @@ export type MerchantTierHistoryTransport = (
 export type MerchantLedgerRowTransport = (
   request: MerchantLedgerRowExportRequest,
 ) => Promise<MerchantLedgerRowExportResponse>;
+export type MerchantRedemptionRowTransport = (
+  request: MerchantRedemptionRowExportRequest,
+) => Promise<MerchantRedemptionRowExportResponse>;
 
 function download(content: string, contentType: string, filename: string) {
   const url = URL.createObjectURL(new Blob([content], { type: contentType }));
@@ -44,10 +53,12 @@ export function MerchantAnalyticsScreen({
   request,
   requestTierHistory,
   requestLedgerRows,
+  requestRedemptionRows,
 }: {
   request: MerchantAnalyticsTransport;
   requestTierHistory?: MerchantTierHistoryTransport;
   requestLedgerRows?: MerchantLedgerRowTransport;
+  requestRedemptionRows?: MerchantRedemptionRowTransport;
 }) {
   const [locale, setLocale] =
     useState<keyof typeof merchantAnalyticsCopy>("en");
@@ -194,6 +205,43 @@ export function MerchantAnalyticsScreen({
         merchantLedgerRowCsv(result.rows),
         "text/csv;charset=utf-8",
         `weletic-points-transactions-${start}-${end}.csv`,
+      );
+    } catch {
+      if (version === epoch.current) setError("error");
+    } finally {
+      if (version === epoch.current) setBusy(false);
+    }
+  }
+  async function exportRedemptionRows() {
+    if (!snapshot?.canExport || !requestRedemptionRows || !start || !end) {
+      setError("invalid");
+      return;
+    }
+    const parsed = merchantRedemptionRowExportRequestSchema.safeParse({
+      filter: {
+        startAt: `${start}T00:00:00.000Z`,
+        endAt: `${end}T23:59:59.999Z`,
+      },
+      expectedInstallationGeneration: snapshot.installationGeneration,
+    });
+    if (!parsed.success) {
+      setError("invalid");
+      return;
+    }
+    const version = ++epoch.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await requestRedemptionRows(parsed.data);
+      if (version !== epoch.current) return;
+      if (result.status === "too_large") {
+        setError("tooMany");
+        return;
+      }
+      download(
+        merchantRedemptionRowCsv(result.rows),
+        "text/csv;charset=utf-8",
+        `weletic-recorded-redemptions-${start}-${end}.csv`,
       );
     } catch {
       if (version === epoch.current) setError("error");
@@ -398,6 +446,19 @@ export function MerchantAnalyticsScreen({
                 onClick={() => void exportLedgerRows()}
               >
                 {copy.ledgerRowsCsv}
+              </button>
+            </section>
+          )}
+          {requestRedemptionRows && (
+            <section>
+              <h2>{copy.redemptionRowsTitle}</h2>
+              <p>{copy.redemptionRowsSemantics}</p>
+              <button
+                type="button"
+                disabled={busy || !snapshot.canExport || !start || !end}
+                onClick={() => void exportRedemptionRows()}
+              >
+                {copy.redemptionRowsCsv}
               </button>
             </section>
           )}

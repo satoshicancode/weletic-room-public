@@ -33,6 +33,7 @@ test("admits only exact Flow action and owner gateway paths, not sibling APIs", 
     "/api/shopify/flow/points-adjustment",
     "/api/internal/shopify/merchant/flow-grants",
     "/api/internal/shopify/merchant/analytics/ledger-rows",
+    "/api/internal/shopify/merchant/analytics/redemption-rows",
   ]) {
     assert.equal(admitsLoyaltyRequest(input(url)), true);
     assert.equal(admitsLoyaltyRequest(input(url + "/extra")), false);
