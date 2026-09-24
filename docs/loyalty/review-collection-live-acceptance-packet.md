@@ -9,6 +9,9 @@ in [PR #101](https://github.com/satoshicancode/weletic-room-public/pull/101).
 The [local storefront build](store-review-storefront-build-2026-09-24.md)
 passed for the default app configuration. Neither result proves deployment,
 installed Shopify behavior or provider delivery.
+The [explicit review-route admission](https://github.com/satoshicancode/weletic-room-public/pull/112)
+and [read-only schema preflight](https://github.com/satoshicancode/weletic-room-public/pull/115) are also
+merged local gates. The preflight has not inspected a release target.
 
 ## Preconditions and stop conditions
 
@@ -114,8 +117,8 @@ orders/sends or a different recipient, revise the packet before execution.
   enrollment recovery and activation gates pass. No incentives may be enabled
   merely to exercise collection.
 - A local CLI tunnel is not persistent Cloudflare supervision or release proof.
-  Verify exact review-route admission on the release candidate; complete review
-  worker/media packaging and provider operation remain open.
+  Recheck PR #112's exact review-route admission on the release candidate;
+  complete review worker/media packaging and provider operation remain open.
 - Exact supported suppression, expiry and remaining invitation schedules require
   recorded cases beyond the two happy-path fixtures; do not claim universal
   collection completion from this packet alone.
