@@ -38,6 +38,16 @@ Guard log: `/tmp/weletic-import-restart-guard-20260925.log`, SHA-256
 `2fab86cf28c2de3caa1c16046aaa9f2a4e122fc407a746a3aa0f0423472aaae6`.
 The second disposable container was removed after the SQL check.
 
+The complete isolated source-database suite then passed on PR #140's
+reconciled head with another fresh MySQL 8.0.46 fixture: **54 passed,
+10 intentionally skipped**, including 50-row late-conflict atomicity,
+real-worker continuation and the process-restart test. Independent SQL again
+counted zero remaining import sources, row executions, ledger rows, accounts and
+stores. Log: `/tmp/weletic-import-pr140-full-sql-20260925.log`, SHA-256
+`9635f35ca0b458aac41f6dbdbe6af487d6402e4fb315d67cd20c8543cb4a17e5`.
+The fixture was `weletic_loyalty_it_import_pr140_20260925` on loopback port
+3313 with the explicit dedicated-instance opt-in; it was removed afterward.
+
 The concurrent 50,000-row full lifecycle uses a separate MySQL container and
 fixture. Its result, independent 50,000-row reconciliation, provider read plan,
 installed worker supervision and restore remain separate open gates.
