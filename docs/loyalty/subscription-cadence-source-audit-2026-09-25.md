@@ -62,9 +62,10 @@ are **not accepted**. Every-payment earning and Shopify-native recurring
 discounts remain separate acceptance paths; neither is certified by this
 source audit. No app configuration, scope, database or live store changed.
 
-## Containment boundary under verification
+## Merged containment boundary
 
-The follow-up implementation disables new cadence-specific points/referral
+The [follow-up implementation](https://github.com/satoshicancode/weletic-room-public/pull/147)
+disables new cadence-specific points/referral
 promises and separates new one-time referral defaults from historical null
 policies. Existing subscription orders with unverified or incomplete cycle
 identity retain an open critical reconciliation issue without consuming the
