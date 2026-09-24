@@ -33,6 +33,14 @@ there, and no resource or account setting was changed. Their ownership, plans,
 regions, R2/Redis/QStash resources and billing remain unverified. No database,
 bucket, queue or other paid resource was created.
 
+September 24 local image check: the unchanged Shopify image at public `main`
+`037e80fe` unpacked to 4.47 GB, above the proposed `basic` 4 GB disk. The
+unmerged [production-dependency candidate](https://github.com/satoshicancode/weletic-room-public/pull/119)
+unpacked to 980 MB and passed a no-network guarded startup smoke. This resolves
+only the local Shopify image-size question if that candidate passes CI and is
+merged. The actual Cloudflare account, upload/admission, memory and installed
+runtime remain unverified; web and outbox images need current-SHA checks.
+
 ## Proposed acceptance footprint
 
 Retain ADR 0034: Node containers and private R2, MySQL-compatible SQL with the
@@ -43,7 +51,7 @@ separate gate and must not silently inherit test databases or credentials.
 | Component               | Candidate                                              | Required proof before purchase/deployment                                                                                |
 | ----------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | Web/API                 | One container, trial sizing 1 vCPU / 3 GiB / 4 GB disk | Exact image fits disk, load/cold-start/heap evidence, route admission and private logging                                |
-| Shopify app             | One `basic` container                                  | Fresh image fits disk, real embedded authentication and paired gateway                                                   |
+| Shopify app             | One `basic` container                                  | Candidate local image fits disk; prove Cloudflare admission, memory, real embedded authentication and paired gateway     |
 | Outbox                  | One independently supervised `basic` container         | Drain/restart, lease recovery, scheduling and no accidental idle shutdown                                                |
 | Reviews video processor | Separate bounded worker, sizing not selected           | Codec/quota implementation, measured peak resources, unsafe-file isolation; never hide this cost in outbox capacity      |
 | SQL                     | Isolated PlanetScale Vitess candidate                  | Region/plan quote, native and HTTP connections to the same database, real transaction/lock/concurrency suite and restore |
@@ -66,8 +74,9 @@ These are public rate inputs, not account-specific quotes or total estimates:
   200 GB-hours monthly. Memory/disk bill provisioned resources while active;
   CPU bills active usage. [Provider pricing](https://developers.cloudflare.com/containers/platform/pricing/)
 - `basic` is 1/4 vCPU, 1 GiB memory and 4 GB disk. Custom instances require at
-  least 1 vCPU and 3 GiB per vCPU. Image size must fit instance disk, so the
-  candidate footprint is not accepted until image sizes are checked.
+  least 1 vCPU and 3 GiB per vCPU. Image size must fit instance disk. The
+  Shopify candidate has local disk headroom; web/outbox and deployed instance
+  fit remain open.
   [Provider limits](https://developers.cloudflare.com/containers/platform/limits/)
 - Redis pay-as-you-go advertises $0.20 per 100K commands. A configured budget
   cap can rate-limit the database, so reaching it must fail closed and alert,

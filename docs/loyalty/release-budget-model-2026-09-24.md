@@ -13,8 +13,12 @@ remains the account and compatibility gate.
   PS-10/PS-20 compute figures below are **stale provisional inputs**, not an
   account quote. Storage, backups, branches and network remain unpriced.
 - Cloudflare account, Upstash account and Resend sender/plan ownership are
-  unverified. Local Docker images were built September 14–16 and do not prove
-  current release-SHA image fit or Cloudflare deployment compatibility.
+  unverified. An unmerged [Shopify runtime image candidate](https://github.com/satoshicancode/weletic-room-public/pull/119)
+  built from public `main` `037e80fe` plus its focused Dockerfile change is
+  980 MB unpacked and passed a no-network local startup smoke. The previous
+  current-main image was 4.47 GB and exceeded the `basic` 4 GB disk. This
+  establishes local Shopify image-size headroom only; web/outbox current-image
+  fit and Cloudflare deployment compatibility remain unverified.
 - [Containers pricing](https://developers.cloudflare.com/containers/platform/pricing/)
   lists $5/month Workers Paid base, 25 GiB-hours memory, 375 vCPU-minutes and
   200 GB-hours disk included, then $0.0000025/GiB-second,
@@ -95,7 +99,7 @@ proof before being selected.
 | Item             | Evidence needed before a complete acceptance and production quote                                                                                                                                                                                          |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | SQL              | Account-owned Tokyo Vitess quote, storage growth, backup retention, restore tests, branching, transfer, compatible native/HTTP transactions and lock behavior.                                                                                             |
-| Cloudflare       | Account plan/allowance ownership, current-SHA image sizes, instance fit, real CPU and sleep behavior, container egress region/volume, Workers/DO/log usage, registry/image retention and alert pricing.                                                    |
+| Cloudflare       | Account plan/allowance ownership, web/outbox current-SHA image sizes, deployed Shopify-image fit, real CPU and sleep behavior, container egress region/volume, Workers/DO/log usage, registry/image retention and alert pricing.                           |
 | Redis and QStash | Account/region, keys and payload classification, selected security plan, actual retries, schedules, storage, bandwidth, DLQ retention and budget-cap failure behavior. Selecting both $200 Prod Packs adds **$400/month** before any other missing charge. |
 | R2 and media     | Private buckets, Class A/B operations, media retention and cleanup, video processor limits and incident storage.                                                                                                                                           |
 | Email            | Approved sender/domain and recipient policy, account plan, expected transactional volume, overage cap, deliverability and US processing review.                                                                                                            |
