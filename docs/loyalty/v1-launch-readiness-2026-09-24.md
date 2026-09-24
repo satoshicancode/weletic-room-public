@@ -72,7 +72,9 @@ but no separate public Weletic app across its three pages. The custom app's
 [installation detail](https://admin.shopify.com/store/n0pvef-cs/settings/apps/app_installations/app/weletic-room)
 showed four active extensions: Weletic Loyalty Checkout Slider, Account Blocks,
 Customer Account Hub and Launcher (App Embed), with zero active Functions. Its
-Shopify protected-customer-data confirmation applies to that custom app only;
+extension-detail app ID matches the checked-in `shopify.app.toml` client ID and
+differs from `shopify.app.loyalty-public.toml`; this is the retained custom app.
+Shopify's protected-customer-data confirmation applies to that custom app only;
 it is not evidence for the public listing candidate. The public-app CLI still
 listed one active version created September 5, but did not expose its extension
 manifest. In the installed [Flow workflow list](https://admin.shopify.com/store/n0pvef-cs/apps/flow),
