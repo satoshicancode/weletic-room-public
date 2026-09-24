@@ -1,11 +1,20 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 25, 2026 JST: public `main` at
-[`f42949f4`](https://github.com/satoshicancode/weletic-room-public/commit/f42949f443f99f028f4d5f498b86bd5a48e5dae9)
-(PR #147; [post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36067134508)).
+[`3bfb0a93`](https://github.com/satoshicancode/weletic-room-public/commit/3bfb0a939cda5ce8129df2365aba451e77de897f)
+(PR #140). The prior [PR #147 post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36067134508).
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
+The September 25 [provider inventory](release-resource-inventory-2026-09-20.md)
+found that the accessible Cloudflare account is on Workers Free, which cannot
+run the proposed Containers. R2 Paid and a private empty APAC bucket exist;
+the accessible Upstash workspace has no Room-specific Redis database, and its
+QStash Free instance is in US East. No account resource was changed. The public Shopify app's protected
+customer data request remains a draft with **0 of 9 data-protection questions
+completed**. The questions include merchant privacy agreements, customer
+consent/opt-out handling, retention and encryption; answer them from verified
+release evidence before listing submission.
 
 The [combined completion checklist](company-store-completion.md) defines the
 capability contracts and T1–T4 evidence classes. This index names each

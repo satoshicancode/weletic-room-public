@@ -12,8 +12,13 @@ remains the account and compatibility gate.
   not proof that no company database exists elsewhere. The September 20 Tokyo
   PS-10/PS-20 compute figures below are **stale provisional inputs**, not an
   account quote. Storage, backups, branches and network remain unpriced.
-- Cloudflare account, Upstash account and Resend sender/plan ownership are
-  unverified. The merged [Shopify runtime-image fix](https://github.com/satoshicancode/weletic-room-public/pull/119)
+- The September 25 [read-only provider inventory](release-resource-inventory-2026-09-20.md)
+  found Cloudflare Workers Free (Containers unavailable until Workers Paid),
+  R2 Paid, an empty private APAC bucket, one unrelated Upstash Free Tokyo Redis,
+  and QStash Free in US East. Room-specific Redis/QStash isolation, provider
+  security packs and Resend sender/plan ownership remain unverified. These
+  account findings do not complete either budget or authorize an upgrade. The
+  merged [Shopify runtime-image fix](https://github.com/satoshicancode/weletic-room-public/pull/119)
   at `373cdbe2` was built locally from the same source content and is
   980 MB unpacked and passed a no-network local startup smoke. The previous
   Shopify recipe produced a 4.47 GB image and exceeded the `basic` 4 GB disk. This
