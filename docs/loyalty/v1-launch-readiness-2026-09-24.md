@@ -65,6 +65,23 @@ A fresh [13-extension public staging build](public-extension-build-2026-09-24.md
 passed local validation on the same source SHA; its unique candidate UIDs remain
 unowned until the public-app mapping and deployment gate are accepted.
 
+Read-only Yamax installation inventory on September 24: the authenticated
+[installed-app list](https://admin.shopify.com/store/n0pvef-cs/settings/apps)
+contained the existing **custom** Weletic Room app, Judge.me, Smile.io and Flow,
+but no separate public Weletic app across its three pages. The custom app's
+[installation detail](https://admin.shopify.com/store/n0pvef-cs/settings/apps/app_installations/app/weletic-room)
+showed four active extensions: Weletic Loyalty Checkout Slider, Account Blocks,
+Customer Account Hub and Launcher (App Embed), with zero active Functions. Its
+Shopify protected-customer-data confirmation applies to that custom app only;
+it is not evidence for the public listing candidate. The public-app CLI still
+listed one active version created September 5, but did not expose its extension
+manifest. In the installed [Flow workflow list](https://admin.shopify.com/store/n0pvef-cs/apps/flow),
+the sole active workflow was “Recover abandoned checkout” with Shopify's
+“Customer abandons checkout” trigger. No Weletic Flow workflow was present.
+No app was installed, extension deployed, workflow changed or live operation run
+during this inventory. S02/S03 require a controlled public-app installation,
+exact extension ownership and named Flow workflow receipts before acceptance.
+
 ## Migration and runtime inventory
 
 The repository has [29 checked-in Shopify-development SQL files](../../infra/shopify-development/migrations/).
