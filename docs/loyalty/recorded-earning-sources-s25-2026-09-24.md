@@ -1,8 +1,10 @@
 # Recorded earning sources (S25)
 
-Status: implementation candidate, September 24, 2026. This is a partial
-Weletic-defined report, not a reconstruction of Smile's unknown `Total` formula
-or installed acceptance.
+Status: [PR #131](https://github.com/satoshicancode/weletic-room-public/pull/131)
+merged September 24, 2026 at
+[`63280435`](https://github.com/satoshicancode/weletic-room-public/commit/63280435b0a54e5ef6e9ab4d5f9cabf0b85bfe9d).
+This is a partial Weletic-defined report, not a reconstruction of Smile's unknown
+`Total` formula or installed acceptance.
 
 The signed merchant analytics snapshot now groups retained positive
 `EARN_ORDER`, `EARN_REFERRAL`, `EARN_BONUS` and `TIER_BONUS` ledger entries by
@@ -37,5 +39,5 @@ The offline loyalty-release-profile production build passed with the existing
 `WELETIC_WEB_BUILD_PROFILE=loyalty-only` and separate-validation configuration;
 its local log is `/tmp/weletic-s25-web-build-loyalty-profile-20260924.log`.
 An ordinary all-portal build compiled but could not prerender unrelated partner
-routes without a local database. Exact-head CI and named installed merchant
-acceptance remain release gates.
+routes without a local database. Exact-head and [post-merge CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/35994793709) passed. Named
+installed merchant acceptance remains a release gate.
