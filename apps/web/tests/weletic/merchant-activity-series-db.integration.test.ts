@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { readMerchantPointActivitySeries } from "@/lib/weletic/loyalty/activity-series";
+import { readMerchantLedgerNetSeries } from "@/lib/weletic/loyalty/ledger-net-series";
 import { deriveMerchantRedemptionRateSeries } from "@/lib/weletic/loyalty/redemption-rate-series";
 import { WeleticPointsLedgerEntryType as Entry, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
@@ -242,6 +243,67 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
     BigInt(0),
   );
   expect(net.toString()).toBe(independent[0].net.toFixed(0));
+  const netStart = new Date("2026-09-01T12:00:00.000Z");
+  const openingPlan = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    EXPLAIN SELECT SUM(CAST(pointsDelta AS DECIMAL(65, 0)))
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt < ${netStart}
+  `;
+  expect(Object.values(openingPlan[0]).map(String).join(" ")).toContain(
+    "WeleticPointsLedgerEntry_storeId_createdAt_idx",
+  );
+  const ledgerNet = await prisma.$transaction((tx) =>
+    readMerchantLedgerNetSeries({
+      tx,
+      storeId: storeIds[0],
+      startAt: netStart,
+      endAt,
+    }),
+  );
+  expect(ledgerNet).toEqual({
+    status: "available",
+    bucket: "utc_day",
+    coverage: "recorded_ledger_net_only",
+    openingNetPoints: huge.toString(),
+    rows: [
+      {
+        date: "2026-09-01",
+        netChangePoints: "7",
+        cumulativeNetPoints: (huge + BigInt(7)).toString(),
+      },
+      {
+        date: "2026-09-02",
+        netChangePoints: "-12",
+        cumulativeNetPoints: (huge - BigInt(5)).toString(),
+      },
+      {
+        date: "2026-09-03",
+        netChangePoints: "0",
+        cumulativeNetPoints: (huge - BigInt(5)).toString(),
+      },
+    ],
+  });
+  const independentOpening = await prisma.$queryRaw<
+    Array<{ net: Prisma.Decimal }>
+  >`
+    SELECT SUM(CAST(pointsDelta AS DECIMAL(65, 0))) AS net
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt < ${netStart}
+  `;
+  expect(ledgerNet.openingNetPoints).toBe(independentOpening[0].net.toFixed(0));
+  const independentWindow = await prisma.$queryRaw<
+    Array<{ net: Prisma.Decimal }>
+  >`
+    SELECT SUM(CAST(pointsDelta AS DECIMAL(65, 0))) AS net
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt >= ${netStart} AND createdAt <= ${endAt}
+  `;
+  expect(ledgerNet.rows.at(-1)?.cumulativeNetPoints).toBe(
+    (
+      BigInt(independentOpening[0].net.toFixed(0)) +
+      BigInt(independentWindow[0].net.toFixed(0))
+    ).toString(),
+  );
   const redemption = deriveMerchantRedemptionRateSeries(result);
   expect(redemption.rows).toEqual([
     {

@@ -1,8 +1,8 @@
 # Loyalty analytics report coverage
 
 Inventory originally inspected September 13, 2026 through public PR #32.
-Updated September 24 against public main `bd99d392` (S16 merged) and this
-standalone S17 candidate. **Analytics is not accepted live.** The report dispositions distinguish
+Updated September 24 against public main `e96953bd` (S16/S17 merged) and the
+S23 implementation candidate. **Analytics is not accepted live.** The report dispositions distinguish
 merged code from local candidate work and do not certify Smile parity.
 
 The [preserved benchmark](benchmark-smile-2026-09-08.md) identifies 34 included
@@ -16,8 +16,8 @@ from titles. No renewed Smile access is required to start the tasks below.
 - [Merchant contract](../../apps/web/lib/weletic/loyalty/merchant-analytics-contract.ts):
   one strict aggregate snapshot with liability, point activity, referral
   economics/current statuses, reward current statuses and current VIP assignments.
-  S24 daily point activity and the partial S16 daily recorded-order rate are
-  merged; this branch adds a partial S17 monthly recorded-ledger rate. There are no sequential funnel stages or
+  S24 daily point activity and the partial S16/S17 rates are
+  merged; S23 adds a partial recorded-ledger net series. There are no sequential funnel stages or
   member-comparison fields.
 - [Signed merchant service](../../apps/web/lib/weletic/shopify/merchant-analytics.ts):
   authenticated store scope and repeatable-read transaction; exports require the
@@ -33,7 +33,7 @@ from titles. No renewed Smile access is required to start the tasks below.
 - [Merchant tests](../../apps/web/tests/weletic/merchant-analytics.test.ts) and
   [analytics matrix tests](../../apps/web/tests/weletic/loyalty-analytics-matrix.test.ts)
   provide local service/calculation evidence. S24 and S16 have isolated SQL
-  checks; the exact standalone S17 head still needs an isolated SQL rerun.
+  checks, including the standalone S17 and S23 heads.
   None has named-store acceptance.
   The [original checkpoint](merchant-analytics-implementation.md) records bounded
   UI/build evidence and its remaining gates.
@@ -68,7 +68,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | S20 | Smile benchmarks                              | **Unavailable / decision.** No proprietary peer dataset exists for company stores. A09: no fabricated peer comparison; historical target replacement requires a product decision.                                                                                                                           |
 | S21 | First time vs repeat earners over time        | **Missing.** Current member/non-member helper is a different cohort. A03 needs first-ever qualifying earn evidence, not first event within the selected window.                                                                                                                                             |
 | S22 | First time vs repeat redeemers over time      | **Missing.** Current status totals cannot identify first-ever successful redemption. A03.                                                                                                                                                                                                                   |
-| S23 | Outstanding points over time                  | **Partial.** Current liability exists, not historical balances/expiry/debt evolution. A02 needs an opening boundary and exact cumulative movements.                                                                                                                                                         |
+| S23 | Outstanding points over time                  | **Candidate / partial.** Exact opening, daily and cumulative **recorded-ledger net** have isolated SQL evidence. They do not reconstruct historical outstanding liability, missing pre-Weletic history or account-level debt. Installed acceptance and index rollout remain open. A02.                      |
 | S24 | Points activity over time                     | **Implementation candidate.** A bounded UTC daily ledger series now preserves exact strings and separate imports, corrections and manual movements in the signed merchant snapshot, CSV/JSON and EN/JA/VI UI. Isolated SQL verification exists; named merchant acceptance and release evidence remain open. |
 | S25 | Top ways to earn                              | **Unknown / missing.** Reference shows Comment/Total but Total's meaning is unknown. A04 must publish Weletic's own count/point measures and provenance.                                                                                                                                                    |
 | S26 | Top ways to redeem                            | **Unknown / partial.** Status/artifact grouping is not reward-name ranking; reference Total is undefined. A04.                                                                                                                                                                                              |
@@ -117,8 +117,9 @@ calendar days, zero-filled days and exact ledger categories. An omitted endpoint
 or wider range returns an explicit unavailable state. This series reports
 movements, not historical balance or order/reward rates. S16 is merged as a
 recorded-order implementation candidate with explicit partial coverage. S17 has
-a recorded-ledger monthly candidate with an explicit earned denominator; S18
-and S23 remain unimplemented. S16, S17 and S24 merchant journeys await named
+a merged recorded-ledger monthly rate with an explicit earned denominator. S23
+has a bounded recorded-ledger net candidate, not historical liability; S18
+remains unimplemented. S16, S17, S23 and S24 merchant journeys await named
 acceptance. The accompanying
 `(storeId, createdAt)` ledger index needs its separate shared-schema migration
 gate before this report is enabled in a deployed environment.
