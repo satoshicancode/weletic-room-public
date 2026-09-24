@@ -191,11 +191,69 @@ describe("historical import schema release preflight", () => {
       }
     }
   });
+  it("accepts the appended review recovery and anonymous email lineages", () => {
+    for (const local of [[], ["REVIEW_POINTS_FULFILL"]]) {
+      for (const core of [
+        [
+          "LOYALTY_COMMUNICATION",
+          "HISTORICAL_IMPORT_COMMIT",
+          "HISTORICAL_IMPORT_ROLLBACK",
+        ],
+        [
+          "HISTORICAL_IMPORT_COMMIT",
+          "HISTORICAL_IMPORT_ROLLBACK",
+          "LOYALTY_COMMUNICATION",
+        ],
+      ]) {
+        for (const later of [
+          ["REVIEW_POINTS_RECOVERY"],
+          ["REVIEW_POINTS_RECOVERY", "ANONYMOUS_REFERRAL_EMAIL"],
+        ]) {
+          const current = [
+            ...HISTORICAL_OUTBOX_VALUES,
+            ...local,
+            ...core,
+            ...later,
+          ];
+          expect(planImportOutboxEnum(sqlEnum(current))).toEqual({
+            current,
+            proposed: current,
+            ready: true,
+          });
+          const data = fixture();
+          data.columns.at(-2)!.columnType = sqlEnum(current);
+          expect(auditHistoricalImportSchema(data).ready).toBe(true);
+        }
+      }
+    }
+  });
   it("rejects unknown labels, reordered values and partial import enums", () => {
     for (const values of [
       [...HISTORICAL_OUTBOX_VALUES, "UNKNOWN"],
       [...HISTORICAL_OUTBOX_VALUES].reverse(),
       [...HISTORICAL_OUTBOX_VALUES, "HISTORICAL_IMPORT_COMMIT"],
+      [...HISTORICAL_OUTBOX_VALUES, "ANONYMOUS_REFERRAL_EMAIL"],
+      [
+        ...HISTORICAL_OUTBOX_VALUES,
+        "LOYALTY_COMMUNICATION",
+        "HISTORICAL_IMPORT_COMMIT",
+        "REVIEW_POINTS_RECOVERY",
+      ],
+      [
+        ...HISTORICAL_OUTBOX_VALUES,
+        "LOYALTY_COMMUNICATION",
+        "HISTORICAL_IMPORT_COMMIT",
+        "HISTORICAL_IMPORT_ROLLBACK",
+        "ANONYMOUS_REFERRAL_EMAIL",
+      ],
+      [
+        ...HISTORICAL_OUTBOX_VALUES,
+        "LOYALTY_COMMUNICATION",
+        "HISTORICAL_IMPORT_COMMIT",
+        "HISTORICAL_IMPORT_ROLLBACK",
+        "ANONYMOUS_REFERRAL_EMAIL",
+        "REVIEW_POINTS_RECOVERY",
+      ],
     ]) {
       expect(() => planImportOutboxEnum(sqlEnum(values))).toThrow(
         "Unrecognized",
