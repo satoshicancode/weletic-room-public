@@ -130,6 +130,7 @@ model WeleticShopifyStore {
   loyaltyBackfillJobs          WeleticLoyaltyBackfillJob[]
   loyaltyReferrals             WeleticLoyaltyReferral[]
   loyaltyEarnGrants            WeleticLoyaltyEarnGrant[]
+  loyaltyRefundAllocations     WeleticLoyaltyRefundAllocation[]
   loyaltyOutboxJobs            WeleticLoyaltyOutboxJob[]
   flowTriggerStates            WeleticShopifyFlowTriggerState[]
   flowPointsGrants             WeleticShopifyFlowPointsGrant[]

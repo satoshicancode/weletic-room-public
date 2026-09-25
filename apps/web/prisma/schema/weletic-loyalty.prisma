@@ -544,6 +544,24 @@ model WeleticLoyaltyOrderLineEarn {
   @@index([storeId, createdAt])
 }
 
+// Immutable, source-line evidence for newly posted refund reversals. Older
+// ledger events have no allocation rows and remain explicitly unauditable.
+model WeleticLoyaltyRefundAllocation {
+  id            String   @id
+  storeId       String
+  ledgerEntryId String
+  grantId       String
+  refundId      String
+  orderLineId   String
+  points        BigInt
+  createdAt     DateTime @default(now())
+  store         WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, ledgerEntryId, orderLineId], map: "RefundAllocation_store_ledger_line_key")
+  @@index([storeId, grantId, orderLineId])
+  @@index([storeId, refundId])
+}
+
 model WeleticPointsLedgerEntry {
   id             String                       @id
   storeId        String

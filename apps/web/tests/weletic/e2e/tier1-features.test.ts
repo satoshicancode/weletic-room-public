@@ -136,6 +136,9 @@ vi.mock("@/lib/prisma", () => ({
       update: vi.fn(),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
+    weleticLoyaltyRefundAllocation: {
+      createMany: vi.fn(),
+    },
     weleticLoyaltyOutboxJob: {
       findUnique: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockImplementation(({ data }: any) => data),
@@ -225,6 +228,11 @@ describe("Tier 1: Feature Coverage (Weletic Loyalty Production-Core)", () => {
     (prisma.weleticLoyaltyOrderLineEarn.updateMany as any).mockResolvedValue({
       count: 1,
     });
+    (prisma.weleticLoyaltyRefundAllocation.createMany as any).mockResolvedValue(
+      {
+        count: 1,
+      },
+    );
     (prisma.weleticLoyaltyOutboxJob.findUnique as any).mockResolvedValue(null);
     (prisma.weleticLoyaltyOutboxJob.create as any).mockImplementation(
       ({ data }: any) => data,

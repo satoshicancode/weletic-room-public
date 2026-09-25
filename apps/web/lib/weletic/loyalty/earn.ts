@@ -3219,6 +3219,8 @@ export async function processRefundPointsReversal({
   }
 
   let totalPointsToClawback = BigInt(0);
+  const lineReversals: Array<{ orderLineId: string; points: string }> = [];
+  let refundAllocationMode: "line_refund" | "order_adjustment" = "line_refund";
 
   if (grant && BigInt(grant.grossPoints) > BigInt(0)) {
     const remainingGrantClawback =
@@ -3374,6 +3376,10 @@ export async function processRefundPointsReversal({
           );
         }
         totalPointsToClawback += lineClawback;
+        lineReversals.push({
+          orderLineId,
+          points: lineClawback.toString(),
+        });
       }
     }
 
@@ -3411,6 +3417,7 @@ export async function processRefundPointsReversal({
       }
 
       if (totalPointsToClawback > BigInt(0)) {
+        refundAllocationMode = "order_adjustment";
         const orderLevelAllocations = allocateReversalAcrossRemainingLines({
           grantId: grant.id,
           storeId,
@@ -3441,6 +3448,10 @@ export async function processRefundPointsReversal({
               `Order-level refund line conflict for ${allocation.id}`,
             );
           }
+          lineReversals.push({
+            orderLineId: allocation.orderLineId,
+            points: allocation.pointsToReverse.toString(),
+          });
         }
       }
     }
@@ -3453,6 +3464,15 @@ export async function processRefundPointsReversal({
 
   if (totalPointsToClawback <= BigInt(0) && !isLegacyGrantAdoption) {
     return null;
+  }
+  if (
+    !isLegacyGrantAdoption &&
+    lineReversals.reduce(
+      (sum, line) => sum + BigInt(line.points),
+      BigInt(0),
+    ) !== totalPointsToClawback
+  ) {
+    throw new Error(`Refund allocation does not conserve grant ${grant?.id}`);
   }
 
   // 3. Dual-Bucket Reconciliation: void pending points before debiting
@@ -3581,6 +3601,13 @@ export async function processRefundPointsReversal({
             totalClawback: totalPointsToClawback.toString(),
             settledClawback: settledClawback.toString(),
             pendingVoided: pendingVoided.toString(),
+            ...(!isLegacyGrantAdoption
+              ? {
+                  refundAllocationVersion: 1,
+                  refundAllocationMode,
+                  lineReversalCount: lineReversals.length,
+                }
+              : {}),
           }
         : {
             grantId: grant?.id ?? null,
@@ -3599,9 +3626,34 @@ export async function processRefundPointsReversal({
             totalClawback: totalPointsToClawback.toString(),
             settledClawback: settledClawback.toString(),
             pendingVoided: pendingVoided.toString(),
+            ...(!isLegacyGrantAdoption
+              ? {
+                  refundAllocationVersion: 1,
+                  refundAllocationMode,
+                  lineReversalCount: lineReversals.length,
+                  lineReversals,
+                }
+              : {}),
           },
       tx: db,
     });
+    if (!isLegacyGrantAdoption && lineReversals.length > 0) {
+      const postedEntry = ledgerEntry;
+      if (!grant || !postedEntry) {
+        throw new Error(`Refund ${refund.id} has no allocation source`);
+      }
+      await db.weleticLoyaltyRefundAllocation.createMany({
+        data: lineReversals.map((allocation) => ({
+          id: nanoid(),
+          storeId,
+          ledgerEntryId: postedEntry.id,
+          grantId: grant.id,
+          refundId: refund.id,
+          orderLineId: allocation.orderLineId,
+          points: BigInt(allocation.points),
+        })),
+      });
+    }
   }
 
   // 5. Enqueue Metafield Sync if outbox exists
