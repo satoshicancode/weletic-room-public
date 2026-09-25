@@ -52,3 +52,34 @@ The separate [50,000-row isolated lifecycle](historical-import-rollback-group-20
 subsequently passed both worker phases and independent SQL reconciliation. This
 51-row test does not prove a process restart during a full-scale run. Provider
 read plans, installed worker supervision and restore remain open gates.
+
+## Full-scale process handoff on isolated SQL
+
+The opt-in 50,000-row test on PR #158 head `aed5a94d` passed on September 25
+in a dedicated MySQL 8.0.46 container bound to loopback port 3316. The fixture
+was `weletic_loyalty_it_import_full_restart_20260925`. Before each phase's
+remaining worker deliveries, one real outbox CLI process completed 50 rows and
+a second process with a different worker ID resumed to 100 rows. The
+remaining runner reported 999 further durable deliveries per phase before
+50,000 rows reached terminal status. No failed delivery or stage failure was
+reported. Vitest exited 0: one test passed and
+63 unrelated tests were intentionally skipped by the focused selector.
+
+The unchanged test assertions require 50,000 committed rows, 50,000 rolled-back
+rows, 100,000 ledger entries with exact SQL net zero, a fully rolled-back
+execution proof, and 50,000 zero-balance accounts at ledger version 2. The
+process was allowed to finish its fixture cleanup. An independent SQL query
+after exit counted zero import sources, row executions, row snapshots, ledger
+entries, accounts, outbox jobs and stores in that isolated database. Local
+run log: `/tmp/weletic-import-full-restart-50000-20260925.log`, SHA-256
+`926e851fcb2515c4be79fddec64cde8b45ec603aeb579f82a904cbf644006853`.
+The full Vitest duration was 25,632.02 seconds; no production timeout or batch
+size was changed for the test.
+
+This proves a graceful OS-process handoff through persisted continuations, not
+a mid-transaction crash or a deployed supervisor restart. It does not establish
+provider-scale SQL behavior, authenticated merchant import execution, target
+migrations, backup restoration or installation acceptance. After the
+independent cleanup query, the disposable container was stopped and its
+`--rm` policy removed it; a subsequent Docker inventory showed no matching
+container.
