@@ -128,6 +128,32 @@ describe("paid-order optional pixel wait", () => {
     expect(mocks.publish).not.toHaveBeenCalled();
     expect(mocks.cacheWrite).not.toHaveBeenCalled();
   });
+  it("passes an offset-qualified Shopify order creation time with its basis", async () => {
+    await ordersPaid({
+      ...input,
+      event: { ...input.event, created_at: "2026-09-01T09:30:00+09:00" },
+    });
+    expect(mocks.settle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        usedAt: new Date("2026-09-01T00:30:00.000Z"),
+        usedAtBasis: "shopify_order_created_at",
+      }),
+    );
+  });
+  it("labels a malformed Shopify order timestamp as webhook observation", async () => {
+    const before = Date.now();
+    await ordersPaid({
+      ...input,
+      event: { ...input.event, created_at: "not-a-timestamp" },
+    });
+    const after = Date.now();
+    expect(mocks.settle).toHaveBeenCalledWith(
+      expect.objectContaining({ usedAtBasis: "webhook_observed_at" }),
+    );
+    const usedAt = mocks.settle.mock.calls[0][0].usedAt as Date;
+    expect(usedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(usedAt.getTime()).toBeLessThanOrEqual(after);
+  });
   it("preserves queue dispatch for an owned link even without a known click yet", async () => {
     mocks.link.mockResolvedValue({ id: "link_test" });
     await expect(ordersPaid(input)).resolves.toContain("Waiting for pixel");
