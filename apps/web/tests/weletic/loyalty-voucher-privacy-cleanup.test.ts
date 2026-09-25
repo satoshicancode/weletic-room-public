@@ -383,6 +383,12 @@ describe("durable privacy voucher cleanup", () => {
     expect(cleanup.status).toBe(WeleticVoucherCleanupStatus.completed);
     expect(cleanup.remoteOutcome).toBe("used_preserved");
     expect(resolveShopifyOfflineCredentials).toHaveBeenCalledOnce();
+    expect(
+      mocks.redemptionUpdateMany.mock.calls.every(
+        ([input]) =>
+          !("usedAt" in input.data) && !("usedAtBasis" in input.data),
+      ),
+    ).toBe(true);
     expect(deactivateDiscount).toHaveBeenCalledWith(
       "privacy-cleanup.myshopify.com",
       "offline-token",
@@ -447,6 +453,7 @@ describe("durable privacy voucher cleanup", () => {
         where: expect.objectContaining({ id: redemptionId, storeId }),
         data: expect.objectContaining({
           status: WeleticRedemptionStatus.used,
+          usedAtBasis: "remote_cleanup_observed_at",
           metadata: expect.objectContaining({
             privacySafeFinancialAudit: true,
           }),

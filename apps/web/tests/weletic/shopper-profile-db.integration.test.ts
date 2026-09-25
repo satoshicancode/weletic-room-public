@@ -1,4 +1,5 @@
 import { encrypt } from "@/lib/encryption";
+import type { ShopifyOrderUseTimeBasis } from "@/lib/weletic/loyalty/redemption-use-time";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -4470,6 +4471,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
       orderId: "987654",
       shopifyCustomerId: "1234",
       usedAt: new Date("2026-09-01T00:00:00Z"),
+      usedAtBasis: "shopify_order_created_at" as ShopifyOrderUseTimeBasis,
       expectedInstallationGeneration: "g1",
       orderDiscountEvidence: evidence(),
       orderMetadata: { email: "must-not-retain@example.invalid" },
@@ -4497,6 +4499,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
       discountAmountMinor: BigInt(100),
       currency: "JPY",
       amountUnavailableReason: null,
+      usedAtBasis: "shopify_order_created_at",
     });
     const reward = await database.weleticRewardRedemption.findUniqueOrThrow({
       where: { id: fixture.redemption.id },
@@ -4506,6 +4509,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
       orderId: "987654",
       accountId: null,
       pointsSpent: BigInt(0),
+      usedAtBasis: "shopify_order_created_at",
     });
     expect(JSON.stringify(reward.metadata)).not.toContain("must-not-retain");
     expect(
@@ -4551,9 +4555,22 @@ describe("shopper profile production queries on isolated MySQL", () => {
       shopifyCustomerId: "1234",
     });
     expect(exported?.rewardCouponUses).toHaveLength(3);
+    expect(exported?.rewardFulfillments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: fixture.redemption.id,
+          usedAtBasis: "shopify_order_created_at",
+        }),
+      ]),
+    );
     expect(
       exported?.rewardCouponUses.every(
         (use) => use.discountAmountMinor === "100",
+      ),
+    ).toBe(true);
+    expect(
+      exported?.rewardCouponUses.every(
+        (use) => use.usedAtBasis === "shopify_order_created_at",
       ),
     ).toBe(true);
     expect(exported?.exportCompleteness.recordCounts.rewardCouponUses).toBe(3);
@@ -4591,6 +4608,24 @@ describe("shopper profile production queries on isolated MySQL", () => {
         where: { storeId: fixture.storeId },
       }),
     ).toMatchObject({ discountAmountMinor: BigInt(100) });
+    expect(
+      await database.weleticReconciliationIssue.findFirst({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toMatchObject({
+      details: { reason: "shopper_coupon_use_evidence_conflict" },
+    });
+  });
+
+  it("contains a replay with a conflicting use-time basis", async () => {
+    const fixture = await couponSettlementFixture();
+    await fixture.settle();
+    await fixture.settle({ usedAtBasis: "webhook_observed_at" });
+    expect(
+      await database.weleticRewardCouponUse.findFirst({
+        where: { storeId: fixture.storeId },
+      }),
+    ).toMatchObject({ usedAtBasis: "shopify_order_created_at" });
     expect(
       await database.weleticReconciliationIssue.findFirst({
         where: { storeId: fixture.storeId },
@@ -5742,6 +5777,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
       });
       expect(current).toMatchObject({
         status: "used",
+        usedAtBasis: status === "used" ? null : "remote_cleanup_observed_at",
         accountId: null,
         pointsSpent: BigInt(0),
         ledgerEntryId: null,

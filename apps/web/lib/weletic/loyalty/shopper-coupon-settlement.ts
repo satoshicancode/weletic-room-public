@@ -17,6 +17,7 @@ import {
   createLoyaltyRedemptionProvisioningSnapshot,
   readLoyaltyRedemptionProvisioningSnapshot,
 } from "./redemption-provisioning-snapshot";
+import type { ShopifyOrderUseTimeBasis } from "./redemption-use-time";
 import { DIRECT_REVIEW_REWARD_SOURCE } from "./reward-ownership";
 
 const object = (value: unknown): Record<string, unknown> =>
@@ -46,6 +47,7 @@ export async function settleShopperCouponUse({
   orderId,
   shopifyCustomerId,
   usedAt,
+  usedAtBasis,
   orderDiscountEvidence,
 }: {
   tx: Prisma.TransactionClient;
@@ -54,6 +56,7 @@ export async function settleShopperCouponUse({
   orderId: string;
   shopifyCustomerId: string | null;
   usedAt: Date;
+  usedAtBasis?: ShopifyOrderUseTimeBasis;
   orderDiscountEvidence?: unknown;
 }): Promise<{
   marked: boolean;
@@ -233,6 +236,9 @@ export async function settleShopperCouponUse({
       existing.shopperId !== shopper.id ||
       existing.installationGeneration !== installationGeneration ||
       existing.source !== "shopify_orders_paid" ||
+      (existing.usedAtBasis !== null &&
+        usedAtBasis !== undefined &&
+        existing.usedAtBasis !== usedAtBasis) ||
       existing.usedAt.getTime() !== usedAt.getTime() ||
       existing.discountAmountMinor !== amount.discountAmountMinor ||
       existing.currency !== amount.currency ||
@@ -251,6 +257,7 @@ export async function settleShopperCouponUse({
       installationGeneration,
       source: "shopify_orders_paid",
       usedAt,
+      usedAtBasis: usedAtBasis ?? null,
       ...amount,
       priorRedemptionStatus: redemption.status,
     },
@@ -262,7 +269,9 @@ export async function settleShopperCouponUse({
       where: { id: redemption.id },
       data: {
         status: "used",
-        ...(redemption.orderId === null ? { orderId: externalId, usedAt } : {}),
+        ...(redemption.orderId === null
+          ? { orderId: externalId, usedAt, usedAtBasis: usedAtBasis ?? null }
+          : {}),
       },
     });
   }
