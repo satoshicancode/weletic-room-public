@@ -17,6 +17,7 @@ import {
 import { upsertWeleticShopper } from "@/lib/weletic/loyalty/shopper";
 import type { BonusCampaignFields } from "@/lib/weletic/loyalty/vip-campaign-contract";
 import { VipCampaignConflictError } from "@/lib/weletic/loyalty/vip-campaign-service";
+import { readStoreWalletReconciliation } from "@/lib/weletic/loyalty/wallet-reconciliation";
 import { manageWorkspaceVipCampaign } from "@/lib/weletic/loyalty/workspace-vip-campaign";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
@@ -382,6 +383,154 @@ async function conserved(f: Fixture) {
     ),
   ).toEqual([]);
 }
+
+it("read-only store audit detects cached-wallet drift and ledger-chain corruption", async () => {
+  const f = await seed();
+  await manual(f, BigInt(100), `wallet-audit-${f.id}`);
+  const audit = () =>
+    prisma.$transaction(
+      (tx) => readStoreWalletReconciliation({ tx, storeId: f.id }),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  expect(await audit()).toMatchObject({
+    accounts: "1",
+    status: "clean",
+    balanceMismatch: "0",
+    pendingMismatch: "0",
+    earnedMismatch: "0",
+    redeemedMismatch: "0",
+    sequenceMismatch: "0",
+    chainMismatch: "0",
+    orphanLedger: "0",
+    orphanGrants: "0",
+    grantConservationMismatch: "0",
+    lineAllocationMismatch: "0",
+    orphanLines: "0",
+  });
+
+  const account = await prisma.weleticLoyaltyAccount.findUniqueOrThrow({
+    where: { id: f.accountId },
+  });
+  await prisma.weleticLoyaltyAccount.update({
+    where: { id: f.accountId },
+    data: {
+      cachedPointsBalance: account.cachedPointsBalance + BigInt(1),
+      cachedPendingPoints: account.cachedPendingPoints + BigInt(1),
+      lifetimePointsEarned: account.lifetimePointsEarned + BigInt(1),
+      lifetimePointsRedeemed: account.lifetimePointsRedeemed + BigInt(1),
+      ledgerVersion: account.ledgerVersion + 1,
+    },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    balanceMismatch: "1",
+    pendingMismatch: "1",
+    earnedMismatch: "1",
+    redeemedMismatch: "1",
+    sequenceMismatch: "1",
+    chainMismatch: "0",
+  });
+  await prisma.weleticLoyaltyAccount.update({
+    where: { id: f.accountId },
+    data: {
+      cachedPointsBalance: account.cachedPointsBalance,
+      cachedPendingPoints: account.cachedPendingPoints,
+      lifetimePointsEarned: account.lifetimePointsEarned,
+      lifetimePointsRedeemed: account.lifetimePointsRedeemed,
+      ledgerVersion: account.ledgerVersion,
+    },
+  });
+
+  const entry = await prisma.weleticPointsLedgerEntry.findFirstOrThrow({
+    where: { accountId: f.accountId },
+  });
+  await prisma.weleticPointsLedgerEntry.update({
+    where: { id: entry.id },
+    data: { balanceAfter: entry.balanceAfter + BigInt(1) },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    balanceMismatch: "0",
+    chainMismatch: "1",
+  });
+  await prisma.weleticPointsLedgerEntry.update({
+    where: { id: entry.id },
+    data: { balanceAfter: entry.balanceAfter },
+  });
+  expect((await audit()).status).toBe("clean");
+
+  await prisma.$executeRaw`UPDATE WeleticPointsLedgerEntry SET accountId = ${`missing-${f.accountId}`} WHERE id = ${entry.id}`;
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    orphanLedger: "1",
+  });
+  await prisma.$executeRaw`UPDATE WeleticPointsLedgerEntry SET accountId = ${f.accountId} WHERE id = ${entry.id}`;
+  expect((await audit()).status).toBe("clean");
+
+  const other = await seed();
+  await manual(other, BigInt(50), `wallet-audit-${other.id}`);
+  await prisma.weleticLoyaltyAccount.update({
+    where: { id: other.accountId },
+    data: { cachedPointsBalance: BigInt(51) },
+  });
+  expect((await audit()).status).toBe("clean");
+  expect(
+    (
+      await prisma.$transaction((tx) =>
+        readStoreWalletReconciliation({ tx, storeId: other.id }),
+      )
+    ).status,
+  ).toBe("mismatch");
+});
+
+it("store audit rejects common-mode pending drift and line allocation drift", async () => {
+  const f = await seed(5);
+  const orderId = await order(f);
+  await earn(f, orderId);
+  const audit = () =>
+    prisma.$transaction((tx) =>
+      readStoreWalletReconciliation({ tx, storeId: f.id }),
+    );
+  expect((await audit()).status).toBe("clean");
+
+  const grant = await prisma.weleticLoyaltyEarnGrant.findFirstOrThrow({
+    where: { storeId: f.id },
+  });
+  await prisma.weleticLoyaltyEarnGrant.update({
+    where: { id: grant.id },
+    data: { pendingPoints: grant.pendingPoints + BigInt(1) },
+  });
+  await prisma.weleticLoyaltyAccount.update({
+    where: { id: f.accountId },
+    data: { cachedPendingPoints: grant.pendingPoints + BigInt(1) },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    pendingMismatch: "0",
+    grantConservationMismatch: "1",
+  });
+  await prisma.weleticLoyaltyEarnGrant.update({
+    where: { id: grant.id },
+    data: { pendingPoints: grant.pendingPoints },
+  });
+  await prisma.weleticLoyaltyAccount.update({
+    where: { id: f.accountId },
+    data: { cachedPendingPoints: grant.pendingPoints },
+  });
+
+  const line = await prisma.weleticLoyaltyOrderLineEarn.findFirstOrThrow({
+    where: { grantId: grant.id },
+  });
+  await prisma.weleticLoyaltyOrderLineEarn.update({
+    where: { id: line.id },
+    data: { awardedPoints: line.awardedPoints + BigInt(1) },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    grantConservationMismatch: "0",
+    lineAllocationMismatch: "1",
+  });
+});
 
 it("P01: purchase multi-line earn, duplicate delivery and partial/full refund conserve points", async () => {
   const f = await seed();
