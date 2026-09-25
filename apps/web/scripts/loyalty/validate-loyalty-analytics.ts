@@ -343,10 +343,12 @@ export async function validateLoyaltyAnalytics(
   );
 
   checks.push(
-    check("Every retained wallet reconciles to its ledger", () => {
+    check("Retained wallets, grants and pending events reconcile", () => {
       const result = evidence.walletReconciliation;
       if (result.status !== "clean")
-        throw new Error(`Wallet or ledger drift: ${JSON.stringify(result)}`);
+        throw new Error(
+          `Financial reconciliation ${result.status}: ${JSON.stringify(result)}`,
+        );
       return result;
     }),
     check("Liability service reconciles to independent SQL totals", () => {
