@@ -151,7 +151,8 @@ movements, not historical balance or order/reward rates. S16 is merged as a
 recorded-order implementation candidate with explicit partial coverage. S17 has
 a merged recorded-ledger monthly rate with an explicit earned denominator. S23
 has a bounded recorded-ledger net candidate, not historical liability; S18
-remains unimplemented. S16, S17, S23 and S24 merchant journeys await named
+has no reliable issued-and-used series and is shown as unavailable in the
+merchant UI. S16, S17, S23 and S24 merchant journeys await named
 acceptance. The accompanying
 `(storeId, createdAt)` ledger index needs its separate shared-schema migration
 gate before this report is enabled in a deployed environment.

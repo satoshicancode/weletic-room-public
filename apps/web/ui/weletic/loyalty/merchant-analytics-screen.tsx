@@ -664,6 +664,10 @@ export function MerchantAnalyticsScreen({
               <p role="status">{copy[snapshot.redemptionRateSeries.status]}</p>
             </section>
           )}
+          <section>
+            <h2>{copy.rewardUsageRateTitle}</h2>
+            <p role="status">{copy.rewardUsageRateUnavailable}</p>
+          </section>
           <p>{copy.orderEarningSemantics}</p>
           {snapshot.orderEarningSeries.status === "available" ? (
             table(copy.orderEarningSeries, snapshot.orderEarningSeries.rows)
