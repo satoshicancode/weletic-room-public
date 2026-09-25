@@ -1,10 +1,10 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 25, 2026 JST: public `main` at
-[`2f6407d60b`](https://github.com/satoshicancode/weletic-room-public/commit/2f6407d60beb3eb1a0087d09ce9c3438098210e2)
-(PR #155). [PR #155 current-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36085758848);
-[post-merge `main` CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/36086480440)
-is a separate gate. At this baseline, the only open public PR is the
+[`efbe4a9ee3`](https://github.com/satoshicancode/weletic-room-public/commit/efbe4a9ee33b10a1d7e62719ea0a9b49bb5c11a8)
+(PR #157). [PR #157 current-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36090814151);
+[post-merge `main` CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/36091727819)
+is a separate gate. Apart from this release-matrix PR, the only open public PR is the
 [schema-gated import provenance index](https://github.com/satoshicancode/weletic-room-public/pull/106),
 which remains draft work rather than a shipped capability.
 The store-review, prospective collection and shared-delivery code is merged.
@@ -67,6 +67,11 @@ are merged. The wallet reader must wait for the reward-issuance column to be
 applied on the exact release target. Historical unknown dates stay unknown,
 and the cart nudge suppresses those unproven reward hints. Neither PR closes
 the reward-usage or installed acceptance gate.
+The [reward use-time provenance](reward-use-time-provenance-2026-09-25.md)
+merged in PR #157. New paid-order and cleanup records label the source of
+`usedAt`; historical rows remain unknown. Its two additive columns have not
+been verified on a release database. Shopify order creation is not the exact
+coupon-application time, and S18 usage-over-time remains unavailable.
 The [owner account-row export](https://github.com/satoshicancode/weletic-room-public/pull/153)
 is also merged; it remains bounded to retained, pseudonymous records and needs
 provider read-plan and installed acceptance evidence.
@@ -193,9 +198,9 @@ exact extension ownership and named Flow workflow receipts before acceptance.
 
 ## Migration and runtime inventory
 
-The repository has [32 checked-in Shopify-development SQL files](../../infra/shopify-development/migrations/),
-including one candidate reward-issuance timestamp migration. Code-only merge
-does not authorize applying it to a shared database.
+The repository has [33 checked-in Shopify-development SQL files](../../infra/shopify-development/migrations/),
+including additive reward-issuance and use-time provenance migrations. Code-only merge
+does not authorize applying them to a shared database.
 The table below isolates the known v1 deployment candidates; it does not assert
 which older files are already present on an acceptance or production database.
 The merged [read-only review schema preflight](review-release-schema-preflight.md)
@@ -210,6 +215,7 @@ with every candidate file and the current Prisma schema.
 | Loyalty recorded-order earning `(storeId, occurredAt)` index                    | Merged PR #117; isolated SQL only                                                                                                 | Exact target metadata, reviewed DDL and read-plan acceptance before deploying the S16 reader                                                                                                                           |
 | Loyalty account enrollment `(storeId, enrolledAt)` index                        | Candidate SQL and [50,000-account isolated plan](account-enrollment-index-preflight-2026-09-25.md); shared application unverified | Exact target metadata, reviewed DDL window and provider read plan before treating S01/S27 as provider-scale accepted                                                                                                   |
 | Loyalty reward `issuanceConfirmedAt` and `(storeId, issuanceConfirmedAt)` index | [Additive SQL merged in PR #154](reward-issuance-confirmation-2026-09-25.md); disposable MySQL and Prisma sync only               | Exact target metadata and schema-first deployment before writers/readers; historical NULL values remain unknown, and S18 remains incomplete                                                                            |
+| Loyalty reward/coupon-use `usedAtBasis` columns                                 | [Additive SQL merged in PR #157](reward-use-time-provenance-2026-09-25.md); disposable MySQL and Prisma sync only                 | Exact target metadata and schema-first deployment before paid-order, cleanup and privacy readers; historical NULL values remain unknown; S18 remains incomplete                                                        |
 | Store-review five-table core                                                    | Merged PR #101; only disposable SQL rehearsed                                                                                     | Create all five before privacy readers; retain export-phase-compatible workers                                                                                                                                         |
 | Review collection/reminder settings and history                                 | Merged PR #101; only disposable SQL rehearsed                                                                                     | Schema before readers/jobs; retain reminder export phase                                                                                                                                                               |
 | Product-review encrypted delivery snapshot and retention index                  | Merged code; only disposable SQL rehearsed                                                                                        | Verify existing request table before email retry and privacy cleanup readers                                                                                                                                           |
