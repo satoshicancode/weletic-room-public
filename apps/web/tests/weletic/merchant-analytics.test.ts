@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   ledgerNetSeries: vi.fn(),
   firstEarnersSeries: vi.fn(),
   firstRedemptionDebitsSeries: vi.fn(),
+  firstConfirmedIssuancesSeries: vi.fn(),
   retainedEnrollmentSeries: vi.fn(),
   tierChangesSeries: vi.fn(),
   earningSources: vi.fn(),
@@ -47,6 +48,13 @@ vi.mock(
   () => ({
     readMerchantFirstRecordedRedemptionDebitsSeries:
       mocks.firstRedemptionDebitsSeries,
+  }),
+);
+vi.mock(
+  "../../lib/weletic/loyalty/first-recorded-confirmed-issuances-series",
+  () => ({
+    readMerchantFirstRecordedConfirmedIssuancesSeries:
+      mocks.firstConfirmedIssuancesSeries,
   }),
 );
 vi.mock("../../lib/weletic/loyalty/retained-enrollment-series", () => ({
@@ -204,6 +212,19 @@ beforeEach(() => {
       },
     ],
   });
+  mocks.firstConfirmedIssuancesSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_confirmed_point_issuance_accounts_only",
+    rows: [
+      {
+        month: "2026-09",
+        confirmedAccounts: "2",
+        firstRecordedConfirmedAccounts: "1",
+        returningConfirmedAccounts: "1",
+      },
+    ],
+  });
   mocks.retainedEnrollmentSeries.mockResolvedValue({
     status: "available",
     bucket: "utc_month",
@@ -342,6 +363,18 @@ describe("merchant analytics", () => {
     ).toMatchObject({
       firstRecordedDebitAccounts: "1",
       returningDebitAccounts: "1",
+    });
+    expect(mocks.firstConfirmedIssuancesSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(
+      result.snapshot.firstRecordedConfirmedIssuancesSeries.rows[0],
+    ).toMatchObject({
+      firstRecordedConfirmedAccounts: "1",
+      returningConfirmedAccounts: "1",
     });
     expect(result.snapshot.retainedEnrollmentSeries.rows[0]).toMatchObject({
       newRetainedAccounts: "1",
@@ -641,6 +674,9 @@ describe("merchant analytics", () => {
           "firstRecordedRedemptionDebitsSeries.rows.0.firstRecordedDebitAccounts,1",
         );
         expect(result.download!.content).toContain(
+          "firstRecordedConfirmedIssuancesSeries.rows.0.firstRecordedConfirmedAccounts,1",
+        );
+        expect(result.download!.content).toContain(
           "retainedEnrollmentSeries.rows.0.cumulativeRetainedAccounts,2",
         );
         expect(result.download!.content).toContain(
@@ -699,6 +735,26 @@ describe("merchant analytics", () => {
       verifyMerchantAnalyticsResponse(read, {
         ...result,
         shopperEmail: "private@example.com",
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          firstRecordedConfirmedIssuancesSeries: {
+            ...result.snapshot.firstRecordedConfirmedIssuancesSeries,
+            rows: [
+              {
+                ...result.snapshot.firstRecordedConfirmedIssuancesSeries
+                  .rows[0],
+                confirmedAccounts: "2",
+                firstRecordedConfirmedAccounts: "2",
+                returningConfirmedAccounts: "1",
+              },
+            ],
+          },
+        },
       }),
     ).toThrow();
   });
