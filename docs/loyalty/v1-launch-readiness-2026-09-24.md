@@ -119,7 +119,9 @@ MySQL: 500 commits, 500 rollbacks, final exact SQL reconciliation and disposable
 fixture cleanup. The run took 11 commit deliveries and 11 rollback deliveries;
 its local log is `/tmp/weletic-import-500-lifecycle-after-122.log` (SHA-256
 `b52157c3528ccf9b9bdfd73c989e1178d82aedc1c7defc367004c3027ebbad34`).
-This does not close the 50,000-row, restart or installed gates.
+That earlier bounded run did not close the 50,000-row gate. The later strict
+50,000-commit and 50,000-rollback isolated run in L10's evidence row did;
+full-scale restart, provider and installed gates remain open.
 
 L09's [recorded-order earning-rate code](https://github.com/satoshicancode/weletic-room-public/pull/117) is merged. It excludes missing Shopify orders, and its additive index has not been applied to a shared database. This is neither a whole-store rate nor installed acceptance.
 
