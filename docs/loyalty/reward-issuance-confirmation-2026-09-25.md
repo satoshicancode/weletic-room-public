@@ -43,8 +43,10 @@ The full web unit suite passed with a local fixture Shopify app key: 669 files,
 Prisma validation, TypeScript and web lint passed. The Shopify CLI app build
 also passed, and the generated review asset checked at 8,419 bytes. The web
 production build passed against the disposable MySQL fixture, including static
-page generation. CI, the shopper SQL integration suite and target-specific
-deployment evidence remain separate gates. The shopper suite's fixed local
-port 3307 was already held by an unrelated SSH process, which was left
-untouched. The current Fast quality gate does not run that suite; its new
-assertions remain an isolated-SQL release gate.
+page generation. A separate disposable MySQL 8.0.46 shopper fixture passed all
+187 real-SQL tests, including store/product reward competition, ambiguous
+coupon adoption, concurrent issuance, rejected remote ownership and privacy
+cleanup. Its test helper still required a unique shopper database and matching
+restricted principal; only the expected port was temporarily changed from the
+occupied 3307 to 3315, then restored byte-for-byte. Both disposable containers
+were stopped. CI and exact-target deployment evidence remain separate gates.
