@@ -91,6 +91,10 @@ The merged [cadence containment](https://github.com/satoshicancode/weletic-room-
 preserves historical subscription promises as critical
 reconciliation holds. It does not settle them; an authorized cycle source and
 fenced referral adjudication path remain necessary. L03 remains blocked.
+The September 25 read-only Yamax inventory found Shopify Subscriptions installed
+but its setup guide at 0/7 steps and its contracts screen empty; no real cycle
+receipt is available from that app for acceptance yet. This does not exclude
+contracts managed elsewhere.
 
 L09's [S15 bounded owner tier-event export](https://github.com/satoshicancode/weletic-room-public/pull/138)
 is merged with [isolated SQL redaction and row-cap evidence](tier-history-row-export-s15-2026-09-25.md).
