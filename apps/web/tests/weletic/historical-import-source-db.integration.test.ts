@@ -45,7 +45,7 @@ import {
 const execFileAsync = promisify(execFile);
 const webRoot = fileURLToPath(new URL("../../", import.meta.url));
 
-async function runIsolatedOutboxProcess(shopDomain: string) {
+async function runIsolatedOutboxProcessBatch(shopDomain: string) {
   if (!process.env.DATABASE_URL)
     throw new Error(
       "The isolated worker needs the explicit fixture DATABASE_URL",
@@ -69,11 +69,30 @@ async function runIsolatedOutboxProcess(shopDomain: string) {
     },
   );
   expect(stderr).not.toContain("fatal worker error");
-  expect(stdout).toContain("processed=1");
-  expect(stdout).toContain("failed=0 deadLettered=0");
   const workerId = stdout.match(/\[loyalty-outbox\] worker (\S+) started/)?.[1];
   if (!workerId) throw new Error("The isolated worker did not report its ID");
-  return workerId;
+  const summary = stdout.match(
+    /^\[loyalty-outbox\] processed=(\d+) succeeded=(\d+) failed=(\d+) deadLettered=(\d+)$/m,
+  );
+  if (!summary)
+    throw new Error("The isolated worker did not report a batch summary");
+  return {
+    workerId,
+    processed: Number(summary[1]),
+    succeeded: Number(summary[2]),
+    failed: Number(summary[3]),
+    deadLettered: Number(summary[4]),
+  };
+}
+
+async function runIsolatedOutboxProcess(shopDomain: string) {
+  const result = await runIsolatedOutboxProcessBatch(shopDomain);
+  expect(result).toMatchObject({
+    processed: 1,
+    failed: 0,
+    deadLettered: 0,
+  });
+  return result.workerId;
 }
 
 const stageDiagnostics = vi.hoisted(() => ({ active: false, emitted: 0 }));
@@ -323,13 +342,17 @@ const options = {
 };
 beforeAll(async () => {
   const url = new URL(process.env.DATABASE_URL || "invalid:");
+  const fullScaleRestart =
+    process.env.HISTORICAL_IMPORT_FULL_SCALE_RESTART_INTEGRATION === "1";
   if (
     process.env.HISTORICAL_IMPORT_SOURCE_DATABASE_INTEGRATION !== "1" ||
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
+    (fullScaleRestart &&
+      process.env.HISTORICAL_IMPORT_FULL_LIFECYCLE_INTEGRATION !== "1") ||
     ((process.env.HISTORICAL_IMPORT_FULL_LIFECYCLE_INTEGRATION === "1" ||
       process.env.HISTORICAL_IMPORT_POPULATED_COMMIT_PROFILE === "1") &&
-      (url.port !== "3308" ||
+      (url.port !== (fullScaleRestart ? "3316" : "3308") ||
         process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE !== "1" ||
         fixtureDatabase === undefined)) ||
     (process.env.HISTORICAL_IMPORT_PROCESS_RESTART_INTEGRATION === "1" &&
@@ -339,6 +362,12 @@ beforeAll(async () => {
     !(
       url.port === "3307" ||
       (url.port === "3308" &&
+        !fullScaleRestart &&
+        process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE === "1" &&
+        fixtureDatabase !== undefined) ||
+      (url.port === "3316" &&
+        fullScaleRestart &&
+        process.env.HISTORICAL_IMPORT_FULL_LIFECYCLE_INTEGRATION === "1" &&
         process.env.HISTORICAL_IMPORT_DEDICATED_INSTANCE === "1" &&
         fixtureDatabase !== undefined) ||
       (url.port === "3313" &&
@@ -2441,6 +2470,98 @@ for (const rowCount of [500, 50_000]) {
     async () => {
       const fixture = await queuedWorkerFixture(rowCount);
       await releaseFixtureJobToRealWorker(fixture.job.id);
+      // The 500-row variant is a bounded rehearsal of the same handoff before
+      // the separate 50,000-row opt-in run.
+      const fullScaleRestart =
+        process.env.HISTORICAL_IMPORT_FULL_SCALE_RESTART_INTEGRATION === "1";
+      const handoffProcessDeliveries = async (
+        jobId: string,
+        terminal: "committed" | "rolled_back",
+      ) => {
+        const workerId = await runIsolatedOutboxProcess(
+          `${fixture.source.storeId}.myshopify.com`,
+        );
+        expect(workerId).not.toBe("isolated-load-worker");
+        const completedRows =
+          await database.weleticLoyaltyImportRowExecution.count({
+            where: { sourceId: fixture.source.id, status: terminal },
+          });
+        expect(completedRows).toBeGreaterThan(0);
+        expect(completedRows).toBeLessThan(rowCount);
+        expect(
+          await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+            where: { id: jobId },
+          }),
+        ).toMatchObject({
+          status: "pending",
+          attempts: 0,
+          lockedBy: null,
+          lockedAt: null,
+        });
+        expect(
+          await database.weleticLoyaltyImportSource.findUniqueOrThrow({
+            where: { id: fixture.source.id },
+          }),
+        ).toMatchObject({
+          status: terminal === "committed" ? "committing" : "rolling_back",
+        });
+        const secondDelivery = await pollImportWorkerUntilEligible({
+          run: () =>
+            runIsolatedOutboxProcessBatch(
+              `${fixture.source.storeId}.myshopify.com`,
+            ),
+          readEvidence: () =>
+            readImportPollEvidence({
+              storeId: fixture.source.storeId,
+              sourceId: fixture.source.id,
+              jobId,
+              terminal,
+            }),
+          phase: terminal === "committed" ? "committing" : "rolling_back",
+          previousRows: completedRows,
+          report: (evidence) =>
+            console.log(
+              JSON.stringify({
+                event: "isolated_import_empty_poll",
+                phase: terminal,
+                evidence,
+              }),
+            ),
+        });
+        expect(secondDelivery).toMatchObject({
+          processed: 1,
+          failed: 0,
+          deadLettered: 0,
+        });
+        expect(secondDelivery.workerId).not.toBe(workerId);
+        const resumedRows =
+          await database.weleticLoyaltyImportRowExecution.count({
+            where: { sourceId: fixture.source.id, status: terminal },
+          });
+        expect(resumedRows).toBeGreaterThan(completedRows);
+        expect(resumedRows).toBeLessThan(rowCount);
+        expect(
+          await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+            where: { id: jobId },
+          }),
+        ).toMatchObject({
+          status: "pending",
+          attempts: 0,
+          lockedBy: null,
+          lockedAt: null,
+        });
+        console.log(
+          JSON.stringify({
+            event: "isolated_full_scale_process_handoff",
+            phase: terminal,
+            sourceRows: rowCount,
+            firstCompletedRows: completedRows,
+            secondCompletedRows: resumedRows,
+          }),
+        );
+      };
+      if (fullScaleRestart)
+        await handoffProcessDeliveries(fixture.job.id, "committed");
       const runPhase = async (
         jobId: string,
         terminal: "committed" | "rolled_back",
@@ -2448,7 +2569,10 @@ for (const rowCount of [500, 50_000]) {
         const started = performance.now();
         const batchTimes: number[] = [];
         stageDiagnostics.active = true;
-        let previousRows = 0;
+        let previousRows =
+          await database.weleticLoyaltyImportRowExecution.count({
+            where: { sourceId: fixture.source.id, status: terminal },
+          });
         let finished = false;
         for (let batch = 0; batch <= rowCount; batch++) {
           const batchStarted = performance.now();
@@ -2634,6 +2758,8 @@ for (const rowCount of [500, 50_000]) {
         data: { leaseExpiresAt: new Date(0) },
       });
       await releaseFixtureJobToRealWorker(rollbackJob.id);
+      if (fullScaleRestart)
+        await handoffProcessDeliveries(rollbackJob.id, "rolled_back");
       await runPhase(rollbackJob.id, "rolled_back");
       await assertLedgerSql(rowCount * 2, BigInt(0));
       const after = await database.$transaction(
