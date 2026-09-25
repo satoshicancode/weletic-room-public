@@ -27,8 +27,10 @@ intentional for this candidate; a cross-report key contract would need a
 separate approved privacy design before account-level reconciliation is
 claimed. Provider-scale query plans and latency remain open because the
 current account index does not match the store/enrollment sort; the 2,001-row
-output bound does not bound the rows scanned. A named installed merchant
-journey also remains open.
+output bound does not bound the rows scanned. An additive
+[store/enrollment index candidate](account-enrollment-index-preflight-2026-09-25.md)
+has an isolated 50,000-account plan, but has not been applied or measured on a
+release provider. A named installed merchant journey also remains open.
 
 Candidate-branch evidence:
 

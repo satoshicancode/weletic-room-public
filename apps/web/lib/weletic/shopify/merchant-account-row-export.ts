@@ -57,6 +57,9 @@ export async function readShopifyMerchantAccountRowExportInTransaction({
 
   const startAt = new Date(data.filter.startAt!);
   const endAt = new Date(data.filter.endAt!);
+  // Discovery only proves whether the cap is exceeded. Sorting here would
+  // scan the whole range before refusing a large export; the locked read below
+  // orders the rows that can actually be returned.
   const candidates = await tx.$queryRaw<Candidate[]>(PrismaSql.sql`
     SELECT a.id
     FROM WeleticLoyaltyAccount a
@@ -64,7 +67,6 @@ export async function readShopifyMerchantAccountRowExportInTransaction({
       AND BINARY a.storeId = BINARY ${actor.storeId}
       AND COALESCE(JSON_CONTAINS_PATH(a.metadata, 'one', ${redactionPath}), 0) = 0
       AND a.enrolledAt >= ${startAt} AND a.enrolledAt <= ${endAt}
-    ORDER BY a.enrolledAt ASC, BINARY a.id ASC
     LIMIT ${MAX_ACCOUNT_ROW_EXPORT_ROWS + 1}
   `);
   if (candidates.length > MAX_ACCOUNT_ROW_EXPORT_ROWS + 1)
