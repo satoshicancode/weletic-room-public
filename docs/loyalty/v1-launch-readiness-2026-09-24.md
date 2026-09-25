@@ -1,10 +1,10 @@
 # Weletic Room v1 launch readiness
 
 Implementation baseline reconciled September 25, 2026 JST through
-[`4f86822587`](https://github.com/satoshicancode/weletic-room-public/commit/4f86822587f508bc17094d0e25b0098725c0415b)
-(PR #167). Its [current-head quality run](https://github.com/satoshicancode/weletic-room-public/actions/runs/36107237723)
+[`831a4de4be`](https://github.com/satoshicancode/weletic-room-public/commit/831a4de4be3fd61ed9039aaa46207498d53653b5)
+(PR #169). Its [PR-head quality run](https://github.com/satoshicancode/weletic-room-public/actions/runs/36109650961)
 passed all applicable checks; Shopify checks were skipped for this web-only
-change. Post-merge CI and deployed acceptance remain open.
+change. Deployed acceptance remains open.
 The remaining implementation PRs are the draft
 [schema-gated import provenance index](https://github.com/satoshicancode/weletic-room-public/pull/106)
 and draft [full-scale import restart test](https://github.com/satoshicancode/weletic-room-public/pull/158).
@@ -116,9 +116,12 @@ It compares account projections with ledger and grant history, detects broken
 ledger sequence/balance chains and orphan rows, and returns aggregate mismatch
 counts without shopper identifiers. The [pending-history audit](https://github.com/satoshicancode/weletic-room-public/pull/167)
 adds held-grant release/refund event checks and reports unknown provenance as
-unavailable instead of clean. Twenty-three isolated real-MySQL points tests
-passed, including intentional drift, pending-event corruption and tenant
-isolation. This is local operator evidence, not a clean named-store result:
+unavailable instead of clean. The [grant-ledger audit](https://github.com/satoshicancode/weletic-room-public/pull/169)
+compares settled and reversed grant totals against linked earn/refund events,
+detects orphan links and checks immediate earn, backfill and refund sources.
+Twenty-six isolated real-MySQL points tests passed, including intentional drift,
+pending-event corruption, reassigned grants, positive legacy corrections and
+tenant isolation. This is local operator evidence, not a clean named-store result:
 per-refund source amount attribution, provider-scale read plans and live
 financial reconciliation remain open.
 L10's [strict 50,000-row process-handoff rehearsal](https://github.com/satoshicancode/weletic-room-public/pull/158)
