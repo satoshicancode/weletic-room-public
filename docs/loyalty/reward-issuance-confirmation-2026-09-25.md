@@ -46,4 +46,5 @@ production build passed against the disposable MySQL fixture, including static
 page generation. CI, the shopper SQL integration suite and target-specific
 deployment evidence remain separate gates. The shopper suite's fixed local
 port 3307 was already held by an unrelated SSH process, which was left
-untouched; the new assertions must run in isolated SQL CI.
+untouched. The current Fast quality gate does not run that suite; its new
+assertions remain an isolated-SQL release gate.
