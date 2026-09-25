@@ -395,7 +395,11 @@ export async function provisionShopperReviewCoupon({
             throw new Error("Shopper coupon remote identity changed");
           await tx.weleticRewardRedemption.update({
             where: { id: current.redemption.id },
-            data: { status: "issued", shopifyDiscountId: remote.id },
+            data: {
+              status: "issued",
+              issuanceConfirmedAt: new Date(),
+              shopifyDiscountId: remote.id,
+            },
           });
           await tx.weleticReviewIncentiveClaim.update({
             where: { id: current.claim.id },

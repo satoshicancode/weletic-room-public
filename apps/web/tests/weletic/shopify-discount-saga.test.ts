@@ -1953,6 +1953,7 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
           data: expect.objectContaining({
             status: WeleticRedemptionStatus.issued,
             shopifyDiscountId: "gid://shopify/DiscountCodeNode/999888777",
+            issuanceConfirmedAt: expect.any(Date),
           }),
         }),
       );
@@ -3526,6 +3527,7 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
           data: expect.objectContaining({
             status: WeleticRedemptionStatus.issued,
             shopifyDiscountId: "gid://shopify/DiscountCodeNode/777666555",
+            issuanceConfirmedAt: expect.any(Date),
           }),
         }),
       );

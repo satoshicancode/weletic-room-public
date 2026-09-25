@@ -636,6 +636,9 @@ model WeleticRewardRedemption {
   compensationReason              String?
   orderId                         String?
   expiresAt                       DateTime?
+  // Local durable confirmation of remote issuance or adoption. Earlier rows
+  // remain unknown; createdAt is only reservation time, not issuance evidence.
+  issuanceConfirmedAt             DateTime?
   usedAt                          DateTime?
   ledgerEntryId                   String?
   metadata                        Json?                     @db.Json
@@ -659,6 +662,7 @@ model WeleticRewardRedemption {
   @@index([storeId, shopifyDiscountCode])
   @@index([storeId, status])
   @@index([storeId, createdAt])
+  @@index([storeId, issuanceConfirmedAt])
 }
 
 // Append-only, provider-reported use of a shopper-owned coupon. The redemption

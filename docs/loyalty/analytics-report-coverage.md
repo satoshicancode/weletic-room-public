@@ -263,6 +263,13 @@ currency. Distinguish outstanding liability, face value issued, remotely observe
 usage, cancellation/expiry, stored-value remaining balance and unrecoverable cost.
 Do not silently equate these quantities or infer a locked Smile formula.
 
+The candidate nullable `issuanceConfirmedAt` records the time this app durably
+confirmed a remote reward artifact, including exact-match adoption after an
+uncertain response. Existing rows remain unknown; reservation `createdAt` is
+not an issuance proxy. The field does not by itself establish remote creation
+time, observed usage or a complete S18 denominator. Its schema must precede
+the writer deployment on each target.
+
 Dependencies: authoritative per-artifact capability/evidence and reviewed
 valuation; stored-value limitations remain visibly unavailable. Tests: missing
 valuation, missing/mismatched currency, partial usage/refunds, duplicate remote

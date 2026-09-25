@@ -1141,6 +1141,7 @@ describe("referral coupon provisioning", () => {
         }),
         data: expect.objectContaining({
           status: WeleticRedemptionStatus.issued,
+          issuanceConfirmedAt: expect.any(Date),
         }),
       }),
     );
@@ -1449,6 +1450,7 @@ describe("referral coupon provisioning", () => {
         data: expect.objectContaining({
           status: WeleticRedemptionStatus.issued,
           shopifyDiscountId: "gid://shopify/DiscountCodeNode/owned-match",
+          issuanceConfirmedAt: expect.any(Date),
         }),
       }),
     );

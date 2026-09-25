@@ -1002,6 +1002,7 @@ async function provisionDiscountSagaUnlocked(
             },
             data: {
               status: WeleticRedemptionStatus.issued,
+              issuanceConfirmedAt: new Date(),
               shopifyDiscountId: shopifyResult?.id || null,
               shopifyDiscountCode: effectiveCode,
               shopifyDiscountCodeCanonical:
@@ -1749,6 +1750,7 @@ export async function reconcileGenericProvisioningDiscount({
         },
         data: {
           status: WeleticRedemptionStatus.issued,
+          issuanceConfirmedAt: new Date(),
           shopifyDiscountId: remoteDiscount.id,
         },
       });
