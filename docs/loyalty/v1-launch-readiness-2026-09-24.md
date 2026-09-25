@@ -1,9 +1,10 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 25, 2026 JST: public `main` at
-[`654411a46e`](https://github.com/satoshicancode/weletic-room-public/commit/654411a46e9e979a58dc526165a6c2c78189e266)
-(PR #152). [PR #152 current-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36079162213);
-post-merge `main` CI is a separate gate. At this baseline, the only open public PR is the
+[`2f6407d60b`](https://github.com/satoshicancode/weletic-room-public/commit/2f6407d60beb3eb1a0087d09ce9c3438098210e2)
+(PR #155). [PR #155 current-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36085758848);
+[post-merge `main` CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/36086480440)
+is a separate gate. At this baseline, the only open public PR is the
 [schema-gated import provenance index](https://github.com/satoshicancode/weletic-room-public/pull/106),
 which remains draft work rather than a shipped capability.
 The store-review, prospective collection and shared-delivery code is merged.
@@ -60,9 +61,15 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 Since the prior matrix revision, [S01 current-account rows](current-account-rows-s01-2026-09-25.md)
 merged in PR #151 and the additive [account enrollment index](account-enrollment-index-preflight-2026-09-25.md)
 merged in PR #152. S01 remains partial; the index is unapplied on shared targets.
-L02 has a [local customer-wallet issuance-date correction](customer-wallet-issuance-date-2026-09-25.md).
-Its reader must wait for the merged reward-issuance column to be
-applied on the exact release target; historical unknown dates stay unknown.
+L02's [confirmed issuance writer](https://github.com/satoshicancode/weletic-room-public/pull/154)
+and [customer-wallet correction](https://github.com/satoshicancode/weletic-room-public/pull/155)
+are merged. The wallet reader must wait for the reward-issuance column to be
+applied on the exact release target. Historical unknown dates stay unknown,
+and the cart nudge suppresses those unproven reward hints. Neither PR closes
+the reward-usage or installed acceptance gate.
+The [owner account-row export](https://github.com/satoshicancode/weletic-room-public/pull/153)
+is also merged; it remains bounded to retained, pseudonymous records and needs
+provider read-plan and installed acceptance evidence.
 The [S15 tier-event row export](tier-history-row-export-s15-2026-09-25.md)
 also has isolated SQL evidence, with provider and installed acceptance open.
 These updates extend L09's evidence and add S01 to its provider read-plan gate;
@@ -202,7 +209,7 @@ with every candidate file and the current Prisma schema.
 | Loyalty daily activity `(storeId, createdAt)` index                             | Merged in PR #102; shared application unverified                                                                                  | Exact target metadata, reviewed DDL and read-plan acceptance                                                                                                                                                           |
 | Loyalty recorded-order earning `(storeId, occurredAt)` index                    | Merged PR #117; isolated SQL only                                                                                                 | Exact target metadata, reviewed DDL and read-plan acceptance before deploying the S16 reader                                                                                                                           |
 | Loyalty account enrollment `(storeId, enrolledAt)` index                        | Candidate SQL and [50,000-account isolated plan](account-enrollment-index-preflight-2026-09-25.md); shared application unverified | Exact target metadata, reviewed DDL window and provider read plan before treating S01/S27 as provider-scale accepted                                                                                                   |
-| Loyalty reward `issuanceConfirmedAt` and `(storeId, issuanceConfirmedAt)` index | [Candidate additive SQL](reward-issuance-confirmation-2026-09-25.md); disposable MySQL and Prisma sync only                       | Exact target metadata and schema-first deployment before writers; historical NULL values remain unknown, and S18 remains incomplete                                                                                    |
+| Loyalty reward `issuanceConfirmedAt` and `(storeId, issuanceConfirmedAt)` index | [Additive SQL merged in PR #154](reward-issuance-confirmation-2026-09-25.md); disposable MySQL and Prisma sync only               | Exact target metadata and schema-first deployment before writers/readers; historical NULL values remain unknown, and S18 remains incomplete                                                                            |
 | Store-review five-table core                                                    | Merged PR #101; only disposable SQL rehearsed                                                                                     | Create all five before privacy readers; retain export-phase-compatible workers                                                                                                                                         |
 | Review collection/reminder settings and history                                 | Merged PR #101; only disposable SQL rehearsed                                                                                     | Schema before readers/jobs; retain reminder export phase                                                                                                                                                               |
 | Product-review encrypted delivery snapshot and retention index                  | Merged code; only disposable SQL rehearsed                                                                                        | Verify existing request table before email retry and privacy cleanup readers                                                                                                                                           |
