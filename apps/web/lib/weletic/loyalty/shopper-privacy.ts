@@ -1551,6 +1551,7 @@ export async function getShopperDataExport({
             expiresAt: true,
             issuanceConfirmedAt: true,
             usedAt: true,
+            usedAtBasis: true,
             ledgerEntryId: true,
             metadata: true,
             createdAt: true,
