@@ -14,6 +14,10 @@ const en = {
   csv: "Export CSV",
   json: "Export JSON",
   exportNote: "Financial exports are available to the store owner only.",
+  accountRowsTitle: "Current recorded members",
+  accountRowsCsv: "Export current members CSV",
+  accountRowsSemantics:
+    "Owner-only export of up to 2,000 retained, non-redacted accounts enrolled within 366 UTC days. Select both dates first. Status, tier order and cached balances are current snapshots, not historical values or independent ledger reconciliation. Point values are exact integer strings; import numeric columns as text. Account keys are pseudonyms specific to this report and cannot be joined to other exports. Customer identity, contact details, referral codes and erased history are unavailable.",
   tierHistoryTitle: "Recorded VIP tier history",
   tierHistoryCsv: "Export tier events CSV",
   ledgerRowsTitle: "Recorded points transactions",
@@ -181,6 +185,10 @@ const ja: Copy = {
   csv: "CSVを出力",
   json: "JSONを出力",
   exportNote: "財務データの出力はストアオーナーのみ利用できます。",
+  accountRowsTitle: "記録済み会員の現在の状態",
+  accountRowsCsv: "現在の会員CSVを出力",
+  accountRowsSemantics:
+    "オーナー限定。UTCで最大366日間に登録された、保持済みで削除されていないアカウントを最大2,000件出力します。開始日と終了日を選択してください。状態、ランク順、保存済み残高は現在の値であり、過去の値や台帳との独立した照合結果ではありません。ポイントは正確な整数文字列です。表計算アプリでは数値列をテキストとして読み込んでください。仮名化されたアカウントキーはこのレポート専用で、他の出力とは結合できません。顧客の識別情報、連絡先、紹介コード、削除済み履歴は含まれません。",
   tierHistoryTitle: "記録されたVIPランク履歴",
   tierHistoryCsv: "ランク履歴CSVを出力",
   ledgerRowsTitle: "記録されたポイント取引",
@@ -346,6 +354,10 @@ const vi: Copy = {
   csv: "Xuất CSV",
   json: "Xuất JSON",
   exportNote: "Chỉ chủ cửa hàng có quyền xuất dữ liệu tài chính.",
+  accountRowsTitle: "Thành viên đã ghi nhận hiện tại",
+  accountRowsCsv: "Xuất CSV thành viên hiện tại",
+  accountRowsSemantics:
+    "Chỉ chủ cửa hàng được xuất tối đa 2.000 tài khoản còn lưu, chưa bị xóa dữ liệu và đăng ký trong tối đa 366 ngày UTC. Hãy chọn cả hai ngày. Trạng thái, thứ tự hạng và số dư đã lưu là ảnh chụp hiện tại, không phải giá trị lịch sử hay kết quả đối soát độc lập với sổ cái. Điểm là chuỗi số nguyên chính xác; hãy nhập cột số dưới dạng văn bản trong bảng tính. Khóa tài khoản được thay bằng bút danh riêng cho báo cáo này và không thể ghép với các bản xuất khác. Không gồm danh tính, liên hệ, mã giới thiệu hay lịch sử đã xóa.",
   tierHistoryTitle: "Lịch sử hạng VIP đã ghi nhận",
   tierHistoryCsv: "Xuất CSV sự kiện hạng",
   ledgerRowsTitle: "Giao dịch điểm đã ghi nhận",

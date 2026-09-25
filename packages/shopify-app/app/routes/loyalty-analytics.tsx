@@ -2,6 +2,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { useMemo } from "react";
 import { MerchantAnalyticsScreen } from "../../../../apps/web/ui/weletic/loyalty/merchant-analytics-screen";
 import { LoyaltyNavigation } from "../loyalty-navigation";
+import { createMerchantAccountRowExportClient } from "../merchant-account-row-export-client";
 import { createMerchantAnalyticsClient } from "../merchant-analytics-client";
 import { createMerchantLedgerRowExportClient } from "../merchant-ledger-row-export-client";
 import { createMerchantRedemptionRowExportClient } from "../merchant-redemption-row-export-client";
@@ -26,6 +27,10 @@ export default function LoyaltyAnalyticsPage() {
     () => createMerchantRedemptionRowExportClient(() => shopify.idToken()),
     [shopify],
   );
+  const requestAccountRows = useMemo(
+    () => createMerchantAccountRowExportClient(() => shopify.idToken()),
+    [shopify],
+  );
   return (
     <main className="weletic-shoppers">
       <LoyaltyNavigation />
@@ -34,6 +39,7 @@ export default function LoyaltyAnalyticsPage() {
         requestTierHistory={requestTierHistory}
         requestLedgerRows={requestLedgerRows}
         requestRedemptionRows={requestRedemptionRows}
+        requestAccountRows={requestAccountRows}
       />
     </main>
   );

@@ -1,6 +1,12 @@
 "use client";
 
 import React, { useRef, useState } from "react";
+import { merchantAccountRowCsv } from "../../../lib/weletic/loyalty/account-row-csv";
+import {
+  merchantAccountRowExportRequestSchema,
+  type MerchantAccountRowExportRequest,
+  type MerchantAccountRowExportResponse,
+} from "../../../lib/weletic/loyalty/account-row-export-contract";
 import { merchantLedgerRowCsv } from "../../../lib/weletic/loyalty/ledger-row-csv";
 import {
   merchantLedgerRowExportRequestSchema,
@@ -39,6 +45,9 @@ export type MerchantLedgerRowTransport = (
 export type MerchantRedemptionRowTransport = (
   request: MerchantRedemptionRowExportRequest,
 ) => Promise<MerchantRedemptionRowExportResponse>;
+export type MerchantAccountRowTransport = (
+  request: MerchantAccountRowExportRequest,
+) => Promise<MerchantAccountRowExportResponse>;
 
 function download(content: string, contentType: string, filename: string) {
   const url = URL.createObjectURL(new Blob([content], { type: contentType }));
@@ -54,11 +63,13 @@ export function MerchantAnalyticsScreen({
   requestTierHistory,
   requestLedgerRows,
   requestRedemptionRows,
+  requestAccountRows,
 }: {
   request: MerchantAnalyticsTransport;
   requestTierHistory?: MerchantTierHistoryTransport;
   requestLedgerRows?: MerchantLedgerRowTransport;
   requestRedemptionRows?: MerchantRedemptionRowTransport;
+  requestAccountRows?: MerchantAccountRowTransport;
 }) {
   const [locale, setLocale] =
     useState<keyof typeof merchantAnalyticsCopy>("en");
@@ -249,6 +260,43 @@ export function MerchantAnalyticsScreen({
       if (version === epoch.current) setBusy(false);
     }
   }
+  async function exportAccountRows() {
+    if (!snapshot?.canExport || !requestAccountRows || !start || !end) {
+      setError("invalid");
+      return;
+    }
+    const parsed = merchantAccountRowExportRequestSchema.safeParse({
+      filter: {
+        startAt: `${start}T00:00:00.000Z`,
+        endAt: `${end}T23:59:59.999Z`,
+      },
+      expectedInstallationGeneration: snapshot.installationGeneration,
+    });
+    if (!parsed.success) {
+      setError("invalid");
+      return;
+    }
+    const version = ++epoch.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await requestAccountRows(parsed.data);
+      if (version !== epoch.current) return;
+      if (result.status === "too_large") {
+        setError("tooMany");
+        return;
+      }
+      download(
+        merchantAccountRowCsv(result.rows),
+        "text/csv;charset=utf-8",
+        `weletic-current-accounts-${start}-${end}.csv`,
+      );
+    } catch {
+      if (version === epoch.current) setError("error");
+    } finally {
+      if (version === epoch.current) setBusy(false);
+    }
+  }
   const label = (key: string) => copy[key as keyof typeof copy] ?? key;
   const rate = new Intl.NumberFormat(locale, {
     style: "percent",
@@ -423,6 +471,19 @@ export function MerchantAnalyticsScreen({
             {copy.json}
           </button>
           {!snapshot.canExport && <p>{copy.exportNote}</p>}
+          {requestAccountRows && (
+            <section>
+              <h2>{copy.accountRowsTitle}</h2>
+              <p>{copy.accountRowsSemantics}</p>
+              <button
+                type="button"
+                disabled={busy || !snapshot.canExport || !start || !end}
+                onClick={() => void exportAccountRows()}
+              >
+                {copy.accountRowsCsv}
+              </button>
+            </section>
+          )}
           {requestTierHistory && (
             <section>
               <h2>{copy.tierHistoryTitle}</h2>
