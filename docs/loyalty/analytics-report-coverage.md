@@ -1,7 +1,7 @@
 # Loyalty analytics report coverage
 
 Inventory originally inspected September 13, 2026 through public PR #32.
-Updated September 25 from public main `e55ce9a2` with merged S10 export.
+Updated September 25 from public main `646a1981` with an S01 export candidate.
 **Analytics is not accepted live.** The report dispositions distinguish
 code coverage from installed acceptance and do not certify Smile parity.
 
@@ -38,6 +38,14 @@ from titles. No renewed Smile access is required to start the tasks below.
   excludes erased accounts and raw identities, orders and free-text metadata.
   [Isolated SQL evidence](recorded-ledger-rows-s11-2026-09-25.md) exists;
   provider-scale and installed acceptance remain open.
+- [S01 current-account row export candidate](../../apps/web/lib/weletic/shopify/merchant-account-row-export.ts):
+  a separate signed, audited owner-only CSV path with a 366-day UTC enrollment
+  range, 2,000-row cap, installation fencing and pseudonymous account keys.
+  It excludes redacted accounts and raw customer/contact identifiers. Status,
+  tier order and cached points are current values, not historical membership
+  or independently reconciled balances. Isolated SQL evidence is recorded in
+  [the candidate worklog](current-account-rows-s01-2026-09-25.md); provider-scale
+  and installed acceptance remain open.
 - [S10 merged redemption-row export](https://github.com/satoshicancode/weletic-room-public/pull/143):
   a separate signed, audited owner-only CSV of retained account-backed
   positive-point redemptions. It exposes pseudonymous keys, exact points,
@@ -67,7 +75,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 
 | ID  | Preserved report                              | Current disposition and remaining task                                                                                                                                                                                                                                                                                                     |
 | --- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| S01 | List of customers                             | **Decision / missing.** Aggregate member counts only; customer-row fields and export privacy policy require A01.                                                                                                                                                                                                                           |
+| S01 | List of customers                             | **Implementation candidate / partial.** [Owner-only current account CSV](current-account-rows-s01-2026-09-25.md) has bounded pseudonymous rows, current status/tier and exact cached points. It has no identity, contacts, historical membership, full Smile columns or installed acceptance. A01. |
 | S02 | List of customers by VIP tier                 | **Decision / partial.** Current tier counts exist, not customer rows, next-tier deltas or membership dates. A01, A05.                                                                                                                                                                                                                      |
 | S03 | List of customers who can redeem              | **Unknown / missing.** Smile grid was empty. Do not infer its complete columns or affordability logic. A01 must use actual reward eligibility, not balance alone.                                                                                                                                                                          |
 | S04 | List of customers with points expiring        | **Unknown / missing.** Empty reference grid and incomplete interval evidence. A01 needs actual lot expiry/schedule semantics and approved recipient fields.                                                                                                                                                                                |

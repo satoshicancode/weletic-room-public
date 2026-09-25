@@ -379,6 +379,119 @@ it.each([
   expect(node.textContent).toContain(title);
 });
 
+it("exports current account rows only after owner date refresh and refuses partial files", async () => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: { ...response.snapshot, canExport: true },
+  });
+  const exportResponse = {
+    status: "available",
+    coverage: "current_retained_nonredacted_accounts_by_enrollment",
+    installationGeneration: "private-generation",
+    filter: {
+      startAt: "2026-09-01T00:00:00.000Z",
+      endAt: "2026-09-30T23:59:59.999Z",
+    },
+    rows: [
+      {
+        accountPseudonym: `account_${"a".repeat(32)}`,
+        enrolledAt: "2026-09-02T00:00:00.000Z",
+        accountStatus: "active",
+        currentTierOrder: null,
+        cachedPointsBalance: "9007199254740997",
+        cachedPendingPoints: "0",
+        lifetimePointsEarned: "9007199254740999",
+        lifetimePointsRedeemed: "2",
+      },
+    ],
+  };
+  const requestAccountRows = vi.fn().mockResolvedValue(exportResponse);
+  const createObjectURL = vi.fn().mockReturnValue("blob:account-fixture");
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: createObjectURL,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: vi.fn(),
+  });
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  try {
+    await act(async () =>
+      root.render(
+        createElement(MerchantAnalyticsScreen, { request, requestAccountRows }),
+      ),
+    );
+    const button = () =>
+      Array.from(node.querySelectorAll("button")).find((item) =>
+        item.textContent?.includes("Export current members CSV"),
+      );
+    expect(button()!.disabled).toBe(true);
+    const dates = node.querySelectorAll<HTMLInputElement>('input[type="date"]');
+    await act(async () => {
+      for (const [index, value] of ["2026-09-01", "2026-09-30"].entries()) {
+        Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value",
+        )!.set!.call(dates[index], value);
+        dates[index].dispatchEvent(new Event("input", { bubbles: true }));
+        dates[index].dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    expect(button()).toBeUndefined();
+    await act(async () =>
+      node
+        .querySelector("form")!
+        .dispatchEvent(
+          new Event("submit", { bubbles: true, cancelable: true }),
+        ),
+    );
+    expect(button()!.disabled).toBe(false);
+    await act(async () => button()!.click());
+    expect(requestAccountRows).toHaveBeenCalledWith({
+      filter: exportResponse.filter,
+      expectedInstallationGeneration: "private-generation",
+    });
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(click).toHaveBeenCalledTimes(1);
+    requestAccountRows.mockResolvedValueOnce({
+      ...exportResponse,
+      status: "too_large",
+      rows: [],
+    });
+    await act(async () => button()!.click());
+    expect(node.querySelector('[role="alert"]')?.textContent).toContain(
+      "More than 2,000",
+    );
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+  } finally {
+    click.mockRestore();
+  }
+});
+
+it.each([
+  ["en", "Current recorded members"],
+  ["ja", "記録済み会員の現在の状態"],
+  ["vi", "Thành viên đã ghi nhận hiện tại"],
+])("labels the current account export in %s", async (locale, title) => {
+  await act(async () =>
+    root.render(
+      createElement(MerchantAnalyticsScreen, {
+        request: vi.fn().mockResolvedValue(response),
+        requestAccountRows: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(node.textContent).toContain(title);
+});
+
 it("downloads recorded points redemptions only after owner date refresh and refuses partial files", async () => {
   const request = vi.fn().mockResolvedValue({
     ...response,
