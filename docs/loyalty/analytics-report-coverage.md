@@ -1,8 +1,9 @@
 # Loyalty analytics report coverage
 
 Inventory originally inspected September 13, 2026 through public PR #32.
-Updated September 25 from public main `654411a46e` after the S01 export and
-account-enrollment index merges.
+Updated September 25 from public main `c86f216e87` after the S01 export and
+account-enrollment index merges. The inventory separates current account rows
+from event-time VIP membership and installed acceptance.
 **Analytics is not accepted live.** The report dispositions distinguish
 code coverage from installed acceptance and do not certify Smile parity.
 
@@ -42,7 +43,8 @@ from titles. No renewed Smile access is required to start the tasks below.
 - [S01 merged current-account row export](../../apps/web/lib/weletic/shopify/merchant-account-row-export.ts):
   a separate signed, audited owner-only CSV path with a 366-day UTC enrollment
   range, 2,000-row cap, installation fencing and pseudonymous account keys.
-  It excludes redacted accounts and raw customer/contact identifiers. Status,
+  It excludes redacted accounts and raw customer/contact identifiers. S02 can
+  group these rows by current tier order and show their enrollment dates. Status,
   tier order and cached points are current values, not historical membership
   or independently reconciled balances. Isolated SQL evidence is recorded in
   [the worklog](current-account-rows-s01-2026-09-25.md). The additive
@@ -79,7 +81,7 @@ current signed merchant snapshot has no report equivalent. `Decision` and
 | ID  | Preserved report                              | Current disposition and remaining task                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | --- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | S01 | List of customers                             | **Merged implementation / partial.** [Owner-only current account CSV](current-account-rows-s01-2026-09-25.md) has bounded pseudonymous rows, current status/tier and exact cached points. It has no identity, contacts, historical membership, full Smile columns or installed acceptance. A01.                                                                                                                                                                                 |
-| S02 | List of customers by VIP tier                 | **Decision / partial.** Current tier counts exist, not customer rows, next-tier deltas or membership dates. A01, A05.                                                                                                                                                                                                                                                                                                                                                           |
+| S02 | List of customers by VIP tier                 | **Merged current snapshot / partial.** The S01 owner-only pseudonymous CSV now provides retained account rows with current tier order and enrollment date; merchants can group those rows by current tier within the selected enrollment window. It does not include tier names, next-tier qualification deltas, tier-entry dates or the full reference columns. Redacted and earlier erased accounts are absent; the 2,000-row cap and installed acceptance remain open. A01, A05.                                                                                                                                                                                                                                                                                                                                                           |
 | S03 | List of customers who can redeem              | **Unknown / missing.** Smile grid was empty. Do not infer its complete columns or affordability logic. A01 must use actual reward eligibility, not balance alone.                                                                                                                                                                                                                                                                                                               |
 | S04 | List of customers with points expiring        | **Unknown / missing.** Empty reference grid and incomplete interval evidence. A01 needs actual lot expiry/schedule semantics and approved recipient fields.                                                                                                                                                                                                                                                                                                                     |
 | S05 | List of discounts created by Smile            | **Decision / partial.** Redemption counts by status/artifact exist, not code/recipient/issuance/usage rows or the complete reference filters. A01, A08.                                                                                                                                                                                                                                                                                                                         |
@@ -203,9 +205,10 @@ matching exports/localized screen.
 
 ### A05 — Membership and VIP temporal reports
 
-Scope: S02/S08/S15/S27/S32–S34. Reconstruct history from membership creation and
-persisted tier changes, distinguishing null/unavailable assignments and current
-snapshots. Do not apply today's tier to historical orders.
+Scope: S02/S08/S15/S27/S32–S34. S01 supplies a bounded current account
+snapshot for part of S02. Reconstruct historical membership separately from
+account enrollment and persisted tier changes, distinguishing null/unavailable
+assignments and current snapshots. Do not apply today's tier to historical orders.
 
 Dependencies: historic completeness and explicit membership/segment definitions;
 S32's reference schema remains unknown. Tests: tier entry/upgrade/downgrade,
