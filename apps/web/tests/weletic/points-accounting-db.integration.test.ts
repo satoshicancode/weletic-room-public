@@ -695,6 +695,154 @@ it("store audit rejects swapped equal-value release provenance", async () => {
   });
 });
 
+it("store audit reconciles grant balances with linked earn and refund entries", async () => {
+  const f = await seed();
+  const firstOrder = await order(f);
+  const secondOrder = await order(f, [BigInt("5000")]);
+  await earn(f, firstOrder);
+  await earn(f, secondOrder);
+  const first = await prisma.weleticLoyaltyEarnGrant.findFirstOrThrow({
+    where: { storeId: f.id, orderId: firstOrder },
+  });
+  const second = await prisma.weleticLoyaltyEarnGrant.findFirstOrThrow({
+    where: { storeId: f.id, orderId: secondOrder },
+  });
+  const refundId = await refund(f, firstOrder, [[0, BigInt("3000")]]);
+  await reverse(f, refundId);
+  const audit = () =>
+    prisma.$transaction((tx) =>
+      readStoreWalletReconciliation({ tx, storeId: f.id }),
+    );
+  expect(await audit()).toMatchObject({
+    status: "clean",
+    grantLedgerMismatch: "0",
+    orphanGrantLedger: "0",
+    grantLedgerSourceMismatch: "0",
+  });
+
+  const reversal = await prisma.weleticPointsLedgerEntry.findFirstOrThrow({
+    where: {
+      storeId: f.id,
+      grantId: first.id,
+      entryType: "REFUND_REVERSAL",
+    },
+  });
+  // A reassigned refund leaves the account balance and every grant's own
+  // conservation equation unchanged, but breaks their ledger relationship.
+  await prisma.weleticPointsLedgerEntry.update({
+    where: { id: reversal.id },
+    data: { grantId: second.id },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    balanceMismatch: "0",
+    grantConservationMismatch: "0",
+    grantLedgerMismatch: "2",
+    grantLedgerSourceMismatch: "1",
+  });
+  await prisma.weleticPointsLedgerEntry.update({
+    where: { id: reversal.id },
+    data: { grantId: first.id },
+  });
+  expect((await audit()).status).toBe("clean");
+
+  await prisma.weleticPointsLedgerEntry.update({
+    where: { id: reversal.id },
+    data: { grantId: `missing-${first.id}` },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    orphanGrantLedger: "1",
+  });
+  await prisma.weleticPointsLedgerEntry.update({
+    where: { id: reversal.id },
+    data: { grantId: first.id },
+  });
+  expect((await audit()).status).toBe("clean");
+});
+
+it("store audit rejects an immediate earn linked to a different order", async () => {
+  const f = await seed();
+  const firstOrder = await order(f);
+  const secondOrder = await order(f);
+  await earn(f, firstOrder);
+  await earn(f, secondOrder);
+  const first = await prisma.weleticLoyaltyEarnGrant.findFirstOrThrow({
+    where: { storeId: f.id, orderId: firstOrder },
+  });
+  const second = await prisma.weleticLoyaltyEarnGrant.findFirstOrThrow({
+    where: { storeId: f.id, orderId: secondOrder },
+  });
+  const entry = await prisma.weleticPointsLedgerEntry.findFirstOrThrow({
+    where: { storeId: f.id, grantId: first.id, entryType: "EARN_ORDER" },
+  });
+  await prisma.weleticPointsLedgerEntry.update({
+    where: { id: entry.id },
+    data: { grantId: second.id },
+  });
+  expect(
+    await prisma.$transaction((tx) =>
+      readStoreWalletReconciliation({ tx, storeId: f.id }),
+    ),
+  ).toMatchObject({
+    status: "mismatch",
+    grantLedgerMismatch: "2",
+    grantLedgerSourceMismatch: "1",
+  });
+});
+
+it("store audit accepts a conserved legacy refund correction with a positive delta", async () => {
+  const f = await seed();
+  const orderId = await order(f, [BigInt("10000")]);
+  await earn(f, orderId);
+  const grant = await prisma.weleticLoyaltyEarnGrant.findFirstOrThrow({
+    where: { storeId: f.id, orderId },
+  });
+  const refundId = await refund(f, orderId, [[0, BigInt("3000")]]);
+  await prisma.weleticLoyaltyOrderLineEarn.updateMany({
+    where: { storeId: f.id, grantId: grant.id },
+    data: { reversedPoints: BigInt(30) },
+  });
+  await prisma.weleticLoyaltyEarnGrant.update({
+    where: { id: grant.id },
+    data: { settledPoints: BigInt(70), reversedPoints: BigInt(30) },
+  });
+  // A historical -50 debit is adopted into a -30 immutable grant target by
+  // appending +20. The positive correction is a legitimate ledger movement.
+  await withActiveStoreLoyaltyMutation({
+    storeId: f.id,
+    expectedInstallationGeneration: f.expectedInstallationGeneration,
+    action: "points_acceptance_legacy_correction",
+    operation: async (tx) => {
+      for (const [suffix, pointsDelta] of [
+        ["historical", BigInt(-50)],
+        ["correction", BigInt(20)],
+      ] as const) {
+        await appendPointsLedgerEntry({
+          storeId: f.id,
+          accountId: f.accountId,
+          entryType: "REFUND_REVERSAL",
+          pointsDelta,
+          grantId: grant.id,
+          referenceType: "COMMERCE_REFUND",
+          referenceId: refundId,
+          idempotencyKey: `legacy-refund-${suffix}:${refundId}`,
+          tx,
+        });
+      }
+    },
+  });
+  expect(
+    await prisma.$transaction((tx) =>
+      readStoreWalletReconciliation({ tx, storeId: f.id }),
+    ),
+  ).toMatchObject({
+    status: "clean",
+    grantLedgerMismatch: "0",
+    grantLedgerSourceMismatch: "0",
+  });
+});
+
 it("P01: purchase multi-line earn, duplicate delivery and partial/full refund conserve points", async () => {
   const f = await seed();
   const id = await order(f);
