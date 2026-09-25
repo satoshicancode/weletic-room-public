@@ -80,6 +80,40 @@ later paid orders, expected first-N decisions, operation and spend limits,
 refund/cancellation steps and cleanup. Do not lift the merged cadence hold or
 settle held referral claims from this empty-state observation.
 
+## Shopify Flow bridge candidate — source review, not cycle proof
+
+Shopify Flow's [subscription billing attempt success trigger](https://help.shopify.com/en/manual/shopify-flow/reference/triggers/subscription-billing-attempt-success)
+provides the billing attempt, created order and subscription contract to a
+workflow. A Weletic [Flow app action](https://shopify.dev/docs/apps/build/flow/actions/endpoints)
+could receive a Shopify-signed request with those IDs. This is a plausible
+way to receive **provider-owned contract identity** without claiming that
+Weletic's `read_own_subscription_contracts` scope grants access to Shopify
+Subscriptions contracts. The action must authenticate Shopify's HMAC, verify
+its own handle and bound store/installation, persist a replay key, and match
+the referenced order to its normal signed order ingestion before any award.
+Merchant workflow installation and a real provider event are still required.
+
+The trigger documentation does **not** promise a billing-cycle index. The
+[billing-cycle API](https://shopify.dev/docs/api/admin-graphql/2026-07/objects/SubscriptionBillingCycle)
+has `cycleIndex`, but requires own-contract access. Counting received success
+actions would be unsafe: Flow retries, missing runs, late installation,
+out-of-order delivery and failed/skipped cycles can all change that count.
+The [Flow HTTP action](https://help.shopify.com/en/manual/shopify-flow/reference/actions/send-http-request)
+has plan restrictions; use of a signed app action must be verified in the
+installed workflow and must not be represented as a substitute for the
+missing index. Do not enable first-payment/first-N earning or adjudicate held
+referrals based on the Flow trigger alone.
+
+The next proof step is read-only configuration validation followed by a
+scoped installed test: confirm that Flow can populate an app action with the
+contract, attempt and order IDs from this trigger; establish an authoritative
+cycle number or an independently complete contract history; and compare it
+with two distinct contracts, later renewals and the source order lines.
+If the selected provider cannot expose that evidence, keep those policies
+disabled and use a provider-specific authenticated integration only after its
+data contract and permissions are documented. No workflow, app action or
+provider permission was installed by this source review.
+
 ## Merged containment boundary
 
 The [follow-up implementation](https://github.com/satoshicancode/weletic-room-public/pull/147)
