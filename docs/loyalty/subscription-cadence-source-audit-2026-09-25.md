@@ -62,6 +62,24 @@ are **not accepted**. Every-payment earning and Shopify-native recurring
 discounts remain separate acceptance paths; neither is certified by this
 source audit. No app configuration, scope, database or live store changed.
 
+## Read-only Yamax provider inventory — September 25
+
+The [Yamax installed-app list](https://admin.shopify.com/store/n0pvef-cs/settings/apps)
+shows **Subscriptions by Shopify**, installed July 19. Its app setup guide shows
+**0 of 7 steps complete**, including creating the first subscription plan. The
+[Shopify Subscriptions contracts screen](https://admin.shopify.com/store/n0pvef-cs/apps/subscriptions-remix/app/contracts)
+shows its empty state: contracts will appear after a customer purchases a
+subscription. This establishes an installed candidate provider but supplies no
+contract ID, billing-cycle receipt or two-renewal evidence for L03. It does not
+prove that no subscription exists in another provider or in Shopify history.
+No plan, contract, order, setting or permission was changed during inspection.
+
+The next L03 acceptance packet must identify the exact provider and scope,
+two distinct test contracts using the same selling plan/item, their first and
+later paid orders, expected first-N decisions, operation and spend limits,
+refund/cancellation steps and cleanup. Do not lift the merged cadence hold or
+settle held referral claims from this empty-state observation.
+
 ## Merged containment boundary
 
 The [follow-up implementation](https://github.com/satoshicancode/weletic-room-public/pull/147)
