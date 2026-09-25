@@ -1,10 +1,10 @@
 # Weletic Room v1 launch readiness
 
 Implementation baseline reconciled September 25, 2026 JST through
-[`f6762223ea`](https://github.com/satoshicancode/weletic-room-public/commit/f6762223ead6f13d2d2804193ad03a8cfa9eaa20)
-(PR #164). The [full current-head quality run](https://github.com/satoshicancode/weletic-room-public/actions/runs/36101511186)
-passed, including Shopify checks, web type-check, lint and deterministic unit
-tests. Deployed acceptance remains open.
+[`4f86822587`](https://github.com/satoshicancode/weletic-room-public/commit/4f86822587f508bc17094d0e25b0098725c0415b)
+(PR #167). Its [current-head quality run](https://github.com/satoshicancode/weletic-room-public/actions/runs/36107237723)
+passed all applicable checks; Shopify checks were skipped for this web-only
+change. Post-merge CI and deployed acceptance remain open.
 The remaining implementation PRs are the draft
 [schema-gated import provenance index](https://github.com/satoshicancode/weletic-room-public/pull/106)
 and draft [full-scale import restart test](https://github.com/satoshicancode/weletic-room-public/pull/158).
@@ -111,9 +111,20 @@ is merged with [real-MySQL evidence](reward-sql-acceptance-2026-09-24.md):
 two distinct same-wallet redemption attempts cannot both reserve a balance
 that funds only one. This covers the local debit and provider-call boundary,
 not uncertain remote issuance, every reward type or installed acceptance.
+L01/L09 now have a [read-only, store-scoped wallet reconciliation gate](https://github.com/satoshicancode/weletic-room-public/pull/166).
+It compares account projections with ledger and grant history, detects broken
+ledger sequence/balance chains and orphan rows, and returns aggregate mismatch
+counts without shopper identifiers. The [pending-history audit](https://github.com/satoshicancode/weletic-room-public/pull/167)
+adds held-grant release/refund event checks and reports unknown provenance as
+unavailable instead of clean. Twenty-three isolated real-MySQL points tests
+passed, including intentional drift, pending-event corruption and tenant
+isolation. This is local operator evidence, not a clean named-store result:
+per-refund source amount attribution, provider-scale read plans and live
+financial reconciliation remain open.
 L10's [strict 50,000-row process-handoff rehearsal](https://github.com/satoshicancode/weletic-room-public/pull/158)
-remains a draft while its commit and rollback phases run. Passing the earlier
-8,100-row failure point is progress, not full-scale acceptance.
+remains a draft. Its uninterrupted 50,000-row commit phase finished; the rollback
+phase is still in progress. Full-scale process-handoff acceptance requires all
+50,000 rollbacks, terminal independent SQL assertions and cleanup.
 
 L09's [S15 bounded owner tier-event export](https://github.com/satoshicancode/weletic-room-public/pull/138)
 is merged with [isolated SQL redaction and row-cap evidence](tier-history-row-export-s15-2026-09-25.md).
