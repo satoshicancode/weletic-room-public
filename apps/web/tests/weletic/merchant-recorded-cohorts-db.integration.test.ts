@@ -1,3 +1,4 @@
+import { readMerchantFirstRecordedConfirmedIssuancesSeries } from "@/lib/weletic/loyalty/first-recorded-confirmed-issuances-series";
 import { readMerchantFirstRecordedEarnersSeries } from "@/lib/weletic/loyalty/first-recorded-earners-series";
 import { readMerchantFirstRecordedRedemptionDebitsSeries } from "@/lib/weletic/loyalty/first-recorded-redemption-debits-series";
 import { Prisma, PrismaClient } from "@prisma/client";
@@ -56,11 +57,20 @@ beforeAll(async () => {
     INDEX wl_ledger_store_created_idx (storeId, createdAt),
     INDEX wl_ledger_account_created_idx (accountId, createdAt)
   )`);
+  await prisma.$executeRawUnsafe(`CREATE TABLE WeleticRewardRedemption (
+    id VARCHAR(64) PRIMARY KEY,
+    storeId VARCHAR(191) NOT NULL,
+    accountId VARCHAR(64) NULL,
+    issuanceConfirmedAt DATETIME(3) NULL,
+    pointsSpent BIGINT NOT NULL,
+    INDEX wl_reward_issuance_idx (storeId, issuanceConfirmedAt)
+  )`);
   initialized = true;
 });
 
 afterAll(async () => {
   if (initialized) {
+    await prisma.$executeRawUnsafe("DROP TABLE WeleticRewardRedemption");
     await prisma.$executeRawUnsafe("DROP TABLE WeleticPointsLedgerEntry");
     await prisma.$executeRawUnsafe("DROP TABLE WeleticLoyaltyAccount");
   }
@@ -321,4 +331,104 @@ it("reconciles retained earned and redemption-debit cohorts without redacted or 
     WHERE id = ${"redacted"} AND status = ${"closed"}
   `;
   expect(redactedRetained.count).toBe(BigInt(1));
+});
+
+it("classifies retained confirmed point issuances across range, month, tenant and privacy boundaries", async () => {
+  const accounts = [
+    ["issued-prior", "store-a", "active"],
+    ["issued-new", "store-a", "active"],
+    ["issued-legacy-unknown", "store-a", "active"],
+    ["issued-redacted", "store-a", "closed"],
+    ["issued-foreign", "store-b", "active"],
+    ["issued-case-foreign", "Store-A", "active"],
+  ] as const;
+  for (const [id, storeId, status] of accounts)
+    await prisma.$executeRaw`
+      INSERT INTO WeleticLoyaltyAccount (id, storeId, status)
+      VALUES (${id}, ${storeId}, ${status})
+    `;
+  await prisma.$executeRaw`
+    UPDATE WeleticLoyaltyAccount
+    SET metadata = JSON_OBJECT('shopifyCustomerRedaction', JSON_OBJECT('status', 'redacted'))
+    WHERE id = ${"issued-redacted"}
+  `;
+  const redemptions = [
+    ["prior-before", "issued-prior", "store-a", "2026-09-15T11:59:59.999Z", 1],
+    ["prior-in", "issued-prior", "store-a", "2026-09-15T12:00:00.000Z", 1],
+    ["new-first", "issued-new", "store-a", "2026-09-16T00:00:00.000Z", 1],
+    ["new-again", "issued-new", "store-a", "2026-09-18T00:00:00.000Z", 2],
+    ["new-next-month", "issued-new", "store-a", "2026-10-01T00:00:00.000Z", 1],
+    ["unknown-legacy", "issued-legacy-unknown", "store-a", null, 1],
+    [
+      "unknown-in",
+      "issued-legacy-unknown",
+      "store-a",
+      "2026-09-17T00:00:00.000Z",
+      1,
+    ],
+    ["zero-points", "issued-new", "store-a", "2026-09-17T00:00:00.000Z", 0],
+    [
+      "redacted-in",
+      "issued-redacted",
+      "store-a",
+      "2026-09-17T00:00:00.000Z",
+      1,
+    ],
+    ["foreign-in", "issued-foreign", "store-b", "2026-09-17T00:00:00.000Z", 1],
+    [
+      "case-foreign-in",
+      "issued-case-foreign",
+      "Store-A",
+      "2026-09-17T00:00:00.000Z",
+      1,
+    ],
+    ["outside-end", "issued-prior", "store-a", "2026-11-02T10:00:00.001Z", 1],
+  ] as const;
+  for (const [id, accountId, storeId, at, pointsSpent] of redemptions)
+    await prisma.$executeRaw`
+      INSERT INTO WeleticRewardRedemption
+        (id, accountId, storeId, issuanceConfirmedAt, pointsSpent)
+      VALUES (${id}, ${accountId}, ${storeId}, ${at ? new Date(at) : null}, ${pointsSpent})
+    `;
+  await prisma.$executeRaw`
+    INSERT INTO WeleticRewardRedemption
+      (id, accountId, storeId, issuanceConfirmedAt, pointsSpent)
+    VALUES (${"direct-no-account"}, NULL, ${"store-a"}, ${new Date("2026-09-17T00:00:00.000Z")}, ${1})
+  `;
+
+  const series = await prisma.$transaction(
+    (tx) =>
+      readMerchantFirstRecordedConfirmedIssuancesSeries({
+        tx,
+        storeId: "store-a",
+        startAt: new Date("2026-09-15T12:00:00.000Z"),
+        endAt: new Date("2026-11-02T10:00:00.000Z"),
+      }),
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+  );
+  expect(series).toEqual({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_confirmed_point_issuance_accounts_only",
+    rows: [
+      {
+        month: "2026-09",
+        confirmedAccounts: "3",
+        firstRecordedConfirmedAccounts: "2",
+        returningConfirmedAccounts: "1",
+      },
+      {
+        month: "2026-10",
+        confirmedAccounts: "1",
+        firstRecordedConfirmedAccounts: "0",
+        returningConfirmedAccounts: "1",
+      },
+      {
+        month: "2026-11",
+        confirmedAccounts: "0",
+        firstRecordedConfirmedAccounts: "0",
+        returningConfirmedAccounts: "0",
+      },
+    ],
+  });
 });

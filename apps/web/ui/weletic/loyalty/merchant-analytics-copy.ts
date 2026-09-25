@@ -50,6 +50,13 @@ const en = {
   debitAccounts: "Accounts with recorded debits",
   firstRecordedDebitAccounts: "First recorded debit accounts",
   returningDebitAccounts: "Repeat debit accounts",
+  firstRecordedConfirmedIssuancesSeries:
+    "First recorded and repeat confirmed reward issuances (UTC)",
+  firstRecordedConfirmedIssuancesSemantics:
+    "Counts each retained account once per UTC month when Weletic durably confirms a points-funded reward artifact. First means no earlier retained confirmation before the selected instant or month. The timestamp is local confirmation, not exact remote creation or discount use. Legacy records without a confirmation date, erased history, zero-point awards and multiple accounts cannot establish a lifetime shopper cohort.",
+  confirmedAccounts: "Accounts with confirmed issuance",
+  firstRecordedConfirmedAccounts: "First recorded confirmed accounts",
+  returningConfirmedAccounts: "Repeat confirmed accounts",
   retainedEnrollmentSeries: "Retained account enrollments over time (UTC)",
   retainedEnrollmentOpening: "Retained accounts before selected range",
   retainedEnrollmentSemantics:
@@ -107,6 +114,9 @@ const en = {
   redemptionRateSeries: "Monthly redemption-to-earn rate (UTC)",
   redemptionRateSemantics:
     "Within the selected interval in each UTC month, recorded reward-spend points are divided by recorded earned points; boundary months may be partial. Earned points exclude backfills; refund reversals, expiry and manual adjustments stay separate. Canceled rewards remain in gross spend while restoration credits stay in manual adjustments. Spending earlier earnings can make this rate exceed 100%. A month with no qualifying earned points has no rate. This is not discount usage or a whole-store measure.",
+  rewardUsageRateTitle: "Reward usage rate over time",
+  rewardUsageRateUnavailable:
+    "Unavailable: We cannot yet verify when every reward was issued and used. Older records and uses discovered later lack the timing needed for a reliable monthly percentage.",
   month: "UTC month",
   earnedPoints: "Earned points, excluding backfill",
   redeemedPoints: "Reward-spend points",
@@ -220,6 +230,13 @@ const ja: Copy = {
   debitAccounts: "引落が記録されたアカウント",
   firstRecordedDebitAccounts: "初回引落記録のアカウント",
   returningDebitAccounts: "再引落記録のアカウント",
+  firstRecordedConfirmedIssuancesSeries:
+    "確認済み特典発行の初回・リピート（UTC）",
+  firstRecordedConfirmedIssuancesSemantics:
+    "ポイントを使った特典の発行をWeleticが確定記録した月ごとに、保存中のアカウントを1回数えます。初回は選択期間の開始時点またはその月より前に、保存中の確定記録がない場合です。日時はアプリでの確定時刻で、外部サービスでの正確な作成時刻や割引利用時刻ではありません。確定日時のない古い記録、削除済み履歴、0ポイントの付与、複数アカウントの統合は含められず、生涯の顧客群ではありません。",
+  confirmedAccounts: "発行確定が記録されたアカウント",
+  firstRecordedConfirmedAccounts: "初回の発行確定アカウント",
+  returningConfirmedAccounts: "リピートの発行確定アカウント",
   retainedEnrollmentSeries: "保持中アカウントの登録推移（UTC）",
   retainedEnrollmentOpening: "選択期間前の保持中アカウント",
   retainedEnrollmentSemantics:
@@ -277,6 +294,9 @@ const ja: Copy = {
   redemptionRateSeries: "月別ポイント利用・獲得比率（UTC）",
   redemptionRateSemantics:
     "選択した期間内の各UTC月に記録された特典交換の使用ポイントを、同じ期間の獲得ポイントで割った比率です。期間の端にある月は一部の日付のみを含む場合があります。獲得ポイントに過去分補填は含めず、返金による取戻し、失効、手動調整は別に扱います。取り消された特典の元の使用ポイントは残り、返還分は手動調整に分けて記録されます。以前に獲得したポイントを使うと100%を超える場合があります。対象の獲得がない月は比率を表示しません。割引の利用率やストア全体の指標ではありません。",
+  rewardUsageRateTitle: "特典利用率の推移",
+  rewardUsageRateUnavailable:
+    "利用不可：すべての特典の発行時刻と利用時刻をまだ確認できません。古い記録や後から判明した利用には、信頼できる月別の割合を計算するための時刻情報が不足しています。",
   month: "UTC月",
   earnedPoints: "獲得ポイント（過去分補填を除く）",
   redeemedPoints: "特典交換の使用ポイント",
@@ -389,6 +409,13 @@ const vi: Copy = {
   debitAccounts: "Tài khoản có khoản trừ đã ghi",
   firstRecordedDebitAccounts: "Tài khoản ghi nhận trừ điểm lần đầu",
   returningDebitAccounts: "Tài khoản ghi nhận trừ điểm lặp lại",
+  firstRecordedConfirmedIssuancesSeries:
+    "Tài khoản phát hành thưởng được xác nhận lần đầu và lặp lại (UTC)",
+  firstRecordedConfirmedIssuancesSemantics:
+    "Đếm mỗi tài khoản còn lưu một lần trong từng tháng UTC khi Weletic ghi nhận xác nhận phát hành phần thưởng dùng điểm. Lần đầu nghĩa là không có xác nhận còn lưu trước thời điểm hoặc tháng đã chọn. Thời điểm này là lúc ứng dụng xác nhận, không phải lúc nhà cung cấp tạo chính xác hay lúc dùng giảm giá. Không thể khôi phục bản ghi cũ thiếu ngày xác nhận, lịch sử đã xóa, phần thưởng 0 điểm hoặc nhiều tài khoản được hợp nhất; đây không phải nhóm khách hàng theo toàn bộ vòng đời.",
+  confirmedAccounts: "Tài khoản có xác nhận phát hành",
+  firstRecordedConfirmedAccounts: "Tài khoản xác nhận lần đầu",
+  returningConfirmedAccounts: "Tài khoản xác nhận lặp lại",
   retainedEnrollmentSeries: "Tài khoản còn lưu theo thời điểm đăng ký (UTC)",
   retainedEnrollmentOpening: "Tài khoản còn lưu trước khoảng đã chọn",
   retainedEnrollmentSemantics:
@@ -446,6 +473,9 @@ const vi: Copy = {
   redemptionRateSeries: "Tỷ lệ dùng điểm trên điểm tích lũy theo tháng (UTC)",
   redemptionRateSemantics:
     "Trong khoảng thời gian đã chọn của từng tháng UTC, điểm đã dùng đổi thưởng được chia cho điểm đã tích lũy theo sổ điểm; tháng đầu và cuối có thể chỉ gồm một phần tháng. Mẫu số không gồm điểm bổ sung lịch sử; hoàn điểm, hết hạn và điều chỉnh thủ công được tách riêng. Điểm đã dùng ban đầu của thưởng bị hủy vẫn được tính; điểm trả lại nằm trong điều chỉnh thủ công. Tỷ lệ có thể vượt 100% khi dùng điểm tích lũy từ trước. Tháng không có điểm tích lũy đủ điều kiện thì không có tỷ lệ. Đây không phải tỷ lệ sử dụng mã giảm giá hay chỉ số của toàn cửa hàng.",
+  rewardUsageRateTitle: "Tỷ lệ sử dụng phần thưởng theo thời gian",
+  rewardUsageRateUnavailable:
+    "Chưa khả dụng: Chưa thể xác minh thời điểm phát hành và sử dụng của mọi phần thưởng. Dữ liệu cũ và lượt sử dụng chỉ được phát hiện về sau thiếu mốc thời gian để tính tỷ lệ theo tháng đáng tin cậy.",
   month: "Tháng UTC",
   earnedPoints: "Điểm tích lũy, không gồm bổ sung lịch sử",
   redeemedPoints: "Điểm đã dùng đổi thưởng",

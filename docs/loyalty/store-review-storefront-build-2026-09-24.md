@@ -17,3 +17,10 @@ extension directory until public-owned extension identities are reconciled.
 This check therefore does **not** prove public-app extension ownership,
 installation, grants, published theme placement, 375px/keyboard behavior or
 shopper/provider delivery. Those remain in the installed SR-01–SR-07 packet.
+
+September 25 current-source recheck on PR #158 checkout `aed5a94d` (whose
+Shopify sources match public `main` `7f423d3e`):
+`check:theme-assets` passed at **8,419 bytes**, and the review-theme-asset and
+store-review-storefront suites passed all **5 tests**. The separate 13-extension
+public staging build also passed, with ownership still unresolved. This does
+not replace installed storefront or provider acceptance.

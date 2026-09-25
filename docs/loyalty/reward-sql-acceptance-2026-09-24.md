@@ -51,6 +51,24 @@ SQL counts found zero stores, orders, refunds, FX snapshots and ledger entries
 in the disposable database; its container and credential file were removed.
 Web TypeScript, lint and Prisma validation passed.
 
+September 25 concurrency increment: a third case launches two distinct
+redemptions whose individual costs exceed half the same wallet balance. The
+first reservation reaches a held mocked Shopify issuance while the competing
+reservation fails with insufficient points before that remote call is released.
+Real MySQL transactions persist exactly one new redemption and one debit; only
+one mocked remote creation occurs. Independent SQL ledger summation equals the
+cached wallet after the winning issuance. The complete three-case suite passed
+on a new disposable MySQL 8 schema; an independent post-test count found zero
+stores, ledger entries, redemptions, orders, outbox jobs, programs and projects
+before the schema and principal were dropped. The final run log is
+`/tmp/weletic-reward-concurrency-20260925-final3.log` (SHA-256
+`444517cbf88ecee85c6ec3aa2f7c8d7c9d276095afec908096d69268a700fa97`).
+A preceding harness run surfaced an asynchronously handled test-promise
+rejection; handlers were attached at launch and the final run has no unhandled
+errors. This proves local database reservation serialization under the fixture's
+mocked distributed lock, not actual concurrent Shopify issuance or installed
+checkout acceptance.
+
 To reproduce, build workspace dependencies and generate Prisma, create a fresh
 restricted local database/principal matching the test guard, apply
 `prisma db push --schema prisma/schema`, then run the single file through

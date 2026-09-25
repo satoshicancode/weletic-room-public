@@ -24,3 +24,19 @@ The next gate is an authoritative public-app UID/handle mapping, followed by
 approved deployment, required protected-customer-data access, installation and
 named merchant/shopper/Flow journeys. No Shopify app version, store, database,
 provider resource or module setting was changed by this check.
+
+## September 25 source recheck
+
+The later PR #158 checkout `aed5a94d` differs from public `main` `7f423d3e`
+only in its historical-import integration test; `packages/shopify-app` and the
+staging tool have no branch diff. Shopify CLI 4.8.2 validated the checked-in
+`loyalty-public` configuration and a new 51-file, 13-extension temporary stage
+with zero issues. The stage installed its two pinned dependencies and
+`shopify app build` completed, including the theme and customer-account and
+thank-you UI bundles. The stage remains `unowned_not_deployable`.
+
+This recheck is current-source build evidence only. The active public version's
+dashboard exposes its app URL and webhook API version, but no authoritative
+extension UID/handle mapping. No version was deployed and no installation or
+provider setting changed. Public-app extension ownership, required grants,
+placement and installed journeys remain open.

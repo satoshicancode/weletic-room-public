@@ -867,4 +867,166 @@ describe("loyalty reward lifecycle on isolated MySQL", () => {
       ).cachedPointsBalance,
     ).toBe(await sumPersistedLedgerPoints());
   }, 120_000);
+
+  it("rejects a competing wallet reservation while the first remote issuance waits", async () => {
+    const { provisionDiscountSaga } = await import(
+      "@/lib/weletic/loyalty/saga"
+    );
+    const balanceBefore = await sumPersistedLedgerPoints();
+    expect(balanceBefore).toBeGreaterThan(BigInt(1));
+    const pointsCost = balanceBefore / BigInt(2) + BigInt(1);
+    const rewardDefinitionId = `concurrent_reward_${suffix}`;
+    await database.weleticRewardDefinition.create({
+      data: {
+        id: rewardDefinitionId,
+        storeId,
+        name: "Concurrent wallet reservation",
+        rewardType: "amount_off",
+        exchangeType: "fixed",
+        pointsCost,
+        discountValue: 5,
+      },
+    });
+    let signalRemoteEntered!: () => void;
+    let releaseRemote!: () => void;
+    const remoteEntered = new Promise<void>((resolve) => {
+      signalRemoteEntered = resolve;
+    });
+    const remoteHeld = new Promise<void>((resolve) => {
+      releaseRemote = resolve;
+    });
+    transport.create
+      .mockReset()
+      .mockImplementation(
+        async ({ discountCode }: { discountCode: string }) => {
+          signalRemoteEntered();
+          await remoteHeld;
+          return {
+            id: `gid://shopify/DiscountCodeNode/${discountCode}`,
+            code: discountCode,
+            title: "Isolated concurrent reward",
+            status: "ACTIVE",
+          };
+        },
+      );
+    transport.lookup.mockReset().mockResolvedValue(null);
+    transport.credentials.mockReset().mockResolvedValue({
+      shopDomain: `${suffix}.myshopify.com`,
+      accessToken: "test-only-token",
+      source: "app_session",
+    });
+    const redemptionCountBefore = await database.weleticRewardRedemption.count({
+      where: { storeId, accountId },
+    });
+    const debitCountBefore = await database.weleticPointsLedgerEntry.count({
+      where: { storeId, accountId, entryType: "REDEEM_REWARD" },
+    });
+    const requests = [0, 1].map((index) =>
+      provisionDiscountSaga({
+        storeId,
+        accountId,
+        rewardDefinitionId,
+        idempotencyKey: `reward-${suffix}-concurrent-${index}`,
+        discountCode: `WL-${suffix}-concurrent-${index}`,
+        shopDomain: `${suffix}.myshopify.com`,
+        accessToken: "test-only-token",
+      }),
+    );
+    const observed = requests.map((request) =>
+      request.then(
+        () => ({ kind: "fulfilled" as const }),
+        (error: unknown) => ({ kind: "rejected" as const, error }),
+      ),
+    );
+    const within = async <T>(pending: Promise<T>, label: string) => {
+      let timeoutId: NodeJS.Timeout | undefined;
+      try {
+        return await Promise.race([
+          pending,
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(
+              () => reject(new Error(`${label} timed out`)),
+              10_000,
+            );
+          }),
+        ]);
+      } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+      }
+    };
+    let firstSettled!:
+      | { kind: "fulfilled" }
+      | { kind: "rejected"; error: unknown };
+    let remoteCallsBeforeRelease = 0;
+    let stageFailure: Error | null = null;
+    try {
+      const reachedRemote = await within(
+        Promise.race([
+          remoteEntered.then(() => true),
+          Promise.all(observed).then(() => false),
+        ]),
+        "Remote reservation entry",
+      );
+      if (!reachedRemote) {
+        throw new Error(
+          "Neither competing reservation reached remote issuance",
+        );
+      }
+      firstSettled = await within(
+        Promise.race(observed),
+        "Competing reservation rejection",
+      );
+      remoteCallsBeforeRelease = transport.create.mock.calls.length;
+    } catch (error) {
+      stageFailure = error instanceof Error ? error : new Error(String(error));
+    } finally {
+      releaseRemote();
+    }
+    const outcomes = await within(
+      Promise.allSettled(requests),
+      "Competing reservation settlement",
+    );
+    if (stageFailure) throw stageFailure;
+    expect(firstSettled).toMatchObject({
+      kind: "rejected",
+      error: expect.objectContaining({
+        message: expect.stringContaining("Insufficient points balance"),
+      }),
+    });
+    expect(remoteCallsBeforeRelease).toBe(1);
+    const successes = outcomes.filter(
+      (outcome) => outcome.status === "fulfilled" && outcome.value.success,
+    );
+    const failures = outcomes.filter(
+      (outcome) => outcome.status === "rejected",
+    );
+    expect(successes).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      reason: expect.objectContaining({
+        message: expect.stringContaining("Insufficient points balance"),
+      }),
+    });
+    expect(transport.create).toHaveBeenCalledTimes(1);
+    expect(
+      await database.weleticRewardRedemption.count({
+        where: { storeId, accountId },
+      }),
+    ).toBe(redemptionCountBefore + 1);
+    expect(
+      await database.weleticPointsLedgerEntry.count({
+        where: { storeId, accountId, entryType: "REDEEM_REWARD" },
+      }),
+    ).toBe(debitCountBefore + 1);
+    const balanceAfter = await sumPersistedLedgerPoints();
+    expect(balanceAfter).toBe(balanceBefore - pointsCost);
+    expect(
+      (
+        await database.weleticLoyaltyAccount.findUniqueOrThrow({
+          where: { id: accountId },
+          select: { cachedPointsBalance: true },
+        })
+      ).cachedPointsBalance,
+    ).toBe(balanceAfter);
+  }, 120_000);
 });
