@@ -1107,6 +1107,52 @@ it("renders a rate above Number precision without losing digits", async () => {
   expect(node.textContent).toContain("900,719,925,474,099,300.00%");
 });
 
+it.each([
+  ["en", "Reward usage rate over time", "Unavailable"],
+  ["ja", "特典利用率の推移", "利用不可"],
+  ["vi", "Tỷ lệ sử dụng phần thưởng theo thời gian", "Chưa khả dụng"],
+])(
+  "marks reward usage timing unavailable in %s",
+  async (locale, title, reason) => {
+    const request = vi.fn().mockResolvedValue({
+      ...response,
+      snapshot: {
+        ...response.snapshot,
+        redemptionRateSeries: {
+          status: "available",
+          bucket: "utc_month",
+          coverage: "recorded_ledger_only",
+          rows: [
+            {
+              month: "2026-09",
+              earnedPoints: "100",
+              redeemedPoints: "50",
+              redemptionRateBasisPoints: "5000",
+            },
+          ],
+        },
+      },
+    } satisfies MerchantAnalyticsResponse);
+    await act(async () =>
+      root.render(createElement(MerchantAnalyticsScreen, { request })),
+    );
+    await act(async () => {
+      const select = node.querySelector("select")!;
+      select.value = locale;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const heading = Array.from(node.querySelectorAll("h2")).find(
+      (element) => element.textContent === title,
+    );
+    const section = heading!.closest("section")!;
+    expect(section.querySelector('[role="status"]')?.textContent).toContain(
+      reason,
+    );
+    expect(section.textContent).not.toMatch(/\d+\s?%/);
+    expect(section.textContent).not.toContain("private-store-id");
+  },
+);
+
 it("ignores a late old-scope response after changing the authenticated transport", async () => {
   let finish!: (value: MerchantAnalyticsResponse) => void;
   const oldRequest = vi.fn(

@@ -107,6 +107,9 @@ const en = {
   redemptionRateSeries: "Monthly redemption-to-earn rate (UTC)",
   redemptionRateSemantics:
     "Within the selected interval in each UTC month, recorded reward-spend points are divided by recorded earned points; boundary months may be partial. Earned points exclude backfills; refund reversals, expiry and manual adjustments stay separate. Canceled rewards remain in gross spend while restoration credits stay in manual adjustments. Spending earlier earnings can make this rate exceed 100%. A month with no qualifying earned points has no rate. This is not discount usage or a whole-store measure.",
+  rewardUsageRateTitle: "Reward usage rate over time",
+  rewardUsageRateUnavailable:
+    "Unavailable: We cannot yet verify when every reward was issued and used. Older records and uses discovered later lack the timing needed for a reliable monthly percentage.",
   month: "UTC month",
   earnedPoints: "Earned points, excluding backfill",
   redeemedPoints: "Reward-spend points",
@@ -277,6 +280,9 @@ const ja: Copy = {
   redemptionRateSeries: "月別ポイント利用・獲得比率（UTC）",
   redemptionRateSemantics:
     "選択した期間内の各UTC月に記録された特典交換の使用ポイントを、同じ期間の獲得ポイントで割った比率です。期間の端にある月は一部の日付のみを含む場合があります。獲得ポイントに過去分補填は含めず、返金による取戻し、失効、手動調整は別に扱います。取り消された特典の元の使用ポイントは残り、返還分は手動調整に分けて記録されます。以前に獲得したポイントを使うと100%を超える場合があります。対象の獲得がない月は比率を表示しません。割引の利用率やストア全体の指標ではありません。",
+  rewardUsageRateTitle: "特典利用率の推移",
+  rewardUsageRateUnavailable:
+    "利用不可：すべての特典の発行時刻と利用時刻をまだ確認できません。古い記録や後から判明した利用には、信頼できる月別の割合を計算するための時刻情報が不足しています。",
   month: "UTC月",
   earnedPoints: "獲得ポイント（過去分補填を除く）",
   redeemedPoints: "特典交換の使用ポイント",
@@ -446,6 +452,9 @@ const vi: Copy = {
   redemptionRateSeries: "Tỷ lệ dùng điểm trên điểm tích lũy theo tháng (UTC)",
   redemptionRateSemantics:
     "Trong khoảng thời gian đã chọn của từng tháng UTC, điểm đã dùng đổi thưởng được chia cho điểm đã tích lũy theo sổ điểm; tháng đầu và cuối có thể chỉ gồm một phần tháng. Mẫu số không gồm điểm bổ sung lịch sử; hoàn điểm, hết hạn và điều chỉnh thủ công được tách riêng. Điểm đã dùng ban đầu của thưởng bị hủy vẫn được tính; điểm trả lại nằm trong điều chỉnh thủ công. Tỷ lệ có thể vượt 100% khi dùng điểm tích lũy từ trước. Tháng không có điểm tích lũy đủ điều kiện thì không có tỷ lệ. Đây không phải tỷ lệ sử dụng mã giảm giá hay chỉ số của toàn cửa hàng.",
+  rewardUsageRateTitle: "Tỷ lệ sử dụng phần thưởng theo thời gian",
+  rewardUsageRateUnavailable:
+    "Chưa khả dụng: Chưa thể xác minh thời điểm phát hành và sử dụng của mọi phần thưởng. Dữ liệu cũ và lượt sử dụng chỉ được phát hiện về sau thiếu mốc thời gian để tính tỷ lệ theo tháng đáng tin cậy.",
   month: "Tháng UTC",
   earnedPoints: "Điểm tích lũy, không gồm bổ sung lịch sử",
   redeemedPoints: "Điểm đã dùng đổi thưởng",
