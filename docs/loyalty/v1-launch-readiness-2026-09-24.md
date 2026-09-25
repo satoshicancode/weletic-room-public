@@ -1,8 +1,10 @@
 # Weletic Room v1 launch readiness
 
-Code baseline reconciled September 25, 2026 JST: public `main` at
-[`202da7eef4`](https://github.com/satoshicancode/weletic-room-public/commit/202da7eef4dc0052d03d66cbf25125053339cb99)
-(PR #159); its [post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36094901738).
+Implementation baseline reconciled September 25, 2026 JST through
+[`f6762223ea`](https://github.com/satoshicancode/weletic-room-public/commit/f6762223ead6f13d2d2804193ad03a8cfa9eaa20)
+(PR #164). The [full current-head quality run](https://github.com/satoshicancode/weletic-room-public/actions/runs/36101511186)
+passed, including Shopify checks, web type-check, lint and deterministic unit
+tests. Deployed acceptance remains open.
 The remaining implementation PRs are the draft
 [schema-gated import provenance index](https://github.com/satoshicancode/weletic-room-public/pull/106)
 and draft [full-scale import restart test](https://github.com/satoshicancode/weletic-room-public/pull/158).
@@ -72,6 +74,9 @@ merged in PR #157. New paid-order and cleanup records label the source of
 `usedAt`; historical rows remain unknown. Its two additive columns have not
 been verified on a release database. Shopify order creation is not the exact
 coupon-application time, and S18 usage-over-time remains unavailable.
+The [S18 merchant display](https://github.com/satoshicancode/weletic-room-public/pull/161)
+now states that unavailability in EN/JA/VI rather than presenting the separate
+recorded-ledger redemption ratio as reward use.
 The [owner account-row export](https://github.com/satoshicancode/weletic-room-public/pull/153)
 is also merged; it remains bounded to retained, pseudonymous records and needs
 provider read-plan and installed acceptance evidence.
@@ -95,6 +100,20 @@ The September 25 read-only Yamax inventory found Shopify Subscriptions installed
 but its setup guide at 0/7 steps and its contracts screen empty; no real cycle
 receipt is available from that app for acceptance yet. This does not exclude
 contracts managed elsewhere.
+The [Flow bridge source audit](subscription-cadence-source-audit-2026-09-25.md)
+identifies a signed app action as a possible source of contract, attempt and
+order IDs, but Shopify's billing-success trigger does not promise a cycle
+index. No subscription-cadence workflow or provider integration has been
+installed; the cadence hold remains in force.
+
+L02's [concurrent wallet reservation test](https://github.com/satoshicancode/weletic-room-public/pull/162)
+is merged with [real-MySQL evidence](reward-sql-acceptance-2026-09-24.md):
+two distinct same-wallet redemption attempts cannot both reserve a balance
+that funds only one. This covers the local debit and provider-call boundary,
+not uncertain remote issuance, every reward type or installed acceptance.
+L10's [strict 50,000-row process-handoff rehearsal](https://github.com/satoshicancode/weletic-room-public/pull/158)
+remains a draft while its commit and rollback phases run. Passing the earlier
+8,100-row failure point is progress, not full-scale acceptance.
 
 L09's [S15 bounded owner tier-event export](https://github.com/satoshicancode/weletic-room-public/pull/138)
 is merged with [isolated SQL redaction and row-cap evidence](tier-history-row-export-s15-2026-09-25.md).
