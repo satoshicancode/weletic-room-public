@@ -1894,6 +1894,7 @@ export async function issueReferralRewardCoupon({
               },
               data: {
                 status: WeleticRedemptionStatus.issued,
+                issuanceConfirmedAt: new Date(),
                 shopifyDiscountId: provisioned.id,
                 ...(communicationOrigin
                   ? {

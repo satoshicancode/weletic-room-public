@@ -381,6 +381,7 @@ export async function provisionFinancialRewardReservation({
           },
           data: {
             status: WeleticRedemptionStatus.issued,
+            issuanceConfirmedAt: new Date(),
             shopifyGiftCardId: giftCardId,
             shopifyStoreCreditTransactionId: storeCreditTransactionId,
           },

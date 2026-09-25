@@ -1549,6 +1549,7 @@ export async function getShopperDataExport({
             compensationReason: true,
             orderId: true,
             expiresAt: true,
+            issuanceConfirmedAt: true,
             usedAt: true,
             ledgerEntryId: true,
             metadata: true,

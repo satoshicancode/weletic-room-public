@@ -1154,8 +1154,17 @@ describe("shopper profile production queries on isolated MySQL", () => {
       "lost store coupon response",
     );
     expect(await fixture.provision()).toEqual({ status: "issued" });
+    const issued = await database.weleticRewardRedemption.findUniqueOrThrow({
+      where: { id: fixture.redemption.id },
+    });
+    expect(issued.issuanceConfirmedAt).toEqual(expect.any(Date));
     expect(await fixture.provision()).toEqual({ status: "already_issued" });
     expect(couponTransport.create).toHaveBeenCalledTimes(1);
+    expect(
+      await database.weleticRewardRedemption.findUniqueOrThrow({
+        where: { id: fixture.redemption.id },
+      }),
+    ).toMatchObject({ issuanceConfirmedAt: issued.issuanceConfirmedAt });
     expect(
       await database.weleticStoreReview.findUnique({
         where: { id: fixture.review.id },
@@ -6197,6 +6206,11 @@ describe("shopper profile production queries on isolated MySQL", () => {
     expect(await fixture.provision()).toEqual({ status: "already_issued" });
     expect(couponTransport.create).toHaveBeenCalledTimes(1);
     expect(
+      await database.weleticRewardRedemption.findUniqueOrThrow({
+        where: { id: fixture.redemption.id },
+      }),
+    ).toMatchObject({ issuanceConfirmedAt: expect.any(Date) });
+    expect(
       await database.weleticReviewIncentiveClaim.findUnique({
         where: { id: fixture.claim.id },
       }),
@@ -6389,6 +6403,14 @@ describe("shopper profile production queries on isolated MySQL", () => {
       "configuration does not match",
     );
     expect(couponTransport.create).not.toHaveBeenCalled();
+    expect(
+      await database.weleticRewardRedemption.findUniqueOrThrow({
+        where: { id: fixture.redemption.id },
+      }),
+    ).toMatchObject({
+      status: "provisioning",
+      issuanceConfirmedAt: null,
+    });
     expect(
       await database.weleticReviewIncentiveClaim.findUnique({
         where: { id: fixture.claim.id },
