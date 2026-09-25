@@ -15,6 +15,9 @@ type GrantRow = {
   grantConservationMismatch: string;
   lineAllocationMismatch: string;
   orphanLines: string;
+  grantLedgerMismatch: string;
+  orphanGrantLedger: string;
+  grantLedgerSourceMismatch: string;
 };
 
 type PendingHistoryRow = {
@@ -123,7 +126,51 @@ export async function readStoreWalletReconciliation({
         FROM WeleticLoyaltyOrderLineEarn lineEarn
         LEFT JOIN WeleticLoyaltyEarnGrant grantRow
           ON grantRow.id = lineEarn.grantId AND grantRow.storeId = lineEarn.storeId
-        WHERE lineEarn.storeId = ${storeId} AND grantRow.id IS NULL) AS orphanLines
+        WHERE lineEarn.storeId = ${storeId} AND grantRow.id IS NULL) AS orphanLines,
+      (SELECT CAST(COUNT(*) AS CHAR)
+        FROM WeleticLoyaltyEarnGrant grantRow
+        LEFT JOIN (
+          SELECT grantId,
+            SUM(CASE WHEN entryType IN ('EARN_ORDER', 'BACKFILL') THEN pointsDelta ELSE 0 END) AS earned,
+            SUM(CASE WHEN entryType = 'REFUND_REVERSAL' THEN pointsDelta ELSE 0 END) AS refundedBalance,
+            SUM(CASE WHEN entryType = 'REFUND_REVERSAL' THEN pendingDelta ELSE 0 END) AS refundedPending,
+            SUM(CASE WHEN entryType NOT IN ('EARN_ORDER', 'BACKFILL', 'REFUND_REVERSAL')
+              OR (entryType IN ('EARN_ORDER', 'BACKFILL') AND pointsDelta < 0)
+              THEN 1 ELSE 0 END) AS invalidEvents
+          FROM WeleticPointsLedgerEntry
+          WHERE storeId = ${storeId} AND grantId IS NOT NULL
+          GROUP BY grantId
+        ) events ON events.grantId = grantRow.id
+        WHERE grantRow.storeId = ${storeId}
+          AND (grantRow.settledPoints <> COALESCE(events.earned, 0) + COALESCE(events.refundedBalance, 0)
+            OR grantRow.reversedPoints <> -COALESCE(events.refundedBalance, 0) - COALESCE(events.refundedPending, 0)
+            OR COALESCE(events.invalidEvents, 0) <> 0)) AS grantLedgerMismatch,
+      (SELECT CAST(COUNT(*) AS CHAR)
+        FROM WeleticPointsLedgerEntry entry
+        LEFT JOIN WeleticLoyaltyEarnGrant grantRow
+          ON grantRow.id = entry.grantId AND grantRow.storeId = entry.storeId
+          AND grantRow.accountId = entry.accountId
+        WHERE entry.storeId = ${storeId} AND entry.grantId IS NOT NULL
+          AND grantRow.id IS NULL) AS orphanGrantLedger,
+      (SELECT CAST(COUNT(*) AS CHAR)
+        FROM WeleticPointsLedgerEntry entry
+        JOIN WeleticLoyaltyEarnGrant grantRow
+          ON grantRow.id = entry.grantId AND grantRow.storeId = entry.storeId
+          AND grantRow.accountId = entry.accountId
+        LEFT JOIN WeleticCommerceRefund refund
+          ON refund.id = entry.referenceId AND refund.storeId = entry.storeId
+        WHERE entry.storeId = ${storeId}
+          AND ((entry.entryType = 'EARN_ORDER'
+              AND (COALESCE(entry.referenceType, '') <> 'COMMERCE_ORDER'
+                OR COALESCE(entry.referenceId, '') <> grantRow.orderId))
+            OR (entry.entryType = 'BACKFILL'
+              AND (COALESCE(entry.referenceType, '') <> 'historical_order'
+                OR COALESCE(entry.referenceId, '') <> grantRow.orderId))
+            OR (entry.entryType = 'REFUND_REVERSAL'
+              AND NOT ((COALESCE(entry.referenceType, '') = 'COMMERCE_ORDER'
+                  AND COALESCE(entry.referenceId, '') = grantRow.orderId)
+                OR (COALESCE(entry.referenceType, '') = 'COMMERCE_REFUND'
+                  AND COALESCE(refund.orderId, '') = grantRow.orderId))))) AS grantLedgerSourceMismatch
   `);
   // Held grants begin with pending points but no ledger entry. Their later
   // release/refund events must explain gross minus the remaining pending
