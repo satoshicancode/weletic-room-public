@@ -1,8 +1,11 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 25, 2026 JST: public `main` at
-[`3bfb0a93`](https://github.com/satoshicancode/weletic-room-public/commit/3bfb0a939cda5ce8129df2365aba451e77de897f)
-(PR #140). The prior [PR #147 post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36067134508).
+[`654411a46e`](https://github.com/satoshicancode/weletic-room-public/commit/654411a46e9e979a58dc526165a6c2c78189e266)
+(PR #152). [PR #152 current-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36079162213);
+post-merge `main` CI is a separate gate. At this baseline, the only open public PR is the
+[schema-gated import provenance index](https://github.com/satoshicancode/weletic-room-public/pull/106),
+which remains draft work rather than a shipped capability.
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
@@ -53,6 +56,14 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 | S04 | Runtime/operations          | locally verified                             | [Isolated container proof](../../infra/cloudflare-release/ISOLATED-VERIFICATION.md); [explicit review route admission](https://github.com/satoshicancode/weletic-room-public/pull/112)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Provider compatibility, supervision, alerts and restore                                                                                                                                                                                   | M3        |
 | S05 | Privacy/retention           | implemented                                  | Foundations and store/delivery consumers merged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | Schema compatibility and live export/erase races                                                                                                                                                                                          | M1/M3     |
 | S06 | Listing/production          | missing acceptance                           | [Reviewer packet draft](app-store-reviewer-packet.md)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Accepted build, listing/reviewer approval and controlled activation                                                                                                                                                                       | M4        |
+
+Since the prior matrix revision, [S01 current-account rows](current-account-rows-s01-2026-09-25.md)
+merged in PR #151 and the additive [account enrollment index](account-enrollment-index-preflight-2026-09-25.md)
+merged in PR #152. S01 remains partial; the index is unapplied on shared targets.
+The [S15 tier-event row export](tier-history-row-export-s15-2026-09-25.md)
+also has isolated SQL evidence, with provider and installed acceptance open.
+These updates extend L09's evidence and add S01 to its provider read-plan gate;
+they do not change L09's incomplete status.
 
 L03 has a [subscription cadence source blocker](subscription-cadence-source-audit-2026-09-25.md):
 the local `subscriptionSequence` counts retained orders by selling plan and
