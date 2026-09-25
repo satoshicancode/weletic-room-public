@@ -156,6 +156,11 @@ acceptance. The accompanying
 `(storeId, createdAt)` ledger index needs its separate shared-schema migration
 gate before this report is enabled in a deployed environment.
 
+PR #157 adds nullable use-time provenance to new reward and coupon-use records.
+It does not supply the exact coupon application time or bucket remote usage
+observed without an order. Both columns need exact-target schema verification
+before their writers or privacy readers deploy; S18 remains unavailable.
+
 Dependencies: source coverage for actual discount use and explicit unknown
 behavior; existing UTC filters are not proof of historical bucket semantics.
 Tests: empty/zero denominator, month boundaries, multiple order lines counted
