@@ -105,6 +105,7 @@ it.each([
   { termsSnapshot: null },
   { issuedAt: "2026-09-11T00:00:00Z" },
   { issuedAt: "bad" },
+  { issuedAt: null },
   { expiresAt: "2026-09-10T00:00:00Z" },
   { expiresAt: undefined },
   { salesChannel: "pos" },

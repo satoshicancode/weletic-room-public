@@ -60,6 +60,9 @@ mean installed acceptance. “Partial” identifies a named missing sub-capabili
 Since the prior matrix revision, [S01 current-account rows](current-account-rows-s01-2026-09-25.md)
 merged in PR #151 and the additive [account enrollment index](account-enrollment-index-preflight-2026-09-25.md)
 merged in PR #152. S01 remains partial; the index is unapplied on shared targets.
+L02 has a [local customer-wallet issuance-date correction](customer-wallet-issuance-date-2026-09-25.md).
+Its reader must wait for the merged reward-issuance column to be
+applied on the exact release target; historical unknown dates stay unknown.
 The [S15 tier-event row export](tier-history-row-export-s15-2026-09-25.md)
 also has isolated SQL evidence, with provider and installed acceptance open.
 These updates extend L09's evidence and add S01 to its provider read-plan gate;

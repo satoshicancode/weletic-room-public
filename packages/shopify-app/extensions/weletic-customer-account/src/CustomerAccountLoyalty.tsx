@@ -229,7 +229,7 @@ export type CustomerReward = {
   discountCode?: string | null;
   giftCardCode?: string | null;
   status: "available" | "used" | "expired" | "cancelled";
-  issuedAt: string;
+  issuedAt: string | null;
   statusDate?: string | null;
   expiresAt?: string | null;
   usedAt?: string | null;
