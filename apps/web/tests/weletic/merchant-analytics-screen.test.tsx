@@ -59,6 +59,12 @@ const response: MerchantAnalyticsResponse = {
       coverage: "retained_reward_debit_accounts_only",
       rows: [],
     },
+    firstRecordedConfirmedIssuancesSeries: {
+      status: "range_required",
+      bucket: "utc_month",
+      coverage: "retained_confirmed_point_issuance_accounts_only",
+      rows: [],
+    },
     retainedEnrollmentSeries: {
       status: "range_required",
       bucket: "utc_month",
@@ -786,6 +792,57 @@ it.each([
             debitAccounts: "9007199254740993",
             firstRecordedDebitAccounts: "9007199254740990",
             returningDebitAccounts: "3",
+          },
+        ],
+      },
+    },
+  } satisfies MerchantAnalyticsResponse);
+  await act(async () =>
+    root.render(createElement(MerchantAnalyticsScreen, { request })),
+  );
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = locale;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const heading = Array.from(node.querySelectorAll("h2")).find(
+    (element) => element.textContent === title,
+  );
+  expect(heading).toBeDefined();
+  expect(heading!.closest("section")!.textContent).toContain(label);
+  expect(heading!.closest("section")!.textContent).toContain(
+    "9007199254740990",
+  );
+  expect(node.innerHTML).not.toContain("account_123");
+});
+
+it.each([
+  [
+    "en",
+    "First recorded and repeat confirmed reward issuances (UTC)",
+    "First recorded confirmed accounts",
+  ],
+  ["ja", "確認済み特典発行の初回・リピート（UTC）", "初回の発行確定アカウント"],
+  [
+    "vi",
+    "Tài khoản phát hành thưởng được xác nhận lần đầu và lặp lại (UTC)",
+    "Tài khoản xác nhận lần đầu",
+  ],
+])("renders confirmed issuance cohorts in %s", async (locale, title, label) => {
+  const request = vi.fn().mockResolvedValue({
+    ...response,
+    snapshot: {
+      ...response.snapshot,
+      firstRecordedConfirmedIssuancesSeries: {
+        status: "available",
+        bucket: "utc_month",
+        coverage: "retained_confirmed_point_issuance_accounts_only",
+        rows: [
+          {
+            month: "2026-09",
+            confirmedAccounts: "9007199254740993",
+            firstRecordedConfirmedAccounts: "9007199254740990",
+            returningConfirmedAccounts: "3",
           },
         ],
       },

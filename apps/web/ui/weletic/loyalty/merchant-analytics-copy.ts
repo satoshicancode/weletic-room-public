@@ -50,6 +50,13 @@ const en = {
   debitAccounts: "Accounts with recorded debits",
   firstRecordedDebitAccounts: "First recorded debit accounts",
   returningDebitAccounts: "Repeat debit accounts",
+  firstRecordedConfirmedIssuancesSeries:
+    "First recorded and repeat confirmed reward issuances (UTC)",
+  firstRecordedConfirmedIssuancesSemantics:
+    "Counts each retained account once per UTC month when Weletic durably confirms a points-funded reward artifact. First means no earlier retained confirmation before the selected instant or month. The timestamp is local confirmation, not exact remote creation or discount use. Legacy records without a confirmation date, erased history, zero-point awards and multiple accounts cannot establish a lifetime shopper cohort.",
+  confirmedAccounts: "Accounts with confirmed issuance",
+  firstRecordedConfirmedAccounts: "First recorded confirmed accounts",
+  returningConfirmedAccounts: "Repeat confirmed accounts",
   retainedEnrollmentSeries: "Retained account enrollments over time (UTC)",
   retainedEnrollmentOpening: "Retained accounts before selected range",
   retainedEnrollmentSemantics:
@@ -223,6 +230,13 @@ const ja: Copy = {
   debitAccounts: "引落が記録されたアカウント",
   firstRecordedDebitAccounts: "初回引落記録のアカウント",
   returningDebitAccounts: "再引落記録のアカウント",
+  firstRecordedConfirmedIssuancesSeries:
+    "確認済み特典発行の初回・リピート（UTC）",
+  firstRecordedConfirmedIssuancesSemantics:
+    "ポイントを使った特典の発行をWeleticが確定記録した月ごとに、保存中のアカウントを1回数えます。初回は選択期間の開始時点またはその月より前に、保存中の確定記録がない場合です。日時はアプリでの確定時刻で、外部サービスでの正確な作成時刻や割引利用時刻ではありません。確定日時のない古い記録、削除済み履歴、0ポイントの付与、複数アカウントの統合は含められず、生涯の顧客群ではありません。",
+  confirmedAccounts: "発行確定が記録されたアカウント",
+  firstRecordedConfirmedAccounts: "初回の発行確定アカウント",
+  returningConfirmedAccounts: "リピートの発行確定アカウント",
   retainedEnrollmentSeries: "保持中アカウントの登録推移（UTC）",
   retainedEnrollmentOpening: "選択期間前の保持中アカウント",
   retainedEnrollmentSemantics:
@@ -395,6 +409,13 @@ const vi: Copy = {
   debitAccounts: "Tài khoản có khoản trừ đã ghi",
   firstRecordedDebitAccounts: "Tài khoản ghi nhận trừ điểm lần đầu",
   returningDebitAccounts: "Tài khoản ghi nhận trừ điểm lặp lại",
+  firstRecordedConfirmedIssuancesSeries:
+    "Tài khoản phát hành thưởng được xác nhận lần đầu và lặp lại (UTC)",
+  firstRecordedConfirmedIssuancesSemantics:
+    "Đếm mỗi tài khoản còn lưu một lần trong từng tháng UTC khi Weletic ghi nhận xác nhận phát hành phần thưởng dùng điểm. Lần đầu nghĩa là không có xác nhận còn lưu trước thời điểm hoặc tháng đã chọn. Thời điểm này là lúc ứng dụng xác nhận, không phải lúc nhà cung cấp tạo chính xác hay lúc dùng giảm giá. Không thể khôi phục bản ghi cũ thiếu ngày xác nhận, lịch sử đã xóa, phần thưởng 0 điểm hoặc nhiều tài khoản được hợp nhất; đây không phải nhóm khách hàng theo toàn bộ vòng đời.",
+  confirmedAccounts: "Tài khoản có xác nhận phát hành",
+  firstRecordedConfirmedAccounts: "Tài khoản xác nhận lần đầu",
+  returningConfirmedAccounts: "Tài khoản xác nhận lặp lại",
   retainedEnrollmentSeries: "Tài khoản còn lưu theo thời điểm đăng ký (UTC)",
   retainedEnrollmentOpening: "Tài khoản còn lưu trước khoảng đã chọn",
   retainedEnrollmentSemantics:
