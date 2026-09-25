@@ -1,12 +1,12 @@
 # Weletic Room v1 launch readiness
 
 Code baseline reconciled September 25, 2026 JST: public `main` at
-[`efbe4a9ee3`](https://github.com/satoshicancode/weletic-room-public/commit/efbe4a9ee33b10a1d7e62719ea0a9b49bb5c11a8)
-(PR #157). [PR #157 current-head CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36090814151);
-[post-merge `main` CI](https://github.com/satoshicancode/weletic-room-public/actions/runs/36091727819)
-is a separate gate. Apart from this release-matrix PR, the only open public PR is the
-[schema-gated import provenance index](https://github.com/satoshicancode/weletic-room-public/pull/106),
-which remains draft work rather than a shipped capability.
+[`202da7eef4`](https://github.com/satoshicancode/weletic-room-public/commit/202da7eef4dc0052d03d66cbf25125053339cb99)
+(PR #159); its [post-merge CI passed](https://github.com/satoshicancode/weletic-room-public/actions/runs/36094901738).
+The remaining implementation PRs are the draft
+[schema-gated import provenance index](https://github.com/satoshicancode/weletic-room-public/pull/106)
+and draft [full-scale import restart test](https://github.com/satoshicancode/weletic-room-public/pull/158).
+Neither is shipped or closes a release gate.
 The store-review, prospective collection and shared-delivery code is merged.
 Its shared schemas have not been applied to a release target, and neither
 Loyalty nor Reviews has passed installed, provider and operational release gates.
@@ -123,6 +123,13 @@ That earlier bounded run did not close the 50,000-row gate. The later strict
 50,000-commit and 50,000-rollback isolated run in L10's evidence row did;
 full-scale restart, provider and installed gates remain open.
 
+The draft [full-scale process-handoff test](https://github.com/satoshicancode/weletic-room-public/pull/158)
+has green current-head CI and a passing 500-row rehearsal with two real worker
+processes in each phase. Its isolated 50,000-row run is still in progress;
+the commit phase has passed the earlier 8,100-row failure point. Do not treat
+this as a completed full-scale restart or rollback result until the terminal
+SQL assertions and fixture cleanup pass.
+
 L09's [recorded-order earning-rate code](https://github.com/satoshicancode/weletic-room-public/pull/117) is merged. It excludes missing Shopify orders, and its additive index has not been applied to a shared database. This is neither a whole-store rate nor installed acceptance.
 
 L09's [recorded-ledger redemption-to-earn code](https://github.com/satoshicancode/weletic-room-public/pull/124) is merged after 38 focused combined tests, green current-head CI, a bounded production build and [isolated SQL reconciliation](redemption-rate-s17-2026-09-24.md). Its monthly ratio excludes historical backfill from earned points and does not measure discount use or whole-store behavior. Installed acceptance remains open. Earlier stacked PR #118 was closed and superseded.
@@ -146,6 +153,10 @@ not establish those facts for `loyalty-public`.
 A fresh [13-extension public staging build](public-extension-build-2026-09-24.md)
 passed local validation on the same source SHA; its unique candidate UIDs remain
 unowned until the public-app mapping and deployment gate are accepted.
+The [September 25 current-source recheck](public-extension-build-2026-09-24.md)
+and [8,419-byte review asset check](store-review-storefront-build-2026-09-24.md)
+are merged in PR #159, with five focused storefront tests passing. Neither
+establishes remote extension ownership or an installed journey.
 
 The [September 25 public-app runtime inventory](public-app-runtime-inventory-2026-09-25.md)
 found that the active remote version still uses `https://example.com`, whereas
