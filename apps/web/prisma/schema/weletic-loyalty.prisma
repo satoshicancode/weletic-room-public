@@ -457,6 +457,7 @@ model WeleticLoyaltyAccount {
 
   @@unique([storeId, id])
   @@index([storeId, status])
+  @@index([storeId, enrolledAt])
   @@index([programId, status])
   @@index([storeId, referralCode])
   @@index([referredById])
