@@ -26,10 +26,18 @@ These UI identities must still be matched against authenticated API identities
 and the new local installation generation before benefit tests. Do not substitute
 the separately installed custom app, Weletic Room.
 
-The Partner distribution page requested account selection/sign-in. Hosted plans,
-their actual handles, Partner API credential access and current protected-data
-permissions were not verified in this pass. Do not infer an active subscription
-from the install row or the store's development label.
+Partner sign-in is complete. With Hiro's explicit approval, Partner API client
+`37492` (Weletic core acceptance) was created with Manage apps only; its token is
+stored privately outside Git. The exact production `activeSubscription` query
+returned HTTP 200, no GraphQL errors and null for this app/shop pair. This proves
+API access/query compatibility, not paid or private-free entitlement.
+
+The account is unregistered for the App Store. The observed Manage submission
+path reaches a registration form with a one-time USD19 fee and business/associated
+account declarations. No registration or payment has been made. Do not generalize
+this observed pricing-navigation blocker into a requirement to pay before any
+local or development-store test. Actual hosted plan handles remain unknown.
+Protected-data details remain 0/9 complete; Email has no selected reason.
 
 ## Local tooling change
 
@@ -71,9 +79,9 @@ The intended first remote step is setup and authentication only:
    is currently occupied by an existing SSH listener. Do not terminate it or point
    a schema/probe command at it. The previous free tests used a separate owned
    Docker MySQL port; the standard launcher does not yet accept that layout.
-2. Complete Partner sign-in and read the existing hosted-pricing and protected-data
-   settings. Prepare any required plan/credential changes as specific actions.
-   New credential creation/access expansion requires its own confirmation.
+2. Resolve the hosted-pricing development path and required protected-data
+   selections. Partner sign-in and the approved API credential are complete.
+   Any further access expansion or registration/payment needs its own approval.
 3. After explicit preview approval, create two temporary HTTPS origins: embedded
    app and allowlisted backend ingress. Never tunnel the full Next server;
    internal gateways, cron, SQL, Redis and storage remain loopback-only.

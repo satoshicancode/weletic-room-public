@@ -124,3 +124,10 @@ The [yamaxdev preview preparation packet](yamaxdev-core-preview-packet-2026-09-2
 records verified public app/store identities, the unchanged `example.com` active
 version, explicit core billing configuration for local tooling, and remaining
 sign-in/resource prerequisites. It is not approval or evidence of a live preview.
+
+## Testing-first execution consolidation
+
+The [September 26 plan reconciliation](testing-first-plan-reconciliation-2026-09-26.md)
+maps the last month of discoverable plans and open PRs to the reduced scope and
+orders local, installed-store, persistent acceptance and production evidence.
+It preserves the deferred backlog and all explicit execution approvals.

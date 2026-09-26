@@ -1,0 +1,156 @@
+# Testing-first plan reconciliation — September 26, 2026
+
+Execution plan for the August 27–September 26 review window. The
+[core launch checklist](core-launch-checklist.md) remains the product authority.
+The new testing-first goal does not reactivate the deferred parity backlog.
+Production is not ready; no installed acceptance gate is closed by this review.
+
+## Sources and current authority
+
+Reviewed the current repository plans and evidence indexes, the three matching
+Notion planning documents, recent project task summaries, and all six open public
+PRs. Git history was searched across the window; the clean-history public import
+means a file's public commit date does not establish its original creation date.
+This is a reconciliation of discoverable plans, not a claim to have recovered
+every private or archived conversation.
+
+- [September 5 six-package rollout](https://www.notion.so/3d2e26097bfd81c0a667ce21978d4fdc):
+  runtime, publication, Flow, referrals, reviews and cutover; subsequent expanded
+  twelve-package baseline. Its earlier target n0pvef-cs is not authorization to
+  test on that store now. Canonical acceptance remains yamaxdev.
+- [Public-app roadmap](https://www.notion.so/3d2e26097bfd81079fe5dfe9036c3d9a):
+  public identity, isolated runtime, native interfaces and controlled release.
+- [September 16 completion plan and September 26 reset](https://www.notion.so/3dde26097bfd811fbd84f212b6d67fe5):
+  current approval and execution record; latest reset supersedes parity order.
+- [Company-store contracts](company-store-completion.md),
+  [requirement matrix](unified-acceptance-matrix.md),
+  [readiness index](v1-launch-readiness-2026-09-24.md),
+  [native-review history](native-reviews-plan.md), and ADRs 0038, 0040–0045.
+- Recent project chats: “Audit Weletic Room loyalty”, “Ship basic review app”,
+  “Plan Smile-like loyalty features”, “Report progress and plan remaining”, and
+  “Rà soát công việc Gemini 3.8”. Their old completion claims retain their original
+  repository, version and capability boundary; current code/CI takes precedence.
+
+Current source: public main `c86f216e87c6cc71ccb799b8a7f94e700b5a1c6b`;
+core candidate `808a1cf533abc42d5ee006537c508a0e8ce4477d` before this follow-up.
+The original historical-import checkout and all other unfinished branches remain
+untouched. Six open PRs were re-read/listed on September 26:
+
+| PR                                                                    | Disposition                                                                                                                                                                                               |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [176](https://github.com/satoshicancode/weletic-room-public/pull/176) | Core launch candidate; draft, all six checks green at 808a1cf533; schema/installed acceptance still open.                                                                                                 |
+| [173](https://github.com/satoshicancode/weletic-room-public/pull/173) | Refund allocation evidence; draft with additive schema. Evaluate for independent core refund reconciliation; do not merge or apply blindly. Its validator currently rejects legacy unavailable histories. |
+| [175](https://github.com/satoshicancode/weletic-room-public/pull/175) | Provider payload/budget sensitivity evidence. Keep as proposal input, not spending approval.                                                                                                              |
+| [174](https://github.com/satoshicancode/weletic-room-public/pull/174) | Advanced VIP reporting documentation; outside launch critical path.                                                                                                                                       |
+| [158](https://github.com/satoshicancode/weletic-room-public/pull/158) | Import full-scale process handoff; preserve, defer to P3.                                                                                                                                                 |
+| [106](https://github.com/satoshicancode/weletic-room-public/pull/106) | Import provenance index, schema-gated; preserve, defer to P3.                                                                                                                                             |
+
+## Consolidated requirement disposition
+
+These rows retain every L01–L10, R01–R10 and S01–S06 family from the prior plans.
+Exact tests and boundaries remain linked from the original requirement matrix.
+
+| Family | Required before core launch                                                                   | Deferred work                                         |
+| ------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| L01    | Purchase earning, ledger concurrency/idempotency, partial/full refunds and recovery           | Signup/birthday and configurable expiry               |
+| L02    | Fixed native coupons, wallet/history, issuance/recovery/checkout/refund                       | Other discount and stored-value types                 |
+| L03    | Contain subscription-specific earning and preserve existing obligations                       | Contract-level subscription cadence acceptance        |
+| L04    | Keep new VIP/campaign activity disabled; preserve historical accounting                       | VIP/campaign journeys                                 |
+| L05    | No new referral activity                                                                      | Claims, benefits, abuse, refund and delivery journeys |
+| L06    | Existing launcher usable with core content                                                    | Advanced appearance/nudges                            |
+| L07    | Account hub and theme launcher, EN/JA/VI, mobile/keyboard and recovery                        | POS/Plus/expanded surfaces                            |
+| L08    | Transactional review invitation delivery, suppression and privacy                             | Growth communications and deferred feature notices    |
+| L09    | Balances, ledger, reward status and operational reconciliation                                | Advanced analytics, cohorts and exports               |
+| L10    | Compatibility for any shared readers; no import activation                                    | Historical imports and scale work                     |
+| R01    | Verified invitation/submission, seven-day delay, thirty-day token, no historical sends        | Configurable reminders                                |
+| R02    | Manual moderation, replies, stars/listing, low-rating neutrality                              | Advanced presentation                                 |
+| R03    | Preserve shared privacy readers; no open submissions                                          | Open review eligibility/anti-abuse                    |
+| R04    | Immutable prospective participation policy and honest disclosure                              | Coupon/photo bonuses and richer policy UI             |
+| R05    | Exactly one points award per order, recovery and enrollment rules                             | Coupon fulfillment                                    |
+| R06    | Existing obligations, audited invalidity and privacy; hiding criticism never revokes points   | Additional cost/reporting features                    |
+| R07    | Compatibility for shared award/privacy readers                                                | Store reviews and their collection journey            |
+| R08    | Private photos, validated upload/deletion and privacy                                         | Video processing/playback                             |
+| R09    | Preserve shared privacy dependencies                                                          | Q&A and manual translations                           |
+| R10    | Preserve provider data until approved retirement                                              | Historical review imports                             |
+| S01    | App/shop/generation identity, staff access, paid/private-free admission, suspension/reinstall | General external-merchant onboarding                  |
+| S02    | Four enabled triggers and bounded points action, deduplication/revocation                     | VIP/expiry/referral Flow capabilities                 |
+| S03    | Public-owned theme/account/Flow identity and minimum required scopes                          | POS/Plus-only checkout bundle                         |
+| S04    | Stable testing runtime, supervision/recovery, alerts and restore before production            | Capacity expansion                                    |
+| S05    | Export/erasure, retention, private media, schema compatibility and protected-data evidence    | None of the applicable privacy obligations            |
+| S06    | Accurate listing, review and separately approved production activation                        | External acquisition and additional pricing tiers     |
+
+## Execution order and proof required
+
+1. **T0 — Reproducible local testing.** Resolve the occupied SQL port without
+   terminating the existing SSH listener. Update the isolated development
+   tooling's exact ownership contract and tests to support the selected owned
+   Docker layout. Do not only override environment URLs. Keep loopback-only
+   SQL/Redis/media and capture-only mail. Record image IDs, schema, source SHA,
+   fixture generation, startup/stop/restart and bounded worker results.
+2. **T1 — Core SQL and privacy stability.** Run production-service tests for
+   financial races, ambiguous issuance, worker recovery, review token races,
+   single awards and privacy/export races under core-v1. Add self-contained
+   fixtures where a focused test currently depends on prior tests. Preserve
+   deferred tests in their original profile. Run relevant types/lint/build/CI.
+3. **T2 — Installed yamaxdev preview.** Prepare exact origins/routes, public
+   extension identities and a setup-only packet. Obtain approval for exposure
+   and installation changes before starting the tunnel. Verify authenticated
+   app/shop IDs, installation generation and staff scope. No historical sends.
+4. **T3 — Native billing.** The actual Partner API query now returns HTTP 200,
+   no GraphQL errors, activeSubscription null for app 419628580865/shop 73236414690. Client 37492 has Manage apps only. Plan handles remain unknown.
+   Verify a supported development pricing route; do not treat registration as
+   necessary for all testing or fabricate live entitlement. Paid/private-free,
+   cancellation, rejected selection, unavailable API and reinstall need proof.
+5. **T4 — Installed loyalty and reviews.** Execute approved synthetic test-order,
+   recipient and media packets. Purchase → earn → fixed coupon → checkout →
+   partial/full refund; fulfillment → real inbox → text/photo review → one
+   disclosed participation award → moderation → public display. Independently
+   reconcile SQL and provider receipts, duplicates and restart recovery.
+6. **T5 — Essential Flow.** Publish only the approved public-owned capabilities
+   after its explicit publication gate. Retain receipts for all four triggers,
+   bounded action, duplicates, revoked grants and disabled workflows.
+7. **T6 — Persistent acceptance.** After exact resource/budget approval, audit
+   target schema and compatible migrations, deploy the accepted candidate,
+   rehearse backup restoration and supervised restart, verify alerts and private
+   media/provider delivery. A laptop preview cannot establish durable hosting.
+8. **T7 — Production eligibility.** Freeze evidence and SHA; complete honest
+   privacy/listing/reviewer materials and Shopify approval. Only after separate
+   activation approval enable one company store, monitor 72 hours, and obtain
+   retirement approval before removing existing apps/provider data.
+
+## Files, contracts, migrations and risks
+
+Implementation touches existing `infra/shopify-development` tooling,
+`apps/web/tests/weletic` integration fixtures, and production service modules only
+when a verified test failure requires a fix. Update this record and the canonical
+checklist as evidence arrives. Preserve the existing ledger, issuance saga,
+participation policy, authorization and installation-generation contracts.
+
+No new shared migration is authorized here. Local synthetic databases may receive
+reviewed compatible schemas. The subscription snapshot and any selected refund
+allocation DDL need exact-target review before shared application. Deferred tables
+may remain necessary for shared privacy readers.
+
+Current risks: local runner scripts are temporary; full core privacy coverage is
+incomplete; broad legacy SQL has a known deferred referral failure; current
+public version still points at example.com; hosted plans, real inbox, actual
+Flow workflows, provider restore and protected-data approval remain unproven.
+A passing API query with null subscription proves query compatibility only.
+
+## First execution slice
+
+Add a self-contained core SQL regression for review erasure after billing expiry,
+using two independently created shoppers and real transaction boundaries. Assert
+one participation award each before erasure, retained append-only financial rows,
+redacted target content/tokens, unchanged other-shopper state and idempotent
+completion. Email/storage remain mocked; do not label this an inbox/R2 test.
+
+## First-slice validation
+
+The focused core SQL selection passed 10 tests (117 unselected/skipped), then the
+new privacy case passed by itself with the strengthened account/claim assertions.
+Both runs used the existing scoped local MySQL database; no shared schema or
+external side effect. The test remains synthetic and does not prove photo deletion,
+real inbox delivery or the full customer export/erasure workflow. Independent
+review identified a missing target-account/claim assertion; it was added and the
+reviewer found no further actionable issues. Exact follow-up CI belongs to PR176.

@@ -564,6 +564,183 @@ describe("native reviews real MySQL production-service boundaries", () => {
     },
   );
 
+  it.runIf(coreLaunch)(
+    "core privacy cleanup survives expired billing and preserves rewards and another shopper",
+    async () => {
+      const policy = await createReviewIncentivePolicyRevision(storeId, {
+        kind: "points",
+        basePoints: "100",
+        photoBonusPoints: "0",
+        videoBonusPoints: "0",
+        maxPoints: "100",
+      });
+      const fixtures: Array<{
+        buyerId: string;
+        buyerAccountId: string;
+        request: Awaited<ReturnType<typeof invitation>>;
+        review: Awaited<ReturnType<typeof submitNativeReview>>;
+        claim: { id: string };
+      }> = [];
+      for (const label of ["erase", "keep"]) {
+        const buyerId = `core-privacy-${label}-${run}`;
+        const buyerAccountId = `core-privacy-account-${label}-${run}`;
+        await prisma.weleticShopper.create({
+          data: {
+            id: buyerId,
+            storeId,
+            shopifyCustomerId: String(++sequence),
+            email: `${label}@example.test`,
+          },
+        });
+        await prisma.weleticLoyaltyAccount.create({
+          data: {
+            id: buyerAccountId,
+            storeId,
+            shopperId: buyerId,
+            programId: loyaltyProgramId,
+          },
+        });
+        const request = await invitation(await purchase(buyerId));
+        // Bind a synthetic disclosed promise; external delivery is not tested.
+        await prisma.weleticReviewRequest.update({
+          where: { id: request.id },
+          data: { incentivePolicyId: policy.id },
+        });
+        const review = await submitNativeReview(storeId, input(request.token));
+        const claim = await prisma.weleticReviewIncentiveClaim.findFirstOrThrow(
+          {
+            where: { storeId, sourceReviewId: review.id },
+          },
+        );
+        expect(claim.status).toBe("fulfilled");
+        fixtures.push({ buyerId, buyerAccountId, request, review, claim });
+      }
+      const [target, other] = fixtures;
+      const pendingOrder = await purchase(target.buyerId);
+      const [pendingRequestId] = await createFulfilledReviewRequests({
+        storeId,
+        orderExternalId: pendingOrder.externalId,
+        fulfilledAt: new Date(Date.now() - 1000),
+        expectedInstallationGeneration: "g1",
+      });
+      const pendingRequest = { id: pendingRequestId };
+      mocks.viaSmtp.mockRejectedValueOnce(
+        new Error("synthetic ambiguous send"),
+      );
+      await expect(
+        deliverReviewRequest(storeId, pendingRequest.id, "g1"),
+      ).rejects.toThrow();
+      const pendingBefore = await prisma.weleticReviewRequest.findUniqueOrThrow(
+        {
+          where: { id: pendingRequest.id },
+        },
+      );
+      expect(pendingBefore.tokenHash).toBeTruthy();
+      expect(pendingBefore.encryptedDeliverySnapshot).toBeTruthy();
+
+      const readFinancials = () =>
+        prisma.weleticPointsLedgerEntry.findMany({
+          where: {
+            storeId,
+            accountId: { in: fixtures.map((f) => f.buyerAccountId) },
+          },
+          orderBy: { id: "asc" },
+        });
+      const readOther = async () => ({
+        review: await prisma.weleticProductReview.findUniqueOrThrow({
+          where: { id: other.review.id },
+        }),
+        request: await prisma.weleticReviewRequest.findUniqueOrThrow({
+          where: { id: other.request.id },
+        }),
+        account: await prisma.weleticLoyaltyAccount.findUniqueOrThrow({
+          where: { id: other.buyerAccountId },
+        }),
+      });
+      const readTargetFinancialState = async () => ({
+        account: await prisma.weleticLoyaltyAccount.findUniqueOrThrow({
+          where: { id: target.buyerAccountId },
+          select: {
+            cachedPointsBalance: true,
+            cachedPendingPoints: true,
+            lifetimePointsEarned: true,
+            ledgerVersion: true,
+          },
+        }),
+        claim: await prisma.weleticReviewIncentiveClaim.findUniqueOrThrow({
+          where: { id: target.claim.id },
+          select: {
+            id: true,
+            storeId: true,
+            orderId: true,
+            shopperId: true,
+            policyId: true,
+            sourceReviewId: true,
+            awardSnapshot: true,
+          },
+        }),
+      });
+      const targetBefore = await readTargetFinancialState();
+      const financials = await readFinancials();
+      expect(financials).toHaveLength(2);
+      expect(
+        financials.every((entry) => entry.pointsDelta === BigInt(100)),
+      ).toBe(true);
+      const otherBefore = await readOther();
+      await prisma.weleticShopifySubscriptionSnapshot.update({
+        where: { id: subscriptionId },
+        data: { validUntil: new Date(0) },
+      });
+      // A bounded loop fails if cleanup stops making progress.
+      let drained = false;
+      for (let page = 0; page < 10; page++) {
+        if (
+          !(await redactNativeReviewsBatch(storeId, target.buyerId)).hasMore
+        ) {
+          drained = true;
+          break;
+        }
+      }
+      expect(drained).toBe(true);
+      expect(
+        await prisma.weleticProductReview.findUniqueOrThrow({
+          where: { id: target.review.id },
+        }),
+      ).toMatchObject({ status: "redacted", body: "", merchantReply: null });
+      expect(
+        await prisma.weleticReviewRequest.findUniqueOrThrow({
+          where: { id: pendingRequest.id },
+        }),
+      ).toMatchObject({
+        tokenHash: null,
+        encryptedDeliveryToken: null,
+        encryptedDeliverySnapshot: null,
+      });
+      expect(await readFinancials()).toEqual(financials);
+      expect(await readOther()).toEqual(otherBefore);
+      expect(await readTargetFinancialState()).toEqual(targetBefore);
+      const redactedClaim =
+        await prisma.weleticReviewIncentiveClaim.findUniqueOrThrow({
+          where: { id: target.claim.id },
+        });
+      expect(redactedClaim).toMatchObject({
+        status: "privacy_redacted",
+        validationSnapshot: { redacted: true },
+      });
+      expect(await redactNativeReviewsBatch(storeId, target.buyerId)).toEqual({
+        hasMore: false,
+      });
+      expect(await readFinancials()).toEqual(financials);
+      expect(await readTargetFinancialState()).toEqual(targetBefore);
+      expect(await readOther()).toEqual(otherBefore);
+      expect(
+        await prisma.weleticReviewIncentiveClaim.findUniqueOrThrow({
+          where: { id: target.claim.id },
+        }),
+      ).toEqual(redactedClaim);
+    },
+  );
+
   it("store review collection: keeps one prospective order request, line evidence and a legacy no-reward submission", async () => {
     const now = new Date();
     await prisma.weleticStoreReviewSettings.upsert({
