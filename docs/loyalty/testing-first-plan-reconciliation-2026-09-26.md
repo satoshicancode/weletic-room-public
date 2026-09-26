@@ -280,3 +280,30 @@ Shopify discount responses and Redis locks are mocked, and order earning inputs
 are seeded. This proves local SQL/service behavior, not a real checkout, signed
 webhook, actual worker-process restart or complete ambiguous-issuance recovery.
 Those installed acceptance requirements remain open. Registration stays deferred.
+
+## Ambiguous-coupon recovery correction
+
+The next SQL regression exposed a production worker defect: generic provisioning
+recovery verified the immutable discount configuration but omitted its saved
+`currencyVerifiedAt` when invoking transactional adoption. The adopter correctly
+refused an undefined currency generation, so even an unchanged, matching coupon
+took deactivation/compensation instead of being recovered as issued.
+
+The worker now passes the immutable snapshot timestamp into the existing check.
+It does not substitute the current timestamp or weaken the currency fence. The
+new core SQL cases prove that a lookup miss and foreign ownership retain the
+reservation; a later matching coupon is adopted once after billing expiry; and a
+currency-verification change during remote lookup requires confirmed deactivation
+before one compensation entry. Both replay paths preserve independent ledger sums
+and account balances without another create, debit or refund.
+
+Validation: five core SQL cases passed; the two new cases also passed alone;
+the three legacy cases passed with the two core cases skipped. The focused outbox
+and discount-saga unit suites passed 137 tests. Final web type-check (8 GB Node
+heap), focused lint/formatting and the production build passed. The build reported
+expected missing QStash-token warnings in this isolated environment. Independent
+adversarial review found no blockers. Preceding commit `15367a76c2` completed all
+CI checks in run `36249446881`; the correction needs its own exact-head CI.
+Shopify responses remain simulated and Redis locks bypassed;
+this closes the specific SQL/service recovery gap, not actual Shopify consistency,
+worker-process restart or deployed acceptance. Registration remains deferred.

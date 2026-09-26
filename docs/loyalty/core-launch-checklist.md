@@ -142,3 +142,9 @@ adds three passing core cases and three passing legacy compatibility cases,
 including existing settlement and partial/full refunds after billing expiry.
 Shopify responses and earning inputs remain synthetic; installed checkout and
 worker restart acceptance are still required. Registration remains deferred.
+
+A subsequent [ambiguous-coupon recovery correction](testing-first-plan-reconciliation-2026-09-26.md#ambiguous-coupon-recovery-correction)
+passes the saved currency-verification timestamp to transactional adoption.
+Five core SQL cases now pass, including recovery after billing expiry and
+compensation when currency verification changes during lookup. Real provider
+and worker-process acceptance remain open.

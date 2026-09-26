@@ -955,6 +955,219 @@ describe("loyalty reward lifecycle on isolated MySQL", () => {
     ).toBe(await sumPersistedLedgerPoints());
   }, 120_000);
 
+  it.runIf(coreLaunch).each(["unchanged", "changed"] as const)(
+    "reconciles an uncertain coupon after billing expiry with %s currency verification",
+    async (currencyVerification) => {
+      const { provisionDiscountSaga } = await import(
+        "@/lib/weletic/loyalty/saga"
+      );
+      const { handleRedemptionRecovery } = await import(
+        "@/lib/weletic/loyalty/outbox-worker"
+      );
+      const { RedemptionRecoveryPayloadSchema } = await import(
+        "@/lib/weletic/loyalty/outbox"
+      );
+      const balanceBefore = await sumPersistedLedgerPoints();
+      const recoveryId = `${suffix}-${currencyVerification}`;
+      const rewardDefinitionId = `uncertain_recovery_${recoveryId}`;
+      await database.weleticRewardDefinition.create({
+        data: {
+          id: rewardDefinitionId,
+          storeId,
+          name: "Uncertain five-dollar coupon",
+          rewardType: "amount_off",
+          exchangeType: "fixed",
+          pointsCost: BigInt(100),
+          discountValue: 500,
+        },
+      });
+      transport.create
+        .mockReset()
+        .mockRejectedValue(new Error("response lost after create"));
+      transport.lookup.mockReset().mockResolvedValue(null);
+      transport.deactivate.mockReset();
+      transport.credentials.mockReset().mockResolvedValue({
+        shopDomain: `${suffix}.myshopify.com`,
+        accessToken: "test-only-token",
+        source: "app_session",
+      });
+      const issued = await provisionDiscountSaga({
+        storeId,
+        accountId,
+        rewardDefinitionId,
+        idempotencyKey: `uncertain-recovery-${recoveryId}`,
+        discountCode: `WL-${recoveryId}-RECOVERY`,
+        shopDomain: `${suffix}.myshopify.com`,
+        accessToken: "test-only-token",
+      });
+      expect(issued).toMatchObject({
+        success: false,
+        status: "provisioning",
+        compensated: false,
+      });
+      const redemption =
+        await database.weleticRewardRedemption.findUniqueOrThrow({
+          where: { id: issued.redemptionId },
+        });
+      const job = await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: {
+          storeId_idempotencyKey: {
+            storeId,
+            idempotencyKey: `recovery:${redemption.id}`,
+          },
+        },
+      });
+      const payload = RedemptionRecoveryPayloadSchema.parse(job.payload);
+      await expireFixtureSubscription();
+      const assertReservation = async (status: string) => {
+        expect(await sumPersistedLedgerPoints()).toBe(
+          balanceBefore - BigInt(100),
+        );
+        expect(
+          await database.weleticLoyaltyAccount.findUniqueOrThrow({
+            where: { id: accountId },
+            select: { cachedPointsBalance: true },
+          }),
+        ).toEqual({ cachedPointsBalance: balanceBefore - BigInt(100) });
+        expect(
+          await database.weleticRewardRedemption.findUniqueOrThrow({
+            where: { id: redemption.id },
+            select: { status: true },
+          }),
+        ).toEqual({ status });
+        const entries = await database.weleticPointsLedgerEntry.findMany({
+          where: { storeId, accountId, referenceId: redemption.id },
+          select: { entryType: true, pointsDelta: true },
+        });
+        expect(entries).toEqual([
+          { entryType: "REDEEM_REWARD", pointsDelta: BigInt(-100) },
+        ]);
+        expect(transport.create).toHaveBeenCalledTimes(1);
+        expect(transport.deactivate).not.toHaveBeenCalled();
+      };
+      // A lookup miss cannot establish that Shopify did not create the coupon.
+      await expect(
+        handleRedemptionRecovery(storeId, payload, generation),
+      ).rejects.toThrow("reconciliation remains pending");
+      await assertReservation("provisioning");
+      const metadata = redemption.metadata as {
+        shopifyDiscountOwnership: { expectedTitle: string };
+        provisioningSnapshot: { startsAt: string };
+      };
+      const remote = {
+        id: `gid://shopify/DiscountCodeNode/${recoveryId}-recovered`,
+        code: redemption.shopifyDiscountCode,
+        title: metadata.shopifyDiscountOwnership.expectedTitle,
+        status: "ACTIVE",
+        configuration: {
+          kind: "basic",
+          // Shopify persists discount timestamps at whole-second precision.
+          startsAt: new Date(
+            Math.floor(
+              new Date(metadata.provisioningSnapshot.startsAt).getTime() /
+                1_000,
+            ) * 1_000,
+          ).toISOString(),
+          endsAt: null,
+          usageLimit: 1,
+          appliesOncePerCustomer: true,
+          appliesOnOneTimePurchase: true,
+          appliesOnSubscription: false,
+          recurringCycleLimit: 1,
+          combinesWith: {
+            orderDiscounts: false,
+            productDiscounts: false,
+            shippingDiscounts: false,
+          },
+          customerSelection: {
+            kind: "customers",
+            customerIds: [`gid://shopify/Customer/${suffix}`],
+          },
+          minimumRequirement: null,
+          basicValue: {
+            kind: "amount",
+            amount: "5.00",
+            currencyCode: "USD",
+            appliesOnEachItem: false,
+          },
+          basicItems: { kind: "all" },
+        },
+      };
+      transport.lookup.mockResolvedValue({
+        ...remote,
+        title: "Another merchant's coupon",
+      });
+      await expect(
+        handleRedemptionRecovery(storeId, payload, generation),
+      ).rejects.toThrow("Shopify discount ownership mismatch");
+      await assertReservation("provisioning");
+      transport.lookup.mockResolvedValue(remote);
+      if (currencyVerification === "changed") {
+        // Change the SQL currency generation during the remote read: the
+        // adoption transaction must compare with the original snapshot.
+        transport.lookup.mockImplementationOnce(async () => {
+          await database.weleticShopifyStore.update({
+            where: { id: storeId },
+            data: { currencyVerifiedAt: new Date("2026-09-25T00:00:00Z") },
+          });
+          return remote;
+        });
+        transport.deactivate.mockResolvedValue(true);
+        expect(
+          await handleRedemptionRecovery(storeId, payload, generation),
+        ).toBe("deactivated");
+        expect(
+          await database.weleticRewardRedemption.findUniqueOrThrow({
+            where: { id: redemption.id },
+            select: { status: true, shopifyDiscountId: true },
+          }),
+        ).toEqual({ status: "failed", shopifyDiscountId: remote.id });
+        expect(transport.deactivate).toHaveBeenCalledTimes(1);
+        expect(transport.deactivate).toHaveBeenCalledWith(
+          `${suffix}.myshopify.com`,
+          "test-only-token",
+          remote.id,
+          undefined,
+        );
+        await handleRedemptionRecovery(storeId, payload, generation);
+        expect(transport.deactivate).toHaveBeenCalledTimes(1);
+        expect(transport.create).toHaveBeenCalledTimes(1);
+        expect(
+          await database.weleticPointsLedgerEntry.findMany({
+            where: { storeId, accountId, referenceId: redemption.id },
+            select: { entryType: true, pointsDelta: true },
+            orderBy: { sequenceNumber: "asc" },
+          }),
+        ).toEqual([
+          { entryType: "REDEEM_REWARD", pointsDelta: BigInt(-100) },
+          { entryType: "MANUAL_ADJUSTMENT", pointsDelta: BigInt(100) },
+        ]);
+        expect(await sumPersistedLedgerPoints()).toBe(balanceBefore);
+        expect(
+          await database.weleticLoyaltyAccount.findUniqueOrThrow({
+            where: { id: accountId },
+            select: { cachedPointsBalance: true },
+          }),
+        ).toEqual({ cachedPointsBalance: balanceBefore });
+        return;
+      }
+      expect(await handleRedemptionRecovery(storeId, payload, generation)).toBe(
+        "healed",
+      );
+      await assertReservation("issued");
+      expect(
+        await database.weleticRewardRedemption.findUniqueOrThrow({
+          where: { id: redemption.id },
+          select: { shopifyDiscountId: true },
+        }),
+      ).toEqual({ shopifyDiscountId: remote.id });
+      const lookupsAfterRecovery = transport.lookup.mock.calls.length;
+      await handleRedemptionRecovery(storeId, payload, generation);
+      await assertReservation("issued");
+      expect(transport.lookup).toHaveBeenCalledTimes(lookupsAfterRecovery);
+    },
+  );
+
   it("rejects a competing wallet reservation while the first remote issuance waits", async () => {
     const { provisionDiscountSaga } = await import(
       "@/lib/weletic/loyalty/saga"

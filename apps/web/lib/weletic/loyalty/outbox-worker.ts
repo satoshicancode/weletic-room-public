@@ -2798,6 +2798,7 @@ export async function handleRedemptionRecovery(
         redemption.account.status === "active" &&
         !hasShopifyCustomerRedactionTombstone(redemption.account.metadata);
       let configurationMatches = true;
+      let expectedCurrencyVerifiedAt: string | null | undefined;
       if (accountIsActive) {
         const snapshot = readLoyaltyRedemptionProvisioningSnapshot(
           redemption.metadata,
@@ -2807,6 +2808,7 @@ export async function handleRedemptionRecovery(
             `Provisioning redemption ${redemptionId} is missing its immutable Shopify configuration snapshot.`,
           );
         }
+        expectedCurrencyVerifiedAt = snapshot.currencyVerifiedAt;
         const snapshotExpiresAt = snapshot.expiresAt
           ? new Date(snapshot.expiresAt)
           : null;
@@ -2840,6 +2842,7 @@ export async function handleRedemptionRecovery(
         remoteDiscount: remoteNode,
         accountIsActive,
         configurationMatches,
+        expectedCurrencyVerifiedAt,
         shopDomain: creds.shopDomain,
         accessToken: creds.accessToken,
         loyaltyMaintenancePermit,
