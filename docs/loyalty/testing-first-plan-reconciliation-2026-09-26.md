@@ -154,3 +154,45 @@ external side effect. The test remains synthetic and does not prove photo deleti
 real inbox delivery or the full customer export/erasure workflow. Independent
 review identified a missing target-account/claim assertion; it was added and the
 reviewer found no further actionable issues. Exact follow-up CI belongs to PR176.
+
+## Reproducible local services checkpoint
+
+The local tooling now supports explicit private SQL host ports, retaining
+3307/3902 defaults. Initialization, runtime/preview, service verification and
+local schema helpers share the same validated declaration. Docker ownership,
+loopback binding, database/principal and private-file restrictions remain in force.
+Validation: 74 focused tests across four suites, web type-check, focused ESLint,
+format checks, independent review, and an actual Compose model showing exactly
+one selected binding per SQL service.
+
+Local execution on September 26 moved SQL to 13307/13902 without disturbing the
+SSH listener on 3307. The existing local credentials were copied to the current
+core worktree without rotation; the older checkout is untouched. Existing Redis
+and media volumes remain in use with read-only credential mounts from the current
+worktree. The old MySQL volume failed exact-grant isolation because its user also
+has grants on older import/access-test schemas. Its data and grants were preserved.
+
+The current core SQL service instead uses a new named Docker volume,
+`weletic-loyalty-dev_mysql-core-20260926`. Its initial grants already matched the
+strict exact-schema policy; a guarded repair attempt refused unexpected input and
+made no grant changes. All 13 live service checks then passed. The empty local
+schema staging command completed with 177 tables and zero imported records.
+The standard four-file environment preflight passed all 16 checks, reporting
+`configuration_consistent` and `liveReady: false`.
+
+The current local Compose invocation must include all three files:
+
+```sh
+docker compose -p weletic-loyalty-dev \
+  -f infra/shopify-development/compose.yaml \
+  -f .env.loyalty-secrets.local/compose-ports.yaml \
+  -f .env.loyalty-secrets.local/compose-core-volume.yaml ps
+```
+
+Keep the private overrides with the credentials. Omitting the volume override
+selects the preserved older volume; do not operate on it as the core database.
+No application process, tunnel, Shopify installation, email send or worker was
+started by this checkpoint. Full runtime launch still needs the core billing
+configuration; actual hosted plan handles remain unverified. Local `db push`
+proves current-model compatibility only, not shared migration history or deployed
+acceptance. Draft PR176 remains unmerged.
