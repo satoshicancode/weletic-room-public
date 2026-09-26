@@ -37,6 +37,15 @@ path reaches a registration form with a one-time USD19 fee and business/associat
 account declarations. No registration or payment has been made. Do not generalize
 this observed pricing-navigation blocker into a requirement to pay before any
 local or development-store test. Actual hosted plan handles remain unknown.
+On a subsequent read-only check,
+the documented Distribution → Manage submission route still redirected to
+registration. Shopify's [current testing documentation](https://shopify.dev/docs/apps/launch/billing/shopify-app-pricing#testing)
+says same-organization dev stores can test available plans at no charge and
+provides a private test plan in pricing configuration. Those no-charge contracts
+do not prove this unregistered account can access pricing configuration. Local
+and CLI dev-store testing remain separate from the unresolved hosted-pricing UI.
+Hiro explicitly chose to keep registration deferred and continue free tests.
+No fee or registration has been approved by that choice.
 Protected-data details remain 0/9 complete; Email has no selected reason.
 
 ## Local tooling change
@@ -75,10 +84,12 @@ requires its own public-ownership review before use.
 
 The intended first remote step is setup and authentication only:
 
-1. Resolve the local service layout while retaining ownership checks. Port 3307
-   is currently occupied by an existing SSH listener. Do not terminate it or point
-   a schema/probe command at it. The previous free tests used a separate owned
-   Docker MySQL port; the standard launcher does not yet accept that layout.
+1. Local services are now verified on explicit SQL ports 13307/13902, preserving
+   the SSH listener on 3307. The current core worktree uses a fresh local SQL
+   volume with the 177-table current schema; original data and grants are intact.
+   All 13 service checks and 16 configuration checks passed. Use the three-file
+   Compose invocation in [the current checkpoint](testing-first-plan-reconciliation-2026-09-26.md#reproducible-local-services-checkpoint).
+   Application startup still requires the verified core billing configuration.
 2. Resolve the hosted-pricing development path and required protected-data
    selections. Partner sign-in and the approved API credential are complete.
    Any further access expansion or registration/payment needs its own approval.

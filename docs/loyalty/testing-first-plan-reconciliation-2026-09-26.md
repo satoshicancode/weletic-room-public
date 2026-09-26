@@ -196,3 +196,61 @@ started by this checkpoint. Full runtime launch still needs the core billing
 configuration; actual hosted plan handles remain unverified. Local `db push`
 proves current-model compatibility only, not shared migration history or deployed
 acceptance. Draft PR176 remains unmerged.
+
+## Free billing revalidation checkpoint
+
+The public-plan zero-dollar contract was already guarded by authenticated Admin
+API `shop.plan.partnerDevelopment`; redirect parameters cannot supply this flag.
+The SQL suite now proves production-store denial without provisioning, development
+and private-free admission, denial after loss of development status or an unknown
+private plan, recovery after a fresh accepted contract, and denial on Partner API
+failure. Existing paid admission, suspension, expiry, stale HTTP and reinstall
+cases also pass: six SQL tests total in the isolated `core_billing_test` database,
+using a new database-scoped synthetic principal on the owned test container.
+The test runner accepts an explicit `CORE_BILLING_DATABASE_PORT` while preserving
+its loopback, database-name and opt-in guards; the default remains 65366.
+
+These provider responses are mocked. This checkpoint does not prove a real
+Shopify charge selection, private plan, cancellation/freeze or installed benefit
+journey. The actual dashboard still redirects the documented pricing setup path
+to registration. No registration, payment, Shopify permission change or billing bypass was
+performed. Continue independent testing while hosted-pricing setup remains deferred.
+
+## Local review-photo storage checkpoint
+
+An explicit `CORE_REVIEW_MEDIA_DATABASE_TEST=1` test now binds production storage
+upload/delete methods to the owned local SeaweedFS endpoint and private bucket.
+The normal DB suites continue using mocked storage. The opt-in case refuses any
+fetch outside `http://127.0.0.1:9002`; service ownership verification passed before
+execution. It creates a unique synthetic buyer, invitation, photo and sibling
+object, and cleans up only their exact test keys.
+
+The check proves actual PNG-to-WebP upload, SQL ownership/size metadata, denied
+anonymous reads, signed local reads, and rejection of public delivery before
+publication. The photo is attached through review submission, then published,
+hidden and republished through the production moderation service. Public delivery
+returns the actual signed bytes only in the published state. The previously
+unenrolled shopper still has no loyalty account after submission/publication.
+After billing expiry, an injected deletion failure leaves the media
+row pending and the object present. A production cleanup retry deletes the exact
+object (signed GET returns 404), preserves the sibling bytes, and replays without
+another delete. Production runtime behavior is unchanged.
+
+The initial standalone upload/erasure case passed. The expanded submission and
+publication case passed in the combined core selection:
+11 tests with 117 unselected/skipped, including the prior privacy, financial
+concurrency and low-rating/publication cases. The separate billing SQL suite
+passed six tests; pricing unit tests passed seven. Web type-check, focused ESLint,
+formatting and independent adversarial review also passed.
+
+Limits: invitations, merchant actor identity and Redis serialization are synthetic;
+the privacy projection is explicitly seeded through its service helper. No real inbox,
+merchant moderation UI, R2 provider, installed Shopify workflow or production
+deployment is proven here. Published-photo delivery is proven only at the local
+production-service boundary. The installed review journey and full privacy-race
+acceptance remain open.
+
+Hiro explicitly chose to keep App Store registration deferred and continue free
+tests. Do not infer payment, new permissions or public-preview approval from this
+choice. The previous revision cde56a1c68 completed CI successfully in run
+36248314162; new test changes need their own exact-head CI.

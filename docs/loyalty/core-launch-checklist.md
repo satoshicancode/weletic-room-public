@@ -131,3 +131,8 @@ The [September 26 plan reconciliation](testing-first-plan-reconciliation-2026-09
 maps the last month of discoverable plans and open PRs to the reduced scope and
 orders local, installed-store, persistent acceptance and production evidence.
 It preserves the deferred backlog and all explicit execution approvals.
+
+Additional local evidence now includes six billing SQL lifecycle tests and an
+opt-in production-storage photo upload/erasure check against local SeaweedFS.
+The combined core SQL selection passes 11 tests; installed billing, storefront
+photo delivery and deployed R2 remain open. See the detailed [billing and photo limits](testing-first-plan-reconciliation-2026-09-26.md#free-billing-revalidation-checkpoint).
