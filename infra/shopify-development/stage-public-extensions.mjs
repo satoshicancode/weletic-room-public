@@ -52,6 +52,7 @@ export const publicExtensionFiles = Object.freeze({
     manifest,
     "manifest.json",
     "src/CustomerAccountLoyalty.tsx",
+    "src/release-profile.ts",
     "src/CustomerAccountReviews.tsx",
     "src/CustomerAccountStoreReviews.tsx",
     "src/ReviewProductPicker.tsx",
@@ -103,6 +104,34 @@ export const publicExtensionFiles = Object.freeze({
     ].map((name) => [name, [manifest]]),
   ),
 });
+
+// This is an offline candidate, never publication or public UID ownership proof.
+export const coreExtensionFiles = Object.freeze(
+  Object.fromEntries(
+    Object.entries(publicExtensionFiles)
+      .filter(
+        ([name]) =>
+          ![
+            "loyalty-checkout-slider",
+            "weletic-vip-tier-changed",
+            "weletic-points-expiring-soon",
+            "weletic-referral-completed",
+          ].includes(name),
+      )
+      .map(([name, paths]) => [
+        name,
+        name === "weletic-analytics"
+          ? [
+              ...paths,
+              "blocks/product-review-stars.liquid",
+              "blocks/product-reviews.liquid",
+              "assets/weletic-reviews.js",
+              "assets/weletic-reviews.css",
+            ]
+          : paths,
+      ]),
+  ),
+);
 
 function replaceOnce(text, before, after) {
   if (text.split(before).length !== 2)
@@ -207,7 +236,11 @@ export function transformPublicExtension(path, source) {
 }
 
 /** Build in memory first. No credentials, dependency trees or unknown files copied. */
-export function buildPublicExtensionStage(root = repository) {
+export function buildPublicExtensionStage(
+  root = repository,
+  { coreLaunch = false } = {},
+) {
+  const selectedFiles = coreLaunch ? coreExtensionFiles : publicExtensionFiles;
   const sourceRoot = realpathSync(join(root, "packages/shopify-app"));
   const files = {};
   const hashes = {};
@@ -219,7 +252,7 @@ export function buildPublicExtensionStage(root = repository) {
     hashes[path] = createHash("sha256").update(content).digest("hex");
     return content;
   };
-  for (const [extension, paths] of Object.entries(publicExtensionFiles)) {
+  for (const [extension, paths] of Object.entries(selectedFiles)) {
     for (const path of paths) {
       const key = `${extension}/${path}`;
       files[`extensions/${key}`] = transformPublicExtension(
@@ -227,6 +260,14 @@ export function buildPublicExtensionStage(root = repository) {
         read(`extensions/${key}`),
       );
     }
+  }
+  if (coreLaunch) {
+    const key = "extensions/weletic-customer-account/src/release-profile.ts";
+    files[key] = replaceOnce(
+      files[key],
+      "export const CORE_LAUNCH = false;",
+      "export const CORE_LAUNCH = true;",
+    );
   }
   const config = read("shopify.app.loyalty-public.toml");
   files["shopify.app.toml"] = replaceOnce(
@@ -256,7 +297,8 @@ export function buildPublicExtensionStage(root = repository) {
       {
         status: "unowned_not_deployable",
         sourceHashes: hashes,
-        extensionCount: Object.keys(publicExtensionFiles).length,
+        extensionCount: Object.keys(selectedFiles).length,
+        featureProfile: coreLaunch ? "core-v1" : "legacy",
         note: "No UIDs generated. Public-context identity reconciliation, build and live acceptance remain required.",
       },
       null,
@@ -266,7 +308,11 @@ export function buildPublicExtensionStage(root = repository) {
 }
 
 /** Destination must be a new direct child of the canonical OS temporary directory. */
-export function writePublicExtensionStage(destination, root = repository) {
+export function writePublicExtensionStage(
+  destination,
+  root = repository,
+  options = {},
+) {
   const target = resolve(destination);
   const source = realpathSync(root);
   const parent = realpathSync(dirname(target));
@@ -280,7 +326,7 @@ export function writePublicExtensionStage(destination, root = repository) {
     throw new Error(
       "Stage must be a fresh directory in the canonical OS temporary directory, outside the checkout",
     );
-  const files = buildPublicExtensionStage(root);
+  const files = buildPublicExtensionStage(root, options);
   // Atomic refusal if any destination already exists; never overwrite a stage.
   mkdirSync(target, { mode: 0o700 });
   for (const [path, content] of Object.entries(files)) {
@@ -299,9 +345,18 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  if (process.argv.length !== 3)
+  if (
+    process.argv.length !== 3 &&
+    !(process.argv.length === 4 && process.argv[3] === "--core-v1")
+  )
     throw new Error(
-      "Usage: node stage-public-extensions.mjs <new-directory-outside-checkout>",
+      "Usage: node stage-public-extensions.mjs <new-directory-outside-checkout> [--core-v1]",
     );
-  console.log(JSON.stringify(writePublicExtensionStage(process.argv[2])));
+  console.log(
+    JSON.stringify(
+      writePublicExtensionStage(process.argv[2], repository, {
+        coreLaunch: process.argv[3] === "--core-v1",
+      }),
+    ),
+  );
 }

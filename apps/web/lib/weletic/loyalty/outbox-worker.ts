@@ -97,6 +97,11 @@ import {
   WeleticRedemptionStatus,
   WeleticRewardArtifactKind,
 } from "@prisma/client";
+import {
+  assertCoreLaunchJob,
+  CoreLaunchDeferredError,
+} from "../core-launch-policy";
+import { SubscriptionVerificationRequiredError } from "../shopify/app-pricing-service";
 import { CommunicationDeliveryReconciliationRequiredError } from "./communication-delivery-snapshot";
 import {
   ExpiryDeliveryReconciliationRequiredError,
@@ -1353,6 +1358,23 @@ export async function processOutboxJobsBatch(
       });
     } catch (error: any) {
       if (
+        error instanceof CoreLaunchDeferredError ||
+        error instanceof SubscriptionVerificationRequiredError
+      ) {
+        // Retain the job and its financial evidence. Disabled capabilities must
+        // not be acknowledged, consume retries or be silently discarded.
+        const deferredAt = new Date();
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: deferredAt,
+          retryAt: new Date(deferredAt.getTime() + 30 * 60_000),
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
+      if (
         candidate.jobType === "REVIEW_POINTS_RECOVERY" &&
         error instanceof ReviewPointsRecoveryPendingError
       ) {
@@ -1585,6 +1607,7 @@ export async function executeOutboxJob(
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
   queueClaim?: HistoricalImportWorkerClaim | ExpiryDeliveryClaim,
 ): Promise<OutboxExecutionResult | undefined> {
+  assertCoreLaunchJob(job.jobType, job.payload);
   const deliveryClaim =
     queueClaim && "candidate" in queueClaim ? queueClaim : undefined;
   const importClaim = queueClaim && {

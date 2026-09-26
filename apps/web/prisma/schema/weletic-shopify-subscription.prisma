@@ -1,0 +1,23 @@
+// Server verification only. Never populate from Shopify pricing redirect fields.
+// Admission remains the owner of mapping, suspension and reinstall generation.
+model WeleticShopifySubscriptionSnapshot {
+  id                     String    @id @db.VarChar(64)
+  appId                  String    @db.VarChar(191)
+  partnerAppId           String    @db.VarChar(128)
+  pendingInstallationId  String    @db.VarChar(64)
+  installationGeneration String    @db.VarChar(64)
+  shopId                 String?   @db.VarChar(128)
+  status                 String    @default("unavailable") @db.VarChar(32)
+  planHandle             String?   @db.VarChar(191)
+  cancelAtEndOfCycle      Boolean   @default(false)
+  cycleEndsAt            DateTime? @db.DateTime(3)
+  verifiedAt             DateTime? @db.DateTime(3)
+  validUntil             DateTime? @db.DateTime(3)
+  refreshToken           String?   @db.VarChar(64)
+  revision               Int       @default(0)
+  createdAt              DateTime  @default(now()) @db.DateTime(3)
+  updatedAt              DateTime  @updatedAt @db.DateTime(3)
+
+  @@unique([appId, pendingInstallationId, installationGeneration], map: "shopify_subscription_installation_key")
+  @@index([status, validUntil], map: "shopify_subscription_refresh_index")
+}

@@ -12,6 +12,8 @@ export const dynamic = "force-dynamic";
 const MAX_ATTEMPTS = 10;
 const BATCH_SIZE = 100;
 const LOYALTY_JOB_NAMES = [
+  "weletic-shopify-subscription-job",
+  "weletic-shopify-subscription-sweep-job",
   "weletic-shopify-session-renewal-job",
   "weletic-shopify-session-renewal-sweep-job",
 ];

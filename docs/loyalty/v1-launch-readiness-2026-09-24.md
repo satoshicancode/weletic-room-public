@@ -1,5 +1,11 @@
 # Weletic Room v1 launch readiness
 
+> **September 26 scope reset:** [Core launch checklist](core-launch-checklist.md)
+> is authoritative for launch scope and priority. The inventories below preserve
+> historical evidence and deferred work; full parity, imports and advanced
+> features no longer block launch. Pricing is USD 500/month plus a private free
+> company plan under [ADR 0045](../adr/0045-core-loyalty-reviews-launch.md).
+
 Implementation baseline reconciled September 25, 2026 JST through
 [`ab96c9bc4a`](https://github.com/satoshicancode/weletic-room-public/commit/ab96c9bc4a9cbbb738424879a886f0fd1faa2a41)
 (PR #171). Its [PR-head quality run](https://github.com/satoshicancode/weletic-room-public/actions/runs/36115434744)

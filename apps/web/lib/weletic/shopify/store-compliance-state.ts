@@ -6,6 +6,7 @@ import {
 } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { lockLoyaltyProgramRowIfPresent } from "@/lib/weletic/loyalty/program-write-fence";
 import { Prisma } from "@prisma/client";
+import { assertCoreLaunchOperationalAction } from "../core-launch-policy";
 import {
   isShopifyStoreAccessActive,
   type ShopifyStoreAccessState,
@@ -276,6 +277,7 @@ export async function assertShopifyStoreAcceptsOperationalWrites({
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit | null;
   tx?: Prisma.TransactionClient;
 }): Promise<WeleticShopifyOperationalStore | null> {
+  assertCoreLaunchOperationalAction(action);
   if (Boolean(storeId) === Boolean(workspaceId)) {
     throw new Error(
       "Exactly one of storeId or workspaceId is required for a Shopify compliance-state guard.",

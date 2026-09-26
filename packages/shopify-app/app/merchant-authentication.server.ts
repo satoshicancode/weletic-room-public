@@ -5,6 +5,7 @@ import {
 } from "@shopify/shopify-api";
 import type { ShopifyMerchantActorEnvelope } from "../../../apps/web/lib/weletic/shopify/staff-contract";
 import type { CoordinatedWeleticSessionStorage } from "./coordinated-session-storage.server";
+import { assertCoreLaunchMerchantRoute } from "./core-launch-routes.server";
 import { verifyShopifyMerchantIdentity } from "./merchant-identity.server";
 import { WeleticGatewayError } from "./weletic-api.server";
 
@@ -26,6 +27,7 @@ export function createMerchantAuthenticator({
       session: Session;
     }) => Promise<T>,
   ): Promise<T> {
+    assertCoreLaunchMerchantRoute(request);
     const identity = await verifyShopifyMerchantIdentity(request, sdk);
     const { token } = identity;
     return storage.runOperation(async () => {

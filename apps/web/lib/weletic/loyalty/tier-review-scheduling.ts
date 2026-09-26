@@ -6,6 +6,7 @@ import {
   enqueueOutboxJobFromProgramTransaction,
 } from "@/lib/weletic/loyalty/outbox";
 import type { Prisma } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
 
 export type TierReviewSweepResult = {
   programsScanned: number;
@@ -30,6 +31,7 @@ export async function scheduleTierReviewAfterQualifyingActivity({
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
   tx: Prisma.TransactionClient;
 }) {
+  if (isCoreLaunch()) return null;
   return enqueueOutboxJob({
     storeId,
     jobType: "TIER_REVIEW",

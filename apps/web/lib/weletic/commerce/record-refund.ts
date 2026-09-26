@@ -23,6 +23,7 @@ import {
 } from "@/lib/weletic/shopify/store-compliance-state";
 import { resolveShopifyStoreByDomain } from "@/lib/weletic/shopify/store-resolver";
 import { Prisma, WeleticLoyaltyReferralStatus } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
 import {
   assertRecordedShopifyOrder,
   shopifyOrderSettlementLockKey,
@@ -316,7 +317,7 @@ async function processLoyaltyRefundEffectsUnlocked({
     }
   }
 
-  if (shopperId && !privacyMinimizedFinancialSettlement) {
+  if (shopperId && !privacyMinimizedFinancialSettlement && !isCoreLaunch()) {
     const { evaluateAccountTier } = await import("@/lib/weletic/loyalty/tiers");
     const loyaltyAccount = await prisma.weleticLoyaltyAccount.findUnique({
       where: { shopperId },
