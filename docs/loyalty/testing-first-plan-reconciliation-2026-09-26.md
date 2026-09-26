@@ -307,3 +307,54 @@ CI checks in run `36249446881`; the correction needs its own exact-head CI.
 Shopify responses remain simulated and Redis locks bypassed;
 this closes the specific SQL/service recovery gap, not actual Shopify consistency,
 worker-process restart or deployed acceptance. Registration remains deferred.
+
+## Core Flow and review crash checkpoint — September 27
+
+The isolated Flow action suite now seeds generation-bound subscription authority
+for core fixtures while retaining the production entitlement service. All 29
+core SQL cases passed; the new billing lifecycle case also passed alone. Legacy
+compatibility passed 28 cases with the core-only case skipped. Coverage includes
+owner authorization and signed internal grant requests, exact budget arithmetic,
+concurrent replay, revocation, stale generations, privacy, and rollback.
+
+The new case proves billing expiry rejects a fresh credit with no receipt, ledger,
+budget or outbox changes. Existing receipts replay and bounded owner-authorized
+debits remain accounted for. A fresh synthetic verification allows the rejected
+run to apply exactly once; revoked authority then blocks new debits while old
+receipts remain readable. Independent SQL sums match cached balances. Only
+metafield-sync jobs are queued; the adjustment does not recursively emit Flow
+award events. `FLOW_ACTION_DATABASE_PORT` permits the owned local port 53041,
+retaining the default 3307 and existing loopback/schema/principal identity guards.
+
+Review crash fixtures previously launched their child without the core profile.
+The child now receives the explicit core profile and synthetic app/privacy
+identity, so its production transaction follows the same release restrictions as
+the parent. Actual SIGKILL tests before and after commit pass for moderation and
+participation points: one durable audit or award, independent balance sums, one
+points-earned Flow event and no deferred tier job in core mode. Legacy retains
+its expected tier job. The bounded selection passed seven cases in each profile
+(121 unselected/skipped): four process-crash cases plus Flow event deduplication,
+outbox worker contention and stale-lease recovery.
+
+The existing shared review-owner privacy selection passed 15 cases on a fresh
+isolated schema under core-v1 (113 unselected/skipped), including key retirement,
+backfill rollback, exact source reconciliation, suppression-aware public queries,
+key rotation and source erasure. The initial reused-database run passed 13 and
+failed two fixture assumptions: global audit pagination exceeded its test bound
+and old audit rows prevented installation of the failure-injection constraint.
+That run is not counted as green. Use a fresh schema for this selection; no
+production behavior or assertions were relaxed to obtain the clean rerun.
+
+Final web type-check, focused lint/formatting and independent adversarial review
+passed. Runtime source is unchanged from the preceding recovery correction,
+whose production build passed.
+Recovery correction `11bac84feb` subsequently passed every CI check in run
+`36250391127`, including the full unit suite and final quality gate. This newer
+test-only slice still requires its own exact-head CI.
+
+These are local SQL and production-service boundaries with synthetic authority
+and invitation promises. The signed internal grant test is not Shopify action
+ingress or a real workflow receipt. Process-crash reconciliation is proven for
+the review transaction; deployed worker supervision, stable provider delivery,
+real inbox and installed-store acceptance remain open. No production code,
+shared schema, Shopify configuration or registration was changed in this slice.

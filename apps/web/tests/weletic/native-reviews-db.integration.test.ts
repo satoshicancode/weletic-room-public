@@ -257,6 +257,15 @@ async function crashReviewWriter(
         DATABASE_URL: process.env.DATABASE_URL,
         LOYALTY_DATABASE_INTEGRATION: "1",
         ENCRYPTION_KEY: Buffer.alloc(32, 0x37).toString("base64"),
+        ...(coreLaunch
+          ? {
+              WELETIC_FEATURE_PROFILE: "core-v1",
+              SHOPIFY_API_KEY: fixtureAppId,
+              SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1",
+              WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS:
+                process.env.WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS,
+            }
+          : {}),
       },
       stdio: ["ignore", "ignore", "ignore", "ipc"],
     },
@@ -3579,7 +3588,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
   );
 
   it.each(["before_commit", "after_commit"] as const)(
-    "reconciles review points after a real process crash %s with one award and outbox pair",
+    "reconciles review points after a real process crash %s with one award and expected outbox jobs",
     async (phase) => {
       const buyerId = `crash-buyer-${run}-${phase}`;
       const buyerAccountId = `crash-account-${run}-${phase}`;
@@ -3718,7 +3727,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
         rewardLedgerId: ledger.id,
       });
       expect(final.sums).toEqual([{ points, pending: "0" }]);
-      expect(final.jobs).toHaveLength(2);
+      expect(final.jobs).toHaveLength(coreLaunch ? 1 : 2);
       expect(final.jobs[0]).toMatchObject({
         jobType: "FLOW_TRIGGER",
         idempotencyKey: `flow_trigger:weletic-points-earned:${ledger.id}`,
@@ -3729,11 +3738,12 @@ describe("native reviews real MySQL production-service boundaries", () => {
           installationGeneration: "g1",
         },
       });
-      expect(final.jobs[1]).toMatchObject({
-        jobType: "TIER_REVIEW",
-        idempotencyKey: `tier_review:${buyerAccountId}:${reviewIncentivePointsKey(claim.id)}`,
-        payload: { accountId: buyerAccountId, installationGeneration: "g1" },
-      });
+      if (!coreLaunch)
+        expect(final.jobs[1]).toMatchObject({
+          jobType: "TIER_REVIEW",
+          idempotencyKey: `tier_review:${buyerAccountId}:${reviewIncentivePointsKey(claim.id)}`,
+          payload: { accountId: buyerAccountId, installationGeneration: "g1" },
+        });
     },
   );
   it("review transaction retries a real post-mutation deadlock with one moderation audit", async () => {

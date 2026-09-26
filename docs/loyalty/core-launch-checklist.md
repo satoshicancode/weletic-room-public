@@ -148,3 +148,9 @@ passes the saved currency-verification timestamp to transactional adoption.
 Five core SQL cases now pass, including recovery after billing expiry and
 compensation when currency verification changes during lookup. Real provider
 and worker-process acceptance remain open.
+
+The [September 27 Flow and review crash checkpoint](testing-first-plan-reconciliation-2026-09-26.md#core-flow-and-review-crash-checkpoint--september-27)
+records 29 core Flow SQL cases and actual before/after-commit review process-kill
+checks. Core children preserve one participation award and suppress deferred tier
+jobs. Local transaction recovery is proven; real Flow receipts and deployed
+worker supervision remain required.
