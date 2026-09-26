@@ -43,14 +43,14 @@ and proposed caps, not an account invoice or an automatic provider spending cap.
 | SQL extra daily backups             |       1.61 |       1.61 | Seven retained full 10 GB copies at $0.023/GB-month             |
 | One 24-hour restore rehearsal       |       1.57 |       2.37 | Same-size temporary compute; remove only approved test resource |
 | Redis incl. Prod Pack               |     210.00 |     220.00 | Fixed 250 MB/1 GB, no extra read regions                        |
-| QStash incl. Prod Pack              |     201.00 |     210.00 | 100k/1m delivery attempts including retries                     |
+| QStash incl. Prod Pack              |     202.00 |     210.00 | 200k/1m delivery attempts including retries                     |
 | R2 storage                          |       0.30 |       1.50 | 20/100 GB without free allowance                                |
 | R2 operations allowance             |       5.00 |      10.00 | Bounded upload/read/delete traffic                              |
 | Resend Pro                          |      20.00 |      20.00 | ≤50k monthly transactional messages/environment                 |
-| **Scenario subtotal**               | **633.82** | **780.99** | Before reserve                                                  |
+| **Scenario subtotal**               | **634.82** | **780.99** | Before reserve                                                  |
 | **Proposed monthly ceiling**        | **750.00** | **950.00** | Reserve covers tax/FX, transfer and incidental usage            |
 
-Expected lower-CPU subtotals are approximately $559.95 / $652.69. Both environments
+Expected lower-CPU subtotals are approximately $560.95 / $652.69. Both environments
 running together have a proposed combined ceiling of $1,700/month; not approved.
 The $400/environment Redis/QStash add-ons are selected to obtain encryption at
 rest and provider operation features. Dropping them requires a separate review
