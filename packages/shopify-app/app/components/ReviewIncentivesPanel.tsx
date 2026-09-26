@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useCoreLaunch } from "../../../../apps/web/ui/weletic/core-launch-context";
 import type { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { reviewIncentiveEditorCopy } from "../review-incentive-editor-copy";
 import { ReviewIncentiveActivation } from "./ReviewIncentiveActivation";
@@ -13,6 +14,7 @@ export function ReviewIncentivesPanel({
   locale: keyof typeof reviewIncentiveEditorCopy;
 }) {
   const copy = reviewIncentiveEditorCopy[locale];
+  const coreLaunch = useCoreLaunch();
   const [policy, setPolicy] = useState<Awaited<
     ReturnType<Client["read"]>
   > | null>(null);
@@ -55,7 +57,9 @@ export function ReviewIncentivesPanel({
     try {
       const [fresh, page] = await Promise.all([
         client.read(),
-        client.coupons({}),
+        coreLaunch
+          ? Promise.resolve({ items: [], nextCursor: null })
+          : client.coupons({}),
       ]);
       if (!mounted.current || request.current !== token) return;
       setPolicy(fresh);
@@ -74,7 +78,7 @@ export function ReviewIncentivesPanel({
     }
   };
   const browse = async (more: boolean) => {
-    if (flight.current || !policy || (more && !next)) return;
+    if (coreLaunch || flight.current || !policy || (more && !next)) return;
     flight.current = true;
     const token = ++request.current;
     setBusy(true);
@@ -135,36 +139,38 @@ export function ReviewIncentivesPanel({
           ) : (
             <p>{copy.legacy}</p>
           )}
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              void browse(false);
-            }}
-            style={{ display: "grid", gap: 8, minWidth: 0 }}
-          >
-            <label htmlFor={`${id}-search`}>{copy.search}</label>
-            <input
-              id={`${id}-search`}
-              value={query}
-              maxLength={100}
-              onChange={(event) => setQuery(event.target.value)}
-              disabled={busy}
-              style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }}
-            />
-            <button type="submit" disabled={busy}>
-              {copy.find}
-            </button>
-            {next && (
-              <button
-                type="button"
+          {!coreLaunch && (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void browse(false);
+              }}
+              style={{ display: "grid", gap: 8, minWidth: 0 }}
+            >
+              <label htmlFor={`${id}-search`}>{copy.search}</label>
+              <input
+                id={`${id}-search`}
+                value={query}
+                maxLength={100}
+                onChange={(event) => setQuery(event.target.value)}
                 disabled={busy}
-                onClick={() => void browse(true)}
-              >
-                {copy.more}
+                style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }}
+              />
+              <button type="submit" disabled={busy}>
+                {copy.find}
               </button>
-            )}
-            {empty && <p>{copy.empty}</p>}
-          </form>
+              {next && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void browse(true)}
+                >
+                  {copy.more}
+                </button>
+              )}
+              {empty && <p>{copy.empty}</p>}
+            </form>
+          )}
           <ReviewIncentiveEditor
             key={`${epoch}:${policy.installationGeneration}:${policy.revision}`}
             policy={policy}

@@ -2,6 +2,7 @@ import { createWeleticId } from "@/lib/weletic/ids";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { isCoreLaunch } from "../core-launch-policy";
 import {
   loyaltyCommunicationPolicySchema,
   loyaltyCommunicationsRequestSchema,
@@ -164,6 +165,7 @@ export async function saveLoyaltyCommunicationsInTransaction({
         storeId,
         name: "Customer Loyalty Program",
         status: "draft",
+        vipAutoDowngradeEnabled: !isCoreLaunch(),
         metadata: nextMetadata,
       },
     });

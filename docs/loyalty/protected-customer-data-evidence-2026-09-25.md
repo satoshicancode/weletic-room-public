@@ -49,3 +49,31 @@ Rehearse approved and redacted Shopify responses, complete only supported
 dashboard answers, and capture the submitted request and later approval as
 separate evidence. Listing submission and production activation retain their
 separate approvals.
+
+## September 26 core-launch addendum
+
+The [core checklist](core-launch-checklist.md) supersedes parity-oriented purposes.
+Start the public request from these enabled purposes; do not request fields merely
+because a deferred model or prior custom app used them:
+
+| Data                                                                                           | Enabled purpose                                                                    | Evidence/gap                                                                                                  |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Immutable shop/customer/order/product/line IDs, merchandise amounts, fulfillment/refund events | Tenant identity, exact loyalty accounting, verified purchase and invitation timing | Existing ledger/order/refund contracts; installed public response and webhook evidence required               |
+| Customer email                                                                                 | Transactional review invitation and existing obligation communications             | Sender, actual inbox, encrypted delivery snapshot and erasure evidence required                               |
+| Customer display name                                                                          | Wallet greeting and consented review author display                                | Verify minimum fields actually collected and displayed; no phone/address purpose is established by this scope |
+| Text/photo review and publication consent                                                      | Verified product review, manual moderation/reply/display                           | Private photo read/delete and export/erase race proof required                                                |
+| Shop GID, plan handle/status, verification/cycle timestamps, installation generation           | Subscription access, cancellation and refresh fencing                              | New snapshot contains no payment-card data or buyer fields; shop-redaction paths remove it                    |
+
+Phone/address and unrelated demographic fields have no approved core purpose.
+Complete a payload/retention audit of shared ingestion before claiming those
+fields are not collected; do not select dashboard approval for them by default.
+No data is used for external merchant growth, advertising, video, referrals, VIP
+or historical imports in this release. This statement does not erase existing
+retained records or obligations.
+
+The [resource packet](core-launch-execution-packets.md) now selects separate
+SQL/Redis/QStash/R2/email resources and includes security add-on costs. These are
+proposed controls, not deployed encryption or backup evidence. Dashboard answers,
+legal entity/privacy terms, retention policy, actual protected-field inventory,
+provider proof and submission remain uncompleted. Never mark the nine answers
+complete from local test results alone.

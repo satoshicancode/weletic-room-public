@@ -1,7 +1,7 @@
 import { processRefundPointsReversal } from "@/lib/weletic/loyalty/earn";
 import { shopifyCustomerSettlementLockKeys } from "@/lib/weletic/shopify/customer-settlement-lock";
 import fc from "fast-check";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // =============================================================================
 // MOCK DEPENDENCIES
@@ -355,6 +355,7 @@ import { allocateCommissionProportionally } from "@/lib/weletic/commissions/rule
 // =============================================================================
 
 describe("Challenger 2: Financial Settlement & ADR 0004 Proportional Refund Clawback Engine", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
     transactionHooks.beforeNext = null;
@@ -1059,127 +1060,133 @@ describe("Challenger 2: Financial Settlement & ADR 0004 Proportional Refund Claw
       });
     });
 
-    it("4.5: serializes shopper and referral corrections with deterministic customer locks", async () => {
-      const shopDomain = "lock-order.myshopify.com";
-      const storeId = "wstore_lock_order";
-      const orderId = "worder_lock_order";
-      const orderExternalId = "589283748499";
+    it.each([false, true])(
+      "4.5: serializes corrections and preserves core financial settlement (core=%s)",
+      async (core) => {
+        vi.stubEnv("WELETIC_FEATURE_PROFILE", core ? "core-v1" : "legacy");
+        const shopDomain = "lock-order.myshopify.com";
+        const storeId = "wstore_lock_order";
+        const orderId = "worder_lock_order";
+        const orderExternalId = "589283748499";
 
-      db.weleticShopifyStores.set(storeId, {
-        id: storeId,
-        projectId: storeId,
-        shopDomain,
-        shopCurrency: "USD",
-      });
-      db.weleticCommerceOrders.set(orderId, {
-        id: orderId,
-        storeId,
-        externalId: orderExternalId,
-        orderName: "#LOCK",
-        status: "paid",
-        presentmentCurrency: "USD",
-        shopCurrency: "USD",
-        accountingCurrency: "USD",
-        accountingNet: BigInt(1000),
-        accountingFxRate: "1.0",
-        partnerId: null,
-        programId: "prog_lock",
-        linkId: null,
-        shopperId: "shopper_lock_owner",
-        occurredAt: new Date("2026-08-29T00:00:00Z"),
-      });
-      db.weleticCommerceOrderLines.set("line_lock", {
-        id: "line_lock",
-        orderId,
-        externalId: "98765998",
-        quantity: 1,
-        shopGross: BigInt(1000),
-        accountingNet: BigInt(1000),
-        commissionableAccountingAmount: BigInt(1000),
-      });
-      db.loyaltyReferrals.set("referral_lock", {
-        id: "referral_lock",
-        storeId,
-        qualifyingOrderId: orderId,
-        status: "rewarded",
-        advocateAccountId: "account_advocate_lock",
-        refereeAccountId: "account_referee_lock",
-      });
-
-      for (const account of [
-        {
-          id: "account_owner_lock",
-          shopperId: "shopper_lock_owner",
-          shopifyCustomerId: "300",
-        },
-        {
-          id: "account_advocate_lock",
-          shopperId: "shopper_advocate_lock",
-          shopifyCustomerId: "100",
-        },
-        {
-          id: "account_referee_lock",
-          shopperId: "shopper_referee_lock",
-          shopifyCustomerId: "200",
-        },
-      ]) {
-        db.loyaltyAccounts.set(account.id, {
-          id: account.id,
-          storeId,
-          shopperId: account.shopperId,
-          status: "closed",
-          metadata: null,
-          shopper: { shopifyCustomerId: account.shopifyCustomerId },
-          store: { projectId: storeId },
+        db.weleticShopifyStores.set(storeId, {
+          id: storeId,
+          projectId: storeId,
+          shopDomain,
+          shopCurrency: "USD",
         });
-      }
+        db.weleticCommerceOrders.set(orderId, {
+          id: orderId,
+          storeId,
+          externalId: orderExternalId,
+          orderName: "#LOCK",
+          status: "paid",
+          presentmentCurrency: "USD",
+          shopCurrency: "USD",
+          accountingCurrency: "USD",
+          accountingNet: BigInt(1000),
+          accountingFxRate: "1.0",
+          partnerId: null,
+          programId: "prog_lock",
+          linkId: null,
+          shopperId: "shopper_lock_owner",
+          occurredAt: new Date("2026-08-29T00:00:00Z"),
+        });
+        db.weleticCommerceOrderLines.set("line_lock", {
+          id: "line_lock",
+          orderId,
+          externalId: "98765998",
+          quantity: 1,
+          shopGross: BigInt(1000),
+          accountingNet: BigInt(1000),
+          commissionableAccountingAmount: BigInt(1000),
+        });
+        db.loyaltyReferrals.set("referral_lock", {
+          id: "referral_lock",
+          storeId,
+          qualifyingOrderId: orderId,
+          status: "rewarded",
+          advocateAccountId: "account_advocate_lock",
+          refereeAccountId: "account_referee_lock",
+        });
 
-      await recordWeleticRefund({
-        event: {
-          id: 883746499,
-          order_id: Number(orderExternalId),
-          created_at: "2026-08-29T01:00:00Z",
-          refund_line_items: [
-            {
-              id: 77264999,
-              line_item_id: 98765998,
-              quantity: 1,
-              subtotal_set: {
-                shop_money: { amount: "10.00", currency_code: "USD" },
-                presentment_money: {
-                  amount: "10.00",
-                  currency_code: "USD",
+        for (const account of [
+          {
+            id: "account_owner_lock",
+            shopperId: "shopper_lock_owner",
+            shopifyCustomerId: "300",
+          },
+          {
+            id: "account_advocate_lock",
+            shopperId: "shopper_advocate_lock",
+            shopifyCustomerId: "100",
+          },
+          {
+            id: "account_referee_lock",
+            shopperId: "shopper_referee_lock",
+            shopifyCustomerId: "200",
+          },
+        ]) {
+          db.loyaltyAccounts.set(account.id, {
+            id: account.id,
+            storeId,
+            shopperId: account.shopperId,
+            status: core ? "active" : "closed",
+            metadata: null,
+            shopper: { shopifyCustomerId: account.shopifyCustomerId },
+            store: { projectId: storeId },
+          });
+        }
+
+        await recordWeleticRefund({
+          event: {
+            id: 883746499,
+            order_id: Number(orderExternalId),
+            created_at: "2026-08-29T01:00:00Z",
+            refund_line_items: [
+              {
+                id: 77264999,
+                line_item_id: 98765998,
+                quantity: 1,
+                subtotal_set: {
+                  shop_money: { amount: "10.00", currency_code: "USD" },
+                  presentment_money: {
+                    amount: "10.00",
+                    currency_code: "USD",
+                  },
                 },
               },
-            },
-          ],
-        },
-        shopDomain,
-      });
+            ],
+          },
+          shopDomain,
+        });
 
-      const acquiredKeys = vi
-        .mocked((await import("@/lib/upstash")).redis.set)
-        .mock.calls.map(([key]) => key);
-      const expectedCustomerKeys = ["100", "200", "300"]
-        .flatMap((shopifyCustomerId) =>
-          shopifyCustomerSettlementLockKeys({
-            storeId,
-            workspaceId: storeId,
-            shopifyCustomerId,
-          }),
-        )
-        .sort();
-      expect(acquiredKeys).toEqual([
-        `weletic:shopify:order:${storeId}:${orderExternalId}`,
-        ...expectedCustomerKeys,
-      ]);
-      expect(referralMocks.reverseReferralPointsOnRefund).toHaveBeenCalledWith({
-        storeId,
-        orderId,
-        refundId: expect.any(String),
-        privacyMinimized: false,
-      });
-    });
+        const acquiredKeys = vi
+          .mocked((await import("@/lib/upstash")).redis.set)
+          .mock.calls.map(([key]) => key);
+        const expectedCustomerKeys = ["100", "200", "300"]
+          .flatMap((shopifyCustomerId) =>
+            shopifyCustomerSettlementLockKeys({
+              storeId,
+              workspaceId: storeId,
+              shopifyCustomerId,
+            }),
+          )
+          .sort();
+        expect(acquiredKeys).toEqual([
+          `weletic:shopify:order:${storeId}:${orderExternalId}`,
+          ...expectedCustomerKeys,
+        ]);
+        expect(
+          referralMocks.reverseReferralPointsOnRefund,
+        ).toHaveBeenCalledWith({
+          storeId,
+          orderId,
+          refundId: expect.any(String),
+          privacyMinimized: false,
+        });
+      },
+    );
 
     it("4.6: rejects a refund when the store freezes after the precheck but before the financial transaction", async () => {
       const shopDomain = "freeze-race.myshopify.com";

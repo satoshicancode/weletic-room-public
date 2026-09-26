@@ -97,6 +97,11 @@ import {
   WeleticRedemptionStatus,
   WeleticRewardArtifactKind,
 } from "@prisma/client";
+import {
+  assertCoreLaunchJob,
+  CoreLaunchDeferredError,
+} from "../core-launch-policy";
+import { SubscriptionVerificationRequiredError } from "../shopify/app-pricing-service";
 import { CommunicationDeliveryReconciliationRequiredError } from "./communication-delivery-snapshot";
 import {
   ExpiryDeliveryReconciliationRequiredError,
@@ -1353,6 +1358,23 @@ export async function processOutboxJobsBatch(
       });
     } catch (error: any) {
       if (
+        error instanceof CoreLaunchDeferredError ||
+        error instanceof SubscriptionVerificationRequiredError
+      ) {
+        // Retain the job and its financial evidence. Disabled capabilities must
+        // not be acknowledged, consume retries or be silently discarded.
+        const deferredAt = new Date();
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: deferredAt,
+          retryAt: new Date(deferredAt.getTime() + 30 * 60_000),
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
+      if (
         candidate.jobType === "REVIEW_POINTS_RECOVERY" &&
         error instanceof ReviewPointsRecoveryPendingError
       ) {
@@ -1585,6 +1607,7 @@ export async function executeOutboxJob(
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
   queueClaim?: HistoricalImportWorkerClaim | ExpiryDeliveryClaim,
 ): Promise<OutboxExecutionResult | undefined> {
+  assertCoreLaunchJob(job.jobType, job.payload);
   const deliveryClaim =
     queueClaim && "candidate" in queueClaim ? queueClaim : undefined;
   const importClaim = queueClaim && {
@@ -2775,6 +2798,7 @@ export async function handleRedemptionRecovery(
         redemption.account.status === "active" &&
         !hasShopifyCustomerRedactionTombstone(redemption.account.metadata);
       let configurationMatches = true;
+      let expectedCurrencyVerifiedAt: string | null | undefined;
       if (accountIsActive) {
         const snapshot = readLoyaltyRedemptionProvisioningSnapshot(
           redemption.metadata,
@@ -2784,6 +2808,7 @@ export async function handleRedemptionRecovery(
             `Provisioning redemption ${redemptionId} is missing its immutable Shopify configuration snapshot.`,
           );
         }
+        expectedCurrencyVerifiedAt = snapshot.currencyVerifiedAt;
         const snapshotExpiresAt = snapshot.expiresAt
           ? new Date(snapshot.expiresAt)
           : null;
@@ -2817,6 +2842,7 @@ export async function handleRedemptionRecovery(
         remoteDiscount: remoteNode,
         accountIsActive,
         configurationMatches,
+        expectedCurrencyVerifiedAt,
         shopDomain: creds.shopDomain,
         accessToken: creds.accessToken,
         loyaltyMaintenancePermit,

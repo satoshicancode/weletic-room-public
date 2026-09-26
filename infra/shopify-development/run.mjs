@@ -4,6 +4,10 @@ import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  applyCoreRuntimeConfiguration,
+  readCoreRuntimeConfiguration,
+} from "./core-runtime.mjs";
 import { hasRetainedEnvironment } from "./init.mjs";
 import { buildPreviewEnvironment } from "./preview-runtime.mjs";
 import {
@@ -11,6 +15,7 @@ import {
   createRuntimeLogSink,
   runtimeArguments,
 } from "./runtime-policy.mjs";
+import { readLocalServicePorts } from "./service-ports.mjs";
 import { privateCredentialFiles } from "./verify.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -47,6 +52,8 @@ export function parseRuntimeFlags(args) {
   const names = ["app", "retained-web", "retained-shopify"];
   if (args.some((arg) => arg.startsWith("--preview-config=")))
     names.push("preview-config");
+  if (args.some((arg) => arg.startsWith("--core-config=")))
+    names.push("core-config");
   if (
     args.length !== names.length + 1 ||
     !args.includes("--confirm-local-runtime")
@@ -101,8 +108,22 @@ async function main() {
       shopify,
       process.env,
       JSON.parse(readFileSync(file, "utf8")),
+      readLocalServicePorts(root),
     );
-  } else env = buildRuntimeEnvironment(flags.app, web, shopify, process.env);
+  } else
+    env = buildRuntimeEnvironment(
+      flags.app,
+      web,
+      shopify,
+      process.env,
+      readLocalServicePorts(root),
+    );
+  if (flags["core-config"])
+    env = applyCoreRuntimeConfiguration(
+      flags.app,
+      env,
+      readCoreRuntimeConfiguration(flags["core-config"]),
+    );
   const report = JSON.parse(
     execFileSync(
       process.execPath,
@@ -155,10 +176,10 @@ async function main() {
     [binary, ...runtimeArguments(flags.app)],
     { cwd: directory, env, stdio: ["ignore", "pipe", "pipe"] },
   );
-  const out = createRuntimeLogSink([web, shopify], (line) =>
+  const out = createRuntimeLogSink([web, shopify, env], (line) =>
     process.stdout.write(line),
   );
-  const err = createRuntimeLogSink([web, shopify], (line) =>
+  const err = createRuntimeLogSink([web, shopify, env], (line) =>
     process.stderr.write(line),
   );
   child.stdout.on("data", (data) => out.write(data));

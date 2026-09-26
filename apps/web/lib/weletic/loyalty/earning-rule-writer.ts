@@ -1,5 +1,6 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import { Prisma, type WeleticLoyaltyEarningRule } from "@prisma/client";
+import { CoreLaunchDeferredError, isCoreLaunch } from "../core-launch-policy";
 import { publishLoyaltyEarnPolicyRevision } from "./earn-policy-revision";
 import { JUDGEME_PROVIDER } from "./review-providers/judgeme";
 import { reviewRewardConditionsSchema } from "./review-rewards";
@@ -51,6 +52,17 @@ export async function writeEarningRuleInTransaction({
   ruleId?: string | null;
   ruleData: ValidatedEarningRuleData;
 }) {
+  if (
+    isCoreLaunch() &&
+    ruleData.isActive &&
+    (ruleData.triggerCode !== "order_paid" ||
+      !ruleData.purchasePolicy ||
+      typeof ruleData.purchasePolicy !== "object" ||
+      Array.isArray(ruleData.purchasePolicy) ||
+      !("purchaseType" in ruleData.purchasePolicy) ||
+      ruleData.purchasePolicy.purchaseType !== "one_time")
+  )
+    throw new CoreLaunchDeferredError();
   if (ruleData.triggerCode === "product_review" && ruleData.isActive) {
     const reviewProvider = reviewRewardConditionsSchema.parse(
       ruleData.conditions,
@@ -85,6 +97,7 @@ export async function writeEarningRuleInTransaction({
       storeId,
       name: "Customer Loyalty Program",
       status: "draft",
+      vipAutoDowngradeEnabled: !isCoreLaunch(),
     },
     update: {},
   });

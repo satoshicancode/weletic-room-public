@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { CoreLaunchContext } from "@/ui/weletic/core-launch-context";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -41,11 +42,13 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
 });
-async function render(locale: Props["locale"] = "en") {
+async function render(locale: Props["locale"] = "en", coreLaunch = false) {
   await act(async () =>
     root.render(
       <React.StrictMode>
-        <ReviewIncentivesPanel client={client} locale={locale} />
+        <CoreLaunchContext.Provider value={coreLaunch}>
+          <ReviewIncentivesPanel client={client} locale={locale} />
+        </CoreLaunchContext.Provider>
       </React.StrictMode>,
     ),
   );
@@ -64,6 +67,19 @@ async function submit() {
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
 }
+it.each(["en", "ja", "vi"] as const)(
+  "loads core participation settings without the deferred coupon endpoint in %s",
+  async (locale) => {
+    client.coupons.mockRejectedValue(new StaffAccessClientError("denied"));
+    await render(locale, true);
+    await click(copy[locale].load);
+    expect(client.read).toHaveBeenCalledOnce();
+    expect(client.coupons).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain(copy[locale].loadFailed);
+    expect(container.textContent).not.toContain(copy[locale].search);
+    expect(container.querySelector('[name="kind"]')).not.toBeNull();
+  },
+);
 it.each(["en", "ja", "vi"] as const)(
   "loads only on explicit action in %s",
   async (locale) => {
@@ -370,5 +386,45 @@ it.each(["generation", "active", "digest"] as const)(
     );
     expect(client.activate).not.toHaveBeenCalled();
     expect(container.textContent).toContain(copy.en.stale);
+  },
+);
+
+it.each([
+  { kind: "coupon" as const, rewardDefinitionId: "old-coupon" },
+  {
+    kind: "points" as const,
+    basePoints: "100",
+    maxPoints: "110",
+    photoBonusPoints: "10",
+    videoBonusPoints: "0",
+  },
+])(
+  "core keeps historical disclosure but cannot activate deferred draft $kind",
+  async (draft) => {
+    const existing = {
+      ...savedPolicy,
+      draft,
+      disclosure: {
+        en: ["Existing saved promise"],
+        ja: ["既存の特典"],
+        vi: ["Cam kết đã lưu"],
+      },
+    };
+    client.read.mockResolvedValue({
+      revision: 1,
+      installationGeneration: "g1",
+      activePolicy: existing,
+      latestPolicy: { ...existing, policyId: "newer-policy" },
+      mode: "legacy",
+    });
+    await render("en", true);
+    await click(copy.en.load);
+    expect(container.textContent).toContain("Existing saved promise");
+    expect(container.textContent).not.toContain(activationCopy.en.review);
+    expect(
+      container.querySelector<HTMLSelectElement>('[name="kind"]')!.value,
+    ).toBe("none");
+    expect(client.draft).not.toHaveBeenCalled();
+    expect(client.activate).not.toHaveBeenCalled();
   },
 );

@@ -1,11 +1,12 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { consumeFlowPointsBudget } from "../../lib/weletic/loyalty/flow-action-grant-contract";
 import { readFlowGrantQuantities } from "../../lib/weletic/loyalty/flow-action-grant-storage";
 import { purgeShopifyStaffPrivacyBatch } from "../../lib/weletic/shopify/staff-privacy";
 
 const database = new PrismaClient();
+const coreLaunch = process.env.WELETIC_FEATURE_PROFILE === "core-v1";
 vi.mock("@/lib/prisma", () => ({ prisma: database }));
 vi.mock("server-only", () => ({}));
 
@@ -19,7 +20,7 @@ describe("Flow action persistence on isolated MySQL", () => {
       process.env.FLOW_ACTION_DATABASE_INTEGRATION !== "1" ||
       url.protocol !== "mysql:" ||
       url.hostname !== "127.0.0.1" ||
-      url.port !== "3307" ||
+      url.port !== (process.env.FLOW_ACTION_DATABASE_PORT || "3307") ||
       !suffix ||
       url.username !== `wr_${suffix}`
     )
@@ -30,6 +31,7 @@ describe("Flow action persistence on isolated MySQL", () => {
       { name: url.pathname.slice(1), principal: `${url.username}@%` },
     ]);
     vi.stubEnv("SHOPIFY_API_KEY", "flow-db-test");
+    if (coreLaunch) vi.stubEnv("SHOPIFY_PARTNER_APP_ID", "gid://shopify/App/1");
     vi.stubEnv("ENCRYPTION_KEY", "37".repeat(32));
     vi.stubEnv(
       "WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS",
@@ -50,7 +52,41 @@ describe("Flow action persistence on isolated MySQL", () => {
 
   async function ownerFixture(owner = true) {
     const { seedFlowOwner } = await import("./fixtures/flow-owner");
-    return seedFlowOwner(database, owner);
+    const fixture = await seedFlowOwner(database, owner);
+    if (coreLaunch) {
+      // Synthetic subscription authority only in the guarded local database.
+      // Keep production entitlement checks active for every core execution.
+      const pending =
+        await database.weleticShopifyPendingInstallation.findUniqueOrThrow({
+          where: { mappedStoreId: fixture.storeId },
+        });
+      const [clock] = await database.$queryRaw<
+        Array<{ now: Date }>
+      >`SELECT CURRENT_TIMESTAMP(3) AS now`;
+      await database.weleticShopifySubscriptionSnapshot.create({
+        data: {
+          id: createHash("sha256")
+            .update(
+              JSON.stringify([
+                fixture.actor.appId,
+                pending.id,
+                fixture.actor.installationGeneration,
+              ]),
+            )
+            .digest("hex"),
+          appId: fixture.actor.appId,
+          partnerAppId: "gid://shopify/App/1",
+          pendingInstallationId: pending.id,
+          installationGeneration: fixture.actor.installationGeneration,
+          shopId: "gid://shopify/Shop/789",
+          status: "private_free",
+          planHandle: "company-free",
+          verifiedAt: clock.now,
+          validUntil: new Date(clock.now.getTime() + 300_000),
+        },
+      });
+    }
+    return fixture;
   }
   const policy = () => ({
     allowCredit: true,
@@ -402,6 +438,124 @@ describe("Flow action persistence on isolated MySQL", () => {
       }),
     ).rejects.toMatchObject({ code: "run_conflict" });
   });
+
+  it.runIf(coreLaunch)(
+    "pauses new Flow credits at billing expiry while preserving receipts and bounded corrections",
+    async () => {
+      const f = await executionFixture();
+      const credit = {
+        ...f.action,
+        properties: { ...f.action.properties, points_delta: "25" },
+      };
+      const result = await f.execute(credit);
+      const pending =
+        await database.weleticShopifyPendingInstallation.findUniqueOrThrow({
+          where: { mappedStoreId: f.storeId },
+        });
+      const subscription =
+        await database.weleticShopifySubscriptionSnapshot.findFirstOrThrow({
+          where: {
+            pendingInstallationId: pending.id,
+            installationGeneration: f.actor.installationGeneration,
+          },
+        });
+      await database.weleticShopifySubscriptionSnapshot.update({
+        where: { id: subscription.id },
+        data: { validUntil: new Date(0) },
+      });
+      const assertState = async (
+        balance: bigint,
+        count: number,
+        used: string,
+      ) => {
+        expect(
+          await database.weleticLoyaltyAccount.findUniqueOrThrow({
+            where: { id: f.account.id },
+            select: { cachedPointsBalance: true },
+          }),
+        ).toEqual({ cachedPointsBalance: balance });
+        expect(
+          await database.$queryRaw`SELECT CAST(SUM(pointsDelta) AS CHAR) AS balance FROM WeleticPointsLedgerEntry WHERE accountId = ${f.account.id}`,
+        ).toEqual([{ balance: balance.toString() }]);
+        expect(
+          await database.weleticPointsLedgerEntry.count({
+            where: { storeId: f.storeId },
+          }),
+        ).toBe(count);
+        expect(
+          await database.weleticShopifyFlowActionRun.count({
+            where: { storeId: f.storeId },
+          }),
+        ).toBe(count);
+        expect(
+          await database.weleticLoyaltyOutboxJob.count({
+            where: { storeId: f.storeId, jobType: "METAFIELD_SYNC" },
+          }),
+        ).toBe(count);
+        expect(
+          await database.weleticLoyaltyOutboxJob.count({
+            where: { storeId: f.storeId, jobType: { not: "METAFIELD_SYNC" } },
+          }),
+        ).toBe(0);
+        expect(
+          (
+            await database.weleticShopifyFlowPointsGrant.findUniqueOrThrow({
+              where: { id: f.grant.id },
+            })
+          ).absolutePointsUsed.toFixed(),
+        ).toBe(used);
+      };
+      expect(await f.execute(credit)).toEqual({
+        status: "replayed",
+        runId: result.runId,
+      });
+      const nextCredit = { ...credit, action_run_id: randomUUID() };
+      await expect(f.execute(nextCredit)).rejects.toThrow(
+        "subscription verification",
+      );
+      await assertState(BigInt(25), 1, "25");
+      const debit = {
+        ...credit,
+        action_run_id: randomUUID(),
+        properties: { ...credit.properties, points_delta: "-5" },
+      };
+      const correction = await f.execute(debit);
+      expect(correction.status).toBe("applied");
+      expect(await f.execute(debit)).toEqual({
+        status: "replayed",
+        runId: correction.runId,
+      });
+      await assertState(BigInt(20), 2, "30");
+      const [clock] = await database.$queryRaw<
+        Array<{ now: Date }>
+      >`SELECT CURRENT_TIMESTAMP(3) AS now`;
+      await database.weleticShopifySubscriptionSnapshot.update({
+        where: { id: subscription.id },
+        data: {
+          verifiedAt: clock.now,
+          validUntil: new Date(clock.now.getTime() + 300_000),
+        },
+      });
+      // The failed attempt left no receipt or budget consumption; the same run
+      // can succeed once a fresh subscription decision permits new benefits.
+      expect((await f.execute(nextCredit)).status).toBe("applied");
+      expect((await f.execute(nextCredit)).status).toBe("replayed");
+      await assertState(BigInt(45), 3, "55");
+      await manage(f, "revoke", {
+        grantId: f.grant.id,
+        expectedRevision: 1,
+        expectedInstallationGeneration: "g1",
+      });
+      await expect(
+        f.execute({ ...debit, action_run_id: randomUUID() }),
+      ).rejects.toMatchObject({ code: "unavailable" });
+      expect(await f.execute(debit)).toEqual({
+        status: "replayed",
+        runId: correction.runId,
+      });
+      await assertState(BigInt(45), 3, "55");
+    },
+  );
 
   it("rejects balance overflow without consuming authority or creating a receipt", async () => {
     const f = await executionFixture();

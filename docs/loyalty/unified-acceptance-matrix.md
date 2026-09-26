@@ -1,5 +1,11 @@
 # Weletic company-store loyalty and reviews — acceptance matrix
 
+> **September 26 scope reset:** [Core launch checklist](core-launch-checklist.md)
+> is authoritative for launch scope and priority. The inventories below preserve
+> historical evidence and deferred work; full parity, imports and advanced
+> features no longer block launch. Pricing is USD 500/month plus a private free
+> company plan under [ADR 0045](../adr/0045-core-loyalty-reviews-launch.md).
+
 September 20 scope update: [ADR 0040](../adr/0040-company-store-loyalty-and-reviews-completion.md)
 resumes full staged reviews with independent module releases. The
 [combined completion checklist](company-store-completion.md) is the current

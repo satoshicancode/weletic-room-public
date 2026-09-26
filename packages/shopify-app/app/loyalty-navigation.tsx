@@ -1,18 +1,31 @@
-import { Link } from "@remix-run/react";
+import { Link, useRouteLoaderData } from "@remix-run/react";
+
+const links = [
+  ["/", "Weletic", true],
+  ["/loyalty", "Program", true],
+  ["/earning-rules", "Earning rules", true],
+  ["/loyalty-rewards", "Rewards", true],
+  ["/loyalty-referrals", "Referrals", false],
+  ["/loyalty-vip", "VIP & campaigns", false],
+  ["/loyalty-analytics", "Analytics", false],
+  ["/loyalty-communications", "Communications", true],
+  ["/loyalty-imports", "Imports", false],
+  ["/loyalty-nudges", "Nudges", false],
+  ["/loyalty-flow", "Flow permissions", true],
+] as const;
 
 export function LoyaltyNavigation() {
+  const root = useRouteLoaderData<{ coreLaunch: boolean }>("root");
   return (
     <nav aria-label="Loyalty configuration">
-      <Link to="/">Weletic</Link> · <Link to="/loyalty">Program</Link> ·{" "}
-      <Link to="/earning-rules">Earning rules</Link> ·{" "}
-      <Link to="/loyalty-rewards">Rewards</Link> ·{" "}
-      <Link to="/loyalty-referrals">Referrals</Link> ·{" "}
-      <Link to="/loyalty-vip">VIP & campaigns</Link> ·{" "}
-      <Link to="/loyalty-analytics">Analytics</Link> ·{" "}
-      <Link to="/loyalty-communications">Communications</Link> ·{" "}
-      <Link to="/loyalty-imports">Imports</Link> ·{" "}
-      <Link to="/loyalty-nudges">Nudges</Link> ·{" "}
-      <Link to="/loyalty-flow">Flow permissions</Link>
+      {links
+        .filter(([, , core]) => !root?.coreLaunch || core)
+        .map(([to, label], index) => (
+          <span key={to}>
+            {index > 0 ? " · " : ""}
+            <Link to={to}>{label}</Link>
+          </span>
+        ))}
     </nav>
   );
 }

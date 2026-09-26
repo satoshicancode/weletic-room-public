@@ -103,6 +103,9 @@ export async function redactMappedInstallationAdmission(
   if (!row) return;
   if (row.revision >= 2147483646)
     throw new Error("Admission revision exhausted");
+  await tx.weleticShopifySubscriptionSnapshot.deleteMany({
+    where: { appId: row.appId, pendingInstallationId: row.id },
+  });
   await tx.weleticShopifyPendingInstallationChange.deleteMany({
     where: { pendingInstallationId: row.id },
   });

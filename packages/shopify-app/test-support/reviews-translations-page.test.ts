@@ -2,10 +2,13 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { CoreLaunchContext } from "../../../apps/web/ui/weletic/core-launch-context";
 import { merchantReviewsCopy } from "../app/merchant-reviews-copy";
+import { openReviewPolicyCopy } from "../app/open-review-policy-copy";
 import { reviewTranslationCopy } from "../app/review-translation-copy";
 import ReviewsPage from "../app/routes/reviews";
 import { StaffAccessClientError } from "../app/staff-access-client";
+import { storeReviewSettingsCopy } from "../app/store-review-settings-copy";
 
 const mocks = vi.hoisted(() => {
   window.matchMedia = (query: string) => ({
@@ -137,8 +140,16 @@ const button = (text: string) => {
   if (!found) throw new Error("Missing button: " + text);
   return found;
 };
-async function render() {
-  await act(async () => root.render(React.createElement(ReviewsPage)));
+async function render(coreLaunch = false) {
+  await act(async () =>
+    root.render(
+      React.createElement(
+        CoreLaunchContext.Provider,
+        { value: coreLaunch },
+        React.createElement(ReviewsPage),
+      ),
+    ),
+  );
 }
 it("saving one locale leaves another locale's draft protected", async () => {
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
@@ -331,5 +342,29 @@ it.each(["next", "filter", "moderate", "home"] as const)(
     const event = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(event);
     expect(event.defaultPrevented).toBe(true);
+  },
+);
+
+it.each(["en", "ja", "vi"] as const)(
+  "core Reviews page keeps moderation but hides deferred panels in %s",
+  async (locale) => {
+    await render(true);
+    await act(async () => {
+      const language = container.querySelector("select")!;
+      language.value = locale;
+      language.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.textContent).not.toContain(
+      openReviewPolicyCopy[locale].title,
+    );
+    expect(container.textContent).not.toContain(
+      storeReviewSettingsCopy[locale].load,
+    );
+    expect(container.textContent).not.toContain(
+      reviewTranslationCopy[locale].load,
+    );
+    expect(container.textContent).toContain("Moderate fixture");
+    expect(mocks.read).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
   },
 );

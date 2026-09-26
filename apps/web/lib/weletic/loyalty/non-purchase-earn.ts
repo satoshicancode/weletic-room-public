@@ -14,6 +14,7 @@ import {
   WeleticPointsLedgerEntry,
   WeleticPointsLedgerEntryType,
 } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
 
 export interface AwardSignupWelcomeBonusParams {
   storeId: string;
@@ -236,6 +237,7 @@ export function checkBirthdayEligibility(
 export async function awardSignupWelcomeBonus(
   params: AwardSignupWelcomeBonusParams,
 ): Promise<WeleticPointsLedgerEntry | null> {
+  if (isCoreLaunch()) return null;
   if (!params.tx) {
     return prisma.$transaction((tx) =>
       awardSignupWelcomeBonus({ ...params, tx }),

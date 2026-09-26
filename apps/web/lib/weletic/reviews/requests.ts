@@ -2,6 +2,8 @@ import { createWeleticId } from "@/lib/weletic/ids";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { enqueueOutboxJobFromProgramTransaction } from "@/lib/weletic/loyalty/outbox";
 import { Prisma } from "@prisma/client";
+import { assertCoreLaunchReviewAward } from "../core-launch-policy";
+import { assertStoreSubscriptionForNewBenefit } from "../shopify/app-pricing-service";
 import { hashReviewToken, ReviewError } from "./contracts";
 import { reviewPolicyAtOrderTime } from "./incentive-activation-history";
 import { reviewIncentiveDisclosure } from "./incentive-disclosure";
@@ -92,6 +94,8 @@ export async function createFulfilledReviewRequests({
         ...orderRequests.map((request) => request.incentivePolicyId),
         ...(storeRequest ? [storeRequest.incentivePolicyId] : []),
       ];
+      if (savedPolicies.length === 0)
+        await assertStoreSubscriptionForNewBenefit(tx, storeId);
       const orderPolicies = new Set(savedPolicies);
       if (orderPolicies.size > 1)
         throw new ReviewError(
@@ -106,7 +110,13 @@ export async function createFulfilledReviewRequests({
             order.occurredAt,
             settings.activeIncentivePolicyId ?? null,
           );
-      await readReviewIncentivePolicySnapshot(tx, storeId, incentivePolicyId);
+      const launchPolicy = await readReviewIncentivePolicySnapshot(
+        tx,
+        storeId,
+        incentivePolicyId,
+      );
+      if (launchPolicy && savedPolicies.length === 0)
+        assertCoreLaunchReviewAward(launchPolicy.award);
       for (const [productId, lines] of groups) {
         const existing = await tx.weleticReviewRequest.findUnique({
           where: {

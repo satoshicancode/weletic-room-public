@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useCoreLaunch } from "../../../../apps/web/ui/weletic/core-launch-context";
+import { isCoreReviewIncentiveDraft } from "../core-review-policy";
 import type { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { reviewIncentiveActivationCopy } from "../review-incentive-activation-copy";
 import { reviewIncentiveEditorCopy } from "../review-incentive-editor-copy";
@@ -20,6 +22,7 @@ export function ReviewIncentiveActivation({
   reload: () => void;
 }) {
   const copy = reviewIncentiveActivationCopy[locale];
+  const coreLaunch = useCoreLaunch();
   const common = reviewIncentiveEditorCopy[locale];
   const [checked, setChecked] = useState(false);
   const [status, setStatus] = useState<
@@ -42,6 +45,7 @@ export function ReviewIncentiveActivation({
   const stale = initial.current !== fingerprint;
   const eligible =
     !!latest &&
+    (!coreLaunch || isCoreReviewIncentiveDraft(latest.draft)) &&
     latest.disclosureState === "available" &&
     !!latest.disclosure &&
     latest.revision === policy.revision &&

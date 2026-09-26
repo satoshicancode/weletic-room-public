@@ -29,6 +29,7 @@ import {
   WeleticRewardStatus,
   WeleticRewardType,
 } from "@prisma/client";
+import { assertCoreLaunchReward } from "../core-launch-policy";
 import {
   DEFAULT_REWARD_PURCHASE_POLICY,
   readLoyaltyPurchasePolicy,
@@ -296,6 +297,11 @@ export async function createRewardDefinition(
     params.purchasePolicy,
     DEFAULT_REWARD_PURCHASE_POLICY,
   );
+  assertCoreLaunchReward({
+    rewardType: params.rewardType,
+    exchangeType: params.exchangeType ?? "fixed",
+    purchaseType: purchasePolicy.purchaseType,
+  });
   if (
     (params.rewardType === WeleticRewardType.gift_card ||
       params.rewardType === WeleticRewardType.store_credit) &&
@@ -525,6 +531,12 @@ export async function updateRewardDefinition({
     existing.salesChannel ??
     WeleticRewardSalesChannel.online_store;
   const nextStatus = data.status ?? existing.status;
+  if (nextStatus === "active")
+    assertCoreLaunchReward({
+      rewardType: nextRewardType,
+      exchangeType: data.exchangeType ?? existing.exchangeType,
+      purchaseType: nextPurchasePolicy.purchaseType,
+    });
   const nextDiscountValue =
     data.discountValue !== undefined
       ? data.discountValue

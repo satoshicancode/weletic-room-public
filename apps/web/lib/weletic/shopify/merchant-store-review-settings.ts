@@ -1,5 +1,6 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import type { Prisma } from "@prisma/client";
+import { CoreLaunchDeferredError, isCoreLaunch } from "../core-launch-policy";
 import { ReviewError } from "../reviews/contracts";
 import {
   defaultStoreReviewSettingsPolicy,
@@ -66,6 +67,8 @@ export async function writeShopifyMerchantStoreReviewSettings({
 }) {
   const actorEnvelope = shopifyMerchantActorEnvelopeSchema.parse(envelope);
   const patch = storeReviewSettingsWriteInputSchema.parse(input);
+  if (isCoreLaunch() && patch.policy.enabled)
+    throw new CoreLaunchDeferredError();
   if (
     actorEnvelope.installationGeneration !==
     patch.expectedInstallationGeneration

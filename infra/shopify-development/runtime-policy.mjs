@@ -45,11 +45,20 @@ function pickConfiguration(source, keys) {
   return Object.fromEntries(keys.map((key) => [key, source[key] || ""]));
 }
 
-/** @returns {Record<string, string>} */
-export function buildRuntimeEnvironment(app, web, shopify, ambient) {
+/**
+ * @param {import("./service-ports.mjs").ServicePorts} [ports]
+ * @returns {Record<string, string>}
+ */
+export function buildRuntimeEnvironment(
+  app,
+  web,
+  shopify,
+  ambient,
+  ports = undefined,
+) {
   if (
     !["web", "shopify"].includes(app) ||
-    !isLocalServiceTarget(web) ||
+    !isLocalServiceTarget(web, ports) ||
     web.NEXTAUTH_URL !== "http://app.localhost:8890" ||
     web.NEXT_PUBLIC_APP_DOMAIN !== web.NEXTAUTH_URL ||
     shopify.WELETIC_API_URL !== web.NEXTAUTH_URL ||

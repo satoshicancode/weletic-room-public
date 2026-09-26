@@ -1,5 +1,11 @@
 # Public Shopify app: readiness audit and implementation roadmap
 
+> **September 26 scope reset:** [Core launch checklist](core-launch-checklist.md)
+> is authoritative for launch scope and priority. The inventories below preserve
+> historical evidence and deferred work; full parity, imports and advanced
+> features no longer block launch. Pricing is USD 500/month plus a private free
+> company plan under [ADR 0045](../adr/0045-core-loyalty-reviews-launch.md).
+
 **Historical roadmap.** The approved 12-package plan and
 [unified acceptance matrix](unified-acceptance-matrix.md) supersede conflicting
 scope and sequencing below. In particular, video, imports and subscriptions are

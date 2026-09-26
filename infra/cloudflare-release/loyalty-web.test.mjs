@@ -369,3 +369,19 @@ test("opted-in review HTTP preserves signature/body and never overrides applicat
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test("core launch retains checkout settlement and balance exports while denying new deferred work", () => {
+  const options = { coreLaunch: true, reviewsEnabled: true };
+  for (const path of [
+    "/api/internal/shopify/loyalty/checkout/release",
+    "/api/internal/shopify/merchant/analytics/account-rows",
+    "/api/internal/shopify/merchant/analytics/ledger-rows",
+  ])
+    assert.equal(admitsLoyaltyRequest(input(path), options), true, path);
+  for (const path of [
+    "/api/internal/shopify/loyalty/checkout/reserve",
+    "/api/internal/shopify/merchant/imports",
+    "/api/internal/shopify/reviews/open-submit",
+  ])
+    assert.equal(admitsLoyaltyRequest(input(path), options), false, path);
+});

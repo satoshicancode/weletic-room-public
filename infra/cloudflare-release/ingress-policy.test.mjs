@@ -13,6 +13,7 @@ import { assertCloudflareIngressPair } from "./ingress-policy.mjs";
 function fixture() {
   const common = {
     NODE_ENV: "production",
+    WELETIC_FEATURE_PROFILE: "core-v1",
     SHOPIFY_API_KEY: PUBLIC_LOYALTY_CLIENT_ID,
     SHOPIFY_APP_URL: PUBLIC_LOYALTY_APP_ORIGIN,
     WELETIC_SHOPIFY_SERVICE_SECRET: "synthetic-service-secret-not-real".repeat(
@@ -21,6 +22,11 @@ function fixture() {
   };
   return {
     web: {
+      SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1",
+      SHOPIFY_PARTNER_ORGANIZATION_ID: "123",
+      SHOPIFY_PARTNER_API_TOKEN: "synthetic-partner-api-token-not-real",
+      WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE: "core-monthly",
+      WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE: "company-free",
       ...common,
       WELETIC_ENFORCE_CRON_AUTH: "1",
       NEXTAUTH_URL: PUBLIC_LOYALTY_API_ORIGIN,
@@ -31,6 +37,8 @@ function fixture() {
       SHOPIFY_WEBHOOK_SECRET: "synthetic-app-secret-not-real".repeat(2),
     },
     shopify: {
+      SHOPIFY_APP_HANDLE: "weletic-room",
+      WELETIC_SUPPORT_EMAIL: "support@example.test",
       ...common,
       SHOPIFY_APP_DISTRIBUTION: "app_store",
       WELETIC_API_URL: PUBLIC_LOYALTY_API_ORIGIN,

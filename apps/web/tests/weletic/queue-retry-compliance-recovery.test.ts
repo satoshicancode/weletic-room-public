@@ -78,9 +78,11 @@ describe("minute queue retry compliance recovery", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("loyalty release retries only renewal jobs and leaves unrelated rows untouched", async () => {
+  it("loyalty release retries subscription and renewal jobs and leaves unrelated rows untouched", async () => {
     vi.stubEnv("WELETIC_RELEASE_PROFILE", "loyalty-only");
     const allowed = [
+      "weletic-shopify-subscription-job",
+      "weletic-shopify-subscription-sweep-job",
       "weletic-shopify-session-renewal-job",
       "weletic-shopify-session-renewal-sweep-job",
     ];
@@ -91,10 +93,9 @@ describe("minute queue retry compliance recovery", () => {
       createdAt: new Date("2026-09-17T00:00:00Z"),
     }));
     mocks.jobFindMany.mockResolvedValue(jobs);
-    mocks.batchJSON.mockResolvedValue([
-      { messageId: "q_1" },
-      { messageId: "q_2" },
-    ]);
+    mocks.batchJSON.mockResolvedValue(
+      allowed.map((_, index) => ({ messageId: `q_${index}` })),
+    );
     mocks.isPublishSuccess.mockReturnValue(true);
     await invokeRoute();
     expect(mocks.complianceBatch).toHaveBeenCalledOnce();
@@ -107,7 +108,7 @@ describe("minute queue retry compliance recovery", () => {
       mocks.buildReplayRequest.mock.calls.map(([job]) => job.name),
     ).toEqual(allowed);
     expect(mocks.jobDeleteMany).toHaveBeenCalledWith({
-      where: { id: { in: ["job_0", "job_1"] } },
+      where: { id: { in: ["job_0", "job_1", "job_2", "job_3"] } },
     });
     expect(mocks.jobUpdateMany).not.toHaveBeenCalled();
   });

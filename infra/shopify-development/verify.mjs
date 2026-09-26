@@ -6,6 +6,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { buckets, databaseName, secretDirectory } from "./init.mjs";
+import {
+  DEFAULT_SERVICE_PORTS,
+  readLocalServicePorts,
+  validateServicePorts,
+} from "./service-ports.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const require = createRequire(join(root, "apps/web/package.json"));
@@ -120,14 +125,18 @@ function docker(args, extraEnv = {}) {
 }
 
 /** Never accept an arbitrary resource endpoint for a mutating probe. */
-export function isLocalServiceTarget(web) {
+export function isLocalServiceTarget(
+  web,
+  selectedPorts = DEFAULT_SERVICE_PORTS,
+) {
   try {
+    const ports = validateServicePorts(selectedPorts);
     const database = new URL(web.DATABASE_URL);
     const proxy = new URL(web.PLANETSCALE_DATABASE_URL);
     return (
       database.protocol === "mysql:" &&
       database.hostname === "127.0.0.1" &&
-      database.port === "3307" &&
+      database.port === ports.mysql &&
       database.pathname === `/${databaseName}` &&
       database.username === "loyalty_dev" &&
       !!database.password &&
@@ -135,7 +144,7 @@ export function isLocalServiceTarget(web) {
       !database.hash &&
       proxy.protocol === "http:" &&
       proxy.hostname === "127.0.0.1" &&
-      proxy.port === "3902" &&
+      proxy.port === ports.sqlHttp &&
       proxy.pathname === database.pathname &&
       proxy.username === database.username &&
       proxy.password === database.password &&
@@ -155,8 +164,10 @@ async function verify() {
   if (process.argv.slice(2).join(" ") !== "--confirm-local-probes") {
     throw new Error("Explicit confirmation required");
   }
+  const ports = readLocalServicePorts(root);
   const web = parse(join(root, "apps/web/.env.loyalty.local"));
-  if (!isLocalServiceTarget(web)) throw new Error("Unsafe resource target");
+  if (!isLocalServiceTarget(web, ports))
+    throw new Error("Unsafe resource target");
   const directory = join(root, secretDirectory);
   if (
     !(await check("private_credential_files", () =>
@@ -196,8 +207,8 @@ async function verify() {
   await check("owned_loopback_containers", () => owned);
   if (!owned) throw new Error("Resource ownership failed");
   const expectedPorts = {
-    mysql: "3307",
-    "sql-http": "3902",
+    mysql: ports.mysql,
+    "sql-http": ports.sqlHttp,
     "redis-http": "8079",
     media: "9002",
   };

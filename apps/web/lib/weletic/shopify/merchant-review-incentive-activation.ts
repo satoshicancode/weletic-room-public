@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { assertCoreLaunchReviewAward } from "../core-launch-policy";
 import { createWeleticId } from "../ids";
 import { ReviewError } from "../reviews/contracts";
 import { reviewIncentiveDisclosure } from "../reviews/incentive-disclosure";
@@ -71,6 +72,7 @@ export async function activateShopifyMerchantReviewIncentive({
         reviewIncentivePolicyDigest(snapshot) !== patch.contentDigest
       )
         throw conflict();
+      assertCoreLaunchReviewAward(snapshot.award);
       reviewIncentiveDisclosure(snapshot);
       await readReviewIncentivePolicySnapshot(
         tx,

@@ -15,6 +15,16 @@ import { validateLocalDockerHost, withContainer } from "./shopify-smoke.mjs";
 export function runtimeSmokeEnvironment(role) {
   assert.ok(["web", "outbox"].includes(role));
   return {
+    ...(role === "web"
+      ? {
+          SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1",
+          SHOPIFY_PARTNER_ORGANIZATION_ID: "123",
+          SHOPIFY_PARTNER_API_TOKEN: "synthetic-partner-api-token-not-real",
+          WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE: "core-monthly",
+          WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE: "company-free",
+        }
+      : { SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1" }),
+    WELETIC_FEATURE_PROFILE: "core-v1",
     SHOPIFY_API_KEY: client,
     SHOPIFY_APP_URL: app,
     NEXTAUTH_URL: api,
