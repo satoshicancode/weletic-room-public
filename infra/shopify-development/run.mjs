@@ -15,6 +15,7 @@ import {
   createRuntimeLogSink,
   runtimeArguments,
 } from "./runtime-policy.mjs";
+import { readLocalServicePorts } from "./service-ports.mjs";
 import { privateCredentialFiles } from "./verify.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -107,8 +108,16 @@ async function main() {
       shopify,
       process.env,
       JSON.parse(readFileSync(file, "utf8")),
+      readLocalServicePorts(root),
     );
-  } else env = buildRuntimeEnvironment(flags.app, web, shopify, process.env);
+  } else
+    env = buildRuntimeEnvironment(
+      flags.app,
+      web,
+      shopify,
+      process.env,
+      readLocalServicePorts(root),
+    );
   if (flags["core-config"])
     env = applyCoreRuntimeConfiguration(
       flags.app,
