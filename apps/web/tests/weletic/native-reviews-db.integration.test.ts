@@ -711,6 +711,11 @@ describe("native reviews real MySQL production-service boundaries", () => {
         expect(text.includes(action)).toBe(true);
         expect(text.includes("100")).toBe(true);
         expect(text.includes(neutrality)).toBe(true);
+        expect(
+          /video|store review|bonus|動画|写真ボーナス|ストアレビュー|thưởng ảnh|cửa hàng/i.test(
+            text,
+          ),
+        ).toBe(false);
         const token = text.match(
           new RegExp(`\\?locale=${locale}#token=([A-Za-z0-9_-]+)`),
         )?.[1];
@@ -723,9 +728,12 @@ describe("native reviews real MySQL production-service boundaries", () => {
         expect(sent.tokenHash === hashReviewToken(token!)).toBe(true);
         expect(sent.encryptedDeliveryToken).toBeNull();
         expect(sent.encryptedDeliverySnapshot).toBeNull();
-        expect(
-          (await getReviewRequestPreview(storeId, token!)).productTitle,
-        ).toBe("Review fixture product");
+        const preview = await getReviewRequestPreview(storeId, token!);
+        expect(preview.productTitle).toBe("Review fixture product");
+        for (const line of preview.incentiveDisclosure![
+          locale as "en" | "ja" | "vi"
+        ])
+          expect(text.includes(line)).toBe(true);
         const balanceBefore = (
           await prisma.weleticLoyaltyAccount.findUniqueOrThrow({
             where: { id: accountId },

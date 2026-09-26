@@ -1,3 +1,4 @@
+import { isCoreLaunch } from "../core-launch-policy";
 import { reviewCouponDisclosure } from "./coupon-disclosure";
 import { reviewIncentivePolicySnapshotSchema } from "./incentive-policy";
 
@@ -32,6 +33,28 @@ export function reviewIncentiveDisclosure(
     videoBonusPoints: video,
     maxPoints: cap,
   } = award;
+  // Preserve existing media-bonus promises even when new core policies cannot
+  // offer them. Only participation-only promises use the reduced launch copy.
+  if (isCoreLaunch() && photo === "0" && video === "0") {
+    const points = BigInt(base) > BigInt(cap) ? cap : base;
+    return {
+      en: [
+        `Valid participation: ${points} points. At most one reward per order.`,
+        "The reward is independent of rating or publication; critical and unpublished reviews remain eligible when valid.",
+        "Points require an active loyalty account. Submitting a review does not enroll you automatically; an eligible award waits for enrollment.",
+      ],
+      ja: [
+        `有効なレビュー投稿で${points}ポイント。1注文につき特典は最大1回です。`,
+        "特典は評価や公開状況に左右されず、有効な批判的レビューや未公開レビューも対象です。",
+        "ポイントには有効なロイヤルティアカウントが必要です。レビューの送信で自動登録はされません。対象となる特典は登録まで保留されます。",
+      ],
+      vi: [
+        `Đánh giá hợp lệ nhận ${points} điểm. Tối đa một phần thưởng cho mỗi đơn hàng.`,
+        "Phần thưởng không phụ thuộc xếp hạng hay việc đăng công khai; đánh giá phê bình hoặc chưa công khai vẫn đủ điều kiện nếu hợp lệ.",
+        "Điểm thưởng yêu cầu tài khoản loyalty đang hoạt động. Gửi đánh giá không tự động đăng ký tài khoản; phần thưởng hợp lệ được giữ chờ đăng ký.",
+      ],
+    };
+  }
   return {
     en: [
       `Valid participation: ${base} base points; photo bonus ${photo}; maximum total ${cap} points. Saved video bonus: ${video}, currently unavailable because video uploads are not supported.`,

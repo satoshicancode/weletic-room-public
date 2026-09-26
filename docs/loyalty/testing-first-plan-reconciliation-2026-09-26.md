@@ -414,3 +414,60 @@ LOYALTY_DATABASE_INTEGRATION=1 WELETIC_FEATURE_PROFILE=core-v1 \
 
 The ordinary suite skips these cases unless both opt-ins are present. The token
 is a local synthetic credential; do not publish captured messages or token URLs.
+
+## Core customer and reviewer copy reconciliation — September 27
+
+Captured invitations exposed a scope mismatch: participation-only core promises
+still described deferred media bonuses and store reviews. Core-v1 now presents
+the exact capped participation amount, one reward per order, rating/publication
+neutrality and explicit enrollment requirements in EN/JA/VI. The amount uses
+integer arithmetic over the saved base and cap. Existing promises with media
+bonuses, coupons and historical null policies retain their existing disclosure;
+durably prepared retry messages are not rewritten.
+
+Focused disclosure/coupon/form tests pass 58 cases, including caps below the base,
+zero caps and values above JavaScript's safe integer range. The combined local
+SQL/storage selection passes 14 cases; the three captured emails exclude deferred
+bonus/store-review claims and contain the same disclosure as their form previews.
+Web type-check, focused lint and independent adversarial review passed.
+
+The [reviewer packet](app-store-reviewer-packet.md) now matches the approved core
+policy: US$500 public subscription, private-free company plan, verified subscriber
+provisioning, points-only review incentives, required theme/account surfaces and
+the five essential Flow capabilities. Its old free/company-only/manual-admission
+description is superseded. This is a draft preparation correction, not a public
+listing edit or evidence of installed reviewer acceptance.
+
+## Core merchant Reviews interface — September 27
+
+Source inspection found a functional gap: loading review participation settings
+also requested the coupon catalog, whose endpoint is unavailable in core mode.
+The failed catalog request prevented the supported settings from loading. Core
+mode now loads the policy without that deferred dependency or coupon search UI.
+
+The Reviews page uses its existing core context to hide open-submission,
+store-review and manual-translation panels. The incentive editor offers only
+none/participation-points policies and hides media bonuses. Existing saved
+disclosures remain readable, but incompatible drafts cannot activate. No
+historical policy is rewritten by rendering the editor.
+
+Core collection settings omit automatic publication and reminders. An explicit
+EN/JA/VI notice explains that saving turns those settings off, and the existing
+confirmation, revision/generation checks and ambiguous-write recovery remain in
+place. Legacy mode retains its existing controls and behavior.
+
+The focused UI selection passed 54 tests and the merchant Reviews page passed
+16, covering all three languages and legacy behavior. Formatting, focused lint
+and independent adversarial review passed. Web and Shopify type-checks passed.
+The local web production build using the existing `loyalty-only` release profile
+and the Shopify Node production build passed. Standalone type/lint checks ran
+separately, as required by the release profile. These are local compatibility
+checks, not container-isolation, installed-browser or deployment acceptance.
+
+An earlier ordinary web build was stopped after measured memory pressure
+(9.1 GB process footprint and roughly 31 GB system swap); that attempt is not
+counted as passing. The successful core-profile build used the repository's
+existing 4.5 GiB heap/worker configuration and generated all 353 static pages.
+Provider-configuration warnings under synthetic build inputs and Shopify
+sourcemap warnings were emitted; both builds completed with exit zero.
+No build configuration, dependencies or CI pipeline changed.

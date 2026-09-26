@@ -160,3 +160,13 @@ adds EN/JA/VI production SMTP capture, token consumption, participation points
 and manual publication/hiding. The combined core selection passes 14 cases,
 including actual local photo storage. External inbox delivery, browser navigation
 and installed merchant acceptance remain open; registration remains deferred.
+
+The [customer and reviewer copy correction](testing-first-plan-reconciliation-2026-09-26.md#core-customer-and-reviewer-copy-reconciliation--september-27)
+removes deferred-feature claims from core participation disclosures and replaces
+the reviewer packet's obsolete free/company-only policy. Prior saved promises
+remain intact. Public materials still require installed acceptance and approval.
+
+The [core merchant Reviews interface](testing-first-plan-reconciliation-2026-09-26.md#core-merchant-reviews-interface--september-27)
+loads participation settings without the disabled coupon catalog and hides
+deferred controls. Seventy focused UI tests and both application type-checks
+pass; installed browser acceptance remains open.

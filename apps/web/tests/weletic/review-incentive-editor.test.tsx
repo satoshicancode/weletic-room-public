@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { CoreLaunchContext } from "@/ui/weletic/core-launch-context";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -31,18 +32,20 @@ afterEach(async () => {
   container.remove();
   vi.restoreAllMocks();
 });
-async function render(extra: Partial<Props> = {}) {
+async function render(extra: Partial<Props> = {}, coreLaunch = false) {
   await act(async () =>
     root.render(
       <React.StrictMode>
-        <ReviewIncentiveEditor
-          policy={policy}
-          coupons={[{ id: "reward", name: "Coupon" }]}
-          locale="en"
-          save={save}
-          reload={reload}
-          {...extra}
-        />
+        <CoreLaunchContext.Provider value={coreLaunch}>
+          <ReviewIncentiveEditor
+            policy={policy}
+            coupons={[{ id: "reward", name: "Coupon" }]}
+            locale="en"
+            save={save}
+            reload={reload}
+            {...extra}
+          />
+        </CoreLaunchContext.Provider>
       </React.StrictMode>,
     ),
   );
@@ -201,3 +204,34 @@ it("warns on browser navigation while the draft is dirty", async () => {
   window.dispatchEvent(event);
   expect(event.defaultPrevented).toBe(true);
 });
+
+it.each(["en", "ja", "vi"] as const)(
+  "core editor offers participation-only policies in %s",
+  async (locale) => {
+    await render({ locale }, true);
+    expect(
+      [
+        ...container.querySelectorAll<HTMLOptionElement>(
+          '[name="kind"] option',
+        ),
+      ].map((option) => option.value),
+    ).toEqual(["none", "points"]);
+    await select("kind", "points");
+    expect(container.querySelector('[name="photoBonusPoints"]')).toBeNull();
+    expect(container.querySelector('[name="videoBonusPoints"]')).toBeNull();
+    expect(container.querySelector('[name="basePoints"]')).not.toBeNull();
+    expect(container.querySelector('[name="maxPoints"]')).not.toBeNull();
+    await submit();
+    expect(save).toHaveBeenCalledExactlyOnceWith({
+      expectedRevision: 0,
+      expectedInstallationGeneration: "g1",
+      draft: {
+        kind: "points",
+        basePoints: "0",
+        maxPoints: "0",
+        photoBonusPoints: "0",
+        videoBonusPoints: "0",
+      },
+    });
+  },
+);

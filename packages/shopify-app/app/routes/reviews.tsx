@@ -27,6 +27,7 @@ import {
   type MerchantReviewListPage,
 } from "../../../../apps/web/lib/weletic/reviews/merchant-contract";
 import type { AuditedReviewModerationInput } from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
+import { useCoreLaunch } from "../../../../apps/web/ui/weletic/core-launch-context";
 import { OpenReviewPolicyPanel } from "../components/OpenReviewPolicyPanel";
 import { ReviewCollectionPanel } from "../components/ReviewCollectionPanel";
 import { ReviewDeliveryHistory } from "../components/ReviewDeliveryHistory";
@@ -75,6 +76,7 @@ export function action() {
 }
 
 export default function ReviewsPage() {
+  const coreLaunch = useCoreLaunch();
   const shopify = useAppBridge();
   const read = useMemo(
     () => createMerchantReviewsClient(() => shopify.idToken()),
@@ -279,23 +281,30 @@ export default function ReviewsPage() {
                 locale={locale}
               />
             </Card>
-            <Card>
-              <OpenReviewPolicyPanel
-                client={openPolicyClient}
-                locale={locale}
-                acquireOperation={acquireTranslationOperation}
-                onDirtyChange={policyDirtyChanged}
-              />
-            </Card>
-            <Card>
-              <StoreReviewSettingsPanel
-                client={storeReviewSettingsClient}
-                locale={locale}
-              />
-            </Card>
-            <Card>
-              <StoreReviewsPanel client={storeReviewsClient} locale={locale} />
-            </Card>
+            {!coreLaunch && (
+              <>
+                <Card>
+                  <OpenReviewPolicyPanel
+                    client={openPolicyClient}
+                    locale={locale}
+                    acquireOperation={acquireTranslationOperation}
+                    onDirtyChange={policyDirtyChanged}
+                  />
+                </Card>
+                <Card>
+                  <StoreReviewSettingsPanel
+                    client={storeReviewSettingsClient}
+                    locale={locale}
+                  />
+                </Card>
+                <Card>
+                  <StoreReviewsPanel
+                    client={storeReviewsClient}
+                    locale={locale}
+                  />
+                </Card>
+              </>
+            )}
             <Select
               disabled={busy}
               label={copy.view}
@@ -451,7 +460,7 @@ export default function ReviewsPage() {
                                 save={save}
                               />
                             )}
-                          {row.status !== "redacted" && (
+                          {!coreLaunch && row.status !== "redacted" && (
                             <ReviewTranslationsPanel
                               key={`translations:${row.id}:${row.version}`}
                               reviewId={row.id}
