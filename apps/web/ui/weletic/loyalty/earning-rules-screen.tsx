@@ -316,7 +316,11 @@ function ScopeScreen({
                   form: {
                     ...newEarningRuleForm(),
                     ...(coreLaunch
-                      ? { purchaseType: "one_time" as const }
+                      ? {
+                          purchaseType: "one_time" as const,
+                          subscriptionCadence: "first_payment" as const,
+                          subscriptionPaymentLimit: "",
+                        }
                       : {}),
                   },
                 });
