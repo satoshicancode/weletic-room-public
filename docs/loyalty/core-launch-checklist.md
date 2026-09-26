@@ -154,3 +154,9 @@ records 29 core Flow SQL cases and actual before/after-commit review process-kil
 checks. Core children preserve one participation award and suppress deferred tier
 jobs. Local transaction recovery is proven; real Flow receipts and deployed
 worker supervision remain required.
+
+The [local captured-invitation checkpoint](testing-first-plan-reconciliation-2026-09-26.md#captured-invitation-journey--september-27)
+adds EN/JA/VI production SMTP capture, token consumption, participation points
+and manual publication/hiding. The combined core selection passes 14 cases,
+including actual local photo storage. External inbox delivery, browser navigation
+and installed merchant acceptance remain open; registration remains deferred.

@@ -546,6 +546,276 @@ describe("native reviews real MySQL production-service boundaries", () => {
     vi.unstubAllEnvs();
   });
 
+  it
+    .runIf(coreLaunch && process.env.CORE_REVIEW_MAIL_DATABASE_TEST === "1")
+    .each([
+      ["en", "Write a review", "independent of rating or publication"],
+      ["ja", "レビューを書く", "評価や公開状況に左右されず"],
+      [
+        "vi",
+        "Viết đánh giá",
+        "không phụ thuộc xếp hạng hay việc đăng công khai",
+      ],
+    ])(
+    "core captured SMTP invitation completes the %s review journey",
+    async (locale, action, neutrality) => {
+      // This opt-in path sends only to the owned, capture-only local inbox.
+      // Real delivery credentials and an external SMTP endpoint are never used.
+      const smtpEnv = Object.fromEntries(
+        ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD"].map((key) => [
+          key,
+          process.env[key],
+        ]),
+      );
+      const originalFetch = globalThis.fetch;
+      const recipient = `review-${locale}-${run}@example.test`;
+      const shopperId = `mail-shopper-${locale}-${run}`;
+      const accountId = `mail-account-${locale}-${run}`;
+      const settings = await prisma.weleticReviewSettings.findUniqueOrThrow({
+        where: { storeId },
+      });
+      const capturedIds: string[] = [];
+      const inbox = async (path: string, method = "GET") => {
+        const url = new URL(path, "http://127.0.0.1:18026");
+        if (url.origin !== "http://127.0.0.1:18026")
+          throw new Error("Unexpected capture inbox origin");
+        const response = await originalFetch(url, {
+          method,
+          redirect: "error",
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!response.ok) throw new Error("Local capture inbox unavailable");
+        return response;
+      };
+      try {
+        vi.stubEnv("SMTP_HOST", "127.0.0.1");
+        vi.stubEnv("SMTP_PORT", "11026");
+        vi.stubEnv("SMTP_USER", "");
+        vi.stubEnv("SMTP_PASSWORD", "");
+        const actual = await vi.importActual<
+          typeof import("@dub/email/send-via-nodemailer")
+        >("@dub/email/send-via-nodemailer");
+        mocks.viaSmtp.mockImplementation(async (message) => {
+          if (
+            message.to !== recipient ||
+            process.env.SMTP_HOST !== "127.0.0.1" ||
+            process.env.SMTP_PORT !== "11026"
+          )
+            throw new Error("Unexpected synthetic SMTP destination");
+          return actual.sendViaNodeMailer(message);
+        });
+        const policy = await createReviewIncentivePolicyRevision(storeId, {
+          kind: "points",
+          basePoints: "100",
+          photoBonusPoints: "0",
+          videoBonusPoints: "0",
+          maxPoints: "100",
+        });
+        await prisma.weleticReviewSettings.update({
+          where: { storeId },
+          data: {
+            sendAfterDays: 7,
+            expiresAfterDays: 30,
+            autoPublish: false,
+            reminderAfterDays: [],
+            activeIncentivePolicyId: policy.id,
+          },
+        });
+        await prisma.weleticShopper.create({
+          data: {
+            id: shopperId,
+            storeId,
+            shopifyCustomerId: String(++sequence),
+            email: recipient,
+            locale,
+          },
+        });
+        await prisma.weleticLoyaltyAccount.create({
+          data: {
+            id: accountId,
+            storeId,
+            shopperId,
+            programId: loyaltyProgramId,
+          },
+        });
+        await prisma.$transaction((tx) =>
+          replaceReviewOwnerPrivacyProjection({
+            tx,
+            storeId,
+            shopperId,
+            installationGeneration: "g1",
+          }),
+        );
+        const order = await purchase(shopperId);
+        const fulfilledAt = new Date();
+        const [id] = await createFulfilledReviewRequests({
+          storeId,
+          orderExternalId: order.externalId,
+          fulfilledAt,
+          expectedInstallationGeneration: "g1",
+        });
+        const queued = await prisma.weleticReviewRequest.findUniqueOrThrow({
+          where: { id },
+        });
+        expect(queued.incentivePolicyId).toBe(policy.id);
+        expect(queued.sendAt.getTime() - fulfilledAt.getTime()).toBe(
+          7 * 86_400_000,
+        );
+        expect(queued.expiresAt.getTime() - queued.sendAt.getTime()).toBe(
+          30 * 86_400_000,
+        );
+        await expect(deliverReviewRequest(storeId, id, "g1")).rejects.toThrow(
+          "not due",
+        );
+        expect(mocks.viaSmtp).not.toHaveBeenCalled();
+        // Advance only this synthetic invitation's persisted deadline. This
+        // does not backfill orders or claim seven days of elapsed-time evidence.
+        await prisma.weleticReviewRequest.update({
+          where: { id },
+          data: { sendAt: new Date(Date.now() - 1000) },
+        });
+        await deliverReviewRequest(storeId, id, "g1");
+        await deliverReviewRequest(storeId, id, "g1");
+        expect(mocks.viaSmtp).toHaveBeenCalledTimes(1);
+        const captured = (await (
+          await inbox(
+            `/api/v2/search?kind=to&query=${encodeURIComponent(recipient)}&start=0&limit=10`,
+          )
+        ).json()) as {
+          total: number;
+          items: Array<{
+            ID: string;
+            MIME: {
+              Parts: Array<{ Headers: Record<string, string[]>; Body: string }>;
+            };
+          }>;
+        };
+        capturedIds.push(...captured.items.map((message) => message.ID));
+        expect(captured.total).toBe(1);
+        const part = captured.items[0].MIME.Parts.find((p) =>
+          p.Headers["Content-Type"]?.[0].startsWith("text/plain"),
+        );
+        expect(Boolean(part)).toBe(true);
+        const encoding = part!.Headers["Content-Transfer-Encoding"]?.[0];
+        expect(["quoted-printable", "base64"]).toContain(encoding);
+        const text =
+          encoding === "base64"
+            ? Buffer.from(part!.Body, "base64").toString("utf8")
+            : Buffer.from(
+                part!.Body.replace(/=\r?\n/g, "").replace(
+                  /=([0-9A-F]{2})/gi,
+                  (_, hex) => String.fromCharCode(parseInt(hex, 16)),
+                ),
+                "latin1",
+              ).toString("utf8");
+        expect(text.includes(action)).toBe(true);
+        expect(text.includes("100")).toBe(true);
+        expect(text.includes(neutrality)).toBe(true);
+        const token = text.match(
+          new RegExp(`\\?locale=${locale}#token=([A-Za-z0-9_-]+)`),
+        )?.[1];
+        expect(Boolean(token)).toBe(true);
+        const sent = await prisma.weleticReviewRequest.findUniqueOrThrow({
+          where: { id },
+        });
+        expect(sent.status).toBe("sent");
+        expect(sent.deliveryAttempts).toBe(1);
+        expect(sent.tokenHash === hashReviewToken(token!)).toBe(true);
+        expect(sent.encryptedDeliveryToken).toBeNull();
+        expect(sent.encryptedDeliverySnapshot).toBeNull();
+        expect(
+          (await getReviewRequestPreview(storeId, token!)).productTitle,
+        ).toBe("Review fixture product");
+        const balanceBefore = (
+          await prisma.weleticLoyaltyAccount.findUniqueOrThrow({
+            where: { id: accountId },
+          })
+        ).cachedPointsBalance;
+        const review = await submitNativeReview(storeId, input(token!));
+        await expect(
+          submitNativeReview(storeId, input(token!)),
+        ).rejects.toThrow();
+        const claim = await prisma.weleticReviewIncentiveClaim.findFirstOrThrow(
+          { where: { storeId, sourceReviewId: review.id } },
+        );
+        expect(claim.status).toBe("fulfilled");
+        const ledger = await prisma.weleticPointsLedgerEntry.findMany({
+          where: {
+            storeId,
+            accountId,
+            idempotencyKey: reviewIncentivePointsKey(claim.id),
+          },
+        });
+        expect(ledger).toHaveLength(1);
+        expect(ledger[0].pointsDelta).toBe(BigInt(100));
+        const listing = () =>
+          getPublicProductReviews(storeId, {
+            productId: "1234",
+            limit: 50,
+            locale,
+          });
+        expect(
+          (await listing()).items.some((item) => item.id === review.id),
+        ).toBe(false);
+        await moderateNativeReview(storeId, review.id, "synthetic-owner", {
+          version: 1,
+          status: "published",
+        });
+        expect(
+          (await listing()).items.find((item) => item.id === review.id),
+        ).toMatchObject({
+          rating: 1,
+          verifiedPurchase: true,
+          incentivized: true,
+        });
+        await moderateNativeReview(storeId, review.id, "synthetic-owner", {
+          version: 2,
+          status: "hidden",
+        });
+        expect(
+          (await listing()).items.some((item) => item.id === review.id),
+        ).toBe(false);
+        await fulfillProductReviewPointsIncentive({
+          storeId,
+          claimId: claim.id,
+          expectedInstallationGeneration: "g1",
+        });
+        expect(
+          await prisma.weleticPointsLedgerEntry.findMany({
+            where: {
+              storeId,
+              accountId,
+              idempotencyKey: reviewIncentivePointsKey(claim.id),
+            },
+          }),
+        ).toEqual(ledger);
+        expect(
+          (
+            await prisma.weleticLoyaltyAccount.findUniqueOrThrow({
+              where: { id: accountId },
+            })
+          ).cachedPointsBalance,
+        ).toBe(balanceBefore + BigInt(100));
+      } finally {
+        for (const [key, value] of Object.entries(smtpEnv))
+          vi.stubEnv(key, value);
+        mocks.viaSmtp.mockReset().mockResolvedValue({ messageId: "smtp-test" });
+        await prisma.weleticReviewSettings.update({
+          where: { storeId },
+          data: {
+            sendAfterDays: settings.sendAfterDays,
+            expiresAfterDays: settings.expiresAfterDays,
+            autoPublish: settings.autoPublish,
+            reminderAfterDays: settings.reminderAfterDays ?? Prisma.JsonNull,
+            activeIncentivePolicyId: settings.activeIncentivePolicyId,
+          },
+        });
+        for (const id of capturedIds)
+          await inbox(`/api/v1/messages/${encodeURIComponent(id)}`, "DELETE");
+      }
+    },
+  );
+
   it.runIf(coreLaunch)(
     "core billing expiry rejects new invitations without creating request rows",
     async () => {

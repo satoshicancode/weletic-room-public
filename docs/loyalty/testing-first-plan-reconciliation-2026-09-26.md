@@ -358,3 +358,59 @@ ingress or a real workflow receipt. Process-crash reconciliation is proven for
 the review transaction; deployed worker supervision, stable provider delivery,
 real inbox and installed-store acceptance remain open. No production code,
 shared schema, Shopify configuration or registration was changed in this slice.
+
+## Captured invitation journey — September 27
+
+The opt-in `CORE_REVIEW_MAIL_DATABASE_TEST=1` selection passes three localized
+core journeys (EN/JA/VI). It delegates to the production Nodemailer sender and
+captures SMTP at owned local MailHog port 11026, with its read/delete API on
+loopback port 18026. The runner checks the owned container and exact loopback
+bindings. Authentication is empty and recipients are unique `example.test`
+fixtures. No external inbox or transactional provider is contacted.
+
+Each journey creates a separate shopper/account and synthetic fulfilled order.
+Production invitation creation preserves its immutable points policy, seven-day
+delay and thirty-day validity. Early dispatch is rejected. Only the fixture's
+persisted dispatch deadline is moved into the past to exercise delivery; this
+is not evidence of seven elapsed days or permission for historical sends.
+Duplicate dispatch produces one captured message. The test decodes the actual
+captured MIME, including Japanese base64, verifies localized disclosure that
+rating/publication does not determine eligibility, and extracts the bearer token
+from that message rather than from mocked transport arguments.
+
+The captured token matches retained request authority, previews the product and
+submits one one-star review. Replay is rejected. One 100-point ledger award is
+made before publication. Manual publication displays a verified, incentivized
+review; hiding it removes it from the public listing without reversing points.
+Award retry preserves the same ledger entry and balance. Cleanup restores shared
+settings and SMTP configuration and deletes only captured fixture message IDs.
+
+The combined selection passes 14 cases (117 unselected/skipped), including core
+billing expiry, privacy cleanup, actual private-photo storage, token concurrency,
+publication deduplication and ledger/refund accounting. The first combined run
+found test-fixture balance contamination; dedicated shoppers/accounts fixed it
+without changing production behavior or weakening the negative-balance check.
+Final web type-check, focused lint/formatting and independent adversarial review
+passed. This slice changes tests and evidence only; the preceding production
+build remains applicable to runtime source. Exact-head CI is still required.
+
+The local inbox is capture-only, and submission/moderation use production service
+calls with synthetic authority. External inbox delivery, browser navigation,
+authenticated merchant moderation, installed Shopify billing and deployed
+acceptance remain open. Registration remains explicitly deferred.
+
+To repeat just the captured-email selection, first verify the owned capture-only
+MailHog container is running with ports 1025/8025 bound only to
+`127.0.0.1:11026`/`127.0.0.1:18026`, with no external relay. Use the private,
+scoped SQL test environment described in [free-first acceptance](free-first-acceptance-2026-09-26.md#reproducing-the-focused-sql-selection).
+From `apps/web`:
+
+```sh
+LOYALTY_DATABASE_INTEGRATION=1 WELETIC_FEATURE_PROFILE=core-v1 \
+  CORE_REVIEW_MAIL_DATABASE_TEST=1 \
+  pnpm exec vitest run --config vitest.loyalty-db.config.ts \
+  --testNamePattern 'core captured SMTP invitation'
+```
+
+The ordinary suite skips these cases unless both opt-ins are present. The token
+is a local synthetic credential; do not publish captured messages or token URLs.
