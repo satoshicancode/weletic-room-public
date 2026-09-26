@@ -110,3 +110,12 @@ gate above. The [execution packets](core-launch-execution-packets.md) contain
 resource selection/costs, additive SQL, runtime/pricing/schedule settings,
 public extension publication and bounded live journeys. Pending approvals are
 specific to those actions; the implementation plan itself remains approved.
+
+### Free-first testing checkpoint
+
+Paid provisioning is pending while the approved continuation uses local Docker,
+synthetic SQL fixtures and a capture-only email inbox. Seven HTTP probes, nine
+explicit core SQL checks and three localized email captures passed. The broad
+legacy SQL run has one deferred referral failure; it is not recorded as green.
+See [the evidence and limits](free-first-acceptance-2026-09-26.md). Installed-store,
+durability and real-provider acceptance remain open.

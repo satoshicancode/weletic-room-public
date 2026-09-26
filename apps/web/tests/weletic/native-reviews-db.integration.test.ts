@@ -196,6 +196,37 @@ const accountId = `account-${run}`;
 const productId = `product-${run}`;
 let sequence = 100;
 let safeDatabase = false;
+const coreLaunch = process.env.WELETIC_FEATURE_PROFILE === "core-v1";
+const fixtureAppId = "native_reviews_isolated_test";
+const pendingId = `pending-${run}`;
+const subscriptionId = createHash("sha256")
+  .update(JSON.stringify([fixtureAppId, pendingId, "g1"]))
+  .digest("hex");
+
+async function refreshFixtureSubscription() {
+  const [clock] = await prisma.$queryRaw<Array<{ now: Date }>>(
+    Prisma.sql`SELECT CURRENT_TIMESTAMP(3) AS now`,
+  );
+  await prisma.weleticShopifySubscriptionSnapshot.upsert({
+    where: { id: subscriptionId },
+    create: {
+      id: subscriptionId,
+      appId: fixtureAppId,
+      partnerAppId: "gid://shopify/App/1",
+      pendingInstallationId: pendingId,
+      installationGeneration: "g1",
+      shopId: "gid://shopify/Shop/2",
+      status: "private_free",
+      planHandle: "company-free",
+      verifiedAt: clock.now,
+      validUntil: new Date(clock.now.getTime() + 300_000),
+    },
+    update: {
+      verifiedAt: clock.now,
+      validUntil: new Date(clock.now.getTime() + 300_000),
+    },
+  });
+}
 
 async function crashReviewWriter(
   reviewId: string,
@@ -394,6 +425,24 @@ describe("native reviews real MySQL production-service boundaries", () => {
     await prisma.weleticLoyaltyProgram.create({
       data: { id: loyaltyProgramId, storeId, status: "active" },
     });
+    if (coreLaunch) {
+      // Synthetic subscription authority in this isolated database only. Keep
+      // production billing checks active while exercising the core journey.
+      vi.stubEnv("SHOPIFY_API_KEY", fixtureAppId);
+      vi.stubEnv("SHOPIFY_PARTNER_APP_ID", "gid://shopify/App/1");
+      await prisma.weleticShopifyPendingInstallation.create({
+        data: {
+          id: pendingId,
+          appId: fixtureAppId,
+          identityKeyId: "synthetic-review-fixture",
+          shopDomainDigest: createHash("sha256").update(run).digest("hex"),
+          installationGeneration: "g1",
+          state: "mapped",
+          mappedStoreId: storeId,
+          authenticatedAt: new Date(),
+        },
+      });
+    }
     await prisma.weleticShopper.create({
       data: {
         id: shopperId,
@@ -458,7 +507,8 @@ describe("native reviews real MySQL production-service boundaries", () => {
       },
     });
   });
-  beforeEach(() => {
+  beforeEach(async () => {
+    if (coreLaunch) await refreshFixtureSubscription();
     mocks.resend = null;
     mocks.viaResend
       .mockReset()
@@ -486,6 +536,33 @@ describe("native reviews real MySQL production-service boundaries", () => {
     if (safeDatabase) await prisma.$disconnect();
     vi.unstubAllEnvs();
   });
+
+  it.runIf(coreLaunch)(
+    "core billing expiry rejects new invitations without creating request rows",
+    async () => {
+      const order = await purchase();
+      const before = await prisma.weleticReviewRequest.count({
+        where: { storeId },
+      });
+      await prisma.weleticShopifySubscriptionSnapshot.update({
+        where: { id: subscriptionId },
+        data: { validUntil: new Date(0) },
+      });
+      await expect(
+        createFulfilledReviewRequests({
+          storeId,
+          orderExternalId: order.externalId,
+          fulfilledAt: new Date(Date.now() - 1000),
+          expectedInstallationGeneration: "g1",
+        }),
+      ).rejects.toThrow(
+        "A current Shopify subscription verification is required",
+      );
+      expect(
+        await prisma.weleticReviewRequest.count({ where: { storeId } }),
+      ).toBe(before);
+    },
+  );
 
   it("store review collection: keeps one prospective order request, line evidence and a legacy no-reward submission", async () => {
     const now = new Date();
