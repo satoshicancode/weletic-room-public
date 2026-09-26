@@ -119,3 +119,8 @@ explicit core SQL checks and three localized email captures passed. The broad
 legacy SQL run has one deferred referral failure; it is not recorded as green.
 See [the evidence and limits](free-first-acceptance-2026-09-26.md). Installed-store,
 durability and real-provider acceptance remain open.
+
+The [yamaxdev preview preparation packet](yamaxdev-core-preview-packet-2026-09-26.md)
+records verified public app/store identities, the unchanged `example.com` active
+version, explicit core billing configuration for local tooling, and remaining
+sign-in/resource prerequisites. It is not approval or evidence of a live preview.
