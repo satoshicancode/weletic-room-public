@@ -136,3 +136,9 @@ Additional local evidence now includes six billing SQL lifecycle tests and an
 opt-in production-storage photo upload/erasure check against local SeaweedFS.
 The combined core SQL selection passes 11 tests; installed billing, storefront
 photo delivery and deployed R2 remain open. See the detailed [billing and photo limits](testing-first-plan-reconciliation-2026-09-26.md#free-billing-revalidation-checkpoint).
+
+The [fixed-coupon SQL checkpoint](testing-first-plan-reconciliation-2026-09-26.md#core-fixed-coupon-sql-checkpoint)
+adds three passing core cases and three passing legacy compatibility cases,
+including existing settlement and partial/full refunds after billing expiry.
+Shopify responses and earning inputs remain synthetic; installed checkout and
+worker restart acceptance are still required. Registration remains deferred.

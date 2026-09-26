@@ -254,3 +254,29 @@ Hiro explicitly chose to keep App Store registration deferred and continue free
 tests. Do not infer payment, new permissions or public-preview approval from this
 choice. The previous revision cde56a1c68 completed CI successfully in run
 36248314162; new test changes need their own exact-head CI.
+
+## Core fixed-coupon SQL checkpoint
+
+The reward lifecycle suite now runs in `core-v1` with only fixed-value amount-off
+coupons. It seeds synthetic app/installation-generation subscription authority in
+the guarded disposable database and leaves production entitlement checks active.
+The original five reward variants remain covered outside the core profile.
+
+Three core SQL cases passed: issuance/replay with ambiguous-response reservation
+and terminal compensation; used-coupon partial/full order-refund reconciliation;
+and competing wallet reservations while the first remote issuance waits. The
+tests independently compare persisted ledger sums with cached balances. Expiring
+the subscription explicitly denies the new-benefit gate while existing coupon
+expiry/deactivation, late-use correction and refund obligations still settle.
+The same three cases also passed in the legacy profile after fixture cleanup.
+
+An explicit `LOYALTY_REWARD_DATABASE_PORT` permits the owned local test container
+on port 53041; the default remains 3309. Loopback, opt-in, random schema name,
+matching scoped principal and SQL database/principal identity checks remain.
+The schema was created fresh with a unique principal; no shared schema or older
+test container was changed. Web type-check and focused lint/format checks passed.
+
+Shopify discount responses and Redis locks are mocked, and order earning inputs
+are seeded. This proves local SQL/service behavior, not a real checkout, signed
+webhook, actual worker-process restart or complete ambiguous-issuance recovery.
+Those installed acceptance requirements remain open. Registration stays deferred.
