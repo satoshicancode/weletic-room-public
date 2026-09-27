@@ -1,10 +1,36 @@
 # Core launch execution packets — September 26, 2026
 
-Status: implementation preparation. No live spending, shared DDL, delivery,
-publication or activation is authorized by this document. The
+Status: free-first testing approved September 27; implementation and external
+acceptance remain separate. No live spending, shared DDL, delivery, publication
+or activation is authorized by this document. The
 [canonical checklist](core-launch-checklist.md) owns release scope.
 
-## A. Resource proposal for approval
+## Current approved testing path
+
+Additional infrastructure spending is **$0**. Use the existing isolated local
+SQL/Redis, web and worker processes, private local media and MailHog. The paid
+acceptance proposal below is a historical, unapproved alternative; its $750
+ceiling is not the selected path or spending authorization. Do not purchase
+resources or activate external free tiers implicitly.
+
+Shopify registration remains deferred. The completed yamaxdev setup-only preview
+was stopped and the active version restored. That approval did not authorize
+new benefits, test orders, external invitations or Flow publication. Installed
+customer journeys still require a genuine verified Partner subscription and a
+bounded action packet; do not seed live entitlement or bypass admission.
+
+Local SMTP capture does not prove actual inbox delivery; local private media does
+not prove R2 operation; local process recovery does not prove persistent hosting.
+Keep installed and provider-specific acceptance open until their own receipts
+exist. Production activation and the first-store 72-hour watch remain separate.
+
+Read-only September 28 fixture preparation confirmed JPY and a listed test payment
+gateway on yamaxdev. The previous `loyalty-acceptance-20260917-a-product`
+(product `9371323793634`) is archived; preserve it as prior evidence. A new run
+must identify its new fixtures, exact test-payment amounts, recipients, expected
+ledger outcomes, source SHA, installation generation and cleanup before approval.
+
+## A. Historical paid resource proposal — not selected
 
 Select separate Room acceptance and production resources. Do not reuse the
 Partners Redis, existing custom-app credentials or provider datasets. Acceptance
