@@ -1,11 +1,25 @@
 # Separate acceptance and production budget models — September 25, 2026
 
-Status: **planning models, not complete quotes or spending approval**. These
-models separate the first Loyalty release from the later Reviews increment. No
-resource was created or upgraded. The [resource inventory](release-resource-inventory-2026-09-20.md)
-remains the account and compatibility gate.
+Status: **historical planning models, not current quotes or spending approval**.
+The September 26 scope reset combines core loyalty and verified text/photo
+reviews in the first release. Video and historical imports are deferred; no
+video-processing capacity belongs in the launch proposal. No resource was
+created or upgraded.
 
-## Read-only evidence and rate inputs
+The [approved core checklist](https://github.com/satoshicancode/weletic-room-public/blob/3a6ef735b55b8984f061dbf04bf22e04b70c80fa/docs/loyalty/core-launch-checklist.md)
+and [consolidated resource proposal](https://github.com/satoshicancode/weletic-room-public/blob/3a6ef735b55b8984f061dbf04bf22e04b70c80fa/docs/loyalty/core-launch-execution-packets.md)
+in draft PR #176 supersede the earlier module-by-module budget assumptions below.
+Those proposals also require separate spending approval. This document preserves
+the dated measurements, payload classification and arithmetic inputs for review;
+its partial subtotals are not an additional launch budget. The
+[resource inventory](release-resource-inventory-2026-09-20.md) remains the account
+and compatibility gate. Registration and paid provisioning remain deferred.
+
+## Historical read-only evidence and rate inputs
+
+Rate observations below were recorded on September 25. Recheck the selected
+account's current quote before requesting spending approval; this scope correction
+does not revalidate provider prices or select a plan.
 
 - PlanetScale CLI 0.324.0 listed one accessible organization and zero accessible
   databases on September 24. This is an inventory of the current CLI identity,
@@ -107,7 +121,7 @@ weaken the existing attribution, erasure or recovery contracts to fit a budget.
 QStash's narrower Weletic payloads likewise need a recorded account-specific
 security and retention decision; this table does not certify its base plan.
 
-## Candidate footprints and arithmetic
+## Historical footprints and arithmetic
 
 Both models assume 720 hours/month and **separate billing accounts**, so each
 uses its own included allowances. If acceptance and production share an account,
@@ -152,12 +166,9 @@ production scenario; request count is within the included 10 million.
 | Resend Pro                               |                20.00 |                20.00 | Provisional provider/plan, no overage                    |
 | **Partial scenario subtotal**            |           **125.39** |           **228.23** | **Illustrative only; provider admission and costs open** |
 
-The first-module production model excludes Reviews video. A later 1 vCPU /
-3 GiB / 4 GB video worker active and fully busy for 100 hours adds about
-**$10.00** in container charges before processing, storage, network, queue and
-monitoring effects. It cannot be folded into the Loyalty production approval.
-The production layout also needs actual load, failover and one-financial-writer
-proof before being selected.
+The historical layout includes no video worker. The combined core loyalty and
+photo-review release still needs measured photo storage, delivery and processing
+load, failover and one-financial-writer proof before selecting production capacity.
 
 The subtotal assumes zero overage and no Prod Packs. For sensitivity, 100 GB
 of container egress above an exhausted 500 GB "Everywhere Else" allowance
@@ -177,7 +188,7 @@ must be recalculated from those accounts rather than duplicated.
 | SQL              | Account-owned Tokyo Vitess quote, storage growth, backup retention, restore tests, branching, transfer, compatible native/HTTP transactions and lock behavior.                                                                                                                                                                                                      |
 | Cloudflare       | Account plan/allowance ownership, exact release-SHA builds, provider image admission, real CPU and sleep behavior, container egress region/volume, Workers/DO/log usage, registry/image retention and alert pricing.                                                                                                                                                |
 | Redis and QStash | Account/region, complete shared-account payload/log inventory, at-rest protection for the full order cache and queue references, selected security plan, actual retries, schedules, storage, bandwidth, DLQ retention and budget-cap failure behavior. Selecting both $200 Prod Packs adds **$400/month per separate environment** before any other missing charge. |
-| R2 and media     | Private buckets, Class A/B operations, media retention and cleanup, video processor limits and incident storage.                                                                                                                                                                                                                                                    |
+| R2 and media     | Private photo buckets, Class A/B operations, photo retention and cleanup, and incident storage. Video processing is outside launch scope.                                                                                                                                                                                                                           |
 | Email            | Approved sender/domain and recipient policy, account plan, expected transactional volume, overage cap, deliverability and US processing review.                                                                                                                                                                                                                     |
 | Operations       | Monitoring and paging, audit-log retention, backups/restore, DNS/certificates, taxes, exchange rates, incident reserve, overlap with existing apps and any separate acceptance account base fees.                                                                                                                                                                   |
 
