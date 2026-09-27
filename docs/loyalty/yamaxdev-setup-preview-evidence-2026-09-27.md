@@ -52,6 +52,18 @@ completed billing/status requests. This observation does **not** prove the cause
 or establish reliable cold startup. Reproduce and resolve the initial-load issue
 before claiming stable installed testing; a successful reload is bounded evidence.
 
+The subsequent loopback investigation reproduced the invalid-hook-call errors
+with an empty Vite cache, immediately after late dependency optimization. The
+initial server-rendered page appeared healthy before client hydration failed;
+visible HTML alone must not count as successful browser startup. Enabling Remix's
+documented `future.unstable_optimizeDeps` route scan eliminated the late
+optimization/reload and hook errors in the same fresh-cache local probe. The
+probe then reached the expected App Bridge error outside Shopify Admin (missing
+shop context). This verifies the local startup change, not authenticated
+interaction or a repeated installed cold start. The installed repeat remains
+required. This development-only setting does not change production builds; see
+[Remix dependency optimization](https://v2.remix.run/docs/guides/dependency-optimization/).
+
 The CLI's automatic sample `APP_UNINSTALLED` delivery targeted `/api/webhooks`,
 which this app does not expose, and failed. It did not prove registered webhook
 routing or delivery. No manual webhook event, test order or external email was
