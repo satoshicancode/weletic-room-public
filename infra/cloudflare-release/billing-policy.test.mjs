@@ -34,3 +34,22 @@ test("billing role admission requires identity, separate plans and backend-only 
     }),
   );
 });
+
+test("production billing rejects setup-only flags even when malformed or paired with complete configuration", () => {
+  for (const role of ["web", "shopify", "outbox"])
+    for (const value of ["1", "0", "", "true"])
+      assert.throws(() =>
+        assertCoreBillingEnvironment(role, {
+          SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1",
+          SHOPIFY_PARTNER_ORGANIZATION_ID: "123",
+          ...(role === "web"
+            ? { SHOPIFY_PARTNER_API_TOKEN: "synthetic-partner-token" }
+            : {}),
+          WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE: "core-monthly",
+          WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE: "company-free",
+          SHOPIFY_APP_HANDLE: "weletic-room",
+          WELETIC_SUPPORT_EMAIL: "support@example.test",
+          WELETIC_SETUP_ONLY: value,
+        }),
+      );
+});

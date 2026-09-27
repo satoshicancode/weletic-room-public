@@ -3,6 +3,7 @@ import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
 import { scheduleTierReviewAfterQualifyingActivity } from "@/lib/weletic/loyalty/tier-review-scheduling";
 import { Prisma, WeleticPointsLedgerEntryType } from "@prisma/client";
 import { z } from "zod";
+import { assertNewBenefitsEnabled } from "../shopify/setup-only";
 
 export const reviewRewardConditionsSchema = z.object({
   provider: z.enum(["native", "judgeme"]).default("native"),
@@ -86,6 +87,8 @@ export async function awardVerifiedReviewPoints({
   });
   if (existing)
     return { status: "duplicate", reason: "review_already_rewarded" };
+
+  assertNewBenefitsEnabled();
 
   const account = await tx.weleticLoyaltyAccount.findFirst({
     where: {

@@ -166,6 +166,48 @@ it("paid bootstrap requires credential publication, then mapped refresh works an
   await db.$transaction((tx) =>
     assertStoreSubscriptionForNewBenefit(tx, store.id),
   );
+  vi.stubEnv("WELETIC_SETUP_ONLY", "1");
+  try {
+    // The paid snapshot is still valid; setup must not depend on expiry.
+    await expect(
+      db.$transaction((tx) =>
+        assertStoreSubscriptionForNewBenefit(tx, store.id),
+      ),
+    ).rejects.toThrow("verification");
+    const { assertFreshInstallationSubscription } = await import(
+      "@/lib/weletic/shopify/app-pricing-service"
+    );
+    await expect(
+      db.$transaction((tx) =>
+        assertFreshInstallationSubscription(
+          tx,
+          f.pending.id,
+          store.installationGeneration!,
+          new Date(),
+        ),
+      ),
+    ).rejects.toThrow("verification");
+    expect(await refreshAppPricingForShop(f.shop, f.transport)).toMatchObject({
+      status: "unavailable",
+      storeId: store.id,
+    });
+    expect(
+      (
+        await db.weleticShopifyStore.findUniqueOrThrow({
+          where: { id: store.id },
+        })
+      ).storeAccessState,
+    ).toBe("active");
+  } finally {
+    vi.stubEnv("WELETIC_SETUP_ONLY", undefined);
+  }
+  // Leaving setup does not resurrect its unavailable snapshot without refresh.
+  await expect(
+    db.$transaction((tx) => assertStoreSubscriptionForNewBenefit(tx, store.id)),
+  ).rejects.toThrow("verification");
+  expect(await refreshAppPricingForShop(f.shop, f.transport)).toMatchObject({
+    status: "paid",
+  });
   await db.weleticShopifyStore.update({
     where: { id: store.id },
     data: { storeAccessState: "suspended" },
@@ -367,3 +409,51 @@ it.each([
     expect(retained.storeAccessState).toBe("active");
   },
 );
+
+it("setup refresh verifies identity without admitting a paid installation", async () => {
+  const f = await fixture();
+  const { reconcileSubscribedInstallation } = await import(
+    "@/lib/weletic/shopify/app-pricing-service"
+  );
+  const handles = {
+    WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE:
+      process.env.WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE,
+    WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE:
+      process.env.WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE,
+  };
+  for (const key of Object.keys(handles)) vi.stubEnv(key, undefined);
+  vi.stubEnv("WELETIC_SETUP_ONLY", "1");
+  try {
+    expect(
+      await reconcileSubscribedInstallation(f.shop, f.transport),
+    ).toMatchObject({
+      status: "unavailable",
+      storeId: null,
+      credentialsChanged: false,
+    });
+    expect(
+      await db.weleticShopifyStore.findUnique({
+        where: { shopDomain: f.shop },
+      }),
+    ).toBeNull();
+    const snapshot =
+      await db.weleticShopifySubscriptionSnapshot.findFirstOrThrow({
+        where: { pendingInstallationId: f.pending.id },
+      });
+    expect(snapshot).toMatchObject({
+      status: "unavailable",
+      shopId: "gid://shopify/Shop/2",
+      installationGeneration: f.pending.installationGeneration,
+    });
+    expect(snapshot.validUntil!.getTime()).toBeLessThanOrEqual(Date.now());
+    const { bootstrapCompanyStore } = await import(
+      "@/lib/weletic/shopify/company-store-bootstrap"
+    );
+    await expect(bootstrapCompanyStore({}, f.transport)).rejects.toThrow(
+      "verification",
+    );
+  } finally {
+    vi.stubEnv("WELETIC_SETUP_ONLY", undefined);
+    for (const [key, value] of Object.entries(handles)) vi.stubEnv(key, value);
+  }
+});

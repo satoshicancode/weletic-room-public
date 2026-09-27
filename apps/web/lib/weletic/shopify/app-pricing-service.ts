@@ -22,14 +22,13 @@ import {
   readShopifySessionSnapshot,
 } from "./session-snapshot";
 
-export class SubscriptionVerificationRequiredError extends Error {
-  readonly code = "unavailable";
-  constructor() {
-    super(
-      "A current Shopify subscription verification is required for new benefits.",
-    );
-  }
-}
+import {
+  assertNewBenefitsEnabled,
+  isSetupOnly,
+  SubscriptionVerificationRequiredError,
+} from "./setup-only";
+export { SubscriptionVerificationRequiredError } from "./setup-only";
+
 const fail = () => new SubscriptionVerificationRequiredError();
 const snapshotId = (appId: string, pendingId: string, generation: string) =>
   createHash("sha256")
@@ -183,6 +182,7 @@ export async function refreshAppPricingForShop(
   } catch {
     decision = unavailableSubscription();
   }
+  if (isSetupOnly()) decision = unavailableSubscription();
   return prisma.$transaction(async (tx) => {
     const current = await capture(tx, shop);
     assertShopifySessionObservation(current.observed, first.observed);
@@ -239,6 +239,7 @@ export async function assertFreshInstallationSubscription(
   generation: string,
   now: Date,
 ) {
+  assertNewBenefitsEnabled();
   const appId = process.env.SHOPIFY_API_KEY ?? "";
   const partnerAppId = process.env.SHOPIFY_PARTNER_APP_ID ?? "";
   const id = snapshotId(appId, pendingInstallationId, generation);
@@ -284,6 +285,7 @@ export async function assertStoreSubscriptionForNewBenefit(
   tx: Prisma.TransactionClient,
   storeId: string,
 ) {
+  assertNewBenefitsEnabled();
   if (!isCoreLaunch()) return;
   const [store] = await tx.$queryRaw<
     Array<{ installationGeneration: string | null }>

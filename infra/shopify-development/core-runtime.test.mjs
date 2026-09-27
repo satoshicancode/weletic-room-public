@@ -104,3 +104,42 @@ test("core file rejects shared permissions, symlinks and oversized input", () =>
     rmSync(root, { recursive: true });
   }
 });
+
+test("setup-only pair omits plans, overwrites stale mode and confines identity credentials", () => {
+  const setup = { ...config, mode: "setup-only" };
+  delete setup.WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE;
+  delete setup.WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE;
+  for (const role of ["web", "shopify"]) {
+    const result = applyCoreRuntimeConfiguration(
+      role,
+      { ...base, ...config },
+      setup,
+    );
+    assert.equal(result.WELETIC_SETUP_ONLY, "1");
+    assert.equal(result.WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE, undefined);
+    assert.equal(result.WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE, undefined);
+    assert.equal(
+      result.SHOPIFY_PARTNER_API_TOKEN,
+      role === "web" ? config.SHOPIFY_PARTNER_API_TOKEN : undefined,
+    );
+    assert.equal(
+      applyCoreRuntimeConfiguration(
+        role,
+        { ...base, WELETIC_SETUP_ONLY: "1" },
+        config,
+      ).WELETIC_SETUP_ONLY,
+      undefined,
+    );
+    for (const invalid of [
+      { ...setup, mode: "other" },
+      { ...setup, WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE: "invented" },
+      { ...setup, SHOPIFY_PARTNER_APP_ID: "invalid" },
+      { ...setup, SHOPIFY_PARTNER_ORGANIZATION_ID: "0" },
+      { ...setup, SHOPIFY_PARTNER_API_TOKEN: "" },
+      { ...setup, WELETIC_SUPPORT_EMAIL: "" },
+      { ...setup, WELETIC_SETUP_ONLY: "1" },
+    ])
+      assert.throws(() => applyCoreRuntimeConfiguration(role, base, invalid));
+    assert.throws(() => applyCoreRuntimeConfiguration(role, {}, setup));
+  }
+});

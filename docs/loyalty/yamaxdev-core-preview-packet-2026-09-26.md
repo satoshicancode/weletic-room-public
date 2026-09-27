@@ -56,7 +56,7 @@ an explicit `--core-config=/absolute/private/core.json` argument, after validati
 the existing isolated resource configuration.
 
 The JSON file must be a regular, nonsymlink file with mode `0600`, at most 8 KiB,
-and contain exactly these string keys:
+and contain exactly these string keys for normal billing acceptance:
 
 | Key                                   | Required source / destination                                                              |
 | ------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -67,6 +67,22 @@ and contain exactly these string keys:
 | `WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE` | Confirm configured private company-free plan handle                                        |
 | `SHOPIFY_APP_HANDLE`                  | Verified public handle above; embedded app only                                            |
 | `WELETIC_SUPPORT_EMAIL`               | Approved support contact; embedded app only                                                |
+
+Hiro approved **Option A: setup-only development mode** on September 27
+([ADR 0046](../adr/0046-setup-only-development-mode.md)). For authentication and
+identity tests while registration is deferred, use `"mode": "setup-only"` and
+omit both plan-handle keys from the table above. The remaining five keys are
+required. This variant is accepted only by the isolated development launcher,
+which emits `WELETIC_SETUP_ONLY=1` to both roles. Never invent plan handles.
+
+Setup-only mode blocks new benefits even when a retained subscription snapshot
+is valid. Refresh still verifies identity but records unavailable entitlement;
+company/subscriber provisioning and first-time review awards are blocked.
+Existing award recovery, refunds and privacy processing remain available.
+Production runtime validation rejects any presence of the setup flag.
+The embedded status explains the restriction in EN/JA/VI and hides plan links.
+Removing the flag does not grant access: fresh subscription verification is
+still required. This mode does not establish real billing acceptance.
 
 Both halves validate the full configuration before starting. The launcher selects
 `WELETIC_FEATURE_PROFILE=core-v1` and `WELETIC_RELEASE_PROFILE=loyalty-only`.
@@ -89,9 +105,10 @@ The intended first remote step is setup and authentication only:
    volume with the 177-table current schema; original data and grants are intact.
    All 13 service checks and 16 configuration checks passed. Use the three-file
    Compose invocation in [the current checkpoint](testing-first-plan-reconciliation-2026-09-26.md#reproducible-local-services-checkpoint).
-   Application startup still requires the verified core billing configuration.
-2. Resolve the hosted-pricing development path and required protected-data
-   selections. Partner sign-in and the approved API credential are complete.
+   Application startup requires either verified normal billing configuration or
+   the approved private setup-only configuration described above.
+2. Use setup-only mode for authentication while hosted pricing remains deferred.
+   Resolve required protected-data selections before requesting that data. Partner sign-in and the approved API credential are complete.
    Any further access expansion or registration/payment needs its own approval.
 3. After explicit preview approval, create two temporary HTTPS origins: embedded
    app and allowlisted backend ingress. Never tunnel the full Next server;
@@ -99,8 +116,9 @@ The intended first remote step is setup and authentication only:
 4. Stage the exact public client, required scopes and callback URLs from
    `shopify.app.loyalty-public.toml`; bind the preview only to store `73236414690`.
    Confirm the selected CLI store resolves to yamaxdev before applying a preview.
-5. Authenticate, compare immutable app/shop identities, obtain a fresh real Partner
-   subscription verification, and record the local installation generation.
+5. Authenticate, compare immutable app/shop identities, and record the local
+   installation generation with unavailable setup-only entitlement. A real
+   paid/private-free subscription verification remains a later billing gate.
    No order, benefit award, coupon, review invitation or external email belongs
    to this setup-only packet. No App Store release or production activation.
 6. Stop the preview/tunnels after the bounded session, retaining evidence and
@@ -117,3 +135,8 @@ tests, including role isolation and core-path staging: 24 passed. Independent re
 actionable blockers. Exact-head type/lint/CI results are recorded in PR 176.
 No resource ownership checks, shared schema, Shopify settings, credentials,
 public routing or installed extensions were changed by this tooling patch.
+
+September 27 setup-only extension: 6 configuration tests, 51 focused unit tests,
+7 real local billing SQL tests and 2 focused review SQL tests passed. The broader
+review suite was not rerun (120 unrelated cases skipped). No public preview has
+been started. See the canonical reconciliation record for verification details.

@@ -825,6 +825,160 @@ describe("native reviews real MySQL production-service boundaries", () => {
   );
 
   it.runIf(coreLaunch)(
+    "setup-only rolls back new participation claims and permits existing award recovery",
+    async () => {
+      const policy = await createReviewIncentivePolicyRevision(storeId, {
+        kind: "points",
+        basePoints: "100",
+        photoBonusPoints: "0",
+        videoBonusPoints: "0",
+        maxPoints: "100",
+      });
+      const buyerId = `setup-only-buyer-${run}`;
+      const buyerAccountId = `setup-only-account-${run}`;
+      await prisma.weleticShopper.create({
+        data: {
+          id: buyerId,
+          storeId,
+          shopifyCustomerId: String(++sequence),
+          email: "setup-only@example.test",
+        },
+      });
+      const request = await invitation(await purchase(buyerId));
+      await prisma.weleticReviewRequest.update({
+        where: { id: request.id },
+        data: { incentivePolicyId: policy.id },
+      });
+      const before = await prisma.weleticLoyaltyAccount.findUniqueOrThrow({
+        where: { id: accountId },
+      });
+      vi.stubEnv("WELETIC_SETUP_ONLY", "1");
+      try {
+        await expect(
+          submitNativeReview(storeId, input(request.token)),
+        ).rejects.toThrow("subscription verification");
+        expect(
+          await prisma.weleticReviewIncentiveClaim.count({
+            where: {
+              storeId,
+              orderId: (
+                await prisma.weleticReviewRequest.findUniqueOrThrow({
+                  where: { id: request.id },
+                })
+              ).orderId,
+            },
+          }),
+        ).toBe(0);
+        expect(
+          (
+            await prisma.weleticReviewRequest.findUniqueOrThrow({
+              where: { id: request.id },
+            })
+          ).status,
+        ).toBe("sent");
+        expect(
+          await prisma.weleticLoyaltyAccount.findUniqueOrThrow({
+            where: { id: accountId },
+          }),
+        ).toEqual(before);
+      } finally {
+        vi.stubEnv("WELETIC_SETUP_ONLY", undefined);
+      }
+      const review = await submitNativeReview(storeId, input(request.token));
+      const claim = await prisma.weleticReviewIncentiveClaim.findFirstOrThrow({
+        where: { storeId, sourceReviewId: review.id },
+      });
+      expect(claim.status).toBe("reserved");
+      expect(
+        await prisma.weleticLoyaltyAccount.count({
+          where: { storeId, shopperId: buyerId },
+        }),
+      ).toBe(0);
+      // Explicit fixture enrollment occurs after the existing promise was reserved.
+      await prisma.weleticLoyaltyAccount.create({
+        data: {
+          id: buyerAccountId,
+          storeId,
+          shopperId: buyerId,
+          programId: loyaltyProgramId,
+        },
+      });
+      vi.stubEnv("WELETIC_SETUP_ONLY", "1");
+      try {
+        await fulfillProductReviewPointsIncentive({
+          storeId,
+          claimId: claim.id,
+          expectedInstallationGeneration: "g1",
+        });
+        const ledger = await prisma.weleticPointsLedgerEntry.findMany({
+          where: { storeId, accountId: buyerAccountId },
+        });
+        expect(ledger).toHaveLength(1);
+        expect(ledger[0].pointsDelta).toBe(BigInt(100));
+        expect(
+          (
+            await prisma.weleticReviewIncentiveClaim.findUniqueOrThrow({
+              where: { id: claim.id },
+            })
+          ).status,
+        ).toBe("fulfilled");
+        await fulfillProductReviewPointsIncentive({
+          storeId,
+          claimId: claim.id,
+          expectedInstallationGeneration: "g1",
+        });
+        expect(
+          await prisma.weleticPointsLedgerEntry.findMany({
+            where: { storeId, accountId: buyerAccountId },
+          }),
+        ).toEqual(ledger);
+      } finally {
+        vi.stubEnv("WELETIC_SETUP_ONLY", undefined);
+      }
+    },
+  );
+
+  it.runIf(coreLaunch)(
+    "setup-only blocks historical null-policy first awards during publication",
+    async () => {
+      const request = await invitation(await purchase());
+      await prisma.weleticReviewRequest.update({
+        where: { id: request.id },
+        data: { incentivePolicyId: null },
+      });
+      const review = await submitNativeReview(storeId, input(request.token));
+      const before = await prisma.weleticProductReview.findUniqueOrThrow({
+        where: { id: review.id },
+      });
+      vi.stubEnv("WELETIC_SETUP_ONLY", "1");
+      try {
+        await expect(
+          moderateNativeReview(storeId, review.id, "owner-test", {
+            version: 1,
+            status: "published",
+          }),
+        ).rejects.toThrow("subscription verification");
+        expect(
+          await prisma.weleticProductReview.findUniqueOrThrow({
+            where: { id: review.id },
+          }),
+        ).toEqual(before);
+        expect(
+          await prisma.weleticPointsLedgerEntry.count({
+            where: {
+              storeId,
+              referenceType: "REVIEW_NATIVE",
+              referenceId: review.id,
+            },
+          }),
+        ).toBe(0);
+      } finally {
+        vi.stubEnv("WELETIC_SETUP_ONLY", undefined);
+      }
+    },
+  );
+
+  it.runIf(coreLaunch)(
     "core billing expiry rejects new invitations without creating request rows",
     async () => {
       const order = await purchase();

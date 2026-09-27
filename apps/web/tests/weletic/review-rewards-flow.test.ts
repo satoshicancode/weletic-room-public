@@ -4,7 +4,7 @@ import {
   type ReviewProvider,
 } from "@/lib/weletic/loyalty/review-rewards";
 import type { Prisma } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   append: vi.fn(),
@@ -51,6 +51,7 @@ function award(provider: ReviewProvider) {
 }
 
 describe("provider-neutral review rewards and durable Flow boundary", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.ledger.mockResolvedValue(null);
@@ -125,6 +126,23 @@ describe("provider-neutral review rewards and durable Flow boundary", () => {
     },
   );
 
+  it.each(["native", "judgeme"] as const)(
+    "blocks first-time %s awards in setup-only mode but preserves replay",
+    async (provider) => {
+      vi.stubEnv("WELETIC_SETUP_ONLY", "1");
+      await expect(award(provider)).rejects.toThrow(
+        "subscription verification",
+      );
+      expect(mocks.account).not.toHaveBeenCalled();
+      expect(mocks.append).not.toHaveBeenCalled();
+      expect(mocks.enqueue).not.toHaveBeenCalled();
+      mocks.ledger.mockResolvedValue({ id: "existing-award" });
+      await expect(award(provider)).resolves.toMatchObject({
+        status: "duplicate",
+      });
+    },
+  );
+
   it("does not emit for an unavailable account or a review velocity limit", async () => {
     mocks.account.mockResolvedValueOnce(null);
     await expect(award("native")).resolves.toMatchObject({ status: "ignored" });
@@ -145,6 +163,7 @@ describe("provider-neutral review rewards and durable Flow boundary", () => {
   it.each(["native", "judgeme"] as const)(
     "never labels an append-only %s clawback as points earned",
     async (provider) => {
+      vi.stubEnv("WELETIC_SETUP_ONLY", "1");
       mocks.ledger.mockResolvedValueOnce(null).mockResolvedValueOnce({
         id: "award-ledger-1",
         accountId: "account-1",

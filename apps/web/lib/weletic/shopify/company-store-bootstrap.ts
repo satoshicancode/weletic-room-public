@@ -11,6 +11,7 @@ import {
   configuredShopifySessionScope,
   readShopifySessionSnapshot,
 } from "./session-snapshot";
+import { assertNewBenefitsEnabled } from "./setup-only";
 import { fetchVerifiedShopifyShopDetails } from "./store-resolver";
 
 const operatorText = (max: number) =>
@@ -184,6 +185,7 @@ async function bootstrapStore(
   customFetch: typeof fetch,
   subscriber: boolean,
 ) {
+  assertNewBenefitsEnabled();
   const input = companyStoreBootstrapInputSchema.parse(value);
   const first = await prisma.$transaction((tx) => capture(tx, input));
   const details = await fetchVerifiedShopifyShopDetails({

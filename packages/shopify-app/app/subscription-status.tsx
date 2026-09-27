@@ -7,6 +7,8 @@ import { createMerchantJsonPost } from "./staff-access-client";
 const copy = {
   en: {
     title: "Shopify subscription",
+    setup:
+      "Development setup only. New points, coupons and review rewards are disabled. Registration remains deferred.",
     loading: "Checking subscription…",
     active: "Subscription verified",
     development: "Development test plan verified",
@@ -22,6 +24,8 @@ const copy = {
   },
   ja: {
     title: "Shopifyサブスクリプション",
+    setup:
+      "開発設定専用モードです。新しいポイント・クーポン・レビュー特典は無効です。アプリ登録は保留中です。",
     loading: "確認中…",
     active: "契約を確認しました",
     development: "開発ストア用プランを確認しました",
@@ -37,6 +41,8 @@ const copy = {
   },
   vi: {
     title: "Gói đăng ký Shopify",
+    setup:
+      "Chỉ thiết lập môi trường phát triển. Điểm, mã giảm giá và phần thưởng đánh giá mới bị vô hiệu hóa. Đăng ký ứng dụng vẫn được hoãn.",
     loading: "Đang kiểm tra…",
     active: "Đã xác minh gói đăng ký",
     development: "Đã xác minh gói thử nghiệm cho cửa hàng phát triển",
@@ -54,7 +60,11 @@ const copy = {
 
 /** Fresh SDK bearer identity is the only input. Welcome URL parameters never
  * grant access. Backend gates benefits independently of this status display. */
-export function SubscriptionStatus() {
+export function SubscriptionStatus({
+  setupOnly = false,
+}: {
+  setupOnly?: boolean;
+}) {
   const shopify = useAppBridge();
   const location = useLocation();
   const post = useMemo(
@@ -108,18 +118,20 @@ export function SubscriptionStatus() {
   return (
     <aside aria-label={text.title} style={{ padding: "16px" }}>
       <p role="status" aria-live="polite">
-        {busy
-          ? text.loading
-          : state === "paid" || state === "private_free"
-            ? text.active
-            : state === "development"
-              ? text.development
-              : state === "inactive"
-                ? text.inactive
-                : text.unavailable}
+        {setupOnly
+          ? text.setup
+          : busy
+            ? text.loading
+            : state === "paid" || state === "private_free"
+              ? text.active
+              : state === "development"
+                ? text.development
+                : state === "inactive"
+                  ? text.inactive
+                  : text.unavailable}
       </p>
-      <p>{text.terms}</p>
-      {data && (
+      {!setupOnly && <p>{text.terms}</p>}
+      {data && !setupOnly && (
         <p>
           <a href={data.pricingUrl} target="_top">
             {text.plan}

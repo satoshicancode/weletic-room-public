@@ -597,3 +597,46 @@ supervision, alert delivery, remote voucher cleanup or mid-issuance financial
 recovery on an installed app. Those acceptance requirements remain open alongside the earlier
 separate synthetic coupon saga crash tests. The worker rehearsal did not run
 against or modify the previously restored database.
+
+## September 27 — approved setup-only development mode
+
+Hiro selected Option A; [ADR 0046](../adr/0046-setup-only-development-mode.md)
+records the accepted boundary. The isolated launcher accepts a private setup-only
+configuration without either hosted plan handle. This permits authentication and
+immutable app/shop/installation identity checks while registration stays deferred.
+It is not a private-free entitlement or billing acceptance.
+
+Backend provisioning and new-benefit gates reject setup-only even with a fresh
+paid snapshot. Refresh records unavailable entitlement while retaining verified
+identity. Review claims and historical null-policy first awards cannot bypass the
+guard. Existing claim settlement/replay and reversals retain their controls.
+Production runtime admission rejects any presence of the setup flag. EN/JA/VI
+embedded status explains the restriction and hides plan-selection links.
+
+Local evidence for this slice:
+
+- Six configuration tests cover exact key shape, credential separation, missing
+  handles, malformed modes and production rejection (including false-like flags).
+- 51 focused unit tests pass across setup, review rewards, pricing, reconciliation
+  scheduling and company bootstrap.
+- Seven real local SQL billing tests pass, including a retained paid snapshot,
+  identity refresh without plan handles and blocked company provisioning.
+- Two focused real SQL review tests pass (120 unrelated cases skipped): rejected
+  participation rolls back token/account changes; a dedicated shopper is not
+  silently enrolled; an existing reserved promise settles once under setup-only;
+  historical null-policy publication cannot create a first award.
+- Independent review found and fixed the historical-award bypass and strengthened
+  recovery coverage to test a pending claim rather than only fulfilled replay.
+
+Evidence logs are local in `/tmp/weletic-setup-only-20260927/`. SQL tests use the
+existing dedicated loopback container; synthetic Shopify transports forbid live
+network calls. No shared DDL, live sends/orders, registration/payment, public
+exposure, publication or activation occurred. Public preview remains a separately
+reviewable packet in the canonical checklist.
+
+Both application type-checks, focused ESLint/Prettier and both local production
+builds pass. Backend type-check first exhausted Node's default heap, then passed
+with the established 8 GiB heap. The backend build used the existing 4.5 GiB
+loyalty-only compatibility profile; this is not a deployed container acceptance
+run. Existing build-time missing-provider/sourcemap warnings remain. Next's
+incidental tsconfig rewrite was restored; generated build output is not committed.

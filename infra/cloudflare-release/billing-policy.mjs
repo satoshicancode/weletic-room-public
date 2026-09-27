@@ -3,6 +3,7 @@ export function assertCoreBillingEnvironment(role, env) {
   const fail = () => {
     throw new Error("Core billing configuration rejected");
   };
+  if (env.WELETIC_SETUP_ONLY !== undefined) fail();
   if (role === "shopify") {
     if (
       !/^[a-z0-9][a-z0-9-]*$/.test(env.SHOPIFY_APP_HANDLE ?? "") ||

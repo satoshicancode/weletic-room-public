@@ -190,3 +190,12 @@ five-minute SQL lease. The job completed on attempt 2 after 307.7 seconds; the
 other store remained untouched, and idle/active-batch SIGTERM checks exited
 cleanly. Its cleanup receipt was synthetic and already completed. Deployed supervision, alerts and
 installed mid-issuance recovery remain open.
+
+### September 27: setup-only development decision
+
+Hiro approved [ADR 0046](../adr/0046-setup-only-development-mode.md): isolated
+authentication/identity testing may omit hosted pricing handles while registration
+remains deferred. New benefits and provisioning remain disabled, including with
+retained valid subscription snapshots. Production rejects this mode. The
+[preview packet](yamaxdev-core-preview-packet-2026-09-26.md) documents the exact
+configuration; public exposure still requires its separate execution approval.
