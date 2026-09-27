@@ -506,3 +506,49 @@ was updated only after verifying the named container, loopback binding and
 retained volume. Reinspect current ownership and bindings before reusing any
 older private runner; historical port values are not current-target authority.
 The main isolated development SQL ports remain 13307/13902.
+
+## Local logical restore checkpoint — September 27
+
+At source SHA `3698588eca38ec9217fb59a32144b66c67fab44d`, a logical MySQL
+snapshot of the synthetic core test schema was restored into a separate,
+nonce-named local database. The source remained unchanged. The restore principal
+had access only to the empty target schema; a separate SELECT-only principal
+ran production ledger audits on both copies. No app, worker, external delivery,
+Shopify registration, shared-schema change or paid resource was involved.
+
+All 177 tables and 4,217 rows matched by schema metadata and per-table row
+hashes, including 46 privacy tombstones, 230 review-owner privacy identities and
+128 coverage records. All tables use InnoDB and have no cross-schema foreign
+keys. Full CREATE TABLE definitions matched after narrowly normalizing MySQL's
+explicit `CHARACTER SET utf8mb4` before `COLLATE utf8mb4_unicode_ci`; column
+character sets and collations were independently identical. Raw DDL text is not
+claimed to be byte-identical.
+
+The snapshot was 1,780,732 bytes, SHA-256
+`ae7e18a969246241800fa7ececb03c87e36ec7176076efbddf32395eb1a6d279`.
+Snapshot, restore and initial comparison took 17.986 seconds for this small
+local fixture; this is not a production recovery-time objective or estimate.
+
+Both production ledger audit reports matched: 40 synthetic stores, 109 accounts,
+250 ledger entries, 96 clean accounts, zero repairs and zero quarantines. The
+remaining 13 accounts retained 143 existing fixture anomalies: 117 balance-chain
+discontinuities, 13 cache-balance drifts and 13 lifetime-metrics drifts. An explicit
+anomaly-type allowlist and per-anomaly arithmetic checks confirmed their
+1,000-point offset from the ledger fixture's unjournaled opening balance. This
+is preserved test-fixture state, not a clean audit or permission to repair data.
+
+A rollback-only transaction on a clean restored account introduced a one-point
+cache mismatch. The production auditor detected it with automatic repair and
+quarantine disabled; rollback restored the clean result. Final schema and row
+hash checks confirmed the source and restored target still matched the original
+snapshot after all audits and the probe. Independent review caught and resolved
+an overly broad anomaly-classification assertion before the final evidence was
+recorded.
+
+Private scripts, snapshot, connection material and detailed reports remain in
+the local restricted scratch directory `/tmp/weletic-local-restore-20260927`;
+they are not repository artifacts or durable provider backups. This evidence
+covers only local logical SQL restore. Managed-provider restoration/PITR,
+R2/media and key recovery, queue replay containment, supervised workers and
+production recovery objectives remain open. Shopify registration and its fee
+remain deferred under Hiro's selected free-test path.

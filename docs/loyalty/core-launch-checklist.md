@@ -176,3 +176,10 @@ adds real process termination before the provider response and after committed
 issuance. Seven core SQL cases pass, including single-debit/event recovery after
 billing expiry. Provider and Redis boundaries remain synthetic; deployed worker
 supervision and actual checkout acceptance remain open.
+
+The [local logical restore checkpoint](testing-first-plan-reconciliation-2026-09-26.md#local-logical-restore-checkpoint--september-27)
+proves a separate synthetic SQL restore with 177 tables, 4,217 identical rows,
+matching read-only ledger audits and a rolled-back corruption-detection probe.
+The source remained unchanged; 143 known fixture anomalies were preserved,
+not repaired. This does not close managed backup/PITR, media/key recovery,
+queue containment or supervised-worker acceptance. Registration remains deferred.
