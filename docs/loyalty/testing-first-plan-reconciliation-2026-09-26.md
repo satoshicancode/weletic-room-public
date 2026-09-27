@@ -552,3 +552,48 @@ covers only local logical SQL restore. Managed-provider restoration/PITR,
 R2/media and key recovery, queue replay containment, supervised workers and
 production recovery objectives remain open. Shopify registration and its fee
 remain deferred under Hiro's selected free-test path.
+
+## Local worker CLI restart checkpoint — September 27
+
+At source `1d72c2182d125574ebed8851e1bf0f6adc399a64`, the actual
+`scripts/loyalty/run-outbox-worker.ts` CLI ran under a local process harness
+against a fresh, separately credentialed 177-table synthetic MySQL schema.
+The CLI used its exact `--store` selector, normal five-second polling and unchanged
+300,000 ms lease timeout. No production runtime code or timing configuration was
+modified.
+
+A test-only Prisma pre-handler barrier held the first child after the production
+worker committed its claim. SQL confirmed `processing`, attempt 1 and a durable
+owner/lease before SIGKILL. The harness restarted the CLI automatically once.
+The replacement preserved the unexpired lease, then reaped and completed the job
+307,714 ms after the original claim, on attempt 2, with ownership fields cleared.
+No clock override or direct lease edit was used. The queued job belonging to a
+second synthetic store remained pending with zero attempts. SIGTERM during the
+replacement's idle polling stopped it cleanly with exit code zero.
+
+The domain fixture was an already-completed synthetic voucher-cleanup receipt,
+so successful replay required no provider operation. No ledger entries were
+created, no external fetch occurred, and no live mail/order, tunnel, registration
+or paid resource was involved. The schema's second store used its own workspace
+and affiliate program after initial fixture setup correctly hit their uniqueness
+constraint; that setup failure was not a runtime regression or a passing run.
+
+Independent review found no blocking issues in the isolation, claim observation,
+restart and evidence boundaries. The final harness assertions passed and both
+child processes are terminal. Private harness, fixture and result files remain
+under `/tmp/weletic-worker-restart-20260927`, outside Git.
+
+A separate active-batch SIGTERM check also passed. The CLI acknowledged SIGTERM
+while its claim was held, remained alive until the controlled handler was released,
+then completed the job on attempt 1 and exited zero. The foreign-store job and
+previous crash-recovery job stayed unchanged. The first graceful probe timed out
+because the test-only IPC release listener kept Node alive after batch completion;
+independent review identified it, the harness removed/unreferenced that listener,
+and a fresh job passed. No worker runtime fix was required.
+
+This proves local CLI/process/SQL lease recovery and idle/active-batch graceful
+shutdown at the tested handler boundary. It does not prove container/provider
+supervision, alert delivery, remote voucher cleanup or mid-issuance financial
+recovery on an installed app. Those acceptance requirements remain open alongside the earlier
+separate synthetic coupon saga crash tests. The worker rehearsal did not run
+against or modify the previously restored database.

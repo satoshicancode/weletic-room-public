@@ -183,3 +183,10 @@ matching read-only ledger audits and a rolled-back corruption-detection probe.
 The source remained unchanged; 143 known fixture anomalies were preserved,
 not repaired. This does not close managed backup/PITR, media/key recovery,
 queue containment or supervised-worker acceptance. Registration remains deferred.
+
+The [local worker CLI restart checkpoint](testing-first-plan-reconciliation-2026-09-26.md#local-worker-cli-restart-checkpoint--september-27)
+adds actual CLI termination and automatic local-harness restart with the normal
+five-minute SQL lease. The job completed on attempt 2 after 307.7 seconds; the
+other store remained untouched, and idle/active-batch SIGTERM checks exited
+cleanly. Its cleanup receipt was synthetic and already completed. Deployed supervision, alerts and
+installed mid-issuance recovery remain open.
