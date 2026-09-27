@@ -59,12 +59,12 @@ sent by this session.
 
 Public containment probes observed:
 
-| Request | Status | Evidence scope |
-| --- | --- | --- |
-| GET `/api/internal/shopify/sessions` | 404 | Internal session gateway not exposed |
-| POST `/api/cron/weletic/loyalty/outbox` | 404 | Internal cron not exposed |
-| POST `/api/shopify/integration/webhook`, unsigned | 401 | Signature required; no trusted event |
-| POST `/api/shopify/loyalty/admin/adjust`, unsigned | 404 | Route rejected at public ingress |
+| Request                                            | Status | Evidence scope                       |
+| -------------------------------------------------- | ------ | ------------------------------------ |
+| GET `/api/internal/shopify/sessions`               | 404    | Internal session gateway not exposed |
+| POST `/api/cron/weletic/loyalty/outbox`            | 404    | Internal cron not exposed            |
+| POST `/api/shopify/integration/webhook`, unsigned  | 401    | Signature required; no trusted event |
+| POST `/api/shopify/loyalty/admin/adjust`, unsigned | 404    | Route rejected at public ingress     |
 
 The pending-installation UI and signed status/billing requests were exercised.
 A separately authorized merchant-data/staff-role matrix was not exercised.
