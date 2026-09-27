@@ -214,3 +214,13 @@ exact-head CI is tracked on draft PR #176. This bounded cold-start result does
 not close sustained runtime, staff-role, billing, live-webhook or customer-journey
 gates. The subscription banner uses its own browser locale, so synchronized
 language selection across the app is not proven by the overview test.
+
+### September 27: connected local review browser journey
+
+The [connected browser checkpoint](testing-first-plan-reconciliation-2026-09-26.md#connected-local-review-browser-journey--september-27)
+joins captured SMTP invitations to the production form, signed gateway, review
+HTTP handler and isolated SQL. All three EN/JA/VI one-star submissions passed,
+with exact consumed-token replay rejection, one participation award and unchanged
+points after publication/hiding. Photos were disabled for this run. Shopify
+identity, subscription authority and merchant moderation authority are synthetic;
+this closes a local integration gap without closing the installed P0.5 gate.

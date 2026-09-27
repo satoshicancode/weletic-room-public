@@ -618,6 +618,9 @@ describe("native reviews real MySQL production-service boundaries", () => {
             expiresAfterDays: 30,
             autoPublish: false,
             reminderAfterDays: [],
+            ...(process.env.CORE_REVIEW_BROWSER_DATABASE_TEST === "1"
+              ? { photoUploadsEnabled: false }
+              : {}),
             activeIncentivePolicyId: policy.id,
           },
         });
@@ -739,7 +742,33 @@ describe("native reviews real MySQL production-service boundaries", () => {
             where: { id: accountId },
           })
         ).cachedPointsBalance;
-        const review = await submitNativeReview(storeId, input(token!));
+        let review: { id: string };
+        if (process.env.CORE_REVIEW_BROWSER_DATABASE_TEST === "1") {
+          // Identity is synthetic in this local bridge, never Shopify install
+          // authority. The gateway signature and review HTTP handlers are real.
+          vi.doMock("@/lib/weletic/shopify/store-resolver", () => ({
+            resolveShopifyStoreByDomain: async (shop: string) =>
+              shop === `${run}.myshopify.com` ? { storeId } : null,
+          }));
+          try {
+            const { POST: backend } = await import(
+              "../../app/api/internal/shopify/reviews/[action]/route"
+            );
+            const { capturedReviewBrowser } = await import(
+              "./fixtures/review-browser-loopback"
+            );
+            review = await capturedReviewBrowser({
+              shop: `${run}.myshopify.com`,
+              token: token!,
+              locale,
+              backend,
+            });
+          } finally {
+            vi.doUnmock("@/lib/weletic/shopify/store-resolver");
+          }
+        } else {
+          review = await submitNativeReview(storeId, input(token!));
+        }
         await expect(
           submitNativeReview(storeId, input(token!)),
         ).rejects.toThrow();
@@ -814,6 +843,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
             sendAfterDays: settings.sendAfterDays,
             expiresAfterDays: settings.expiresAfterDays,
             autoPublish: settings.autoPublish,
+            photoUploadsEnabled: settings.photoUploadsEnabled,
             reminderAfterDays: settings.reminderAfterDays ?? Prisma.JsonNull,
             activeIncentivePolicyId: settings.activeIncentivePolicyId,
           },
@@ -822,6 +852,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
           await inbox(`/api/v1/messages/${encodeURIComponent(id)}`, "DELETE");
       }
     },
+    process.env.CORE_REVIEW_BROWSER_DATABASE_TEST === "1" ? 300_000 : 30_000,
   );
 
   it.runIf(coreLaunch)(

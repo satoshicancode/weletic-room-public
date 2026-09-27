@@ -640,3 +640,59 @@ with the established 8 GiB heap. The backend build used the existing 4.5 GiB
 loyalty-only compatibility profile; this is not a deployed container acceptance
 run. Existing build-time missing-provider/sourcemap warnings remain. Next's
 incidental tsconfig rewrite was restored; generated build output is not committed.
+
+## Connected local review browser journey — September 27
+
+Hiro resumed free testing after the setup-only checkpoint. This closes a gap
+between the earlier service-level captured-invitation test and browser tests with
+synthetic API responses. The opt-in SQL suite now serves the production review
+form and gateway over loopback HTTP, forwards its real signed service request to
+the production review route, and persists the submission in the isolated MySQL
+database. The browser receives no simulated submission response.
+
+All three EN/JA/VI cases passed using the token decoded from their actual MailHog
+message. The fixture invitation's store origin is mapped to loopback; opening the
+link renders the actual product and immutable participation disclosure. Each
+one-star submission reaches localized pending moderation, strips the bearer token
+from the browser URL, and creates one 100-point award. SQL assertions verify
+publication and hiding do not revoke that award, and retry does not duplicate it.
+An unsigned direct service request returns 401. Replaying the consumed token
+through the gateway returns 404 with the expected backend `not_found` and gateway
+`review_error` contract, rather than accepting an unrelated network failure.
+
+The three browser cases passed with 130 unrelated cases skipped. Independent
+review found two harness defects before the final run: all locales initially
+shared one exclusive evidence directory, and replay accepted any non-2xx result.
+Locale-specific directories and exact error assertions corrected both. The first
+attempt also had a test-only import-path failure; that attempt is not a pass.
+
+This is local HTTP/browser/SQL evidence with a fixed synthetic Shopify identity
+and synthetic subscription authority. The suite's existing settlement/media lock
+substitutes remain; moderation uses production services with a synthetic owner.
+Photo upload is explicitly disabled for this text-only browser run and restored
+afterward. Prior private-photo tests retain their separate scope. This does not
+prove Shopify proxy authentication, external inbox delivery, a complete framework
+deployment, merchant moderation authorization, live billing or installed acceptance.
+
+The fixture uses current loopback MySQL port 60101, SQL HTTP 65367, Redis HTTP
+8079 and capture-only MailHog 11026/18026. Only captured fixture messages are
+deleted; synthetic SQL evidence remains in `weletic_loyalty_it_core_20260926`.
+All three HTTP listeners and browser tabs were closed after the run. No app
+publication, shared DDL, external send/order, payment or production change occurred.
+
+To repeat, use the private scoped runner with the ownership and recipient checks
+from the captured-invitation checkpoint. Select `core captured SMTP invitation`
+with `CORE_REVIEW_MAIL_DATABASE_TEST=1`, `CORE_REVIEW_BROWSER_DATABASE_TEST=1`
+and a fresh `CORE_REVIEW_BROWSER_DIRECTORY=/tmp/weletic-review-http-<run>`.
+Each locale exclusively creates `<directory>-en`, `-ja` or `-vi` and writes a
+token-free `ready.json` containing its loopback origin. Open that origin and its
+captured-invitation link, submit a one-star text review, verify the localized
+confirmation and token-free URL, then write exactly `verified` to that locale's
+`continue` file. The helper times out after four minutes without that confirmation.
+Do not pre-create confirmation files or treat an expired fixture as successful.
+Ordinary runs do not start a server or wait for browser input.
+
+Private evidence: `/tmp/weletic-review-http-suite-20260927-{en,ja,vi}/` holds
+request-status receipts and browser screenshots; the runner and test log are in
+`/tmp/weletic-review-http-runner-20260927/`. No invitation token or credentials are
+included in Git or this record. Exact-head checks are tracked in draft PR #176.
