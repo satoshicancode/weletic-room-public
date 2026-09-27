@@ -571,6 +571,24 @@ describe("native reviews real MySQL production-service boundaries", () => {
       const recipient = `review-${locale}-${run}@example.test`;
       const shopperId = `mail-shopper-${locale}-${run}`;
       const accountId = `mail-account-${locale}-${run}`;
+      const browserPhoto = process.env.CORE_REVIEW_BROWSER_PHOTO_TEST === "1";
+      const photoMockImplementations = {
+        upload: mocks.upload.getMockImplementation()!,
+        delete: mocks.delete.getMockImplementation()!,
+        signedDownload: mocks.signedDownload.getMockImplementation()!,
+      };
+      let photoRequestId: string | undefined;
+      let photoStorage: typeof import("@/lib/storage").storage | undefined;
+      if (browserPhoto) {
+        expect(process.env.CORE_REVIEW_BROWSER_DATABASE_TEST).toBe("1");
+        expect(process.env.STORAGE_ENDPOINT).toBe("http://127.0.0.1:9002");
+        expect(process.env.STORAGE_PRIVATE_BUCKET).toBe(
+          "weletic-loyalty-dev-private",
+        );
+        photoStorage = (
+          await vi.importActual<typeof import("@/lib/storage")>("@/lib/storage")
+        ).storage;
+      }
       const settings = await prisma.weleticReviewSettings.findUniqueOrThrow({
         where: { storeId },
       });
@@ -588,6 +606,28 @@ describe("native reviews real MySQL production-service boundaries", () => {
         return response;
       };
       try {
+        if (photoStorage) {
+          const ownedPhoto = (args: { key: string; bucket?: string }) => {
+            if (
+              args.bucket !== "private" ||
+              !args.key.startsWith(`weletic/reviews/${storeId}/wrevmedia_`) ||
+              !args.key.endsWith(".webp")
+            )
+              throw new Error("Unexpected browser photo ownership");
+          };
+          mocks.upload.mockImplementation((args) => {
+            ownedPhoto(args);
+            return photoStorage!.upload(args);
+          });
+          mocks.delete.mockImplementation((args) => {
+            ownedPhoto(args);
+            return photoStorage!.delete(args);
+          });
+          mocks.signedDownload.mockImplementation((args) => {
+            ownedPhoto(args);
+            return photoStorage!.getSignedDownloadUrl(args);
+          });
+        }
         vi.stubEnv("SMTP_HOST", "127.0.0.1");
         vi.stubEnv("SMTP_PORT", "11026");
         vi.stubEnv("SMTP_USER", "");
@@ -619,7 +659,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
             autoPublish: false,
             reminderAfterDays: [],
             ...(process.env.CORE_REVIEW_BROWSER_DATABASE_TEST === "1"
-              ? { photoUploadsEnabled: false }
+              ? { photoUploadsEnabled: browserPhoto }
               : {}),
             activeIncentivePolicyId: policy.id,
           },
@@ -731,6 +771,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
         expect(sent.tokenHash === hashReviewToken(token!)).toBe(true);
         expect(sent.encryptedDeliveryToken).toBeNull();
         expect(sent.encryptedDeliverySnapshot).toBeNull();
+        photoRequestId = sent.id;
         const preview = await getReviewRequestPreview(storeId, token!);
         expect(preview.productTitle).toBe("Review fixture product");
         for (const line of preview.incentiveDisclosure![
@@ -772,6 +813,29 @@ describe("native reviews real MySQL production-service boundaries", () => {
         await expect(
           submitNativeReview(storeId, input(token!)),
         ).rejects.toThrow();
+        const photos = browserPhoto
+          ? await prisma.weleticReviewMedia.findMany({
+              where: { storeId, requestId: sent.id, reviewId: review.id },
+            })
+          : [];
+        if (browserPhoto) {
+          expect(photos).toHaveLength(1);
+          const photo = photos[0];
+          expect(photo.objectKey).toBe(
+            `weletic/reviews/${storeId}/${photo.id}.webp`,
+          );
+          expect(photo.contentType).toBe("image/webp");
+          const anonymous = await originalFetch(
+            `http://127.0.0.1:9002/weletic-loyalty-dev-private/${photo.objectKey}`,
+            { redirect: "error", signal: AbortSignal.timeout(5000) },
+          );
+          expect([401, 403]).toContain(anonymous.status);
+          await expect(
+            getPublicReviewPhoto(storeId, photo.id),
+          ).rejects.toMatchObject({
+            code: "not_found",
+          });
+        }
         const claim = await prisma.weleticReviewIncentiveClaim.findFirstOrThrow(
           { where: { storeId, sourceReviewId: review.id } },
         );
@@ -805,6 +869,20 @@ describe("native reviews real MySQL production-service boundaries", () => {
           verifiedPurchase: true,
           incentivized: true,
         });
+        for (const photo of photos) {
+          const published = await getPublicReviewPhoto(storeId, photo.id);
+          expect(new URL(published.url).origin).toBe("http://127.0.0.1:9002");
+          const response = await originalFetch(published.url, {
+            redirect: "error",
+            signal: AbortSignal.timeout(5000),
+          });
+          expect(response.status).toBe(200);
+          const bytes = Buffer.from(await response.arrayBuffer());
+          expect(bytes.length).toBe(photo.sizeBytes);
+          expect(await sharp(bytes).metadata()).toMatchObject({
+            format: "webp",
+          });
+        }
         await moderateNativeReview(storeId, review.id, "synthetic-owner", {
           version: 2,
           status: "hidden",
@@ -812,6 +890,12 @@ describe("native reviews real MySQL production-service boundaries", () => {
         expect(
           (await listing()).items.some((item) => item.id === review.id),
         ).toBe(false);
+        for (const photo of photos)
+          await expect(
+            getPublicReviewPhoto(storeId, photo.id),
+          ).rejects.toMatchObject({
+            code: "not_found",
+          });
         await fulfillProductReviewPointsIncentive({
           storeId,
           claimId: claim.id,
@@ -833,23 +917,83 @@ describe("native reviews real MySQL production-service boundaries", () => {
             })
           ).cachedPointsBalance,
         ).toBe(balanceBefore + BigInt(100));
+        if (photoStorage) {
+          await redactNativeReviewsBatch(storeId, shopperId);
+          for (const photo of photos) {
+            expect(
+              (
+                await prisma.weleticReviewMedia.findUniqueOrThrow({
+                  where: { id: photo.id },
+                })
+              ).status,
+            ).toBe("deleted");
+            const url = await photoStorage.getSignedDownloadUrl({
+              key: photo.objectKey,
+              bucket: "private",
+              expiresIn: 60,
+            });
+            expect(
+              (
+                await originalFetch(url, {
+                  redirect: "error",
+                  signal: AbortSignal.timeout(5000),
+                })
+              ).status,
+            ).toBe(404);
+          }
+          expect(
+            await prisma.weleticPointsLedgerEntry.findMany({
+              where: {
+                storeId,
+                accountId,
+                idempotencyKey: reviewIncentivePointsKey(claim.id),
+              },
+            }),
+          ).toEqual(ledger);
+        }
       } finally {
-        for (const [key, value] of Object.entries(smtpEnv))
-          vi.stubEnv(key, value);
-        mocks.viaSmtp.mockReset().mockResolvedValue({ messageId: "smtp-test" });
-        await prisma.weleticReviewSettings.update({
-          where: { storeId },
-          data: {
-            sendAfterDays: settings.sendAfterDays,
-            expiresAfterDays: settings.expiresAfterDays,
-            autoPublish: settings.autoPublish,
-            photoUploadsEnabled: settings.photoUploadsEnabled,
-            reminderAfterDays: settings.reminderAfterDays ?? Prisma.JsonNull,
-            activeIncentivePolicyId: settings.activeIncentivePolicyId,
-          },
-        });
-        for (const id of capturedIds)
-          await inbox(`/api/v1/messages/${encodeURIComponent(id)}`, "DELETE");
+        try {
+          if (photoStorage && photoRequestId) {
+            const photos = await prisma.weleticReviewMedia.findMany({
+              where: { storeId, requestId: photoRequestId },
+            });
+            for (const photo of photos) {
+              if (
+                photo.objectKey !==
+                `weletic/reviews/${storeId}/${photo.id}.webp`
+              )
+                throw new Error("Unexpected browser photo cleanup ownership");
+              await photoStorage.delete({
+                key: photo.objectKey,
+                bucket: "private",
+              });
+            }
+          }
+        } finally {
+          mocks.upload.mockImplementation(photoMockImplementations.upload);
+          mocks.delete.mockImplementation(photoMockImplementations.delete);
+          mocks.signedDownload.mockImplementation(
+            photoMockImplementations.signedDownload,
+          );
+          for (const [key, value] of Object.entries(smtpEnv))
+            vi.stubEnv(key, value);
+          mocks.viaSmtp
+            .mockReset()
+            .mockResolvedValue({ messageId: "smtp-test" });
+          await prisma.weleticReviewSettings.update({
+            where: { storeId },
+            data: {
+              sendAfterDays: settings.sendAfterDays,
+              expiresAfterDays: settings.expiresAfterDays,
+              autoPublish: settings.autoPublish,
+              photoUploadsEnabled: settings.photoUploadsEnabled,
+              reminderAfterDays: settings.reminderAfterDays ?? Prisma.JsonNull,
+              activeIncentivePolicyId: settings.activeIncentivePolicyId,
+            },
+          });
+          for (const id of capturedIds)
+            await inbox(`/api/v1/messages/${encodeURIComponent(id)}`, "DELETE");
+        }
       }
     },
     process.env.CORE_REVIEW_BROWSER_DATABASE_TEST === "1" ? 300_000 : 30_000,

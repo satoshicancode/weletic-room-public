@@ -224,3 +224,13 @@ with exact consumed-token replay rejection, one participation award and unchange
 points after publication/hiding. Photos were disabled for this run. Shopify
 identity, subscription authority and merchant moderation authority are synthetic;
 this closes a local integration gap without closing the installed P0.5 gate.
+
+### September 27: connected local photo review journey
+
+The [photo browser checkpoint](testing-first-plan-reconciliation-2026-09-26.md#connected-local-photo-review-journey--september-27)
+extends that fixture through actual local private storage. All three EN/JA/VI
+browser uploads and submissions passed, including attachment, anonymous-access
+denial, publication/hiding, exact object deletion and retention of the single
+participation award. Chrome upload permission was enabled by Hiro after an
+interrupted first attempt. The synthetic identity/authority and local-provider
+limits remain; installed P0.5 acceptance is still open.

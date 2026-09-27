@@ -67,7 +67,7 @@ export async function capturedReviewBrowser({
         return;
       }
       const match =
-        /^\/(apps\/proxy|api\/internal\/shopify)\/reviews\/(write|request|submit)$/.exec(
+        /^\/(apps\/proxy|api\/internal\/shopify)\/reviews\/(write|request|submit|upload)$/.exec(
           url.pathname,
         );
       if (!match || !["GET", "POST"].includes(incoming.method!)) {
@@ -176,6 +176,16 @@ export async function capturedReviewBrowser({
     }
     if (!verified || !submitted?.id || !submissionBody)
       throw new Error("Browser submission not verified before timeout");
+    if (
+      process.env.CORE_REVIEW_BROWSER_PHOTO_TEST === "1" &&
+      (!events.some(
+        (event) =>
+          event.action === "api/internal/shopify/upload" &&
+          event.status === 201,
+      ) ||
+        JSON.parse(submissionBody).mediaIds?.length !== 1)
+    )
+      throw new Error("Browser must upload and submit exactly one real photo");
     const replay = await fetch(`${origin}/apps/proxy/reviews/submit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

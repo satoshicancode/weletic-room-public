@@ -696,3 +696,52 @@ Private evidence: `/tmp/weletic-review-http-suite-20260927-{en,ja,vi}/` holds
 request-status receipts and browser screenshots; the runner and test log are in
 `/tmp/weletic-review-http-runner-20260927/`. No invitation token or credentials are
 included in Git or this record. Exact-head checks are tracked in draft PR #176.
+
+## Connected local photo review journey — September 27
+
+The browser fixture now optionally enables `CORE_REVIEW_BROWSER_PHOTO_TEST=1`
+alongside its existing browser and captured-mail flags. It forwards the production
+upload route and binds the storage adapter to the owned loopback private-media
+service. The fixture requires a successful backend upload receipt and exactly one
+submitted attachment; an ordinary text submission cannot satisfy this mode.
+
+After Hiro enabled Chrome's file-upload permission, all three EN/JA/VI cases
+passed: captured invitation → production browser form → real signed upload and
+submission handlers → isolated SQL and private storage. Each browser selected a
+synthetic 2×2 PNG through the file chooser, submitted a one-star review, reached
+localized pending-moderation confirmation and removed its token from the URL.
+The payload text remained English; this is not a non-Latin input-content test.
+
+SQL/storage assertions verify one attached WebP, anonymous object access denied,
+no public photo while pending, signed retrieval of the stored bytes after
+publication, and no public photo after hiding. Customer erasure marks the object
+deleted and subsequent signed retrieval returns 404. The single 100-point ledger
+entry is unchanged after erasure; publication/hiding and reward retry also preserve
+the original award. Consumed-token replay reaches the expected backend rejection.
+
+Result: **3 browser/SQL/photo cases passed, 130 unrelated cases skipped**. The
+service-only mode also passed its three selected regressions. Web type-check,
+focused lint/formatting and independent review cover the test changes. Review
+identified a cleanup failure that could skip restoration; nested `finally` blocks
+now restore storage mocks and SMTP/settings independently of photo cleanup.
+Runtime, dependencies, schemas and CI configuration are unchanged; production
+builds were not repeated for this test-only extension.
+
+The first attempted photo run was interrupted (exit 130) when Chrome denied file
+selection. It is not a passing result; its isolated synthetic invitation/store may
+remain as evidence. The successful retry used new fixture identities and a new
+exclusive evidence directory. Successful-run fixture photos and captured messages
+were cleaned up; all three listeners and the browser tab were closed.
+
+This closes the local connected-photo gap only. Shopify proxy identity,
+subscription authority and moderation actor remain synthetic; the suite's existing
+lock substitutes remain. It does not prove deployed R2, external inbox delivery,
+installed merchant authorization or the complete P0.5 journey.
+
+Private evidence: `/tmp/weletic-review-http-photo-enabled-20260927-{en,ja,vi}/`
+contains token-free HTTP receipts and confirmation screenshots. The scoped runner,
+synthetic image and result log are under
+`/tmp/weletic-review-http-runner-20260927/`. Repeat with a fresh directory and the
+same owned-resource checks; never reuse a consumed invitation or pre-create the
+browser confirmation file. No registration, spending, live order/email, app
+publication or production change occurred. Current CI is tracked in draft PR #176.
