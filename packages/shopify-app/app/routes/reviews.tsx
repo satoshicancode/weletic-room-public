@@ -36,6 +36,7 @@ import { ReviewModerationForm } from "../components/ReviewModerationForm";
 import { ReviewTranslationsPanel } from "../components/ReviewTranslationsPanel";
 import { StoreReviewSettingsPanel } from "../components/StoreReviewSettingsPanel";
 import { StoreReviewsPanel } from "../components/StoreReviewsPanel";
+import { useMerchantLocale } from "../merchant-locale";
 import { createMerchantOpenReviewPolicyClient } from "../merchant-open-review-policy-client";
 import { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
@@ -82,7 +83,7 @@ export default function ReviewsPage() {
     () => createMerchantReviewsClient(() => shopify.idToken()),
     [shopify],
   );
-  const [locale, setLocale] = useState<"en" | "ja" | "vi">("en");
+  const [locale, setLocale] = useMerchantLocale();
   const openPolicyClient = useMemo(
     () => createMerchantOpenReviewPolicyClient(() => shopify.idToken()),
     [shopify],

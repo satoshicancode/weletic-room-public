@@ -25,6 +25,7 @@ import type { ShopifyMerchantOverview } from "../../../../apps/web/lib/weletic/s
 import { installationBootstrapError } from "../installation-bootstrap-error";
 import { createInstallationStatusClient } from "../installation-status-client";
 import { installationStatusCopy } from "../installation-status-copy";
+import { useMerchantLocale } from "../merchant-locale";
 import { createMerchantOverviewClient } from "../merchant-overview-client";
 import { merchantOverviewCopy } from "../merchant-overview-copy";
 import { merchantPolarisTranslations } from "../merchant-polaris-translations";
@@ -77,7 +78,7 @@ export default function IndexPage() {
     () => createMerchantOverviewClient(() => shopify.idToken()),
     [shopify],
   );
-  const [locale, setLocale] = useState<"en" | "ja" | "vi">("en");
+  const [locale, setLocale] = useMerchantLocale();
   const readStatus = useMemo(
     () => createInstallationStatusClient(() => shopify.idToken()),
     [shopify],

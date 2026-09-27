@@ -12,10 +12,13 @@ import {
 import { AppProvider } from "@shopify/polaris";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import enTranslations from "@shopify/polaris/locales/en.json";
+import jaTranslations from "@shopify/polaris/locales/ja.json";
+import viTranslations from "@shopify/polaris/locales/vi.json";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { isCoreLaunch } from "../../../apps/web/lib/weletic/core-launch-policy";
 import { isSetupOnly } from "../../../apps/web/lib/weletic/shopify/setup-only";
 import { CoreLaunchContext } from "../../../apps/web/ui/weletic/core-launch-context";
+import { MerchantLocaleProvider, useMerchantLocale } from "./merchant-locale";
 import { SubscriptionStatus } from "./subscription-status";
 import { requireEnv } from "./weletic-api.server";
 
@@ -34,10 +37,19 @@ export function loader() {
 }
 
 export default function App() {
+  return (
+    <MerchantLocaleProvider>
+      <AppDocument />
+    </MerchantLocaleProvider>
+  );
+}
+
+function AppDocument() {
+  const [locale] = useMerchantLocale();
   const { apiKey, coreLaunch, setupOnly } = useLoaderData<typeof loader>();
 
   return (
-    <html lang="en">
+    <html lang={locale}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -47,7 +59,13 @@ export default function App() {
         <Links />
       </head>
       <body>
-        <AppProvider i18n={enTranslations}>
+        <AppProvider
+          i18n={
+            { en: enTranslations, ja: jaTranslations, vi: viTranslations }[
+              locale
+            ]
+          }
+        >
           {coreLaunch && <SubscriptionStatus setupOnly={setupOnly} />}
           <CoreLaunchContext.Provider value={coreLaunch}>
             <Outlet />

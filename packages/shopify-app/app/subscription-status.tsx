@@ -2,6 +2,7 @@ import { useLocation } from "@remix-run/react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { useEffect, useMemo, useState } from "react";
 import { subscriptionPageSchema } from "../../../apps/web/lib/weletic/shopify/app-pricing-contract";
+import { useMerchantLocale } from "./merchant-locale";
 import { createMerchantJsonPost } from "./staff-access-client";
 
 const copy = {
@@ -79,11 +80,7 @@ export function SubscriptionStatus({
   > | null>(null);
   const [busy, setBusy] = useState(true);
   const [attempt, setAttempt] = useState(0);
-  const [locale, setLocale] = useState<keyof typeof copy>("en");
-  useEffect(() => {
-    const lang = navigator.language.slice(0, 2);
-    if (lang === "ja" || lang === "vi") setLocale(lang);
-  }, []);
+  const [locale] = useMerchantLocale();
   useEffect(() => {
     let current = true;
     setBusy(true);

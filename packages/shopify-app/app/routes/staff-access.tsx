@@ -18,6 +18,7 @@ import {
   type ShopifyStaffPermission,
 } from "../../../../apps/web/lib/weletic/shopify/staff-contract";
 import { StaffExport } from "../components/StaffExport";
+import { useMerchantLocale } from "../merchant-locale";
 import {
   createStaffAccessClient,
   StaffAccessClientError,
@@ -32,7 +33,7 @@ export default function StaffAccessPage() {
     () => createStaffAccessClient(() => shopify.idToken()),
     [shopify],
   );
-  const [locale, setLocale] = useState<"en" | "ja" | "vi">("en");
+  const [locale, setLocale] = useMerchantLocale();
   const copy = staffAccessCopy[locale];
   const [grants, setGrants] = useState<ShopifyStaffGrantView[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
