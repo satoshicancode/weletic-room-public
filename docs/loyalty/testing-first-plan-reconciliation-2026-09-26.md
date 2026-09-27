@@ -745,3 +745,31 @@ synthetic image and result log are under
 same owned-resource checks; never reuse a consumed invitation or pre-create the
 browser confirmation file. No registration, spending, live order/email, app
 publication or production change occurred. Current CI is tracked in draft PR #176.
+
+## Localized review content — September 28
+
+The existing captured-invitation journey now submits Japanese text for `ja`,
+Vietnamese accented text for `vi`, and English for `en`, each including a
+supplementary Unicode emoji. Earlier localized browser cases used English review
+content; this checkpoint closes that specific local coverage gap.
+
+Three service/SQL cases and three actual browser/HTTP/SQL cases passed separately
+(130 unrelated cases skipped in each selection). Assertions verify exact title
+and body in MySQL and after manual publication through the public listing reader.
+Existing one-star, single 100-point award, hiding neutrality and consumed-token
+replay assertions remain. Browser confirmation was observed in each locale before
+releasing its test continuation. The browser helper writes the expected synthetic
+text alongside its token-free origin in `ready.json` for repeatable manual input.
+
+Web type-check, focused lint and formatting passed. No production behavior,
+dependency, schema or CI configuration changed; no build rerun is warranted by
+these test-only changes. This run is text-only; prior photo evidence retains its
+scope. Shopify identity/subscription and moderation actor remain synthetic, and
+existing lock substitutes remain. This does not establish installed yamaxdev,
+external email, deployed storage or hosted-billing acceptance.
+
+Private receipts are `/tmp/weletic-review-http-unicode-20260928-{en,ja,vi}/`;
+the runner/log is `/tmp/weletic-core-acceptance-20260928/unicode-browser.log`.
+All browser fixture listeners exited, captured fixture messages were cleaned by
+the suite, and the browser tab was closed. No external send/order, registration,
+spending, shared DDL, publication or production activation occurred.
