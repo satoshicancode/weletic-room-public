@@ -40,6 +40,9 @@ function transaction(record: unknown = row) {
     tx: {
       $queryRaw: query,
       weleticShopifyPendingInstallation: { update },
+      weleticShopifySubscriptionSnapshot: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       weleticShopifyPendingInstallationChange: { deleteMany: erase },
     } as unknown as Prisma.TransactionClient,
   };

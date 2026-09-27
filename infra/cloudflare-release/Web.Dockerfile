@@ -48,7 +48,7 @@ ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_D
 COPY --from=runtime-dependencies /opt/web-runtime/node_modules ./apps/web/node_modules
 COPY --from=runtime-dependencies /opt/web-runtime/package.json ./apps/web/package.json
 COPY --from=source /workspace/packages ./packages
-COPY infra/cloudflare-release/start.mjs infra/cloudflare-release/runtime-policy.mjs ./infra/cloudflare-release/
+COPY infra/cloudflare-release/start.mjs infra/cloudflare-release/runtime-policy.mjs infra/cloudflare-release/billing-policy.mjs ./infra/cloudflare-release/
 USER node
 STOPSIGNAL SIGTERM
 

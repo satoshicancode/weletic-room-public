@@ -7,9 +7,12 @@ import { assertCloudflareRuntime } from "./runtime-policy.mjs";
 
 const directory = fileURLToPath(new URL("../../apps/web/", import.meta.url));
 
-export function loyaltyHttpServer(handle, { reviewsEnabled = false } = {}) {
+export function loyaltyHttpServer(
+  handle,
+  { reviewsEnabled = false, coreLaunch = false } = {},
+) {
   const server = createServer(async (request, response) => {
-    if (!admitsLoyaltyRequest(request, { reviewsEnabled })) {
+    if (!admitsLoyaltyRequest(request, { reviewsEnabled, coreLaunch })) {
       response.writeHead(404, {
         "Cache-Control": "private, no-store",
         "Content-Type": "text/plain; charset=utf-8",
@@ -61,7 +64,10 @@ export async function startLoyaltyWeb() {
     httpServer: frameworkServer,
   });
   await app.prepare();
-  const server = loyaltyHttpServer(app.getRequestHandler(), { reviewsEnabled });
+  const server = loyaltyHttpServer(app.getRequestHandler(), {
+    reviewsEnabled,
+    coreLaunch: process.env.WELETIC_FEATURE_PROFILE === "core-v1",
+  });
   const stop = () => {
     // Parent start.mjs owns the 25-second hard shutdown bound.
     server.close(async () => {

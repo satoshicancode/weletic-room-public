@@ -1,4 +1,9 @@
 import { json } from "@remix-run/node";
+import {
+  hostedPricingUrl,
+  subscriptionPageSchema,
+  subscriptionStatusSchema,
+} from "../../../apps/web/lib/weletic/shopify/app-pricing-contract";
 import { installationAdmissionStatusSchema } from "../../../apps/web/lib/weletic/shopify/installation-admission-contract";
 import { readWeleticShopifyRequestBodyBytes } from "../../../apps/web/lib/weletic/shopify/service-auth";
 import type { verifyShopifyMerchantIdentity } from "./merchant-identity.server";
@@ -12,6 +17,8 @@ export function createInstallationStatusAction(
   verify: (
     request: Request,
   ) => ReturnType<typeof verifyShopifyMerchantIdentity>,
+  billing = false,
+  bootstrap?: (request: Request) => Promise<unknown>,
 ) {
   return async (request: Request) => {
     const reply = (value: unknown, status: number) =>
@@ -22,6 +29,8 @@ export function createInstallationStatusAction(
     if (request.method !== "POST")
       return reply({ error: "method_not_allowed" }, 405);
     try {
+      const beforeRequest = billing ? request.clone() : null;
+      const afterRequest = billing ? request.clone() : null;
       const bytes = await readWeleticShopifyRequestBodyBytes(request, {
         maxBytes: 1024,
       });
@@ -40,11 +49,18 @@ export function createInstallationStatusAction(
       )
         return reply({ error: "invalid_request" }, 400);
       const identity = await verify(request);
+      if (billing) {
+        if (!bootstrap || !beforeRequest)
+          throw new Error("Billing authentication unavailable");
+        await bootstrap(beforeRequest);
+      }
       const result = await weleticApiJson<unknown>(
-        "/api/internal/shopify/installation/status",
+        billing
+          ? "/api/internal/shopify/installation/billing"
+          : "/api/internal/shopify/installation/status",
         {
           method: "POST",
-          signal: AbortSignal.timeout(8_000),
+          signal: AbortSignal.timeout(billing ? 45_000 : 8_000),
           body: JSON.stringify({
             appId: requireEnv("SHOPIFY_API_KEY"),
             shop: identity.shop,
@@ -54,6 +70,25 @@ export function createInstallationStatusAction(
           }),
         },
       );
+      if (billing) {
+        const status = subscriptionStatusSchema.parse(result);
+        if (status.credentialsChanged) {
+          if (!bootstrap || !afterRequest)
+            throw new Error("Billing credential publication unavailable");
+          await bootstrap(afterRequest);
+        }
+        return reply(
+          subscriptionPageSchema.parse({
+            ...status,
+            pricingUrl: hostedPricingUrl(
+              identity.shop,
+              requireEnv("SHOPIFY_APP_HANDLE"),
+            ),
+            supportEmail: requireEnv("WELETIC_SUPPORT_EMAIL"),
+          }),
+          200,
+        );
+      }
       return reply(installationAdmissionStatusSchema.parse(result), 200);
     } catch (error) {
       const status =

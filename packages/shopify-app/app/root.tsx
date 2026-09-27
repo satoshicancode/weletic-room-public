@@ -13,6 +13,10 @@ import { AppProvider } from "@shopify/polaris";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import { boundary } from "@shopify/shopify-app-remix/server";
+import { isCoreLaunch } from "../../../apps/web/lib/weletic/core-launch-policy";
+import { isSetupOnly } from "../../../apps/web/lib/weletic/shopify/setup-only";
+import { CoreLaunchContext } from "../../../apps/web/ui/weletic/core-launch-context";
+import { SubscriptionStatus } from "./subscription-status";
 import { requireEnv } from "./weletic-api.server";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
@@ -22,11 +26,15 @@ export const headers: HeadersFunction = (headersArgs) => {
 };
 
 export function loader() {
-  return json({ apiKey: requireEnv("SHOPIFY_API_KEY") });
+  return json({
+    apiKey: requireEnv("SHOPIFY_API_KEY"),
+    coreLaunch: isCoreLaunch(),
+    setupOnly: isSetupOnly(),
+  });
 }
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
+  const { apiKey, coreLaunch, setupOnly } = useLoaderData<typeof loader>();
 
   return (
     <html lang="en">
@@ -40,7 +48,10 @@ export default function App() {
       </head>
       <body>
         <AppProvider i18n={enTranslations}>
-          <Outlet />
+          {coreLaunch && <SubscriptionStatus setupOnly={setupOnly} />}
+          <CoreLaunchContext.Provider value={coreLaunch}>
+            <Outlet />
+          </CoreLaunchContext.Provider>
         </AppProvider>
         <ScrollRestoration />
         <Scripts />

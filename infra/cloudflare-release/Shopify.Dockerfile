@@ -43,7 +43,7 @@ COPY --from=runtime-dependencies /opt/shopify-runtime/node_modules ./packages/sh
 COPY --from=build /workspace/packages/shopify-app/package.json ./packages/shopify-app/package.json
 COPY --from=build /workspace/packages/shopify-app/build ./packages/shopify-app/build
 COPY packages/shopify-app/app/public-runtime-policy.mjs packages/shopify-app/app/preview-origins.mjs ./packages/shopify-app/app/
-COPY infra/cloudflare-release/start.mjs infra/cloudflare-release/runtime-policy.mjs ./infra/cloudflare-release/
+COPY infra/cloudflare-release/start.mjs infra/cloudflare-release/runtime-policy.mjs infra/cloudflare-release/billing-policy.mjs ./infra/cloudflare-release/
 USER node
 EXPOSE 3000
 STOPSIGNAL SIGTERM

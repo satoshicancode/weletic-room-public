@@ -1,10 +1,11 @@
 import { Prisma } from "@prisma/client";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   appendPointsLedgerEntry,
   appendPointsLedgerEntryWithReceipt,
   OptimisticConcurrencyError,
 } from "../../lib/weletic/loyalty/ledger";
+import * as billing from "../../lib/weletic/shopify/app-pricing-service";
 
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 const findUnique = vi.fn();
@@ -114,3 +115,26 @@ it("does not adopt conflicting replay evidence", async () => {
     "idempotency conflict",
   );
 });
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+it.each(["REDEMPTION_REFUND", "REDEMPTION_CANCELLATION"])(
+  "keeps first-time %s compensation available with expired subscription",
+  async (referenceType) => {
+    vi.stubEnv("WELETIC_FEATURE_PROFILE", "core-v1");
+    const check = vi
+      .spyOn(billing, "assertStoreSubscriptionForNewBenefit")
+      .mockRejectedValue(new billing.SubscriptionVerificationRequiredError());
+    const result = await appendPointsLedgerEntryWithReceipt({
+      ...params,
+      entryType: "MANUAL_ADJUSTMENT",
+      referenceType,
+      idempotencyKey: "compensate:existing",
+    });
+    expect(result.created).toBe(true);
+    expect(result.entry.balanceAfter).toBe(BigInt(30));
+    expect(check).not.toHaveBeenCalled();
+  },
+);

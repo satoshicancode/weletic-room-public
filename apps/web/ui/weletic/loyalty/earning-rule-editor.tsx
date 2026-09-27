@@ -3,6 +3,7 @@ import React from "react";
 import { isCustomerIntentTriggerCode } from "../../../lib/weletic/loyalty/customer-intent-policy";
 import type { EarningRuleFields } from "../../../lib/weletic/loyalty/earning-rule-contract";
 import { requiresUnverifiedSubscriptionCycle } from "../../../lib/weletic/loyalty/purchase-policy";
+import { useCoreLaunch } from "../core-launch-context";
 import { earningRuleCopy, type EarningRuleLocale } from "./earning-rule-copy";
 import {
   changeEarningRuleTrigger,
@@ -25,6 +26,7 @@ export function EarningRuleEditor({
   disabled?: boolean;
   locale?: EarningRuleLocale;
 }) {
+  const coreLaunch = useCoreLaunch();
   const copy = earningRuleCopy[locale];
   const id = React.useId();
   const [invalid, setInvalid] = React.useState<string[]>([]);
@@ -96,17 +98,26 @@ export function EarningRuleEditor({
           } else update(key, selected);
         }}
       >
-        {Object.entries<string>(options).map(([optionKey, label]) => (
-          <option
-            key={optionKey}
-            value={optionKey}
-            disabled={
-              key === "subscriptionCadence" && optionKey !== "every_payment"
-            }
-          >
-            {label}
-          </option>
-        ))}
+        {Object.entries<string>(options)
+          .filter(
+            ([optionKey]) =>
+              !coreLaunch ||
+              (key !== "triggerCode" && key !== "purchaseType") ||
+              (key === "triggerCode"
+                ? optionKey === "order_paid"
+                : optionKey === "one_time"),
+          )
+          .map(([optionKey, label]) => (
+            <option
+              key={optionKey}
+              value={optionKey}
+              disabled={
+                key === "subscriptionCadence" && optionKey !== "every_payment"
+              }
+            >
+              {label}
+            </option>
+          ))}
       </select>
     </label>
   );

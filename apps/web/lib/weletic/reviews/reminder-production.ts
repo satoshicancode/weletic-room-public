@@ -2,6 +2,7 @@ import { encrypt } from "@/lib/encryption";
 import { createWeleticId } from "@/lib/weletic/ids";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { isCoreLaunch } from "../core-launch-policy";
 import { hashReviewToken, ReviewError } from "./contracts";
 import { planReviewReminders } from "./reminder-schedule";
 
@@ -22,6 +23,7 @@ export async function prepareReviewRemindersInTransaction(
   tx: Prisma.TransactionClient,
   input: z.infer<typeof identity>,
 ) {
+  if (isCoreLaunch()) return 0;
   const { storeId, requestId, installationGeneration, token } =
     identity.parse(input);
   const request = await tx.weleticReviewRequest.findFirst({

@@ -200,3 +200,66 @@ describe("installation status gateway", () => {
     );
   });
 });
+
+describe("hosted billing credential handoff", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("waits for authenticated credential publication before returning paid access", async () => {
+    vi.stubEnv("SHOPIFY_API_KEY", "public-test");
+    vi.stubEnv("SHOPIFY_APP_HANDLE", "weletic-room");
+    vi.stubEnv("WELETIC_SUPPORT_EMAIL", "support@example.test");
+    mocks.gateway.mockResolvedValue({
+      status: "paid",
+      validUntil: "2026-09-26T00:05:00Z",
+      credentialsChanged: true,
+    });
+    let finish!: () => void;
+    let reached!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const bootstrap = vi
+      .fn()
+      .mockResolvedValueOnce({})
+      .mockImplementationOnce(async () => {
+        reached();
+        await gate;
+      });
+    const action = createInstallationStatusAction(
+      vi.fn().mockResolvedValue(actor),
+      true,
+      bootstrap,
+    );
+    let returned = false;
+    const response = action(request()).then((value) => {
+      returned = true;
+      return value;
+    });
+    await waiting;
+    expect(returned).toBe(false);
+    finish();
+    expect((await response).status).toBe(200);
+    expect(bootstrap).toHaveBeenCalledTimes(2);
+  });
+  it("fails closed when authenticated republication fails", async () => {
+    vi.stubEnv("SHOPIFY_API_KEY", "public-test");
+    mocks.gateway.mockResolvedValue({
+      status: "paid",
+      validUntil: "2026-09-26T00:05:00Z",
+      credentialsChanged: true,
+    });
+    const bootstrap = vi
+      .fn()
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("synthetic failure"));
+    const response = await createInstallationStatusAction(
+      vi.fn().mockResolvedValue(actor),
+      true,
+      bootstrap,
+    )(request());
+    expect(response.status).toBe(503);
+    expect(JSON.stringify(await response.json())).not.toContain("paid");
+  });
+});

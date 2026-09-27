@@ -1,5 +1,11 @@
 # Company-store loyalty and reviews — completion checklist
 
+> **September 26 scope reset:** [Core launch checklist](core-launch-checklist.md)
+> is authoritative for launch scope and priority. The inventories below preserve
+> historical evidence and deferred work; full parity, imports and advanced
+> features no longer block launch. Pricing is USD 500/month plus a private free
+> company plan under [ADR 0045](../adr/0045-core-loyalty-reviews-launch.md).
+
 **September 24 release baseline:** [The v1 launch readiness index](v1-launch-readiness-2026-09-24.md)
 tracks every L01–L10, R01–R10 and S01–S06 capability, its next blocker and
 milestone. The reconciled public `main` is `e2ee111d3f9cae7f66488c304b0b0dcd874485e6`

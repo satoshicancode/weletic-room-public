@@ -1,5 +1,6 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import { enqueueOutboxJobFromProgramTransaction } from "@/lib/weletic/loyalty/outbox";
+import { isCoreLaunch } from "../core-launch-policy";
 import { ReviewError } from "./contracts";
 import { reviewPolicyAtOrderTime } from "./incentive-activation-history";
 import { readReviewIncentivePolicySnapshot } from "./incentive-policy";
@@ -24,6 +25,7 @@ export function createProspectiveStoreReviewRequest({
   fulfilledAt: Date;
   expectedInstallationGeneration: string;
 }) {
+  if (isCoreLaunch()) return Promise.resolve(null);
   if (!Number.isFinite(fulfilledAt.getTime()))
     throw new ReviewError("bad_request", "Invalid fulfillment time");
   return withReviewMutation(

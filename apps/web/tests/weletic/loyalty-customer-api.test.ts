@@ -19,6 +19,7 @@ import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referr
 import * as referralOperations from "@/lib/weletic/loyalty/referrals";
 import { validateIncrementalRewardConfig } from "@/lib/weletic/loyalty/rewards";
 import { serializeLoyaltyData } from "@/lib/weletic/loyalty/serialization";
+import * as billing from "@/lib/weletic/shopify/app-pricing-service";
 import {
   WeleticRedemptionStatus,
   WeleticRewardExchangeType,
@@ -124,6 +125,7 @@ describe("Customer Loyalty APIs & Surfaces", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     delete process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
   });
@@ -523,6 +525,60 @@ describe("Customer Loyalty APIs & Surfaces", () => {
       }),
     );
   });
+
+  it.each([true, false])(
+    "core wallet hides deferred features and gates new offers with current subscription=%s",
+    async (active) => {
+      const subscription = vi.spyOn(
+        billing,
+        "assertStoreSubscriptionForNewBenefit",
+      );
+      if (active) subscription.mockResolvedValue(undefined);
+      else
+        subscription.mockRejectedValue(
+          new billing.SubscriptionVerificationRequiredError(),
+        );
+      vi.stubEnv("WELETIC_FEATURE_PROFILE", "core-v1");
+      mockFullSummaryLifecycle({
+        programStatus: "active",
+        killSwitchActive: false,
+        referralRule: {
+          isActive: true,
+          advocateRewardKind: "points",
+          advocatePointsReward: BigInt(100),
+          refereeRewardKind: "points",
+          refereePointsReward: BigInt(100),
+        },
+      });
+      vi.mocked(prisma.weleticRewardDefinition.findMany).mockResolvedValue([]);
+      const link = vi
+        .spyOn(referralOperations, "ensureAccountReferralLink")
+        .mockRejectedValue(new Error("must not provision"));
+      const code = vi
+        .spyOn(referralOperations, "ensureAccountReferralCode")
+        .mockRejectedValue(new Error("must not provision"));
+      try {
+        const summary = await getCustomerLoyaltySummary({
+          storeId: "store_123",
+          shopifyCustomerId: "customer_lifecycle",
+        });
+        expect(summary).toMatchObject({
+          isEnrolled: true,
+          account: expect.objectContaining({ canParticipate: active }),
+          tier: null,
+          referral: null,
+          activeCampaigns: [],
+          pointsExpiry: { enabled: false },
+        });
+        expect(link).not.toHaveBeenCalled();
+        expect(code).not.toHaveBeenCalled();
+      } finally {
+        subscription.mockRestore();
+        link.mockRestore();
+        code.mockRestore();
+      }
+    },
+  );
 
   it("does not provision referral identity for internal read-only summaries", async () => {
     mockFullSummaryLifecycle({

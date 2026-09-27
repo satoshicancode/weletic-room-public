@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { reviewCollectionPolicySchema } from "../../../../apps/web/lib/weletic/reviews/collection-contract";
+import { useCoreLaunch } from "../../../../apps/web/ui/weletic/core-launch-context";
 import type { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
 import { reviewCollectionCopy } from "../review-collection-copy";
 import { StaffAccessClientError } from "../staff-access-client";
@@ -14,6 +15,7 @@ export function ReviewCollectionPanel({
   locale: keyof typeof reviewCollectionCopy;
 }) {
   const copy = reviewCollectionCopy[locale];
+  const coreLaunch = useCoreLaunch();
   const id = useId();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [send, setSend] = useState("");
@@ -54,10 +56,10 @@ export function ReviewCollectionPanel({
     setSettings(fresh);
     setSend(String(fresh.policy.sendAfterDays));
     setExpiry(String(fresh.policy.expiresAfterDays));
-    setReminders(fresh.policy.reminderAfterDays.join(", "));
+    setReminders(coreLaunch ? "" : fresh.policy.reminderAfterDays.join(", "));
     setEmail(fresh.policy.requestEmailEnabled);
     setPhotos(fresh.policy.photoUploadsEnabled);
-    setPublish(fresh.policy.autoPublish);
+    setPublish(coreLaunch ? false : fresh.policy.autoPublish);
     setConfirmed(false);
   };
   const load = async () => {
@@ -100,10 +102,10 @@ export function ReviewCollectionPanel({
     const parsed = reviewCollectionPolicySchema.safeParse({
       sendAfterDays: Number(send),
       expiresAfterDays: Number(expiry),
-      reminderAfterDays: days.map(Number),
+      reminderAfterDays: coreLaunch ? [] : days.map(Number),
       requestEmailEnabled: email,
       photoUploadsEnabled: photos,
-      autoPublish: publish,
+      autoPublish: coreLaunch ? false : publish,
     });
     if (!parsed.success) {
       setNotice("invalid");
@@ -201,45 +203,49 @@ export function ReviewCollectionPanel({
                 />
               </label>
             ))}
-            <label htmlFor={`${id}-reminders`}>
-              {copy.reminders}
-              <input
-                id={`${id}-reminders`}
-                value={reminders}
-                maxLength={24}
-                aria-describedby={`${id}-note`}
-                onChange={(event) => {
-                  setReminders(event.target.value);
-                  changed();
-                }}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  boxSizing: "border-box",
-                }}
-              />
-            </label>
+            {!coreLaunch && (
+              <label htmlFor={`${id}-reminders`}>
+                {copy.reminders}
+                <input
+                  id={`${id}-reminders`}
+                  value={reminders}
+                  maxLength={24}
+                  aria-describedby={`${id}-note`}
+                  onChange={(event) => {
+                    setReminders(event.target.value);
+                    changed();
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </label>
+            )}
             {(
               [
                 ["email", copy.email, email, setEmail],
                 ["photos", copy.photos, photos, setPhotos],
                 ["publish", copy.publish, publish, setPublish],
               ] as const
-            ).map(([key, label, checked, update]) => (
-              <label key={key} htmlFor={`${id}-${key}`}>
-                <input
-                  id={`${id}-${key}`}
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(event) => {
-                    update(event.target.checked);
-                    changed();
-                  }}
-                />{" "}
-                {label}
-              </label>
-            ))}
-            <p id={`${id}-note`}>{copy.note}</p>
+            )
+              .filter(([key]) => !coreLaunch || key !== "publish")
+              .map(([key, label, checked, update]) => (
+                <label key={key} htmlFor={`${id}-${key}`}>
+                  <input
+                    id={`${id}-${key}`}
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => {
+                      update(event.target.checked);
+                      changed();
+                    }}
+                  />{" "}
+                  {label}
+                </label>
+              ))}
+            <p id={`${id}-note`}>{coreLaunch ? copy.coreNote : copy.note}</p>
             <label htmlFor={`${id}-confirm`}>
               <input
                 id={`${id}-confirm`}

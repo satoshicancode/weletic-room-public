@@ -1,5 +1,9 @@
 # Native reviews implementation
 
+> Current launch authority: [core launch checklist](core-launch-checklist.md).
+> The historical expanded scope below is deferred where it conflicts with that
+> checklist; publication-based reward reversal is not the participation policy.
+
 **Historical first-release contract.** The [combined completion checklist](company-store-completion.md)
 supersedes this document's narrower scope and publication-coupled incentive
 policy. Product/store reviews, open submissions, video, imports, Q&A and manual

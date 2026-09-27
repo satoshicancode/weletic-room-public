@@ -7,7 +7,13 @@ import {
   PUBLIC_LOYALTY_CLIENT_ID,
 } from "../../packages/shopify-app/app/public-runtime-policy.mjs";
 
-export function stagePreview(root, config, retainedWeb, retainedShopify) {
+export function stagePreview(
+  root,
+  config,
+  retainedWeb,
+  retainedShopify,
+  coreConfigPath,
+) {
   const app = previewOrigin(config.appOrigin);
   const api = previewOrigin(config.apiOrigin);
   if (
@@ -16,7 +22,12 @@ export function stagePreview(root, config, retainedWeb, retainedShopify) {
   )
     throw new Error("Invalid preview pair");
   // Paths become a local CLI command, never accept shell syntax.
-  for (const path of [root, retainedWeb, retainedShopify]) {
+  for (const path of [
+    root,
+    retainedWeb,
+    retainedShopify,
+    ...(coreConfigPath === undefined ? [] : [coreConfigPath]),
+  ]) {
     if (!isAbsolute(path) || !/^[A-Za-z0-9_./-]+$/.test(path))
       throw new Error("Unsafe staging path");
   }
@@ -50,7 +61,7 @@ export function stagePreview(root, config, retainedWeb, retainedShopify) {
     mode: 0o600,
     flag: "wx",
   });
-  const command = `node ${join(root, "infra/shopify-development/run.mjs")} --confirm-local-runtime --app=shopify --retained-web=${retainedWeb} --retained-shopify=${retainedShopify} --preview-config=${configPath}`;
+  const command = `node ${join(root, "infra/shopify-development/run.mjs")} --confirm-local-runtime --app=shopify --retained-web=${retainedWeb} --retained-shopify=${retainedShopify} --preview-config=${configPath}${coreConfigPath === undefined ? "" : ` --core-config=${coreConfigPath}`}`;
   writeFileSync(
     join(directory, "web/shopify.web.toml"),
     `roles = ["frontend", "backend"]\nport = 3002\n[commands]\ndev = ${JSON.stringify(command)}\n`,

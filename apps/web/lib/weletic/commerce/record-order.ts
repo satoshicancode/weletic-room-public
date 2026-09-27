@@ -47,6 +47,7 @@ import {
   type WeleticCommissionRule,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { isCoreLaunch } from "../core-launch-policy";
 import {
   classifyLifetimeShopifyCustomerOrder,
   isExplicitShopifyCommissionRuleKey,
@@ -461,16 +462,18 @@ async function finalizeOrderLoyalty({
   const { evaluateReferralFriendClaimQualification } = await import(
     "@/lib/weletic/loyalty/referral-friend-claim"
   );
-  const friendClaim = await evaluateReferralFriendClaimQualification({
-    storeId,
-    orderId: order.id,
-    friendEmail: referralFriendEmail,
-    refereeShopperId: shopperId,
-    orderSubtotal: order.shopNet,
-    currency: order.shopCurrency,
-    customerOrderSequence,
-    loyaltyMaintenancePermit,
-  });
+  const friendClaim = isCoreLaunch()
+    ? { qualified: false }
+    : await evaluateReferralFriendClaimQualification({
+        storeId,
+        orderId: order.id,
+        friendEmail: referralFriendEmail,
+        refereeShopperId: shopperId,
+        orderSubtotal: order.shopNet,
+        currency: order.shopCurrency,
+        customerOrderSequence,
+        loyaltyMaintenancePermit,
+      });
   if (!shopperId) {
     return { shopperId: null, loyaltyLedgerEntry: null };
   }
@@ -504,7 +507,7 @@ async function finalizeOrderLoyalty({
   const { evaluateReferralQualification } = await import(
     "@/lib/weletic/loyalty/referrals"
   );
-  if (!friendClaim.qualified) {
+  if (!isCoreLaunch() && !friendClaim.qualified) {
     await evaluateReferralQualification({
       storeId,
       orderId: order.id,
@@ -519,10 +522,11 @@ async function finalizeOrderLoyalty({
   }
 
   const { evaluateAccountTier } = await import("@/lib/weletic/loyalty/tiers");
-  await evaluateAccountTier(loyaltyAccount.id, {
-    expectedInstallationGeneration,
-    loyaltyMaintenancePermit,
-  });
+  if (!isCoreLaunch())
+    await evaluateAccountTier(loyaltyAccount.id, {
+      expectedInstallationGeneration,
+      loyaltyMaintenancePermit,
+    });
 
   return { shopperId, loyaltyLedgerEntry };
 }

@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasRetainedEnvironment } from "./init.mjs";
 import { buildRuntimeEnvironment } from "./runtime-policy.mjs";
+import { readLocalServicePorts } from "./service-ports.mjs";
 import { privateCredentialFiles } from "./verify.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -20,7 +21,13 @@ async function main() {
     throw new Error("Unsafe probe configuration");
   const web = parse(join(root, "apps/web/.env.loyalty.local"));
   const shopify = parse(join(root, "packages/shopify-app/.env.loyalty.local"));
-  const env = buildRuntimeEnvironment("shopify", web, shopify, process.env);
+  const env = buildRuntimeEnvironment(
+    "shopify",
+    web,
+    shopify,
+    process.env,
+    readLocalServicePorts(root),
+  );
   const checks = [];
   async function check(id, operation) {
     try {

@@ -95,13 +95,17 @@ export default function IndexPage() {
     null,
   );
   const inFlight = useRef(false);
+  const reloadQueued = useRef(false);
   const mounted = useRef(true);
   const notice = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (error) notice.current?.focus();
   }, [error]);
   const reload = useCallback(async () => {
-    if (inFlight.current) return;
+    if (inFlight.current) {
+      reloadQueued.current = true;
+      return;
+    }
     inFlight.current = true;
     setBusy(true);
     setError(null);
@@ -123,7 +127,13 @@ export default function IndexPage() {
         );
     } finally {
       inFlight.current = false;
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        if (reloadQueued.current) {
+          reloadQueued.current = false;
+          void reload();
+        }
+      }
     }
   }, [read, readStatus]);
   const reconnect = useCallback(async () => {
@@ -152,7 +162,12 @@ export default function IndexPage() {
   useEffect(() => {
     mounted.current = true;
     void reload();
+    const refreshed = () => {
+      void reload();
+    };
+    window.addEventListener("weletic-subscription-refreshed", refreshed);
     return () => {
+      window.removeEventListener("weletic-subscription-refreshed", refreshed);
       mounted.current = false;
     };
   }, [reload]);

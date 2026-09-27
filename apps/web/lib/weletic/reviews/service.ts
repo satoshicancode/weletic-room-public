@@ -8,6 +8,7 @@ import {
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { CoreLaunchDeferredError, isCoreLaunch } from "../core-launch-policy";
 import {
   reviewCollectionPolicySchema,
   reviewCollectionWriteInputSchema,
@@ -154,6 +155,12 @@ async function writeReviewSettings(
     reminderAfterDays:
       collection?.policy.reminderAfterDays ?? previous?.reminderAfterDays ?? [],
   });
+  if (
+    isCoreLaunch() &&
+    data.enabled &&
+    (policy.autoPublish || policy.reminderAfterDays.length > 0)
+  )
+    throw new CoreLaunchDeferredError();
   const settings = await tx.weleticReviewSettings.upsert({
     where: { storeId },
     create: {
@@ -342,6 +349,11 @@ export async function submitNativeReview(storeId: string, input: unknown) {
       generation,
       now,
     );
+    if (isCoreLaunch() && settings.autoPublish)
+      throw new ReviewError(
+        "disabled",
+        "Manual publication is required for the core launch",
+      );
     assertReviewPolicyReference(request.incentivePolicyId);
     if (request.incentivePolicyId !== null) {
       if (!generation)

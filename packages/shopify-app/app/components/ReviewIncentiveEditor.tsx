@@ -3,6 +3,8 @@ import {
   merchantReviewIncentiveDraftInputSchema,
   type MerchantReviewIncentiveDraftInput,
 } from "../../../../apps/web/lib/weletic/reviews/incentive-merchant-contract";
+import { useCoreLaunch } from "../../../../apps/web/ui/weletic/core-launch-context";
+import { isCoreReviewIncentiveDraft } from "../core-review-policy";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { reviewIncentiveActivationCopy } from "../review-incentive-activation-copy";
 import { reviewIncentiveEditorCopy } from "../review-incentive-editor-copy";
@@ -38,7 +40,12 @@ export function ReviewIncentiveEditor({
   focusHeading?: boolean;
 }) {
   const copy = reviewIncentiveEditorCopy[locale];
-  const initial = policy.latestPolicy?.draft ?? { kind: "none" as const };
+  const coreLaunch = useCoreLaunch();
+  const saved = policy.latestPolicy?.draft;
+  const initial =
+    saved && (!coreLaunch || isCoreReviewIncentiveDraft(saved))
+      ? saved
+      : { kind: "none" as const };
   const [draft, setDraft] = useState<Draft>(initial);
   const [status, setStatus] = useState<
     | "idle"
@@ -129,6 +136,7 @@ export function ReviewIncentiveEditor({
           });
           if (
             !parsed.success ||
+            (coreLaunch && !isCoreReviewIncentiveDraft(draft)) ||
             (draft.kind === "coupon" &&
               !coupons.some((coupon) => coupon.id === draft.rewardDefinitionId))
           ) {
@@ -178,11 +186,13 @@ export function ReviewIncentiveEditor({
               updateKind(event.target.value as Draft["kind"])
             }
           >
-            {(["none", "points", "coupon"] as const).map((kind) => (
-              <option key={kind} value={kind}>
-                {copy[kind]}
-              </option>
-            ))}
+            {(["none", "points", "coupon"] as const)
+              .filter((kind) => !coreLaunch || kind !== "coupon")
+              .map((kind) => (
+                <option key={kind} value={kind}>
+                  {copy[kind]}
+                </option>
+              ))}
           </select>
           {draft.kind === "points" &&
             (
@@ -192,27 +202,34 @@ export function ReviewIncentiveEditor({
                 ["videoBonusPoints", "video"],
                 ["maxPoints", "cap"],
               ] as const
-            ).map(([field, label]) => (
-              <div key={field} style={{ display: "grid", gap: 4 }}>
-                <label htmlFor={`${id}-${field}`}>{copy[label]}</label>
-                <input
-                  id={`${id}-${field}`}
-                  name={field}
-                  style={{
-                    width: "100%",
-                    minWidth: 0,
-                    boxSizing: "border-box",
-                  }}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  maxLength={19}
-                  value={draft[field]}
-                  onChange={(event) =>
-                    setDraft({ ...draft, [field]: event.target.value })
-                  }
-                />
-              </div>
-            ))}
+            )
+              .filter(
+                ([field]) =>
+                  !coreLaunch ||
+                  field === "basePoints" ||
+                  field === "maxPoints",
+              )
+              .map(([field, label]) => (
+                <div key={field} style={{ display: "grid", gap: 4 }}>
+                  <label htmlFor={`${id}-${field}`}>{copy[label]}</label>
+                  <input
+                    id={`${id}-${field}`}
+                    name={field}
+                    style={{
+                      width: "100%",
+                      minWidth: 0,
+                      boxSizing: "border-box",
+                    }}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    maxLength={19}
+                    value={draft[field]}
+                    onChange={(event) =>
+                      setDraft({ ...draft, [field]: event.target.value })
+                    }
+                  />
+                </div>
+              ))}
           {draft.kind === "coupon" && (
             <div style={{ display: "grid", gap: 4 }}>
               <label htmlFor={`${id}-coupon`}>{copy.couponLabel}</label>
@@ -250,6 +267,8 @@ export function ReviewIncentiveEditor({
         </fieldset>
       </form>
       {reviewActivation &&
+        (!coreLaunch ||
+          isCoreReviewIncentiveDraft(policy.latestPolicy?.draft)) &&
         policy.latestPolicy?.disclosureState === "available" &&
         policy.latestPolicy.policyId !== policy.activePolicy?.policyId && (
           <button

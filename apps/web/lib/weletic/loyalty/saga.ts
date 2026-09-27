@@ -67,6 +67,12 @@ import {
   WeleticRewardArtifactKind,
   WeleticRewardStatus,
 } from "@prisma/client";
+import { assertCoreLaunchReward } from "../core-launch-policy";
+import { assertStoreSubscriptionForNewBenefit } from "../shopify/app-pricing-service";
+import {
+  DEFAULT_REWARD_PURCHASE_POLICY,
+  readLoyaltyPurchasePolicy,
+} from "./purchase-policy";
 import { createRewardCommunicationOrigin } from "./reward-communication-origin";
 import {
   assertRewardCommunicationOrigin,
@@ -366,6 +372,8 @@ async function provisionDiscountSagaUnlocked(
       };
     }
 
+    await assertStoreSubscriptionForNewBenefit(tx, storeId);
+
     // 2. Validate Reward Definition only for a new reservation. A retry is
     // fully defined by its immutable provisioning snapshot and must remain
     // recoverable after the merchant edits, disables, or deletes the reward.
@@ -377,6 +385,13 @@ async function provisionDiscountSagaUnlocked(
       throw new Error("Reward definition not found for this Shopify store.");
     }
 
+    assertCoreLaunchReward({
+      ...reward,
+      purchaseType: readLoyaltyPurchasePolicy(
+        reward.purchasePolicy,
+        DEFAULT_REWARD_PURCHASE_POLICY,
+      ).purchaseType,
+    });
     if (!requestedCode && reward.rewardType === "gift_card") {
       generatedCode = `WLGC${nanoid(12).toUpperCase()}`;
     } else if (!requestedCode && reward.rewardType === "store_credit") {

@@ -7,6 +7,7 @@ import {
   shopifyApp,
 } from "@shopify/shopify-app-remix/server";
 import { CoordinatedWeleticSessionStorage } from "./coordinated-session-storage.server";
+import { assertCoreLaunchMerchantRoute } from "./core-launch-routes.server";
 import { createMerchantAuthenticator } from "./merchant-authentication.server";
 import { verifyShopifyMerchantIdentity } from "./merchant-identity.server";
 import { assertPublicShopifyRuntime } from "./public-runtime-policy.mjs";
@@ -69,8 +70,12 @@ export const withAuthenticatedMerchant = createMerchantAuthenticator({
 });
 export const authenticate = {
   ...shopify.authenticate,
-  admin: (...args: Parameters<typeof shopify.authenticate.admin>) =>
-    coordinatedStorage.runOperation(() => shopify.authenticate.admin(...args)),
+  admin: (...args: Parameters<typeof shopify.authenticate.admin>) => {
+    assertCoreLaunchMerchantRoute(args[0]);
+    return coordinatedStorage.runOperation(() =>
+      shopify.authenticate.admin(...args),
+    );
+  },
   public: {
     ...shopify.authenticate.public,
     appProxy: (

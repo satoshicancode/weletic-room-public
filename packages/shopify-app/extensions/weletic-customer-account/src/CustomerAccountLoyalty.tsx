@@ -15,6 +15,7 @@ import {
   hubRequestError,
   hubText,
 } from "./localization";
+import { CORE_LAUNCH } from "./release-profile";
 import { accountReviewProduct, accountReviewTransport } from "./reviews-client";
 import { accountReviewCopy, accountReviewLocale } from "./reviews-copy";
 import type { ReviewProductQuery } from "./reviews-products";
@@ -1349,13 +1350,13 @@ export function CustomerAccountModules() {
   } catch {
     /* Missing navigation keeps the Loyalty home. */
   }
-  return storeReviews ? (
+  return !CORE_LAUNCH && storeReviews ? (
     <CustomerAccountStoreReviews
       language={hubLocale()}
       transport={storeReviewTransport.current}
       onPendingChange={setStoreReviewPending}
     />
-  ) : reviews ? (
+  ) : !CORE_LAUNCH && reviews ? (
     <CustomerAccountReviews
       productId={productId}
       language={hubLocale()}
@@ -1369,15 +1370,18 @@ export function CustomerAccountModules() {
 }
 
 function ReviewsEntry() {
+  if (CORE_LAUNCH) return null;
   const locale = accountReviewLocale(hubLocale());
   return (
     <s-stack direction="block" gap="small">
       <s-button href="extension://reviews?view=reviews">
         {accountReviewCopy[locale].browseReviews}
       </s-button>
-      <s-button href="extension://reviews?view=store-reviews">
-        {accountStoreReviewCopy[locale].browse}
-      </s-button>
+      {!CORE_LAUNCH && (
+        <s-button href="extension://reviews?view=store-reviews">
+          {accountStoreReviewCopy[locale].browse}
+        </s-button>
+      )}
     </s-stack>
   );
 }
@@ -1905,79 +1909,81 @@ export function CustomerAccountLoyalty() {
                 </s-stack>
               </s-section>
 
-              <s-section heading={hubText("currentVip")}>
-                <s-stack direction="block" gap="small-200">
-                  <s-heading>{tier}</s-heading>
-                  {summary.tier?.currentTier?.pointsMultiplier &&
-                  summary.tier.currentTier.pointsMultiplier > 1 ? (
-                    <s-badge icon="star">
-                      {hubText("earningRate", {
-                        multiplier: hubNumber(
-                          summary.tier.currentTier.pointsMultiplier,
-                        ),
-                      })}
-                    </s-badge>
-                  ) : null}
-                  {summary.tier?.tierExpiresAt ? (
-                    <s-text color="subdued" type="small">
-                      {hubText("attainedUntil", {
-                        date:
-                          formatCustomerRewardDate(
-                            summary.tier.tierExpiresAt,
-                          ) || "",
-                      })}
-                    </s-text>
-                  ) : null}
-                  {nextTier && tierProgress ? (
-                    <>
-                      <s-text>
-                        {hubText("tierProgress", {
-                          percent: hubNumber(tierProgress.percent),
-                          tier: nextTier.name,
+              {!CORE_LAUNCH && (
+                <s-section heading={hubText("currentVip")}>
+                  <s-stack direction="block" gap="small-200">
+                    <s-heading>{tier}</s-heading>
+                    {summary.tier?.currentTier?.pointsMultiplier &&
+                    summary.tier.currentTier.pointsMultiplier > 1 ? (
+                      <s-badge icon="star">
+                        {hubText("earningRate", {
+                          multiplier: hubNumber(
+                            summary.tier.currentTier.pointsMultiplier,
+                          ),
+                        })}
+                      </s-badge>
+                    ) : null}
+                    {summary.tier?.tierExpiresAt ? (
+                      <s-text color="subdued" type="small">
+                        {hubText("attainedUntil", {
+                          date:
+                            formatCustomerRewardDate(
+                              summary.tier.tierExpiresAt,
+                            ) || "",
                         })}
                       </s-text>
-                      <s-progress
-                        value={tierProgress.percent}
-                        max={100}
-                        accessibilityLabel={hubText("progressToward", {
-                          name: nextTier.name,
-                        })}
-                      />
-                      {tierProgress.milestoneMode !== "points_earned" ? (
-                        <s-text color="subdued" type="small">
-                          {hubText("spendRemaining", {
-                            amount: formatStoreMinorCurrency(
-                              tierProgress.spendRemaining,
-                              currency,
-                            ),
-                          })}
-                        </s-text>
-                      ) : null}
-                      {tierProgress.milestoneMode !== "amount_spent" ? (
-                        <s-text color="subdued" type="small">
-                          {hubText("pointsToTier", {
-                            points: formatCustomerPoints(
-                              tierProgress.pointsRemaining,
-                              pointNameSingular,
-                              pointNamePlural,
-                            ),
+                    ) : null}
+                    {nextTier && tierProgress ? (
+                      <>
+                        <s-text>
+                          {hubText("tierProgress", {
+                            percent: hubNumber(tierProgress.percent),
                             tier: nextTier.name,
                           })}
                         </s-text>
-                      ) : null}
-                    </>
-                  ) : (
-                    <s-text color="subdued">
-                      {customerVipCompletionLabel(summary.tier)}
-                    </s-text>
-                  )}
-                  {(summary.tier?.perks || []).map((perk) => (
-                    <s-badge key={perk} icon="check-circle">
-                      {perk}
-                    </s-badge>
-                  ))}
-                </s-stack>
-              </s-section>
+                        <s-progress
+                          value={tierProgress.percent}
+                          max={100}
+                          accessibilityLabel={hubText("progressToward", {
+                            name: nextTier.name,
+                          })}
+                        />
+                        {tierProgress.milestoneMode !== "points_earned" ? (
+                          <s-text color="subdued" type="small">
+                            {hubText("spendRemaining", {
+                              amount: formatStoreMinorCurrency(
+                                tierProgress.spendRemaining,
+                                currency,
+                              ),
+                            })}
+                          </s-text>
+                        ) : null}
+                        {tierProgress.milestoneMode !== "amount_spent" ? (
+                          <s-text color="subdued" type="small">
+                            {hubText("pointsToTier", {
+                              points: formatCustomerPoints(
+                                tierProgress.pointsRemaining,
+                                pointNameSingular,
+                                pointNamePlural,
+                              ),
+                              tier: nextTier.name,
+                            })}
+                          </s-text>
+                        ) : null}
+                      </>
+                    ) : (
+                      <s-text color="subdued">
+                        {customerVipCompletionLabel(summary.tier)}
+                      </s-text>
+                    )}
+                    {(summary.tier?.perks || []).map((perk) => (
+                      <s-badge key={perk} icon="check-circle">
+                        {perk}
+                      </s-badge>
+                    ))}
+                  </s-stack>
+                </s-section>
+              )}
             </s-stack>
           </s-grid>
         </s-query-container>
