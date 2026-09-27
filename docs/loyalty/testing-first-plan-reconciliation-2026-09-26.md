@@ -471,3 +471,38 @@ existing 4.5 GiB heap/worker configuration and generated all 353 static pages.
 Provider-configuration warnings under synthetic build inputs and Shopify
 sourcemap warnings were emitted; both builds completed with exit zero.
 No build configuration, dependencies or CI pipeline changed.
+
+## Core coupon issuer crash checkpoint — September 27
+
+The isolated reward lifecycle suite now kills an actual child process with
+`SIGKILL` at two issuance boundaries: after the synthetic provider accepts the
+serialized create but before its response reaches the saga, and after the saga
+returns following committed issuance. The first retains a provisioning reservation
+and no reward event; the second retains issued state and one event.
+
+The parent retains the synthetic provider record across process death, expires
+the fixture subscription, and invokes the production recovery handler twice.
+Both paths converge on one coupon record, one points debit, one reward-redeemed
+Flow event and a confirmed issuance timestamp, without another create or
+deactivation. An independent SQL ledger sum matches the cached wallet balance.
+
+All seven core reward lifecycle cases pass together; the two new crash cases
+also pass in isolation. Legacy compatibility passes three cases with four
+core-only skips. Web type-check, focused lint/formatting and independent
+adversarial review passed. Runtime source is unchanged from the previously
+verified application builds.
+
+This establishes local SQL crash recovery only. Shopify transport and Redis
+coordination are synthetic; no actual coupon exists. Redis lease expiry,
+supervised worker restart and installed checkout remain required. Child
+execution validates the disposable database/principal, uses an allowlisted
+environment, rejects external network calls, and emits only fixed failure stages
+and source basename/line diagnostics.
+
+After the memory-pressure pause, Docker reassigned the dedicated reward-test
+MySQL loopback port from 53041 to 60101 while retaining its data volume. The
+existing guard refused the stale endpoint; the private reward test connection
+was updated only after verifying the named container, loopback binding and
+retained volume. Reinspect current ownership and bindings before reusing any
+older private runner; historical port values are not current-target authority.
+The main isolated development SQL ports remain 13307/13902.

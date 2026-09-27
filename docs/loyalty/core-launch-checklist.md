@@ -170,3 +170,9 @@ The [core merchant Reviews interface](testing-first-plan-reconciliation-2026-09-
 loads participation settings without the disabled coupon catalog and hides
 deferred controls. Seventy focused UI tests and both application type-checks
 pass; installed browser acceptance remains open.
+
+The [coupon issuer crash checkpoint](testing-first-plan-reconciliation-2026-09-26.md#core-coupon-issuer-crash-checkpoint--september-27)
+adds real process termination before the provider response and after committed
+issuance. Seven core SQL cases pass, including single-debit/event recovery after
+billing expiry. Provider and Redis boundaries remain synthetic; deployed worker
+supervision and actual checkout acceptance remain open.

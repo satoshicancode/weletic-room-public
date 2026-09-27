@@ -1,5 +1,9 @@
+import type { ShopifyDiscountResult } from "@/lib/weletic/loyalty/shopify-discounts";
 import { PrismaClient, WeleticPointsLedgerEntryType } from "@prisma/client";
+import { fork } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import {
   afterAll,
   beforeAll,
@@ -147,6 +151,94 @@ async function sumPersistedLedgerPoints() {
     Array<{ balance: string }>
   >`SELECT CAST(COALESCE(SUM(\`pointsDelta\`), 0) AS CHAR) AS balance FROM \`WeleticPointsLedgerEntry\` WHERE \`storeId\` = ${storeId} AND \`accountId\` = ${accountId}`;
   return BigInt(result.balance);
+}
+
+async function crashCouponIssuer(
+  phase: "before_response" | "after_commit",
+  rewardDefinitionId: string,
+) {
+  requireDisposableTarget();
+  const resolve = createRequire(import.meta.url).resolve;
+  const child = fork(
+    fileURLToPath(new URL("./fixtures/reward-crash-child.ts", import.meta.url)),
+    [],
+    {
+      cwd: process.cwd(),
+      execArgv: [
+        "--conditions=react-server",
+        "--import",
+        resolve("tsx"),
+        "--import",
+        fileURLToPath(
+          new URL(
+            "../../scripts/runtime/async-local-storage.cjs",
+            import.meta.url,
+          ),
+        ),
+      ],
+      env: {
+        PATH: process.env.PATH,
+        NODE_ENV: "test",
+        DATABASE_URL: process.env.DATABASE_URL,
+        LOYALTY_REWARD_DATABASE_INTEGRATION: "1",
+        LOYALTY_REWARD_DATABASE_PORT:
+          process.env.LOYALTY_REWARD_DATABASE_PORT || "3309",
+        WELETIC_FEATURE_PROFILE: "core-v1",
+        SHOPIFY_API_KEY: appId,
+        SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1",
+        WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS:
+          process.env.WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS,
+        ENCRYPTION_KEY: Buffer.alloc(32, 0x37).toString("base64"),
+      },
+      stdio: ["ignore", "ignore", "ignore", "ipc"],
+    },
+  );
+  const exited = new Promise<NodeJS.Signals | null>((resolve) => {
+    child.once("close", (_code, signal) => resolve(signal));
+  });
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const remote = await new Promise<ShopifyDiscountResult>(
+      (resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Coupon crash barrier timed out")),
+          20_000,
+        );
+        child.once("error", () =>
+          reject(new Error("Coupon crash worker failed to start")),
+        );
+        child.once("exit", () =>
+          reject(new Error("Coupon crash worker exited early")),
+        );
+        child.once("message", (message) => {
+          const report = message as {
+            phase?: string;
+            remote?: ShopifyDiscountResult;
+            creates?: number;
+            stage?: string;
+            origin?: string;
+          };
+          if (report.phase === phase && report.remote && report.creates === 1)
+            resolve(report.remote);
+          else
+            reject(
+              new Error(
+                `Coupon crash worker missed its requested boundary (${report.stage ?? "unknown"}; ${report.origin ?? "unknown"})`,
+              ),
+            );
+        });
+        child.send({ phase, suffix, rewardDefinitionId });
+      },
+    );
+    expect(child.kill("SIGKILL")).toBe(true);
+    expect(await exited).toBe("SIGKILL");
+    return remote;
+  } finally {
+    clearTimeout(timer);
+    if (child.exitCode === null && child.signalCode === null)
+      child.kill("SIGKILL");
+    await exited;
+  }
 }
 
 describe("loyalty reward lifecycle on isolated MySQL", () => {
@@ -1165,6 +1257,112 @@ describe("loyalty reward lifecycle on isolated MySQL", () => {
       await handleRedemptionRecovery(storeId, payload, generation);
       await assertReservation("issued");
       expect(transport.lookup).toHaveBeenCalledTimes(lookupsAfterRecovery);
+    },
+  );
+
+  it.runIf(coreLaunch).each(["before_response", "after_commit"] as const)(
+    "recovers a coupon after a real issuer process crash %s with one debit and event",
+    async (phase) => {
+      const { handleRedemptionRecovery } = await import(
+        "@/lib/weletic/loyalty/outbox-worker"
+      );
+      const { RedemptionRecoveryPayloadSchema } = await import(
+        "@/lib/weletic/loyalty/outbox"
+      );
+      const balanceBefore = await sumPersistedLedgerPoints();
+      const rewardDefinitionId = `crash_reward_${suffix}_${phase}`;
+      await database.weleticRewardDefinition.create({
+        data: {
+          id: rewardDefinitionId,
+          storeId,
+          name: "Process crash coupon",
+          rewardType: "amount_off",
+          exchangeType: "fixed",
+          pointsCost: BigInt(100),
+          discountValue: 500,
+        },
+      });
+      const remote = await crashCouponIssuer(phase, rewardDefinitionId);
+      const redemption =
+        await database.weleticRewardRedemption.findFirstOrThrow({
+          where: { storeId, rewardDefinitionId },
+        });
+      expect(redemption.status).toBe(
+        phase === "before_response" ? "provisioning" : "issued",
+      );
+      expect(redemption.shopifyDiscountId).toBe(
+        phase === "before_response" ? null : remote.id,
+      );
+      const flowKey = `flow_trigger:weletic-reward-redeemed:${redemption.id}`;
+      expect(
+        await database.weleticLoyaltyOutboxJob.count({
+          where: { storeId, idempotencyKey: flowKey },
+        }),
+      ).toBe(phase === "before_response" ? 0 : 1);
+      const job = await database.weleticLoyaltyOutboxJob.findUniqueOrThrow({
+        where: {
+          storeId_idempotencyKey: {
+            storeId,
+            idempotencyKey: `recovery:${redemption.id}`,
+          },
+        },
+      });
+      const payload = RedemptionRecoveryPayloadSchema.parse(job.payload);
+      transport.create.mockReset();
+      transport.lookup.mockReset().mockResolvedValue(remote);
+      transport.deactivate.mockReset();
+      transport.credentials.mockReset().mockResolvedValue({
+        shopDomain: `${suffix}.myshopify.com`,
+        accessToken: "test-only-token",
+        source: "app_session",
+      });
+      await expireFixtureSubscription();
+      await handleRedemptionRecovery(storeId, payload, generation);
+      await handleRedemptionRecovery(storeId, payload, generation);
+      expect(transport.create).not.toHaveBeenCalled();
+      expect(transport.deactivate).not.toHaveBeenCalled();
+      expect(transport.lookup).toHaveBeenCalledTimes(
+        phase === "before_response" ? 1 : 0,
+      );
+      expect(
+        await database.weleticRewardRedemption.findUniqueOrThrow({
+          where: { id: redemption.id },
+          select: {
+            status: true,
+            shopifyDiscountId: true,
+            issuanceConfirmedAt: true,
+          },
+        }),
+      ).toEqual({
+        status: "issued",
+        shopifyDiscountId: remote.id,
+        issuanceConfirmedAt: expect.any(Date),
+      });
+      expect(
+        await database.weleticPointsLedgerEntry.findMany({
+          where: { storeId, accountId, referenceId: redemption.id },
+          select: { entryType: true, pointsDelta: true },
+        }),
+      ).toEqual([{ entryType: "REDEEM_REWARD", pointsDelta: BigInt(-100) }]);
+      expect(await sumPersistedLedgerPoints()).toBe(
+        balanceBefore - BigInt(100),
+      );
+      expect(
+        await database.weleticLoyaltyAccount.findUniqueOrThrow({
+          where: { id: accountId },
+          select: { cachedPointsBalance: true },
+        }),
+      ).toEqual({ cachedPointsBalance: balanceBefore - BigInt(100) });
+      expect(
+        await database.weleticLoyaltyOutboxJob.count({
+          where: { storeId, idempotencyKey: flowKey },
+        }),
+      ).toBe(1);
+      expect(
+        await database.weleticRewardRedemption.count({
+          where: { storeId, rewardDefinitionId },
+        }),
+      ).toBe(1);
     },
   );
 
