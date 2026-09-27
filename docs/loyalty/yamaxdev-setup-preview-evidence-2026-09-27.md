@@ -2,8 +2,10 @@
 
 Hiro explicitly approved the temporary setup-only preview. The bounded session
 ran against source `7d914547aa92fb7e59c45cc3489139f96e7bdced`; it is now stopped.
-Authentication and immutable identity were verified. This is not billing,
-customer-journey, cold-start reliability or persistent-runtime acceptance.
+Authentication and immutable identity were verified. A subsequent bounded cold
+start passed at `5b17457cfaf4bd1aac49f539ca3bfdbb99ca69df` after the development
+dependency scan fix. This is not billing, customer-journey, sustained reliability
+or persistent-runtime acceptance.
 
 ## Target and observations
 
@@ -60,9 +62,31 @@ documented `future.unstable_optimizeDeps` route scan eliminated the late
 optimization/reload and hook errors in the same fresh-cache local probe. The
 probe then reached the expected App Bridge error outside Shopify Admin (missing
 shop context). This verifies the local startup change, not authenticated
-interaction or a repeated installed cold start. The installed repeat remains
-required. This development-only setting does not change production builds; see
+interaction or a repeated installed cold start. This development-only setting
+does not change production builds; see
 [Remix dependency optimization](https://v2.remix.run/docs/guides/dependency-optimization/).
+
+The installed repeat at `5b17457cfaf4bd1aac49f539ca3bfdbb99ca69df` used a new
+temporary origin and an empty Vite dependency cache. The first authenticated
+browser load rendered the pending-approval/setup-only UI without a manual reload.
+The overview language selector updated Japanese, Vietnamese and English content,
+proving client interaction rather than server HTML alone. No invalid-hook-call
+errors or late optimization reloads were observed. The subscription banner kept
+the Shopify request locale (English); this was not a full translated-billing UI
+acceptance. A second billing refresh retained unavailable access, the same shop
+identity and installation generation, and zero store/ledger/request/claim counts.
+
+All 325 Shopify unit tests, Shopify type-check, production build, changed-file
+ESLint and Prettier checks passed. The build retained existing source-map warnings.
+The build-policy predicate import was aliased to avoid its non-hook `use` name
+triggering the React hook lint rule. No dependencies, API contracts or schema
+were changed. Exact-head CI is tracked on draft PR #176.
+
+The repeat was stopped with `shopify app dev clean`; Shopify confirmed the active
+version was restored. Both tunnels, backend, restricted ingress and app process
+were stopped, with no listeners on ports 3002, 3003, 8890 or 8891. Private repeat
+evidence includes `before-fixed.json`, `after-fixed.json`, `cli-fixed.log` and
+`setup-only-cold-fixed.png` in the evidence directory below.
 
 The CLI's automatic sample `APP_UNINSTALLED` delivery targeted `/api/webhooks`,
 which this app does not expose, and failed. It did not prove registered webhook
