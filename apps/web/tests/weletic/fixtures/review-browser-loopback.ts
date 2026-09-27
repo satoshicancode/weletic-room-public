@@ -10,11 +10,13 @@ export async function capturedReviewBrowser({
   shop,
   token,
   locale,
+  reviewContent,
   backend,
 }: {
   shop: string;
   token: string;
   locale: string;
+  reviewContent: { title: string; body: string };
   backend: (
     request: Request,
     context: { params: Promise<{ action: string }> },
@@ -157,7 +159,7 @@ export async function capturedReviewBrowser({
       throw new Error("Unsigned service request was not rejected");
     await writeFile(
       join(directory, "ready.json"),
-      JSON.stringify({ origin, locale }),
+      JSON.stringify({ origin, locale, reviewContent }),
       { mode: 0o600 },
     );
     const deadline = Date.now() + 240_000;

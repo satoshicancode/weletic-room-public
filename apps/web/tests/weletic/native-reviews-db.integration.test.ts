@@ -568,6 +568,20 @@ describe("native reviews real MySQL production-service boundaries", () => {
         ]),
       );
       const originalFetch = globalThis.fetch;
+      const reviewContent = {
+        en: {
+          title: "Honest review 🌱",
+          body: "The product did not meet my expectations. 🌱",
+        },
+        ja: {
+          title: "率直なレビュー 🌱",
+          body: "商品の品質は期待に届きませんでした。改善を希望します。🌱",
+        },
+        vi: {
+          title: "Đánh giá chân thật 🌱",
+          body: "Sản phẩm chưa đáp ứng kỳ vọng của tôi. Mong chất lượng được cải thiện. 🌱",
+        },
+      }[locale as "en" | "ja" | "vi"];
       const recipient = `review-${locale}-${run}@example.test`;
       const shopperId = `mail-shopper-${locale}-${run}`;
       const accountId = `mail-account-${locale}-${run}`;
@@ -802,17 +816,27 @@ describe("native reviews real MySQL production-service boundaries", () => {
               shop: `${run}.myshopify.com`,
               token: token!,
               locale,
+              reviewContent,
               backend,
             });
           } finally {
             vi.doUnmock("@/lib/weletic/shopify/store-resolver");
           }
         } else {
-          review = await submitNativeReview(storeId, input(token!));
+          review = await submitNativeReview(storeId, {
+            ...input(token!),
+            ...reviewContent,
+          });
         }
         await expect(
           submitNativeReview(storeId, input(token!)),
         ).rejects.toThrow();
+        expect(
+          await prisma.weleticProductReview.findUniqueOrThrow({
+            where: { id: review.id },
+            select: { title: true, body: true },
+          }),
+        ).toEqual(reviewContent);
         const photos = browserPhoto
           ? await prisma.weleticReviewMedia.findMany({
               where: { storeId, requestId: sent.id, reviewId: review.id },
@@ -865,6 +889,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
         expect(
           (await listing()).items.find((item) => item.id === review.id),
         ).toMatchObject({
+          ...reviewContent,
           rating: 1,
           verifiedPurchase: true,
           incentivized: true,
