@@ -113,7 +113,10 @@ specific to those actions; the implementation plan itself remains approved.
 
 ### Free-first testing checkpoint
 
-Paid provisioning is pending while the approved continuation uses local Docker,
+Additional infrastructure spending is capped at $0 under the September 27
+free-first decision. The paid proposal is an unapproved historical alternative;
+see the [current execution path](core-launch-execution-packets.md#current-approved-testing-path).
+The approved continuation uses local Docker,
 synthetic SQL fixtures and a capture-only email inbox. Seven HTTP probes, nine
 explicit core SQL checks and three localized email captures passed. The broad
 legacy SQL run has one deferred referral failure; it is not recorded as green.
@@ -210,7 +213,7 @@ routing and Vite first-load failures are recorded. A subsequent dependency-scan
 fix at `5b17457cfa` passed a new installed first load from an empty Vite cache,
 without manual reload, with interactive EN/JA/VI overview changes and unchanged
 setup-only entitlement. All 325 Shopify tests, types, build and focused lint pass;
-exact-head CI is tracked on draft PR #176. This bounded cold-start result does
+PR #176 merged as `e45516bdad` with passing pre-merge and post-merge CI. This bounded cold-start result does
 not close sustained runtime, staff-role, billing, live-webhook or customer-journey
 gates. The subscription banner uses its own browser locale, so synchronized
 language selection across the app is not proven by the overview test.
