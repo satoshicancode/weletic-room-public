@@ -72,7 +72,7 @@ browser load rendered the pending-approval/setup-only UI without a manual reload
 The overview language selector updated Japanese, Vietnamese and English content,
 proving client interaction rather than server HTML alone. No invalid-hook-call
 errors or late optimization reloads were observed. The subscription banner kept
-the Shopify request locale (English); this was not a full translated-billing UI
+its browser locale (English); this was not a full translated-billing UI
 acceptance. A second billing refresh retained unavailable access, the same shop
 identity and installation generation, and zero store/ledger/request/claim counts.
 

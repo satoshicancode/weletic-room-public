@@ -206,5 +206,11 @@ The [bounded setup preview](yamaxdev-setup-preview-evidence-2026-09-27.md) verif
 real authentication, immutable public app/shop identity and a second billing
 refresh with unavailable entitlement. No store or benefit rows were created.
 The preview is stopped and the active Shopify version restored. Initial tunnel
-routing and Vite first-load failures are recorded; successful reload does not
-close cold-start stability, staff-role, live-webhook or customer-journey gates.
+routing and Vite first-load failures are recorded. A subsequent dependency-scan
+fix at `5b17457cfa` passed a new installed first load from an empty Vite cache,
+without manual reload, with interactive EN/JA/VI overview changes and unchanged
+setup-only entitlement. All 325 Shopify tests, types, build and focused lint pass;
+exact-head CI is tracked on draft PR #176. This bounded cold-start result does
+not close sustained runtime, staff-role, billing, live-webhook or customer-journey
+gates. The subscription banner uses its own browser locale, so synchronized
+language selection across the app is not proven by the overview test.
