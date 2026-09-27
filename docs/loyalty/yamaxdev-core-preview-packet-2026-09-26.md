@@ -1,6 +1,8 @@
 # Yamaxdev core preview preparation — September 26, 2026
 
-Status: prepared locally; not an executed preview or approval to expose services.
+Status: the bounded setup-only preview was approved and executed September 27,
+then stopped. See [observed results and limitations](yamaxdev-setup-preview-evidence-2026-09-27.md).
+This packet grants no customer-journey or production approval.
 The [core checklist](core-launch-checklist.md) remains authoritative.
 
 ## Read-only identity inventory
@@ -138,5 +140,4 @@ public routing or installed extensions were changed by this tooling patch.
 
 September 27 setup-only extension: 6 configuration tests, 51 focused unit tests,
 7 real local billing SQL tests and 2 focused review SQL tests passed. The broader
-review suite was not rerun (120 unrelated cases skipped). No public preview has
-been started. See the canonical reconciliation record for verification details.
+review suite was not rerun (120 unrelated cases skipped). The subsequently approved preview is recorded separately in the evidence link above. See the canonical reconciliation record for verification details.

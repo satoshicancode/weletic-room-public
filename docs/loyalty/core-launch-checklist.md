@@ -199,3 +199,12 @@ remains deferred. New benefits and provisioning remain disabled, including with
 retained valid subscription snapshots. Production rejects this mode. The
 [preview packet](yamaxdev-core-preview-packet-2026-09-26.md) documents the exact
 configuration; public exposure still requires its separate execution approval.
+
+### September 27: approved installed setup preview
+
+The [bounded setup preview](yamaxdev-setup-preview-evidence-2026-09-27.md) verified
+real authentication, immutable public app/shop identity and a second billing
+refresh with unavailable entitlement. No store or benefit rows were created.
+The preview is stopped and the active Shopify version restored. Initial tunnel
+routing and Vite first-load failures are recorded; successful reload does not
+close cold-start stability, staff-role, live-webhook or customer-journey gates.
