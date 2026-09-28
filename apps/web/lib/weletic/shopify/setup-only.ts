@@ -1,3 +1,7 @@
+import {
+  hasRestrictedDevelopmentConfiguration,
+  isRestrictedDevelopmentEnvironment,
+} from "./restricted-development";
 /** Presence is fail-closed, including malformed values. Only the isolated
  * launcher emits "1"; production runtime admission rejects this flag. */
 export function isSetupOnly(env = process.env): boolean {
@@ -14,5 +18,10 @@ export class SubscriptionVerificationRequiredError extends Error {
 }
 
 export function assertNewBenefitsEnabled() {
-  if (isSetupOnly()) throw new SubscriptionVerificationRequiredError();
+  if (
+    isSetupOnly() ||
+    (hasRestrictedDevelopmentConfiguration(process.env) &&
+      !isRestrictedDevelopmentEnvironment(process.env))
+  )
+    throw new SubscriptionVerificationRequiredError();
 }

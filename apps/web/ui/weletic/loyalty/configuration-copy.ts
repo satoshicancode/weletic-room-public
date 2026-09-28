@@ -19,6 +19,7 @@ const en = {
   readOnly: "You have read-only access to this configuration.",
   ownerOnly:
     "Only the store owner can change lifecycle, emergency controls, or financial valuation.",
+  coreGeneral: "Points",
   general: "Points and expiry",
   vip: "VIP qualification",
   finance: "Exact financial valuation",
@@ -96,6 +97,7 @@ export const loyaltyConfigurationCopy: Record<
     ownerOnly:
       "状態、緊急停止、金銭評価を変更できるのはストアオーナーのみです。",
     general: "ポイントと有効期限",
+    coreGeneral: "ポイント",
     vip: "VIP判定",
     finance: "正確な金銭評価",
     lifecycle: "状態と緊急停止",
@@ -162,6 +164,7 @@ export const loyaltyConfigurationCopy: Record<
     ownerOnly:
       "Chỉ chủ cửa hàng được thay đổi trạng thái, dừng khẩn cấp hoặc định giá tài chính.",
     general: "Điểm và thời hạn",
+    coreGeneral: "Điểm thưởng",
     vip: "Điều kiện VIP",
     finance: "Định giá tài chính chính xác",
     lifecycle: "Trạng thái và dừng khẩn cấp",

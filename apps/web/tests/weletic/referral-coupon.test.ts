@@ -21,7 +21,7 @@ import {
   WeleticLoyaltyReferralStatus,
   WeleticRedemptionStatus,
 } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLoyaltyMaintenanceOwnerPermit } from "../../lib/weletic/loyalty/maintenance-write-fence";
 import { loyaltyCommunicationJobPayloadSchema } from "../../lib/weletic/loyalty/points-communication-contract";
 import { createReferralCommunicationOrigin } from "../../lib/weletic/loyalty/referral-communication-origin";
@@ -263,6 +263,7 @@ function mockProvisioningDependencies() {
 }
 
 describe("referral coupon provisioning", () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(prisma.$queryRaw).mockResolvedValue([
@@ -280,6 +281,10 @@ describe("referral coupon provisioning", () => {
   });
 
   function communicationFixture() {
+    // This fixture's immutable coupon expires on September 28. Successful
+    // issuance evidence must not depend on the machine's wall clock.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-27T00:00:00.000Z"));
     const snapshot = createTestReferralCouponSnapshot();
     const program: any = {
       id: "wloyalty_program_coupon",

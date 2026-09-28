@@ -79,6 +79,14 @@ be silently discarded when new work is restricted.
 
 ## Verification and execution gates
 
+September 28 testing decision: [ADR 0047](../adr/0047-restricted-yamaxdev-testing.md)
+permits restricted local yamaxdev feature testing while registration and hosted
+pricing remain deferred. This separate, expiring development receipt is not a
+verified subscription and does not close P0.3. See the
+[testing contract and evidence](restricted-yamaxdev-testing-2026-09-28.md).
+Installed loyalty/review acceptance, real billing and production operation remain
+separate evidence gates.
+
 Each code slice needs focused production-path tests, adversarial review, types,
 lint/build and CI. Finance/auth/billing needs isolated SQL concurrency proof.
 Named yamaxdev acceptance must record immutable shop identity, public app/version,

@@ -33,6 +33,8 @@ export function loader() {
     apiKey: requireEnv("SHOPIFY_API_KEY"),
     coreLaunch: isCoreLaunch(),
     setupOnly: isSetupOnly(),
+    restrictedDevelopment:
+      process.env.WELETIC_RESTRICTED_DEVELOPMENT !== undefined,
   });
 }
 
@@ -46,7 +48,8 @@ export default function App() {
 
 function AppDocument() {
   const [locale] = useMerchantLocale();
-  const { apiKey, coreLaunch, setupOnly } = useLoaderData<typeof loader>();
+  const { apiKey, coreLaunch, setupOnly, restrictedDevelopment } =
+    useLoaderData<typeof loader>();
 
   return (
     <html lang={locale}>
@@ -66,7 +69,12 @@ function AppDocument() {
             ]
           }
         >
-          {coreLaunch && <SubscriptionStatus setupOnly={setupOnly} />}
+          {coreLaunch && (
+            <SubscriptionStatus
+              setupOnly={setupOnly}
+              restrictedDevelopment={restrictedDevelopment}
+            />
+          )}
           <CoreLaunchContext.Provider value={coreLaunch}>
             <Outlet />
           </CoreLaunchContext.Provider>

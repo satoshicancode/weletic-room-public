@@ -124,7 +124,11 @@ export const loyaltyConfigurationResponseSchema = z
       .strict()
       .nullable(),
     capabilities: z
-      .object({ configure: z.boolean(), owner: z.boolean() })
+      .object({
+        configure: z.boolean(),
+        owner: z.boolean(),
+        coreLaunch: z.boolean().optional(),
+      })
       .strict(),
   })
   .strict()

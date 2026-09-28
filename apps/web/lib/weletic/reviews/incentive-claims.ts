@@ -1,6 +1,7 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import { reserveShopperReviewCoupon } from "@/lib/weletic/loyalty/shopper-coupon-reservation";
 import type { Prisma } from "@prisma/client";
+import { assertReviewAwardTestingAuthority } from "../shopify/app-pricing-service";
 import { assertNewBenefitsEnabled } from "../shopify/setup-only";
 import { ReviewError } from "./contracts";
 import { reviewParticipationContentDigest } from "./incentive-evidence";
@@ -172,6 +173,7 @@ export async function reserveProductReviewIncentiveInTransaction({
     };
   }
   assertNewBenefitsEnabled();
+  await assertReviewAwardTestingAuthority(tx, storeId);
   const claim = await tx.weleticReviewIncentiveClaim.create({
     data: {
       id: createWeleticId("wrevclaim_"),

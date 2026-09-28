@@ -11,7 +11,13 @@ export const pricingIdentitySchema = z
   .strict();
 export type PricingIdentity = z.infer<typeof pricingIdentitySchema>;
 export type SubscriptionDecision = {
-  status: "paid" | "private_free" | "development" | "inactive" | "unavailable";
+  status:
+    | "paid"
+    | "private_free"
+    | "development"
+    | "restricted_development"
+    | "inactive"
+    | "unavailable";
   planHandle: string | null;
   cancelAtEndOfCycle: boolean;
   cycleEndsAt: Date | null;
@@ -152,6 +158,7 @@ export const subscriptionStatusSchema = z
       "paid",
       "private_free",
       "development",
+      "restricted_development",
       "inactive",
       "unavailable",
     ]),

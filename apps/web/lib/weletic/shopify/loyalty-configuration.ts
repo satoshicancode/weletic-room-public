@@ -10,6 +10,7 @@ import {
 import { LoyaltySettingsWriteError } from "@/lib/weletic/loyalty/settings-writer";
 import { normalizeCurrency } from "@/lib/weletic/money";
 import type { Prisma } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
 import { readSettingsCapabilities } from "./settings-capabilities";
 import {
   authorizeShopifyMerchantInTransaction,
@@ -80,6 +81,10 @@ export async function manageShopifyLoyaltyConfigurationInTransaction({
     installationGeneration: actor.installationGeneration,
     accountingCurrency,
     ...configuration,
-    capabilities: { configure: capabilities.loyalty, owner: actor.owner },
+    capabilities: {
+      configure: capabilities.loyalty,
+      owner: actor.owner,
+      coreLaunch: isCoreLaunch(),
+    },
   });
 }
