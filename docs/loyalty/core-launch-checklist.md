@@ -245,3 +245,17 @@ denial, publication/hiding, exact object deletion and retention of the single
 participation award. Chrome upload permission was enabled by Hiro after an
 interrupted first attempt. The synthetic identity/authority and local-provider
 limits remain; installed P0.5 acceptance is still open.
+
+## Installed acceptance checkpoint — September 28
+
+Restricted yamaxdev testing now has real test-gateway purchase and two-stage
+refund receipts: order #1047 earned 2,000 points, then reversed 1,000 twice to zero.
+Order #1048 earned 1,000 points after the participation policy was activated. The
+blank customer-projection defect was fixed and the failed sync retried successfully.
+See [bounded evidence and open gates](restricted-yamaxdev-testing-2026-09-28.md#installed-purchase-and-refund-evidence--september-28).
+
+P0.4 and P0.5 remain open: coupon checkout is unproven, and Shopify denies the
+Email field, preventing review invitation creation. The email-access change is
+prepared but not saved pending explicit confirmation. P0.6 remains open because
+the required Flow extension is absent from the preview. These findings do not
+close any full release gate or authorize production.
