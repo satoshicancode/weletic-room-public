@@ -48,6 +48,15 @@ export const recordApiLog = async ({
   userId,
   requestType,
 }: RecordApiLogParams) => {
+  // The isolated Shopify acceptance runtime has no external telemetry sink.
+  // Do not transmit webhook/customer bodies to an unconfigured cloud service.
+  // Production logging must never be disabled by this development flag.
+  if (
+    process.env.NODE_ENV === "development" &&
+    process.env.WELETIC_ISOLATED_DEVELOPMENT === "1"
+  )
+    return;
+
   const apiLog: ApiLogInput = {
     id: createId({ prefix: "req_" }),
     timestamp: new Date().toISOString(),
