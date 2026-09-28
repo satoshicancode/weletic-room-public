@@ -46,7 +46,7 @@ These are synthetic provider-boundary tests, not installed Shopify receipts:
   regressions remain in the same suite.
 - Fifty-five focused backend tests plus a first-claim/replay regression passed.
 - Eight runtime/production-environment tests passed.
-- All 330 Shopify UI tests passed with one worker. Earlier high-concurrency
+- All 335 Shopify UI tests passed with one worker. Earlier high-concurrency
   runs had worker startup timeouts and are not counted as successful runs.
 
 The SQL schema was applied only to a newly created local disposable test
@@ -55,7 +55,29 @@ checks, changed-backend lint, Shopify build and final adversarial review passed.
 Release CI remains required before merge. The first backend type-check exceeded
 Node’s default heap; the successful retry used an 8 GiB heap limit.
 
-## Installed run remains open
+## Bounded installed identity verification
+
+The temporary preview authenticated the canonical Shopify development shop with
+real Admin API identity verification, mapped its current installation to the
+isolated local store, and recorded a fresh `restricted_development` receipt.
+The embedded Reviews page displayed the restricted-testing notice after reload,
+explicitly stating that subscription billing remains unverified. No purchase,
+redemption, invitation or participation claim was created during this check.
+Extensions remained disabled. This is identity/provisioning evidence only.
+
+App entry exposed a transient session-verification race. Subscription verification
+now retries an unavailable response once with fresh SDK authentication; denied or
+reauthentication responses do not retry, and repeated failure keeps access paused.
+Five UI regressions cover the retry, bounds and cleanup. The initial root-loader
+reauthentication recovery was manual and is not claimed as clean cold-start
+acceptance. Sixty-four legacy review-provider tests passed after their transaction
+fixtures were extended with the new store lookup.
+
+Installed navigation also exposed VIP and expiry fields in the loyalty settings
+form. These deferred controls must be removed from the core-v1 surface before
+launch acceptance; this observation does not authorize enabling those features.
+
+## Installed customer journeys remain open
 
 Before execution, record the merged source SHA, observed installation generation,
 temporary ingress pair, exact test-payment fixtures and controlled recipients,

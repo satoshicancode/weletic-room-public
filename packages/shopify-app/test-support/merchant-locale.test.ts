@@ -6,6 +6,7 @@ import {
   MerchantLocaleProvider,
   useMerchantLocale,
 } from "../app/merchant-locale";
+import { StaffAccessClientError } from "../app/staff-access-client";
 import { SubscriptionStatus } from "../app/subscription-status";
 
 const mocks = vi.hoisted(() => ({
@@ -19,7 +20,8 @@ vi.mock("@shopify/app-bridge-react", () => ({
   useAppBridge: () => mocks.bridge,
 }));
 vi.mock("@remix-run/react", () => ({ useLocation: () => mocks.location }));
-vi.mock("../app/staff-access-client", () => ({
+vi.mock("../app/staff-access-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../app/staff-access-client")>()),
   createMerchantJsonPost: () => mocks.post,
 }));
 (
@@ -63,6 +65,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 it("keeps the subscription notice and page language together across navigation", async () => {
   await act(async () => root.render(app("overview")));
@@ -130,3 +133,66 @@ it.each(["restricted_development", "unavailable", "paid"])(
     expect(container.querySelector("a")).toBeNull();
   },
 );
+
+function restrictedApp() {
+  return React.createElement(
+    MerchantLocaleProvider,
+    null,
+    React.createElement(SubscriptionStatus, { restrictedDevelopment: true }),
+  );
+}
+
+it("recovers one transient entry verification failure without claiming access early", async () => {
+  vi.useFakeTimers();
+  mocks.post
+    .mockRejectedValueOnce(new StaffAccessClientError("unavailable"))
+    .mockResolvedValueOnce({
+      status: "restricted_development",
+      validUntil: null,
+      credentialsChanged: false,
+      pricingUrl:
+        "https://admin.shopify.com/store/synthetic/charges/app/pricing_plans",
+      supportEmail: "support@example.test",
+    });
+  await act(async () => root.render(restrictedApp()));
+  expect(container.textContent).toContain("Checking subscription");
+  expect(container.textContent).not.toContain(
+    "Restricted yamaxdev feature testing",
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(750);
+  });
+  expect(mocks.post).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain(
+    "Restricted yamaxdev feature testing",
+  );
+});
+
+it.each(["unavailable", "denied", "reauthenticate"] as const)(
+  "bounds retries for %s and stays paused",
+  async (code) => {
+    vi.useFakeTimers();
+    mocks.post.mockRejectedValueOnce(new StaffAccessClientError(code));
+    if (code === "unavailable")
+      mocks.post.mockRejectedValueOnce(new StaffAccessClientError(code));
+    await act(async () => root.render(restrictedApp()));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(mocks.post).toHaveBeenCalledTimes(code === "unavailable" ? 2 : 1);
+    expect(container.textContent).toContain(
+      "Restricted testing access is paused",
+    );
+  },
+);
+
+it("cancels a pending verification retry when the component leaves", async () => {
+  vi.useFakeTimers();
+  mocks.post.mockRejectedValueOnce(new StaffAccessClientError("unavailable"));
+  await act(async () => root.render(restrictedApp()));
+  await act(async () => root.render(null));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000);
+  });
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+});

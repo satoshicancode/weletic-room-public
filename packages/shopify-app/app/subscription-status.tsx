@@ -3,7 +3,10 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { useEffect, useMemo, useState } from "react";
 import { subscriptionPageSchema } from "../../../apps/web/lib/weletic/shopify/app-pricing-contract";
 import { useMerchantLocale } from "./merchant-locale";
-import { createMerchantJsonPost } from "./staff-access-client";
+import {
+  createMerchantJsonPost,
+  StaffAccessClientError,
+} from "./staff-access-client";
 
 const copy = {
   en: {
@@ -97,24 +100,40 @@ export function SubscriptionStatus({
   const [locale] = useMerchantLocale();
   useEffect(() => {
     let current = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     setBusy(true);
     setData(null);
-    void post("/api/installation/billing", {})
-      .then((value) => {
-        const result = subscriptionPageSchema.parse(value);
+    const check = async (retried = false) => {
+      try {
+        const result = subscriptionPageSchema.parse(
+          await post("/api/installation/billing", {}),
+        );
         if (current) {
           setData(result);
+          setBusy(false);
           window.dispatchEvent(new Event("weletic-subscription-refreshed"));
         }
-      })
-      .catch(() => {
-        if (current) setData(null);
-      })
-      .finally(() => {
-        if (current) setBusy(false);
-      });
+      } catch (error) {
+        if (!current) return;
+        // App entry may refresh the SDK session during identity verification.
+        // Retry this idempotent verification once with fresh authentication;
+        // never retry subscription selection or any benefit mutation here.
+        if (
+          !retried &&
+          error instanceof StaffAccessClientError &&
+          error.code === "unavailable"
+        ) {
+          retryTimer = setTimeout(() => void check(true), 750);
+          return;
+        }
+        setData(null);
+        setBusy(false);
+      }
+    };
+    void check();
     return () => {
       current = false;
+      clearTimeout(retryTimer);
     };
   }, [post, location.key, attempt]);
   useEffect(() => {
