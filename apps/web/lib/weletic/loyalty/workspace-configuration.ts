@@ -4,6 +4,7 @@ import { MerchantSettingsError } from "@/lib/weletic/merchant-settings/contracts
 import { normalizeCurrency } from "@/lib/weletic/money";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
 import { Prisma } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
 import {
   loyaltyConfigurationResponseSchema,
   loyaltyConfigurationUpdateSchema,
@@ -101,6 +102,7 @@ export async function manageWorkspaceLoyaltyConfigurationInTransaction({
     capabilities: {
       configure: authority.permissions.includes("loyalty.write"),
       owner,
+      coreLaunch: isCoreLaunch(),
     },
   });
   if (!response.success)

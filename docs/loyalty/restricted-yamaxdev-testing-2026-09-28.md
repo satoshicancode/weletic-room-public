@@ -74,8 +74,11 @@ acceptance. Sixty-four legacy review-provider tests passed after their transacti
 fixtures were extended with the new store lookup.
 
 Installed navigation also exposed VIP and expiry fields in the loyalty settings
-form. These deferred controls must be removed from the core-v1 surface before
-launch acceptance; this observation does not authorize enabling those features.
+form. The shared form now uses server-derived core scope to hide these controls
+and omit them from both draft creation and updates. All 83 focused configuration
+tests passed, including hidden-field write regressions. Installed navigation
+confirmed the core-only form. Existing incompatible settings are preserved and
+still cannot activate through the server guard.
 
 ## Installed customer journeys remain open
 
