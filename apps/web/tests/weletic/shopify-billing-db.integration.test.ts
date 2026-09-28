@@ -8,17 +8,20 @@ const appId = `billing-${randomUUID()}`;
 const shops: string[] = [];
 beforeAll(async () => {
   const url = new URL(process.env.DATABASE_URL || "invalid:");
+  const databaseName =
+    process.env.CORE_BILLING_DATABASE_NAME || "core_billing_test";
   if (
     url.hostname !== "127.0.0.1" ||
     url.port !== (process.env.CORE_BILLING_DATABASE_PORT || "65366") ||
-    url.pathname !== "/core_billing_test" ||
+    !/^core_billing_test(?:_[a-z0-9]+)?$/.test(databaseName) ||
+    url.pathname !== `/${databaseName}` ||
     process.env.CORE_BILLING_DATABASE_TEST !== "1"
   )
     throw new Error("Isolated local billing database required");
   const [identity] = await db.$queryRaw<
     Array<{ name: string }>
   >`SELECT DATABASE() AS name`;
-  expect(identity.name).toBe("core_billing_test");
+  expect(identity.name).toBe(databaseName);
   vi.stubEnv("SHOPIFY_API_KEY", appId);
   vi.stubEnv("SHOPIFY_PARTNER_APP_ID", "gid://shopify/App/1");
   vi.stubEnv("SHOPIFY_PARTNER_ORGANIZATION_ID", "123");
@@ -40,7 +43,12 @@ afterAll(async () => {
   await db.$disconnect();
 });
 async function fixture(
-  options: { amount?: string; handle?: string; development?: boolean } = {},
+  options: {
+    amount?: string;
+    handle?: string;
+    development?: boolean;
+    restricted?: boolean;
+  } = {},
 ) {
   const billing = {
     amount: "500.00",
@@ -48,7 +56,15 @@ async function fixture(
     development: false,
     ...options,
   };
-  const shop = `billing-${randomUUID()}.myshopify.com`;
+  const fixtureAppId = options.restricted
+    ? "c7d49cebb06e445db345bb200f966a03"
+    : appId;
+  const shopId = options.restricted
+    ? "gid://shopify/Shop/73236414690"
+    : "gid://shopify/Shop/2";
+  const shop = options.restricted
+    ? "montdev.myshopify.com"
+    : `billing-${randomUUID()}.myshopify.com`;
   shops.push(shop);
   const { ensureShopifySessionCoordination } = await import(
     "@/lib/weletic/shopify/session-coordination"
@@ -58,9 +74,9 @@ async function fixture(
   );
   const { encrypt } = await import("@/lib/encryption");
   const pending = await db.$transaction(async (tx) => {
-    await ensureShopifySessionCoordination(tx, { appId, shop });
+    await ensureShopifySessionCoordination(tx, { appId: fixtureAppId, shop });
     await tx.weleticShopifySessionCoordination.updateMany({
-      where: { appId, shop },
+      where: { appId: fixtureAppId, shop },
       data: { leaseEpoch: BigInt(1), revision: BigInt(1) },
     });
     await tx.weleticShopifyAppSession.create({
@@ -80,7 +96,7 @@ async function fixture(
     });
     return ensurePendingInstallationAfterAuthentication(
       tx,
-      { appId, shop },
+      { appId: fixtureAppId, shop },
       new Date(Date.now() - 1000),
     );
   });
@@ -117,7 +133,7 @@ async function fixture(
           : {
               data: {
                 shop: {
-                  id: "gid://shopify/Shop/2",
+                  id: shopId,
                   myshopifyDomain: shop,
                   currencyCode: "JPY",
                   plan: { partnerDevelopment: billing.development },
@@ -455,5 +471,178 @@ it("setup refresh verifies identity without admitting a paid installation", asyn
   } finally {
     vi.stubEnv("WELETIC_SETUP_ONLY", undefined);
     for (const [key, value] of Object.entries(handles)) vi.stubEnv(key, value);
+  }
+});
+
+it("restricted development admits only fresh pinned identity and preserves suspension and privacy", async () => {
+  const original = { ...process.env };
+  const app = "c7d49cebb06e445db345bb200f966a03";
+  const values = {
+    NODE_ENV: "development",
+    WELETIC_SHOPIFY_PRIVACY_HMAC_KEYS: `restricted-test:${Buffer.alloc(32, 0x43).toString("base64")}`,
+    SHOPIFY_API_KEY: app,
+    SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/419628580865",
+    WELETIC_ISOLATED_DEVELOPMENT: "1",
+    WELETIC_RESTRICTED_DEVELOPMENT: "yamaxdev-v1",
+    PLANETSCALE_DATABASE_URL: "http://127.0.0.1:65367/test",
+    UPSTASH_REDIS_REST_URL: "http://127.0.0.1:8079",
+    STORAGE_ENDPOINT: "http://127.0.0.1:9002",
+  };
+  for (const [key, value] of Object.entries(values)) vi.stubEnv(key, value);
+  vi.stubEnv("WELETIC_SETUP_ONLY", undefined);
+  vi.stubEnv("WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE", undefined);
+  vi.stubEnv("WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE", undefined);
+  const {
+    reconcileSubscribedInstallation,
+    refreshAppPricingForShop,
+    assertStoreSubscriptionForNewBenefit,
+    assertFreshInstallationSubscription,
+    assertReviewAwardTestingAuthority,
+  } = await import("@/lib/weletic/shopify/app-pricing-service");
+  try {
+    const f = await fixture({ restricted: true, development: true });
+    vi.stubEnv(
+      "WELETIC_RESTRICTED_DEVELOPMENT_GENERATION",
+      f.pending.installationGeneration!,
+    );
+    let restrictedPartnerCalls = 0;
+    const transport = vi.fn<typeof fetch>(async (url, init) => {
+      if (String(url).startsWith("https://partners.")) {
+        if (process.env.WELETIC_RESTRICTED_DEVELOPMENT !== undefined)
+          restrictedPartnerCalls++;
+        throw new Error("Synthetic Partner outage; billing is not tested");
+      }
+      return f.transport(url, init);
+    });
+    expect(
+      await reconcileSubscribedInstallation(f.shop, transport),
+    ).toMatchObject({
+      status: "restricted_development",
+      credentialsChanged: true,
+    });
+    const store = await db.weleticShopifyStore.findUniqueOrThrow({
+      where: { shopDomain: f.shop },
+    });
+    const { publishStoreOwnedShopifyCredential } = await import(
+      "@/lib/weletic/shopify/store-owned-credential"
+    );
+    await db.$transaction((tx) =>
+      publishStoreOwnedShopifyCredential(tx, {
+        identity: {
+          storeId: store.id,
+          workspaceId: store.projectId,
+          appId: app,
+          shop: f.shop,
+          installationGeneration: store.installationGeneration,
+        },
+        expectedRevision: null,
+        material: { accessToken: "synthetic-billing-token", scope: "" },
+      }),
+    );
+    await refreshAppPricingForShop(f.shop, transport);
+    const allow = () =>
+      db.$transaction((tx) =>
+        assertStoreSubscriptionForNewBenefit(tx, store.id),
+      );
+    await allow();
+    const reviewAllow = () =>
+      db.$transaction((tx) => assertReviewAwardTestingAuthority(tx, store.id));
+    await reviewAllow();
+    const row = await db.weleticShopifySubscriptionSnapshot.findFirstOrThrow({
+      where: { pendingInstallationId: f.pending.id },
+    });
+    expect(row).toMatchObject({
+      status: "restricted_development",
+      planHandle: null,
+      shopId: "gid://shopify/Shop/73236414690",
+    });
+    expect(
+      await db.weleticShopifyPendingInstallationChange.findFirst({
+        where: { mappedStoreId: store.id },
+      }),
+    ).toMatchObject({ operator: "restricted-yamaxdev-testing" });
+    const { bootstrapCompanyStore } = await import(
+      "@/lib/weletic/shopify/company-store-bootstrap"
+    );
+    await expect(bootstrapCompanyStore({}, transport)).rejects.toThrow();
+    await db.weleticShopifySubscriptionSnapshot.update({
+      where: { id: row.id },
+      data: { validUntil: new Date(0) },
+    });
+    await expect(allow()).rejects.toThrow();
+    await refreshAppPricingForShop(f.shop, transport);
+    vi.stubEnv("WELETIC_RESTRICTED_DEVELOPMENT", undefined);
+    vi.stubEnv("WELETIC_RESTRICTED_DEVELOPMENT_GENERATION", undefined);
+    await expect(allow()).rejects.toThrow();
+    await expect(reviewAllow()).rejects.toThrow();
+    expect(await refreshAppPricingForShop(f.shop, transport)).toMatchObject({
+      status: "unavailable",
+    });
+    await expect(reviewAllow()).rejects.toThrow();
+    vi.stubEnv("WELETIC_FEATURE_PROFILE", "legacy");
+    await expect(reviewAllow()).rejects.toThrow();
+    vi.stubEnv("WELETIC_FEATURE_PROFILE", "core-v1");
+    vi.stubEnv("WELETIC_RESTRICTED_DEVELOPMENT", "yamaxdev-v1");
+    vi.stubEnv("WELETIC_RESTRICTED_DEVELOPMENT_GENERATION", randomUUID());
+    await expect(allow()).rejects.toThrow();
+    vi.stubEnv(
+      "WELETIC_RESTRICTED_DEVELOPMENT_GENERATION",
+      f.pending.installationGeneration!,
+    );
+    await refreshAppPricingForShop(f.shop, transport);
+    await expect(
+      db.$transaction((tx) =>
+        assertFreshInstallationSubscription(
+          tx,
+          "foreign-pending",
+          f.pending.installationGeneration!,
+          new Date(),
+        ),
+      ),
+    ).rejects.toThrow();
+    vi.stubEnv("NODE_ENV", "production");
+    await expect(allow()).rejects.toThrow();
+    vi.stubEnv("NODE_ENV", "development");
+    await db.weleticShopifyStore.update({
+      where: { id: store.id },
+      data: { storeAccessState: "suspended" },
+    });
+    await expect(
+      reconcileSubscribedInstallation(f.shop, transport),
+    ).rejects.toThrow();
+    expect(
+      (
+        await db.weleticShopifyStore.findUniqueOrThrow({
+          where: { id: store.id },
+        })
+      ).storeAccessState,
+    ).toBe("suspended");
+    await db.weleticShopifyStore.update({
+      where: { id: store.id },
+      data: { storeAccessState: "active" },
+    });
+    f.billing.development = false;
+    expect(await refreshAppPricingForShop(f.shop, transport)).toMatchObject({
+      status: "unavailable",
+    });
+    await expect(allow()).rejects.toThrow();
+    f.billing.development = true;
+    await refreshAppPricingForShop(f.shop, transport);
+    await db.weleticShopifyPendingInstallation.update({
+      where: { id: f.pending.id },
+      data: { redactedAt: new Date() },
+    });
+    await expect(allow()).rejects.toThrow();
+    await expect(refreshAppPricingForShop(f.shop, transport)).rejects.toThrow();
+    expect(restrictedPartnerCalls).toBe(0);
+  } finally {
+    for (const key of [
+      ...Object.keys(values),
+      "WELETIC_SETUP_ONLY",
+      "WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE",
+      "WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE",
+      "WELETIC_RESTRICTED_DEVELOPMENT_GENERATION",
+    ])
+      vi.stubEnv(key, original[key]);
   }
 });

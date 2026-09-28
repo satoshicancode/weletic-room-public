@@ -10,7 +10,7 @@ import { SubscriptionStatus } from "../app/subscription-status";
 
 const mocks = vi.hoisted(() => ({
   bridge: { idToken: async () => "synthetic" },
-  post: vi.fn(async () => {
+  post: vi.fn<(...args: unknown[]) => Promise<unknown>>(async () => {
     throw new Error("offline fixture");
   }),
   location: { key: "overview" },
@@ -98,3 +98,35 @@ it("uses the browser language consistently on first mount", async () => {
     "Gói đăng ký Shopify",
   );
 });
+
+it.each(["restricted_development", "unavailable", "paid"])(
+  "labels restricted mode truthfully with backend status %s",
+  async (status) => {
+    mocks.post.mockResolvedValueOnce({
+      status,
+      validUntil: null,
+      credentialsChanged: false,
+      pricingUrl:
+        "https://admin.shopify.com/store/synthetic/charges/app/pricing_plans",
+      supportEmail: "support@example.test",
+    });
+    await act(async () =>
+      root.render(
+        React.createElement(
+          MerchantLocaleProvider,
+          null,
+          React.createElement(SubscriptionStatus, {
+            restrictedDevelopment: true,
+          }),
+        ),
+      ),
+    );
+    expect(container.textContent).toContain(
+      status === "restricted_development"
+        ? "Restricted yamaxdev feature testing"
+        : "Restricted testing access is paused",
+    );
+    expect(container.textContent).not.toContain("Subscription verified");
+    expect(container.querySelector("a")).toBeNull();
+  },
+);

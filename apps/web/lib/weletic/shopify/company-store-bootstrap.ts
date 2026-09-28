@@ -4,6 +4,10 @@ import { createHash, randomUUID } from "node:crypto";
 import * as z from "zod/v4";
 import { assertFreshInstallationSubscription } from "./app-pricing-service";
 import { readPendingInstallation } from "./installation-admission";
+import {
+  hasRestrictedDevelopmentConfiguration,
+  isRestrictedDevelopmentEnvironment,
+} from "./restricted-development";
 import { revokeShopifySessionCoordination } from "./session-coordination";
 import { lockShopifySessionLifecycle } from "./session-lifecycle-fence";
 import {
@@ -152,6 +156,7 @@ export async function bootstrapCompanyStore(
   value: unknown,
   customFetch: typeof fetch = fetch,
 ) {
+  if (hasRestrictedDevelopmentConfiguration(process.env)) throw fail();
   return bootstrapStore(value, customFetch, false);
 }
 
@@ -171,8 +176,12 @@ export async function bootstrapSubscribedStore(
   return bootstrapStore(
     {
       ...input,
-      operator: "shopify-app-pricing",
-      reason: "Verified current Shopify-hosted subscription",
+      operator: isRestrictedDevelopmentEnvironment(process.env)
+        ? "restricted-yamaxdev-testing"
+        : "shopify-app-pricing",
+      reason: isRestrictedDevelopmentEnvironment(process.env)
+        ? "Verified restricted development identity; billing untested"
+        : "Verified current Shopify-hosted subscription",
       apply: false,
     },
     customFetch,

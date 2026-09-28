@@ -143,3 +143,68 @@ test("setup-only pair omits plans, overwrites stale mode and confines identity c
     assert.throws(() => applyCoreRuntimeConfiguration(role, {}, setup));
   }
 });
+
+test("restricted mode pins the public app, generation and local service boundaries", () => {
+  const {
+    WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE,
+    WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE,
+    ...identity
+  } = config;
+  const selected = {
+    ...identity,
+    SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/419628580865",
+    mode: "restricted-development",
+    installationGeneration: "11111111-1111-4111-8111-111111111111",
+  };
+  const local = {
+    ...base,
+    NODE_ENV: "development",
+    SHOPIFY_API_KEY: "c7d49cebb06e445db345bb200f966a03",
+    DATABASE_URL: "mysql://synthetic@127.0.0.1/test",
+    PLANETSCALE_DATABASE_URL: "http://127.0.0.1:65367/test",
+    UPSTASH_REDIS_REST_URL: "http://127.0.0.1:8079",
+    STORAGE_ENDPOINT: "http://127.0.0.1:9002",
+  };
+  const web = applyCoreRuntimeConfiguration("web", local, selected);
+  assert.equal(web.WELETIC_RESTRICTED_DEVELOPMENT, "yamaxdev-v1");
+  assert.equal(web.WELETIC_SETUP_ONLY, undefined);
+  assert.equal(web.WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE, undefined);
+  const shopify = applyCoreRuntimeConfiguration("shopify", local, selected);
+  assert.equal(
+    shopify.WELETIC_RESTRICTED_DEVELOPMENT_GENERATION,
+    selected.installationGeneration,
+  );
+  assert.equal(shopify.SHOPIFY_PARTNER_API_TOKEN, undefined);
+  for (const [key, value] of [
+    ["NODE_ENV", "production"],
+    ["SHOPIFY_API_KEY", "wrong"],
+    ["DATABASE_URL", "mysql://synthetic@remote.example.test/test"],
+    ["STORAGE_ENDPOINT", "https://remote.example.test"],
+  ])
+    assert.throws(() =>
+      applyCoreRuntimeConfiguration(
+        "web",
+        { ...local, [key]: value },
+        selected,
+      ),
+    );
+  assert.throws(() =>
+    applyCoreRuntimeConfiguration("web", local, {
+      ...selected,
+      installationGeneration: "",
+    }),
+  );
+  assert.throws(() =>
+    applyCoreRuntimeConfiguration("web", local, {
+      ...selected,
+      SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1",
+    }),
+  );
+  const normal = applyCoreRuntimeConfiguration(
+    "web",
+    { ...local, ...web },
+    config,
+  );
+  assert.equal(normal.WELETIC_RESTRICTED_DEVELOPMENT, undefined);
+  assert.equal(normal.WELETIC_RESTRICTED_DEVELOPMENT_GENERATION, undefined);
+});

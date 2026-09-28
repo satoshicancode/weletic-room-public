@@ -15,6 +15,12 @@ import {
 } from "./app-pricing-contract";
 import { readPendingInstallation } from "./installation-admission";
 import { readBoundedShopifyJson } from "./read-bounded-json";
+import {
+  hasFreshRestrictedDevelopmentAccess,
+  hasRestrictedDevelopmentConfiguration,
+  permitsRestrictedDevelopmentIdentity,
+  RESTRICTED_DEVELOPMENT,
+} from "./restricted-development";
 import { lockShopifySessionLifecycle } from "./session-lifecycle-fence";
 import {
   assertShopifySessionObservation,
@@ -166,19 +172,36 @@ export async function refreshAppPricingForShop(
     if (payload.errors?.length) throw fail();
     shopId = payload.data.shop.id;
     if (first.snapshot.shopId && first.snapshot.shopId !== shopId) throw fail();
-    decision = await fetchActiveAppSubscription(
-      {
-        appId: first.scope.appId,
-        partnerAppId,
-        shopId,
-        installationGeneration: first.generation,
-      },
-      {
-        customFetch,
-        now: first.now,
-        verifiedDevelopmentStore: payload.data.shop.plan.partnerDevelopment,
-      },
-    );
+    if (hasRestrictedDevelopmentConfiguration(process.env)) {
+      if (
+        !payload.data.shop.plan.partnerDevelopment ||
+        !permitsRestrictedDevelopmentIdentity({
+          appId: first.scope.appId,
+          partnerAppId,
+          shopId,
+          shop: first.scope.shop,
+          installationGeneration: first.generation,
+        })
+      )
+        throw fail();
+      decision = {
+        ...unavailableSubscription(),
+        status: "restricted_development",
+      };
+    } else
+      decision = await fetchActiveAppSubscription(
+        {
+          appId: first.scope.appId,
+          partnerAppId,
+          shopId,
+          installationGeneration: first.generation,
+        },
+        {
+          customFetch,
+          now: first.now,
+          verifiedDevelopmentStore: payload.data.shop.plan.partnerDevelopment,
+        },
+      );
   } catch {
     decision = unavailableSubscription();
   }
@@ -248,6 +271,47 @@ export async function assertFreshInstallationSubscription(
   );
   const row = rows[0];
   if (!row?.shopId || !row.verifiedAt || !row.validUntil) throw fail();
+  if (
+    hasRestrictedDevelopmentConfiguration(process.env) ||
+    row.status === "restricted_development"
+  ) {
+    const pending = await readPendingInstallation(tx, {
+      appId,
+      shop: "montdev.myshopify.com",
+    });
+    if (
+      !pending ||
+      pending.id !== pendingInstallationId ||
+      pending.appId !== appId ||
+      pending.installationGeneration !== generation ||
+      !["mapped", "pending_approval"].includes(pending.state) ||
+      !pending.authenticatedAt ||
+      pending.uninstalledAt ||
+      pending.redactedAt ||
+      (pending.expiresAt && pending.expiresAt <= now) ||
+      !hasFreshRestrictedDevelopmentAccess(
+        row,
+        "montdev.myshopify.com",
+        generation,
+        now,
+      )
+    )
+      throw fail();
+    if (pending.mappedStoreId) {
+      const store = await tx.weleticShopifyStore.findUnique({
+        where: { id: pending.mappedStoreId },
+      });
+      if (
+        !store ||
+        store.shopDomain !== "montdev.myshopify.com" ||
+        store.installationGeneration !== generation ||
+        store.complianceState !== "active" ||
+        store.storeAccessState === "suspended"
+      )
+        throw fail();
+    }
+    return row;
+  }
   const identity = pricingIdentitySchema.parse({
     appId,
     partnerAppId,
@@ -317,6 +381,30 @@ export async function assertStoreSubscriptionForNewBenefit(
   );
 }
 
+/** First claims on the canonical test shop always require current authority,
+ * even after testing flags are removed or a refresh replaces the receipt.
+ * Existing claims and ledger replays return before this check. Other stores'
+ * immutable invitation promises retain their existing settlement behavior.
+ */
+export async function assertReviewAwardTestingAuthority(
+  tx: Prisma.TransactionClient,
+  storeId: string,
+) {
+  const store = await tx.weleticShopifyStore.findUnique({
+    where: { id: storeId },
+    select: { shopDomain: true },
+  });
+  if (!store) throw fail();
+  if (
+    hasRestrictedDevelopmentConfiguration(process.env) ||
+    store.shopDomain === RESTRICTED_DEVELOPMENT.shop
+  ) {
+    // A profile change must not bypass the core-only subscription primitive.
+    if (!isCoreLaunch()) throw fail();
+    await assertStoreSubscriptionForNewBenefit(tx, storeId);
+  }
+}
+
 /** Finishes only admission covered by a fresh subscription. Explicit suspension
  * is never cleared here, including after a new successful payment. */
 export async function reconcileSubscribedInstallation(
@@ -329,7 +417,11 @@ export async function reconcileSubscribedInstallation(
     customFetch,
     expectedGeneration,
   );
-  if (!["paid", "private_free", "development"].includes(result.status))
+  if (
+    !["paid", "private_free", "development", "restricted_development"].includes(
+      result.status,
+    )
+  )
     return result;
   if (!result.storeId) {
     const { bootstrapSubscribedStore } = await import(
@@ -385,8 +477,14 @@ export async function reconcileSubscribedInstallation(
         previousState: "pending_approval",
         nextState: "active",
         revision,
-        operator: "shopify-app-pricing",
-        reason: "Verified current Shopify-hosted subscription",
+        operator:
+          result.status === "restricted_development"
+            ? "restricted-yamaxdev-testing"
+            : "shopify-app-pricing",
+        reason:
+          result.status === "restricted_development"
+            ? "Verified restricted development identity; billing untested"
+            : "Verified current Shopify-hosted subscription",
       },
     });
   });

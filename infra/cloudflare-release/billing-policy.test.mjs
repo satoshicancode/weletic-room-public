@@ -53,3 +53,31 @@ test("production billing rejects setup-only flags even when malformed or paired 
         }),
       );
 });
+
+test("production refuses all restricted-development configuration", () => {
+  const environments = {
+    web: {
+      SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1",
+      SHOPIFY_PARTNER_ORGANIZATION_ID: "123",
+      SHOPIFY_PARTNER_API_TOKEN: "synthetic-partner-token",
+      WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE: "core-monthly",
+      WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE: "company-free",
+    },
+    shopify: {
+      SHOPIFY_APP_HANDLE: "weletic-room",
+      WELETIC_SUPPORT_EMAIL: "support@example.test",
+    },
+    outbox: { SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1" },
+  };
+  for (const [role, env] of Object.entries(environments)) {
+    assert.doesNotThrow(() => assertCoreBillingEnvironment(role, env));
+    for (const key of [
+      "WELETIC_RESTRICTED_DEVELOPMENT",
+      "WELETIC_RESTRICTED_DEVELOPMENT_GENERATION",
+    ])
+      for (const value of ["yamaxdev-v1", "", "0", "undefined"])
+        assert.throws(() =>
+          assertCoreBillingEnvironment(role, { ...env, [key]: value }),
+        );
+  }
+});

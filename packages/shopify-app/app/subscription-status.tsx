@@ -8,6 +8,10 @@ import { createMerchantJsonPost } from "./staff-access-client";
 const copy = {
   en: {
     title: "Shopify subscription",
+    restricted:
+      "Restricted yamaxdev feature testing. Subscription billing is not verified; this access cannot be used in production.",
+    restrictedPaused:
+      "Restricted testing access is paused until the development installation identity is verified. Subscription billing remains untested.",
     setup:
       "Development setup only. New points, coupons and review rewards are disabled. Registration remains deferred.",
     loading: "Checking subscription…",
@@ -25,6 +29,10 @@ const copy = {
   },
   ja: {
     title: "Shopifyサブスクリプション",
+    restricted:
+      "yamaxdev限定の機能テストです。課金契約は未検証で、本番環境では利用できません。",
+    restrictedPaused:
+      "開発ストアのインストール情報を確認するまでテスト権限は停止中です。課金契約は未検証です。",
     setup:
       "開発設定専用モードです。新しいポイント・クーポン・レビュー特典は無効です。アプリ登録は保留中です。",
     loading: "確認中…",
@@ -42,6 +50,10 @@ const copy = {
   },
   vi: {
     title: "Gói đăng ký Shopify",
+    restricted:
+      "Thử nghiệm tính năng giới hạn trên yamaxdev. Chưa xác minh thanh toán gói đăng ký; quyền này không dùng được trên production.",
+    restrictedPaused:
+      "Quyền thử nghiệm tạm dừng cho đến khi xác minh cài đặt trên cửa hàng phát triển. Thanh toán gói đăng ký vẫn chưa được kiểm thử.",
     setup:
       "Chỉ thiết lập môi trường phát triển. Điểm, mã giảm giá và phần thưởng đánh giá mới bị vô hiệu hóa. Đăng ký ứng dụng vẫn được hoãn.",
     loading: "Đang kiểm tra…",
@@ -63,8 +75,10 @@ const copy = {
  * grant access. Backend gates benefits independently of this status display. */
 export function SubscriptionStatus({
   setupOnly = false,
+  restrictedDevelopment = false,
 }: {
   setupOnly?: boolean;
+  restrictedDevelopment?: boolean;
 }) {
   const shopify = useAppBridge();
   const location = useLocation();
@@ -119,16 +133,20 @@ export function SubscriptionStatus({
           ? text.setup
           : busy
             ? text.loading
-            : state === "paid" || state === "private_free"
-              ? text.active
-              : state === "development"
-                ? text.development
-                : state === "inactive"
-                  ? text.inactive
-                  : text.unavailable}
+            : restrictedDevelopment
+              ? state === "restricted_development"
+                ? text.restricted
+                : text.restrictedPaused
+              : state === "paid" || state === "private_free"
+                ? text.active
+                : state === "development"
+                  ? text.development
+                  : state === "inactive"
+                    ? text.inactive
+                    : text.unavailable}
       </p>
-      {!setupOnly && <p>{text.terms}</p>}
-      {data && !setupOnly && (
+      {!setupOnly && !restrictedDevelopment && <p>{text.terms}</p>}
+      {data && !setupOnly && !restrictedDevelopment && (
         <p>
           <a href={data.pricingUrl} target="_top">
             {text.plan}
