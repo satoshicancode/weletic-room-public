@@ -32,6 +32,7 @@ const { dbHarness } = vi.hoisted(() => {
     public outboxJobs = new Map<string, any>();
     public earnGrants = new Map<string, any>();
     public orderLineEarns = new Map<string, any>();
+    public refundAllocations = new Map<string, any>();
     public rewardDefinitions = new Map<string, any>();
     public redemptions = new Map<string, any>();
     public programs = new Map<string, any>();
@@ -50,6 +51,7 @@ const { dbHarness } = vi.hoisted(() => {
       this.outboxJobs.clear();
       this.earnGrants.clear();
       this.orderLineEarns.clear();
+      this.refundAllocations.clear();
       this.rewardDefinitions.clear();
       this.redemptions.clear();
       this.programs.clear();
@@ -512,6 +514,19 @@ const { dbHarness } = vi.hoisted(() => {
             }
             harness.orderLineEarns.set(where.id, { ...line, ...data });
             return { count: 1 };
+          }),
+        },
+
+        weleticLoyaltyRefundAllocation: {
+          createMany: vi.fn(async ({ data }: any) => {
+            for (const allocation of data) {
+              const key = `${allocation.storeId}:${allocation.ledgerEntryId}:${allocation.orderLineId}`;
+              if (harness.refundAllocations.has(key)) {
+                throw new Error("Duplicate refund allocation");
+              }
+              harness.refundAllocations.set(key, { ...allocation });
+            }
+            return { count: data.length };
           }),
         },
 

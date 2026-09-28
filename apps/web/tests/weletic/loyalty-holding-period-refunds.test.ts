@@ -19,6 +19,9 @@ vi.mock("@/lib/prisma", () => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    weleticLoyaltyRefundAllocation: {
+      createMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
     weleticLoyaltyAccount: {
       findUnique: vi.fn(),
       update: vi.fn(),
@@ -1610,6 +1613,9 @@ describe("Milestone 3: Holding Period Lifecycle & Exact Proportional Refunds Tes
             totalClawback: "100",
             settledClawback: "100",
             pendingVoided: "0",
+            refundAllocationVersion: 1,
+            refundAllocationMode: "line_refund",
+            lineReversalCount: 1,
           },
         }),
       });
@@ -1618,6 +1624,7 @@ describe("Milestone 3: Holding Period Lifecycle & Exact Proportional Refunds Tes
       expect(ledgerData.metadata).not.toHaveProperty("refundId");
       expect(ledgerData.metadata).not.toHaveProperty("orderId");
       expect(ledgerData.metadata).not.toHaveProperty("grantId");
+      expect(ledgerData.metadata).not.toHaveProperty("lineReversals");
       expect(prisma.weleticLoyaltyOutboxJob.create).not.toHaveBeenCalled();
     });
   });
