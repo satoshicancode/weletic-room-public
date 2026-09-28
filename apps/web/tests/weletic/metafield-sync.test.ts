@@ -6,7 +6,7 @@ import {
   syncCustomerMetafields,
   WELETIC_LOYALTY_NAMESPACE,
 } from "@/lib/weletic/loyalty/metafield-sync";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock prisma
 vi.mock("@/lib/prisma", () => ({
@@ -34,6 +34,7 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 describe("Shopify Customer Metafields Sync Engine (Milestone 4 - PII Sanitized)", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(prisma.installedIntegration.findMany).mockResolvedValue([]);
@@ -57,6 +58,21 @@ describe("Shopify Customer Metafields Sync Engine (Milestone 4 - PII Sanitized)"
   });
 
   describe("2. PII-Sanitized Metafield Payload Builder (buildCustomerMetafieldUpdates)", () => {
+    it("omits blank optional text without dropping zero or negative balances", () => {
+      const fields = buildCustomerMetafieldUpdates({
+        vipTierName: " ",
+        referralCode: "",
+        referralLink: "",
+        memberStatus: "active",
+        pointsBalance: BigInt(-500),
+        pendingPoints: BigInt(0),
+      });
+      expect(fields.map(({ key, value }) => [key, value])).toEqual([
+        ["points_balance", "-500"],
+        ["pending_points", "0"],
+        ["member_status", "active"],
+      ]);
+    });
     it("builds complete 9-key loyalty metafields payload with correct Shopify types and namespace", () => {
       const payload = buildCustomerMetafieldUpdates({
         ownerId: "gid://shopify/Customer/123456789",
@@ -183,6 +199,46 @@ describe("Shopify Customer Metafields Sync Engine (Milestone 4 - PII Sanitized)"
   });
 
   describe("3. Shopify Admin GraphQL Dispatcher (syncCustomerMetafields)", () => {
+    it("projects only core balances and membership even with retained VIP/referral state", async () => {
+      vi.stubEnv("WELETIC_FEATURE_PROFILE", "core-v1");
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValueOnce({
+        id: "account",
+        storeId: "store",
+        cachedPointsBalance: BigInt(2000),
+        cachedPendingPoints: BigInt(0),
+        lifetimePointsEarned: BigInt(2000),
+        referralCode: "RETAINED",
+        status: "active",
+        tierExpiresAt: new Date(Date.now() + 86_400_000),
+        currentTier: { name: "Gold", tierOrder: 3, pointsMultiplier: 2 },
+        store: { shopDomain: "teststore.myshopify.com" },
+      } as any);
+      const transport = vi.fn(async (_url, init) => {
+        const { variables } = JSON.parse(String(init?.body));
+        expect(
+          variables.metafields.map(
+            ({ key, value }: { key: string; value: string }) => [key, value],
+          ),
+        ).toEqual([
+          ["points_balance", "2000"],
+          ["pending_points", "0"],
+          ["lifetime_points", "2000"],
+          ["member_status", "active"],
+        ]);
+        return new Response(
+          JSON.stringify({ data: { metafieldsSet: { userErrors: [] } } }),
+        );
+      });
+      const result = await syncCustomerMetafields({
+        storeId: "store",
+        accountId: "account",
+        shopifyCustomerId: "123",
+        customFetch: transport,
+        adminAccessToken: "test-token",
+      });
+      expect(result.success).toBe(true);
+      expect(transport).toHaveBeenCalledTimes(1);
+    });
     it("fetches account details and constructs 9 PII-sanitized metafields", async () => {
       const storeId = "store_test_1";
       const accountId = "acc_user_1";
