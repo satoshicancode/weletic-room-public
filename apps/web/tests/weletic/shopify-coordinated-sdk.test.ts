@@ -1,4 +1,7 @@
-import { verifyWeleticShopifyRequest } from "@/lib/weletic/shopify/service-auth";
+import {
+  resetServiceAuthNonceCache,
+  verifyWeleticShopifyRequest,
+} from "@/lib/weletic/shopify/service-auth";
 import type {
   ShopifySessionLeaseProof,
   ShopifySessionMutationFence,
@@ -9,32 +12,32 @@ import { createHash, createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CoordinatedWeleticSessionStorage } from "../../../../packages/shopify-app/app/coordinated-session-storage.server";
 
-vi.mock("@/lib/weletic/shopify/service-auth", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@/lib/weletic/shopify/service-auth")>();
-  return {
-    ...actual,
-    verifyWeleticShopifyRequest: vi.fn(
-      async ({
-        request,
-      }: {
-        request: Request;
-        body: string;
-      }) => {
-        const timestamp = request.headers.get("x-weletic-timestamp");
-        const signature = request.headers.get("x-weletic-signature");
-        const requestId = request.headers.get("x-weletic-request-id");
-        return Boolean(
-          timestamp &&
-            signature &&
-            requestId &&
-            /^[a-f0-9]{64}$/.test(signature) &&
-            /^[A-Za-z0-9_-]{1,128}$/.test(requestId),
-        );
-      },
-    ),
-  };
+const { mockRedisSet, redisStore } = vi.hoisted(() => {
+  const store = new Map<string, number>();
+  const fn = vi.fn(
+    async (
+      key: string,
+      value: string,
+      opts?: { nx?: boolean; ex?: number },
+    ) => {
+      const now = Date.now();
+      const existingExpiry = store.get(key);
+      if (opts?.nx && existingExpiry !== undefined && existingExpiry > now) {
+        return null;
+      }
+      const ttlSeconds = opts?.ex ?? 720;
+      store.set(key, now + ttlSeconds * 1000);
+      return "OK";
+    },
+  );
+  return { mockRedisSet: fn, redisStore: store };
 });
+
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: (...args: any[]) => (mockRedisSet as any)(...args),
+  },
+}));
 
 const shop = "coordination-test.myshopify.com";
 const id = `offline_${shop}`;
@@ -141,6 +144,11 @@ function gateway(preparedReconnect = false, mappedBootstrap = false) {
           },
         });
       }
+      if (url.hostname.includes("upstash.io")) {
+        throw new Error(
+          `[R3 INVARIANT VIOLATION] Real network request to Upstash cloud blocked in test fetcher: ${url.href}`,
+        );
+      }
       expect(url.hostname).toBe("session-gateway.invalid");
       const body = init?.body ? String(init.body) : "";
       expect(await verifyWeleticShopifyRequest({ request, body })).toBe(true);
@@ -177,8 +185,9 @@ function gateway(preparedReconnect = false, mappedBootstrap = false) {
             owner ||
             data.observed.epoch !== epoch ||
             data.observed.revision !== revision
-          )
+          ) {
             return Response.json({ error: "lease_busy" }, { status: 409 });
+          }
           epoch = String(BigInt(epoch) + BigInt(1));
           owner = { token: data.token, epoch, revision };
           controls.onAcquired?.();
@@ -202,7 +211,7 @@ function gateway(preparedReconnect = false, mappedBootstrap = false) {
           );
         }
         if (data.action === "release") {
-          if (owner?.token === data.lease.token) owner = null;
+          if (owner?.token === data.lease?.token) owner = null;
           return Response.json({ released: true });
         }
       }
@@ -239,6 +248,25 @@ function gateway(preparedReconnect = false, mappedBootstrap = false) {
 
 describe("coordinated Shopify SDK operations", () => {
   beforeEach(() => {
+    redisStore.clear();
+    mockRedisSet.mockReset();
+    mockRedisSet.mockImplementation(
+      async (
+        key: string,
+        value: string,
+        opts?: { nx?: boolean; ex?: number },
+      ) => {
+        const now = Date.now();
+        const existingExpiry = redisStore.get(key);
+        if (opts?.nx && existingExpiry !== undefined && existingExpiry > now) {
+          return null;
+        }
+        const ttlSeconds = opts?.ex ?? 720;
+        redisStore.set(key, now + ttlSeconds * 1000);
+        return "OK";
+      },
+    );
+    resetServiceAuthNonceCache();
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("SHOPIFY_API_KEY", "synthetic-app-key");
     vi.stubEnv("SHOPIFY_API_SECRET", "synthetic-app-secret");
@@ -248,9 +276,27 @@ describe("coordinated Shopify SDK operations", () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", serviceSecret);
   });
   afterEach(() => {
+    redisStore.clear();
+    resetServiceAuthNonceCache();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+    mockRedisSet.mockImplementation(
+      async (
+        key: string,
+        value: string,
+        opts?: { nx?: boolean; ex?: number },
+      ) => {
+        const now = Date.now();
+        const existingExpiry = redisStore.get(key);
+        if (opts?.nx && existingExpiry !== undefined && existingExpiry > now) {
+          return null;
+        }
+        const ttlSeconds = opts?.ex ?? 720;
+        redisStore.set(key, now + ttlSeconds * 1000);
+        return "OK";
+      },
+    );
   });
 
   it("waits only before provider exchange and tolerates a released owner's newer epoch", async () => {
@@ -819,4 +865,59 @@ describe("coordinated Shopify SDK operations", () => {
     expect(fixture.snapshot().properties).toBeNull();
     expect(fixture.snapshot().observed.revision).toBe("1");
   });
+
+  it("authenticates coordination requests with genuine HMAC-SHA256 and rejects tampered signatures", async () => {
+    const fixture = gateway();
+    vi.stubGlobal("fetch", fixture.fetcher);
+    const {
+      signWeleticShopifyRequest,
+      WELETIC_SHOPIFY_REQUEST_ID_HEADER,
+      WELETIC_SHOPIFY_SIGNATURE_HEADER,
+      WELETIC_SHOPIFY_TIMESTAMP_HEADER,
+    } = await import("@/lib/weletic/shopify/service-auth");
+
+    const timestamp = String(Date.now());
+    const requestId = crypto.randomUUID();
+    const testPath = `/api/internal/shopify/sessions/snapshot?shop=${shop}`;
+
+    // 1. Valid authentic signature is accepted
+    const validSig = signWeleticShopifyRequest({
+      timestamp,
+      method: "GET",
+      path: testPath,
+      body: "",
+      requestId,
+      secret: serviceSecret,
+    });
+    const validReq = new Request(`https://session-gateway.invalid${testPath}`, {
+      headers: {
+        [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
+        [WELETIC_SHOPIFY_SIGNATURE_HEADER]: validSig,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
+      },
+    });
+    expect(await verifyWeleticShopifyRequest({ request: validReq, body: "" })).toBe(true);
+
+    // 2. Negative assertion: corrupted/tampered signature is rejected (false)
+    const tamperedSig = "f".repeat(64);
+    const tamperedReq = new Request(`https://session-gateway.invalid${testPath}`, {
+      headers: {
+        [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
+        [WELETIC_SHOPIFY_SIGNATURE_HEADER]: tamperedSig,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: crypto.randomUUID(),
+      },
+    });
+    expect(await verifyWeleticShopifyRequest({ request: tamperedReq, body: "" })).toBe(false);
+
+    // 3. Negative assertion: tampered body with valid original signature is rejected (false)
+    const tamperedBodyReq = new Request(`https://session-gateway.invalid${testPath}`, {
+      headers: {
+        [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
+        [WELETIC_SHOPIFY_SIGNATURE_HEADER]: validSig,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: crypto.randomUUID(),
+      },
+    });
+    expect(await verifyWeleticShopifyRequest({ request: tamperedBodyReq, body: "tampered-payload" })).toBe(false);
+  });
 });
+

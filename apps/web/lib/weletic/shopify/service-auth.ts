@@ -125,10 +125,12 @@ type RedisSetClient = {
 };
 
 let cachedRedisClient: RedisSetClient | null | undefined = undefined;
+let redisClientPromise: Promise<RedisSetClient | null> | null = null;
 
 export function resetServiceAuthNonceCache(): void {
   inMemoryNonceCache.clear();
   cachedRedisClient = undefined;
+  redisClientPromise = null;
 }
 
 function acquireMemoryNonce(
@@ -160,16 +162,24 @@ async function getRedisClient(): Promise<RedisSetClient | null> {
   if (cachedRedisClient !== undefined) {
     return cachedRedisClient;
   }
-  try {
-    const mod = await import("../../upstash/redis");
-    cachedRedisClient = mod.redis
-      ? (mod.redis as unknown as RedisSetClient)
-      : null;
-    return cachedRedisClient;
-  } catch {
-    cachedRedisClient = null;
-    return null;
+  if (!redisClientPromise) {
+    redisClientPromise = (async () => {
+      try {
+        // @ts-ignore
+        const mod = await import("@/lib/upstash/redis");
+        return mod?.redis ? (mod.redis as unknown as RedisSetClient) : null;
+      } catch {
+        try {
+          const mod = await import("../../upstash/redis");
+          return mod?.redis ? (mod.redis as unknown as RedisSetClient) : null;
+        } catch {
+          return null;
+        }
+      }
+    })();
   }
+  cachedRedisClient = await redisClientPromise;
+  return cachedRedisClient;
 }
 
 async function verifyAndRecordNonce(

@@ -239,6 +239,23 @@ describe("Weletic Shopify service authentication", () => {
     expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
   });
 
+  test("resolves mocked Redis client successfully without emitting fallback warning", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const nonce = `clean-redis-resolve-${crypto.randomUUID()}`;
+    const input = createSignedRequest({ requestId: nonce });
+
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(true);
+    expect(mockRedisSet).toHaveBeenCalledWith(
+      `weletic:service-auth:nonce:${nonce}`,
+      "1",
+      { nx: true, ex: 720 },
+    );
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
   test("rejects request missing x-weletic-request-id in strict mode", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
     vi.stubEnv("WELETIC_SERVICE_AUTH_REQUIRE_REQUEST_ID", "true");
