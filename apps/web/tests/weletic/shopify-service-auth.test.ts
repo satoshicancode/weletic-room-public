@@ -376,6 +376,37 @@ describe("Weletic Shopify service authentication", () => {
     expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
   });
 
+  test("emits observable warning log when Redis is unavailable and fallback occurs", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE", "fallback_memory");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    mockRedisSet.mockRejectedValueOnce(new Error("Redis connection refused"));
+
+    const input = createSignedRequest({
+      requestId: `fallback-warn-${crypto.randomUUID()}`,
+    });
+
+    const result = await verifyWeleticShopifyRequest({ ...input, now });
+    expect(result).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[service-auth] Redis client unavailable, falling back to in-memory nonce cache...",
+    );
+    warnSpy.mockRestore();
+  });
+
+  test("strictly requires 'OK' response from redis.set", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    mockRedisSet.mockResolvedValueOnce(null);
+
+    const input = createSignedRequest({
+      requestId: `strict-ok-${crypto.randomUUID()}`,
+    });
+
+    const result = await verifyWeleticShopifyRequest({ ...input, now });
+    expect(result).toBe(false);
+  });
+
   test("handles Redis connection failure with fail-closed mode", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
     vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");

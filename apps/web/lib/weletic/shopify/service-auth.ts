@@ -116,8 +116,19 @@ export async function readWeleticShopifyRequestBody(request: Request) {
 
 const inMemoryNonceCache = new Map<string, number>();
 
+type RedisSetClient = {
+  set: (
+    key: string,
+    value: string,
+    opts?: { nx?: boolean; ex?: number },
+  ) => Promise<unknown>;
+};
+
+let cachedRedisClient: RedisSetClient | null | undefined = undefined;
+
 export function resetServiceAuthNonceCache(): void {
   inMemoryNonceCache.clear();
+  cachedRedisClient = undefined;
 }
 
 function acquireMemoryNonce(
@@ -145,18 +156,18 @@ function acquireMemoryNonce(
   return true;
 }
 
-async function getRedisClient(): Promise<{
-  set: (
-    key: string,
-    value: string,
-    opts?: { nx?: boolean; ex?: number },
-  ) => Promise<unknown>;
-} | null> {
+async function getRedisClient(): Promise<RedisSetClient | null> {
+  if (cachedRedisClient !== undefined) {
+    return cachedRedisClient;
+  }
   try {
-    // @ts-ignore
-    const mod = await import("@/lib/upstash/redis");
-    return mod.redis ?? null;
+    const mod = await import("../../upstash/redis");
+    cachedRedisClient = mod.redis
+      ? (mod.redis as unknown as RedisSetClient)
+      : null;
+    return cachedRedisClient;
   } catch {
+    cachedRedisClient = null;
     return null;
   }
 }
@@ -174,6 +185,9 @@ async function verifyAndRecordNonce(
       if (process.env.WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE === "fail_closed") {
         return false;
       }
+      console.warn(
+        "[service-auth] Redis client unavailable, falling back to in-memory nonce cache...",
+      );
       return acquireMemoryNonce(requestId, now, ttlSeconds * 1000);
     }
 
@@ -181,7 +195,7 @@ async function verifyAndRecordNonce(
       nx: true,
       ex: ttlSeconds,
     });
-    if (result === "OK" || (result as any) === 1 || (result as any) === true || result === "ok") {
+    if (result === "OK") {
       inMemoryNonceCache.set(requestId, now + ttlSeconds * 1000);
       return true;
     }
@@ -190,6 +204,9 @@ async function verifyAndRecordNonce(
     if (process.env.WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE === "fail_closed") {
       return false;
     }
+    console.warn(
+      "[service-auth] Redis client unavailable, falling back to in-memory nonce cache...",
+    );
     return acquireMemoryNonce(requestId, now, ttlSeconds * 1000);
   }
 }

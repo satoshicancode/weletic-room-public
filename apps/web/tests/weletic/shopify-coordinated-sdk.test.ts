@@ -9,11 +9,32 @@ import { createHash, createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CoordinatedWeleticSessionStorage } from "../../../../packages/shopify-app/app/coordinated-session-storage.server";
 
-vi.mock("@/lib/upstash/redis", () => ({
-  redis: {
-    set: vi.fn().mockResolvedValue("OK"),
-  },
-}));
+vi.mock("@/lib/weletic/shopify/service-auth", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/weletic/shopify/service-auth")>();
+  return {
+    ...actual,
+    verifyWeleticShopifyRequest: vi.fn(
+      async ({
+        request,
+      }: {
+        request: Request;
+        body: string;
+      }) => {
+        const timestamp = request.headers.get("x-weletic-timestamp");
+        const signature = request.headers.get("x-weletic-signature");
+        const requestId = request.headers.get("x-weletic-request-id");
+        return Boolean(
+          timestamp &&
+            signature &&
+            requestId &&
+            /^[a-f0-9]{64}$/.test(signature) &&
+            /^[A-Za-z0-9_-]{1,128}$/.test(requestId),
+        );
+      },
+    ),
+  };
+});
 
 const shop = "coordination-test.myshopify.com";
 const id = `offline_${shop}`;
