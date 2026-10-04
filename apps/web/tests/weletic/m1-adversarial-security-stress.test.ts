@@ -6,10 +6,24 @@ import {
   verifyWeleticShopifyRequest,
   WELETIC_SHOPIFY_MAX_BODY_BYTES,
   WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
 } from "@/lib/weletic/shopify/service-auth";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: vi.fn().mockResolvedValue("OK"),
+  },
+}));
+
+vi.mock("@/lib/auth/rate-limit-request", () => ({
+  rateLimitRequest: vi.fn(async () => ({
+    success: true,
+    headers: {},
+  })),
+}));
 
 // Admin Route Handlers
 import {
@@ -525,7 +539,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
   // 3. HMAC FORGERY, TAMPERING & CRYPTOGRAPHIC BOUNDARY
   // =========================================================================
   describe("3. HMAC Forgery, Payload Tampering & Secret Enforcement", () => {
-    it("HMAC-1: rejects requests signed with an attacker's wrong secret", () => {
+    it("HMAC-1: rejects requests signed with an attacker's wrong secret", async () => {
       const attackerSecret = "attacker-secret-that-is-32-chars-long-123456";
       const now = Date.now();
       const path =
@@ -548,12 +562,12 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         },
       });
 
-      expect(verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
+      expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
         false,
       );
     });
 
-    it("HMAC-2: rejects single-bit flipped signature (tampered signature)", () => {
+    it("HMAC-2: rejects single-bit flipped signature (tampered signature)", async () => {
       const now = Date.now();
       const path =
         "/api/internal/shopify/loyalty/customer?shop=tenant-a.myshopify.com";
@@ -580,12 +594,12 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         },
       });
 
-      expect(verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
+      expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
         false,
       );
     });
 
-    it("HMAC-3: rejects malformed signature formats (non-hex, truncated, spaces, null bytes)", () => {
+    it("HMAC-3: rejects malformed signature formats (non-hex, truncated, spaces, null bytes)", async () => {
       const now = Date.now();
       const path =
         "/api/internal/shopify/loyalty/customer?shop=tenant-a.myshopify.com";
@@ -612,13 +626,13 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
           },
         });
 
-        expect(verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
+        expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
           false,
         );
       }
     });
 
-    it("HMAC-4: fails closed when WELETIC_SHOPIFY_SERVICE_SECRET is unset or under 32 characters", () => {
+    it("HMAC-4: fails closed when WELETIC_SHOPIFY_SERVICE_SECRET is unset or under 32 characters", async () => {
       const now = Date.now();
       const path = "/api/internal/shopify/loyalty/customer";
       const body = "";
@@ -628,19 +642,20 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         headers: {
           [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: String(now),
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: "a".repeat(64),
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: "test-req-id",
         },
       });
-      expect(() =>
+      await expect(
         verifyWeleticShopifyRequest({ request: reqEmpty, body, now }),
-      ).toThrow("must be at least 32 characters");
+      ).rejects.toThrow("must be at least 32 characters");
 
       vi.stubEnv(
         "WELETIC_SHOPIFY_SERVICE_SECRET",
         "short_secret_under_32_chars",
       );
-      expect(() =>
+      await expect(
         verifyWeleticShopifyRequest({ request: reqEmpty, body, now }),
-      ).toThrow("must be at least 32 characters");
+      ).rejects.toThrow("must be at least 32 characters");
     });
   });
 
@@ -648,7 +663,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
   // 4. CLOCK SKEW & REPLAY ATTACKS
   // =========================================================================
   describe("4. Clock Skew & Replay Attack Defense", () => {
-    it("TIME-1: rejects timestamps older than 5 minutes (300,001 ms in past)", () => {
+    it("TIME-1: rejects timestamps older than 5 minutes (300,001 ms in past)", async () => {
       const now = 1724000000000;
       const staleTimestamp = String(
         now - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS - 1,
@@ -673,12 +688,12 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         },
       });
 
-      expect(verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
+      expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
         false,
       );
     });
 
-    it("TIME-2: rejects timestamps further than 5 minutes in future (300,001 ms ahead)", () => {
+    it("TIME-2: rejects timestamps further than 5 minutes in future (300,001 ms ahead)", async () => {
       const now = 1724000000000;
       const futureTimestamp = String(
         now + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 1,
@@ -703,23 +718,25 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         },
       });
 
-      expect(verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
+      expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
         false,
       );
     });
 
-    it("TIME-3: accepts timestamps exactly on the 300,000 ms boundary", () => {
+    it("TIME-3: accepts timestamps exactly on the 300,000 ms boundary", async () => {
       const now = 1724000000000;
       const boundaryPast = String(now - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS);
       const path =
         "/api/internal/shopify/loyalty/customer?shop=tenant-a.myshopify.com";
       const body = "";
+      const requestId = crypto.randomUUID();
 
       const sigPast = signWeleticShopifyRequest({
         timestamp: boundaryPast,
         method: "GET",
         path,
         body,
+        requestId,
         secret: TEST_SECRET,
       });
 
@@ -728,15 +745,16 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         headers: {
           [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: boundaryPast,
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: sigPast,
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
         },
       });
 
-      expect(verifyWeleticShopifyRequest({ request: reqPast, body, now })).toBe(
+      expect(await verifyWeleticShopifyRequest({ request: reqPast, body, now })).toBe(
         true,
       );
     });
 
-    it("TIME-4: rejects non-numeric or unsafe integer timestamp strings (NaN, Infinity, floats, strings)", () => {
+    it("TIME-4: rejects non-numeric or unsafe integer timestamp strings (NaN, Infinity, floats, strings)", async () => {
       const now = 1724000000000;
       const path =
         "/api/internal/shopify/loyalty/customer?shop=tenant-a.myshopify.com";
@@ -770,7 +788,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
           },
         });
 
-        expect(verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
+        expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
           false,
         );
       }
@@ -858,6 +876,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
     it("DOS-5: rejects a signed redemption request without an idempotency key", async () => {
       const timestamp = String(Date.now());
       const path = "/api/internal/shopify/loyalty/customer/redeem";
+      const requestId = crypto.randomUUID();
       const body = JSON.stringify({
         shop: "tenant-a.myshopify.com",
         shopifyCustomerId: "cust_123",
@@ -868,6 +887,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         method: "POST",
         path,
         body,
+        requestId,
         secret: TEST_SECRET,
       });
       const req = new Request(`https://app.weletic.com${path}`, {
@@ -876,6 +896,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
           "content-type": "application/json",
           [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
         },
         body,
       });
@@ -891,6 +912,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
     it("DOS-6: rejects JSON-number points before unsafe integer coercion", async () => {
       const timestamp = String(Date.now());
       const path = "/api/internal/shopify/loyalty/customer/redeem";
+      const requestId = crypto.randomUUID();
       const body =
         '{"shop":"tenant-a.myshopify.com","shopifyCustomerId":"cust_123","rewardDefinitionId":"reward_10","pointsRequested":9007199254740993,"idempotencyKey":"intent-unsafe-number"}';
       const signature = signWeleticShopifyRequest({
@@ -898,6 +920,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         method: "POST",
         path,
         body,
+        requestId,
         secret: TEST_SECRET,
       });
       const req = new Request(`https://app.weletic.com${path}`, {
@@ -906,6 +929,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
           "content-type": "application/json",
           [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
         },
         body,
       });
@@ -949,12 +973,14 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
       const path =
         "/api/internal/shopify/loyalty/customer?shop=unregistered-attacker.myshopify.com";
       const body = "";
+      const requestId = crypto.randomUUID();
 
       const sig = signWeleticShopifyRequest({
         timestamp: String(now),
         method: "GET",
         path,
         body,
+        requestId,
         secret: TEST_SECRET,
       });
 
@@ -963,6 +989,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         headers: {
           [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: String(now),
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: sig,
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
         },
       });
 
@@ -977,12 +1004,14 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
       const path =
         "/api/internal/shopify/loyalty/customer?shop=yamaxdev.myshopify.com";
       const body = "";
+      const requestId = crypto.randomUUID();
 
       const sig = signWeleticShopifyRequest({
         timestamp: String(now),
         method: "GET",
         path,
         body,
+        requestId,
         secret: TEST_SECRET,
       });
 
@@ -991,6 +1020,7 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         headers: {
           [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: String(now),
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: sig,
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
         },
       });
 

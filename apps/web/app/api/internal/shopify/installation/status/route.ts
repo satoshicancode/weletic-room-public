@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     });
     if (bytes === null) return reply({ error: "invalid_request" }, 400);
     const body = new TextDecoder().decode(bytes);
-    if (!verifyWeleticShopifyRequest({ request, body }))
+    if (!await verifyWeleticShopifyRequest({ request, body }))
       return reply({ error: "unauthorized" }, 401);
     let input: unknown;
     try {

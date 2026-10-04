@@ -5,11 +5,17 @@ import { createMerchantAction } from "../../../../packages/shopify-app/app/merch
 import { createMerchantAuthenticator } from "../../../../packages/shopify-app/app/merchant-authentication.server";
 import { deserializeShopifySession } from "../../../../packages/shopify-app/app/session-properties.server";
 import { onlineTokenExchangeFixture } from "../../../../packages/shopify-app/test-support/online-token-exchange";
-import { verifyWeleticShopifyRequest } from "../../lib/weletic/shopify/service-auth";
 import type {
   ShopifySessionMutationFence,
   ShopifySessionProperty,
 } from "../../lib/weletic/shopify/session-contract";
+import { verifyWeleticShopifyRequest } from "../../lib/weletic/shopify/service-auth";
+
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: vi.fn().mockResolvedValue("OK"),
+  },
+}));
 
 const shop = "online-fixture.myshopify.com";
 const id = `${shop}_123`;
@@ -72,7 +78,7 @@ function gateway(persist = false) {
     const url = new URL(request.url);
     const body = init?.body ? String(init.body) : "";
     expect(url.origin).toBe("https://session-gateway.invalid");
-    expect(verifyWeleticShopifyRequest({ request, body })).toBe(true);
+    expect(await verifyWeleticShopifyRequest({ request, body })).toBe(true);
     if (request.method === "GET") {
       if (url.pathname.endsWith("coordination")) {
         state.snapshots++;

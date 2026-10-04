@@ -43,6 +43,7 @@ import {
   signWeleticShopifyRequest,
   verifyWeleticShopifyRequest,
   WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
 } from "@/lib/weletic/shopify/service-auth";
@@ -56,7 +57,14 @@ import {
   WeleticRewardStatus,
   WeleticRewardType,
 } from "@prisma/client";
+import { redis } from "@/lib/upstash/redis";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: vi.fn().mockResolvedValue("OK"),
+  },
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -204,6 +212,7 @@ describe("Tier 1: Feature Coverage (Weletic Loyalty Production-Core)", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    (redis.set as any).mockResolvedValue("OK");
     process.env.WELETIC_SHOPIFY_SERVICE_SECRET = TEST_SECRET;
     (prisma.weleticShopifyStore.findUnique as any).mockResolvedValue({
       id: TEST_STORE_ID,
@@ -249,8 +258,9 @@ describe("Tier 1: Feature Coverage (Weletic Loyalty Production-Core)", () => {
   // Group 1: Security Boundary, RBAC, HMAC & Traffic Termination (Features 1-8)
   // =========================================================================
   describe("Group 1: Security Boundary, RBAC, HMAC & Customer Traffic Termination", () => {
-    it("F1 & F6: Signs and verifies canonical internal HMAC requests with timing safety", () => {
+    it("F1 & F6: Signs and verifies canonical internal HMAC requests with timing safety", async () => {
       const timestamp = String(Date.now());
+      const requestId = crypto.randomUUID();
       const method = "POST";
       const path = "/api/internal/shopify/loyalty/customer";
       const body = JSON.stringify({
@@ -263,14 +273,16 @@ describe("Tier 1: Feature Coverage (Weletic Loyalty Production-Core)", () => {
         method,
         path,
         body,
+        requestId,
       });
-      expect(canonical).toBe(`${timestamp}\nPOST\n${path}\n${body}`);
+      expect(canonical).toBe(`${timestamp}\nPOST\n${path}\n${body}\n${requestId}`);
 
       const signature = signWeleticShopifyRequest({
         timestamp,
         method,
         path,
         body,
+        requestId,
         secret: TEST_SECRET,
       });
       expect(signature).toMatch(/^[a-f0-9]{64}$/);
@@ -280,14 +292,15 @@ describe("Tier 1: Feature Coverage (Weletic Loyalty Production-Core)", () => {
         headers: {
           [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
         },
       });
 
-      const isValid = verifyWeleticShopifyRequest({ request, body });
+      const isValid = await verifyWeleticShopifyRequest({ request, body });
       expect(isValid).toBe(true);
     });
 
-    it("F6: Rejects HMAC verification on expired timestamp or tampered signature", () => {
+    it("F6: Rejects HMAC verification on expired timestamp or tampered signature", async () => {
       const now = Date.now();
       const expiredTimestamp = String(
         now - (WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 1000),
@@ -313,7 +326,7 @@ describe("Tier 1: Feature Coverage (Weletic Loyalty Production-Core)", () => {
       });
 
       expect(
-        verifyWeleticShopifyRequest({ request: expiredReq, body, now }),
+        await verifyWeleticShopifyRequest({ request: expiredReq, body, now }),
       ).toBe(false);
 
       // Tampered signature test
@@ -326,7 +339,7 @@ describe("Tier 1: Feature Coverage (Weletic Loyalty Production-Core)", () => {
         },
       });
       expect(
-        verifyWeleticShopifyRequest({ request: tamperedReq, body, now }),
+        await verifyWeleticShopifyRequest({ request: tamperedReq, body, now }),
       ).toBe(false);
     });
 

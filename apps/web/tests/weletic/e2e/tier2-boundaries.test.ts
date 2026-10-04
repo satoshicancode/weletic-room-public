@@ -347,7 +347,7 @@ describe("Tier 2: Boundary & Corner Cases (Weletic Loyalty Production-Core)", ()
       expect(bodyResult).toBeNull();
     });
 
-    it("rejects request if signature header is missing or non-hex string", () => {
+    it("rejects request if signature header is missing or non-hex string", async () => {
       const req = new Request("https://api.weletic.com/api/internal", {
         method: "GET",
         headers: {
@@ -355,12 +355,12 @@ describe("Tier 2: Boundary & Corner Cases (Weletic Loyalty Production-Core)", ()
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: "invalid-non-hex-sig",
         },
       });
-      expect(verifyWeleticShopifyRequest({ request: req, body: "" })).toBe(
+      expect(await verifyWeleticShopifyRequest({ request: req, body: "" })).toBe(
         false,
       );
     });
 
-    it("rejects request when timestamp is outside 5-minute clock skew window", () => {
+    it("rejects request when timestamp is outside 5-minute clock skew window", async () => {
       const now = Date.now();
       const futureTimestamp = String(
         now + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 5000,
@@ -381,7 +381,7 @@ describe("Tier 2: Boundary & Corner Cases (Weletic Loyalty Production-Core)", ()
         },
       });
 
-      expect(verifyWeleticShopifyRequest({ request: req, body: "", now })).toBe(
+      expect(await verifyWeleticShopifyRequest({ request: req, body: "", now })).toBe(
         false,
       );
     });

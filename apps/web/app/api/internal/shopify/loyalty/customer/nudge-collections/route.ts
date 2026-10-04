@@ -15,7 +15,7 @@ const headers = {
 };
 
 export async function GET(request: Request) {
-  if (!verifyWeleticShopifyRequest({ request, body: "" }))
+  if (!await verifyWeleticShopifyRequest({ request, body: "" }))
     return loyaltyErrorResponse(
       "unauthorized",
       "Unauthorized service request",

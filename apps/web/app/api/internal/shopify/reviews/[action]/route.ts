@@ -65,7 +65,7 @@ async function handle(request: Request, context: Context) {
         413,
       );
     const body = new TextDecoder().decode(bytes);
-    if (!verifyWeleticShopifyRequest({ request, body }))
+    if (!await verifyWeleticShopifyRequest({ request, body }))
       return reviewJson(
         {
           error: {

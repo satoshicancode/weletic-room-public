@@ -10,13 +10,16 @@ export const WELETIC_SHOPIFY_MAX_BODY_BYTES = 256 * 1024;
 // while bounding the public Shopify ingress at a host-aligned 4 MiB (below
 // Vercel Functions' 4.5 MB request limit).
 export const WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES = 4 * 1024 * 1024;
+export const WELETIC_SHOPIFY_NONCE_TTL_SECONDS = 720;
+const NONCE_KEY_PREFIX = "weletic:service-auth:nonce:";
 
-interface SignatureInput {
+export interface SignatureInput {
   timestamp: string;
   method: string;
   path: string;
   body: string;
   secret: string;
+  requestId?: string;
 }
 
 export function createWeleticShopifyCanonicalRequest({
@@ -24,7 +27,11 @@ export function createWeleticShopifyCanonicalRequest({
   method,
   path,
   body,
+  requestId,
 }: Omit<SignatureInput, "secret">) {
+  if (requestId !== undefined && requestId !== "") {
+    return `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}\n${requestId}`;
+  }
   return `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}`;
 }
 
@@ -107,19 +114,102 @@ export async function readWeleticShopifyRequestBody(request: Request) {
   return body === null ? null : new TextDecoder().decode(body);
 }
 
-export function verifyWeleticShopifyRequest({
+const inMemoryNonceCache = new Map<string, number>();
+
+export function resetServiceAuthNonceCache(): void {
+  inMemoryNonceCache.clear();
+}
+
+function acquireMemoryNonce(
+  requestId: string,
+  now: number,
+  ttlMs: number,
+): boolean {
+  if (inMemoryNonceCache.size > 5_000) {
+    for (const [key, expiresAt] of inMemoryNonceCache.entries()) {
+      if (expiresAt <= now) {
+        inMemoryNonceCache.delete(key);
+      }
+    }
+  }
+
+  const existingExpiresAt = inMemoryNonceCache.get(requestId);
+  if (existingExpiresAt !== undefined) {
+    if (existingExpiresAt > now) {
+      return false;
+    }
+    inMemoryNonceCache.delete(requestId);
+  }
+
+  inMemoryNonceCache.set(requestId, now + ttlMs);
+  return true;
+}
+
+async function getRedisClient(): Promise<{
+  set: (
+    key: string,
+    value: string,
+    opts?: { nx?: boolean; ex?: number },
+  ) => Promise<unknown>;
+} | null> {
+  try {
+    // @ts-ignore
+    const mod = await import("@/lib/upstash/redis");
+    return mod.redis ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function verifyAndRecordNonce(
+  requestId: string,
+  now: number,
+  ttlSeconds: number = WELETIC_SHOPIFY_NONCE_TTL_SECONDS,
+): Promise<boolean> {
+  const nonceKey = `${NONCE_KEY_PREFIX}${requestId}`;
+
+  try {
+    const redisClient = await getRedisClient();
+    if (!redisClient) {
+      if (process.env.WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE === "fail_closed") {
+        return false;
+      }
+      return acquireMemoryNonce(requestId, now, ttlSeconds * 1000);
+    }
+
+    const result = await redisClient.set(nonceKey, "1", {
+      nx: true,
+      ex: ttlSeconds,
+    });
+    if (result === "OK" || (result as any) === 1 || (result as any) === true || result === "ok") {
+      inMemoryNonceCache.set(requestId, now + ttlSeconds * 1000);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    if (process.env.WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE === "fail_closed") {
+      return false;
+    }
+    return acquireMemoryNonce(requestId, now, ttlSeconds * 1000);
+  }
+}
+
+export async function verifyWeleticShopifyRequest({
   request,
   body,
   now = Date.now(),
   secret,
+  requireRequestId,
 }: {
   request: Request;
   body: string;
   now?: number;
   secret?: string;
-}) {
+  requireRequestId?: boolean;
+}): Promise<boolean> {
   const timestamp = request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER);
   const signature = request.headers.get(WELETIC_SHOPIFY_SIGNATURE_HEADER);
+  const requestId = request.headers.get(WELETIC_SHOPIFY_REQUEST_ID_HEADER);
 
   if (!timestamp || !signature || !/^[a-f0-9]{64}$/.test(signature)) {
     return false;
@@ -133,17 +223,51 @@ export function verifyWeleticShopifyRequest({
     return false;
   }
 
+  const isStrict =
+    requireRequestId !== undefined
+      ? requireRequestId
+      : process.env.WELETIC_SERVICE_AUTH_REQUIRE_REQUEST_ID !== "false";
+
+  if (!requestId) {
+    if (isStrict) {
+      return false;
+    }
+  } else if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) {
+    return false;
+  }
+
+  const serviceSecret = secret || getServiceSecret();
   const url = new URL(request.url);
   const expected = signWeleticShopifyRequest({
     timestamp,
     method: request.method,
     path: `${url.pathname}${url.search}`,
     body,
-    secret: secret || getServiceSecret(),
+    requestId: requestId || undefined,
+    secret: serviceSecret,
   });
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature, "hex"),
-    Buffer.from(expected, "hex"),
-  );
+  const signatureBuffer = Buffer.from(signature, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+
+  if (
+    signatureBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+  ) {
+    return false;
+  }
+
+  if (requestId) {
+    const dynamicTtlSeconds = Math.max(
+      WELETIC_SHOPIFY_NONCE_TTL_SECONDS,
+      Math.ceil((timestampMs + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS - now) / 1000) + 60,
+    );
+    const isUnique = await verifyAndRecordNonce(requestId, now, dynamicTtlSeconds);
+    if (!isUnique) {
+      return false;
+    }
+  }
+
+  return true;
 }
+

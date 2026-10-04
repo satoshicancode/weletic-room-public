@@ -9,6 +9,12 @@ import { createHash, createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CoordinatedWeleticSessionStorage } from "../../../../packages/shopify-app/app/coordinated-session-storage.server";
 
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: vi.fn().mockResolvedValue("OK"),
+  },
+}));
+
 const shop = "coordination-test.myshopify.com";
 const id = `offline_${shop}`;
 const serviceSecret = "synthetic-session-test-service-secret-32-characters";
@@ -116,7 +122,7 @@ function gateway(preparedReconnect = false, mappedBootstrap = false) {
       }
       expect(url.hostname).toBe("session-gateway.invalid");
       const body = init?.body ? String(init.body) : "";
-      expect(verifyWeleticShopifyRequest({ request, body })).toBe(true);
+      expect(await verifyWeleticShopifyRequest({ request, body })).toBe(true);
       if (request.method === "GET") {
         if (controls.failSnapshot) throw new Error("Snapshot unavailable");
         return Response.json(snapshot());

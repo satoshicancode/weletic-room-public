@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     } catch {
       return reply("invalid_request", 400);
     }
-    if (!verifyWeleticShopifyRequest({ request, body }))
+    if (!await verifyWeleticShopifyRequest({ request, body }))
       return reply("unauthorized", 401);
     let value: unknown;
     try {

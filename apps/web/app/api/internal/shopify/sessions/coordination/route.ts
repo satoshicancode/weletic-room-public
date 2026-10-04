@@ -88,7 +88,7 @@ async function resolveStore(shop: string) {
 }
 
 export async function GET(request: Request) {
-  if (!verifyWeleticShopifyRequest({ request, body: "" }))
+  if (!await verifyWeleticShopifyRequest({ request, body: "" }))
     return respond({ error: "Unauthorized" }, 401);
   try {
     const shop = shopifySessionShopSchema.parse(
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
   const body = await readWeleticShopifyRequestBody(request);
   if (body === null)
     return respond({ error: "Request body is too large" }, 413);
-  if (!verifyWeleticShopifyRequest({ request, body }))
+  if (!await verifyWeleticShopifyRequest({ request, body }))
     return respond({ error: "Unauthorized" }, 401);
   try {
     const input = inputSchema.parse(JSON.parse(body));

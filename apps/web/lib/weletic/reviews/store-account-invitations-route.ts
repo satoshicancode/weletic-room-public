@@ -29,7 +29,7 @@ export async function storeAccountInvitationsRoute(request: Request) {
     });
     if (bytes === null || bytes.length !== 0)
       return reviewJson({ error: { code: "bad_request" } }, 400);
-    if (!verifyWeleticShopifyRequest({ request, body: "" }))
+    if (!await verifyWeleticShopifyRequest({ request, body: "" }))
       return reviewJson({ error: { code: "unauthorized" } }, 401);
     const url = new URL(request.url);
     if (

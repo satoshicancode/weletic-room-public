@@ -47,7 +47,7 @@ function parseShop(request: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!verifyWeleticShopifyRequest({ request, body: "" })) {
+  if (!await verifyWeleticShopifyRequest({ request, body: "" })) {
     return unauthorized();
   }
 
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
       { status: 413 },
     );
   }
-  if (!verifyWeleticShopifyRequest({ request, body: rawBody })) {
+  if (!await verifyWeleticShopifyRequest({ request, body: rawBody })) {
     return unauthorized();
   }
 

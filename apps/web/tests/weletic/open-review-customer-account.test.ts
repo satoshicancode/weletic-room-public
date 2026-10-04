@@ -1,6 +1,13 @@
+import { redis } from "@/lib/upstash/redis";
 import { verifyWeleticShopifyRequest } from "@/lib/weletic/shopify/service-auth";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { action } from "../../../../packages/shopify-app/app/routes/api.customer-account.$";
+
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: vi.fn().mockResolvedValue("OK"),
+  },
+}));
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   fetch: vi.fn(),
@@ -46,6 +53,7 @@ const run = (
   });
 beforeEach(() => {
   vi.resetAllMocks();
+  (redis.set as any).mockResolvedValue("OK");
   vi.stubEnv("WELETIC_API_URL", "https://backend.example.test");
   vi.stubEnv(
     "WELETIC_SHOPIFY_SERVICE_SECRET",
@@ -88,7 +96,7 @@ it.each(["open-prepare", "open-submit", "open-upload"])(
     expect(query.get("customerId")).toBe("123");
     expect(query.get("source")).toBe("customer_account");
     expect(
-      verifyWeleticShopifyRequest({ request, body: String(options.body) }),
+      await verifyWeleticShopifyRequest({ request, body: String(options.body) }),
     ).toBe(true);
     expect(options.body).toBe(JSON.stringify(content));
   },
@@ -115,7 +123,7 @@ it("binds store submission to the verified account and ignores forged query iden
     "customer_account",
   );
   expect(
-    verifyWeleticShopifyRequest({
+    await verifyWeleticShopifyRequest({
       request: signed,
       body: String(options.body),
     }),

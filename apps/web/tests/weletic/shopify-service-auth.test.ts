@@ -2,13 +2,16 @@ import {
   SHOPIFY_ADMIN_API_VERSION,
   getShopifyAdminGraphqlUrl,
 } from "@/lib/integrations/shopify/admin-graphql";
+import { redis } from "@/lib/upstash/redis";
 import {
   WELETIC_SHOPIFY_MAX_BODY_BYTES,
   WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
   createWeleticShopifyCanonicalRequest,
   readWeleticShopifyRequestBody,
+  resetServiceAuthNonceCache,
   signWeleticShopifyRequest,
   verifyWeleticShopifyRequest,
 } from "@/lib/weletic/shopify/service-auth";
@@ -29,42 +32,103 @@ const timestamp = String(now);
 const path = "/api/internal/shopify/catalog?shop=store.myshopify.com";
 const body = "{}";
 
-function createSignedRequest({
-  requestBody = body,
-  signedBody = requestBody,
-  requestTimestamp = timestamp,
-  requestPath = path,
-}: {
+function createSignedRequest(options: {
   requestBody?: string;
   signedBody?: string;
   requestTimestamp?: string;
   requestPath?: string;
+  requestId?: string;
+  signedRequestId?: string;
+  includeRequestIdHeader?: boolean;
 } = {}) {
+  const {
+    requestBody = body,
+    signedBody = requestBody,
+    requestTimestamp = timestamp,
+    requestPath = path,
+    requestId = crypto.randomUUID(),
+    includeRequestIdHeader = true,
+  } = options;
+  const effectiveSignedRequestId =
+    "signedRequestId" in options ? options.signedRequestId : requestId;
+
   const signature = signWeleticShopifyRequest({
     timestamp: requestTimestamp,
     method: "POST",
     path: requestPath,
     body: signedBody,
+    requestId: effectiveSignedRequestId,
     secret,
   });
+
+  const headers: Record<string, string> = {
+    [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: requestTimestamp,
+    [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+  };
+  if (includeRequestIdHeader && requestId) {
+    headers[WELETIC_SHOPIFY_REQUEST_ID_HEADER] = requestId;
+  }
 
   return {
     request: new Request(`https://app.weletic.com${requestPath}`, {
       method: "POST",
-      headers: {
-        [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: requestTimestamp,
-        [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
-      },
+      headers,
       body: requestBody,
     }),
     body: requestBody,
+    requestId,
   };
 }
 
+const redisStore = new Map<string, number>();
+
+const mockRedisSet = vi.fn(
+  async (
+    key: string,
+    value: string,
+    opts?: { nx?: boolean; ex?: number },
+  ) => {
+    const now = Date.now();
+    const existingExpiry = redisStore.get(key);
+    if (opts?.nx && existingExpiry !== undefined && existingExpiry > now) {
+      return null;
+    }
+    const ttlSeconds = opts?.ex ?? 720;
+    redisStore.set(key, now + ttlSeconds * 1000);
+    return "OK";
+  },
+);
+
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: (...args: any[]) => (mockRedisSet as any)(...args),
+  },
+}));
+
 afterEach(() => {
+  redisStore.clear();
+  mockRedisSet.mockReset();
+  mockRedisSet.mockImplementation(
+    async (
+      key: string,
+      value: string,
+      opts?: { nx?: boolean; ex?: number },
+    ) => {
+      const now = Date.now();
+      const existingExpiry = redisStore.get(key);
+      if (opts?.nx && existingExpiry !== undefined && existingExpiry > now) {
+        return null;
+      }
+      const ttlSeconds = opts?.ex ?? 720;
+      redisStore.set(key, now + ttlSeconds * 1000);
+      return "OK";
+    },
+  );
+  resetServiceAuthNonceCache();
   vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("Weletic Shopify service authentication", () => {
@@ -114,7 +178,19 @@ describe("Weletic Shopify service authentication", () => {
       ).rejects.toMatchObject({ status, coordinationCode: code });
     },
   );
-  test("uses the documented canonical request format", () => {
+  test("uses the documented canonical request format with requestId", () => {
+    expect(
+      createWeleticShopifyCanonicalRequest({
+        timestamp,
+        method: "post",
+        path,
+        body,
+        requestId: "req_12345",
+      }),
+    ).toBe(`${timestamp}\nPOST\n${path}\n{}\nreq_12345`);
+  });
+
+  test("supports legacy canonical format without requestId during transition", () => {
     expect(
       createWeleticShopifyCanonicalRequest({
         timestamp,
@@ -125,22 +201,80 @@ describe("Weletic Shopify service authentication", () => {
     ).toBe(`${timestamp}\nPOST\n${path}\n{}`);
   });
 
-  test("accepts an intact request inside the clock window", () => {
+  test("accepts an intact request inside the clock window", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
     const input = createSignedRequest();
-    expect(verifyWeleticShopifyRequest({ ...input, now })).toBe(true);
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(true);
   });
 
-  test("rejects a body changed after signing", () => {
+  test("detects and rejects replay attacks on subsequent requests with identical requestId", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "");
+    const nonce = `replay-nonce-${crypto.randomUUID()}`;
+    const input = createSignedRequest({ requestId: nonce });
+    // First attempt: valid request passes
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(true);
+    // Second attempt: identical request is rejected due to replay
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
+  });
+
+  test("records and checks nonce in Redis via SET NX EX", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
+
+    const nonce = `redis-nonce-${crypto.randomUUID()}`;
+    const input = createSignedRequest({ requestId: nonce });
+
+    // 1st request -> Redis SET NX succeeds -> accepted
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(true);
+    expect(mockRedisSet).toHaveBeenCalledWith(
+      `weletic:service-auth:nonce:${nonce}`,
+      "1",
+      { nx: true, ex: 720 },
+    );
+
+    // 2nd request -> Redis SET NX returns null (already exists) -> rejected
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
+  });
+
+  test("rejects request missing x-weletic-request-id in strict mode", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("WELETIC_SERVICE_AUTH_REQUIRE_REQUEST_ID", "true");
+    const input = createSignedRequest({ includeRequestIdHeader: false });
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
+  });
+
+  test("accepts legacy request missing x-weletic-request-id in transition mode", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("WELETIC_SERVICE_AUTH_REQUIRE_REQUEST_ID", "false");
+    const input = createSignedRequest({
+      signedRequestId: undefined,
+      includeRequestIdHeader: false,
+    });
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(true);
+  });
+
+  test("rejects request with tampered x-weletic-request-id", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    const input = createSignedRequest({
+      requestId: "tampered-request-id",
+      signedRequestId: "original-request-id",
+    });
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
+  });
+
+  test("rejects a body changed after signing", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
     const input = createSignedRequest({
       requestBody: '{"operation":"delete"}',
       signedBody: body,
     });
-    expect(verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
   });
 
-  test("rejects a path or query changed after signing", () => {
+  test("rejects a path or query changed after signing", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
     const input = createSignedRequest({
       requestPath:
@@ -153,30 +287,264 @@ describe("Weletic Shopify service authentication", () => {
         method: "POST",
         path,
         body,
+        requestId: input.requestId,
         secret,
       }),
     );
-    expect(verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
   });
 
-  test("rejects stale requests", () => {
+  test("enforces clock skew boundaries (5 min = 300,000ms)", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+
+    // Exact past boundary (now - 300,000ms) -> accepted
+    const pastBoundary = createSignedRequest({
+      requestTimestamp: String(now - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS),
+      requestId: `boundary-past-exact-${crypto.randomUUID()}`,
+    });
+    expect(await verifyWeleticShopifyRequest({ ...pastBoundary, now })).toBe(
+      true,
+    );
+
+    // Exact future boundary (now + 300,000ms) -> accepted
+    const futureBoundary = createSignedRequest({
+      requestTimestamp: String(now + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS),
+      requestId: `boundary-future-exact-${crypto.randomUUID()}`,
+    });
+    expect(await verifyWeleticShopifyRequest({ ...futureBoundary, now })).toBe(
+      true,
+    );
+
+    // Past boundary + 1ms (now - 300,001ms) -> rejected
+    const pastExpired = createSignedRequest({
+      requestTimestamp: String(now - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS - 1),
+      requestId: `boundary-past-expired-${crypto.randomUUID()}`,
+    });
+    expect(await verifyWeleticShopifyRequest({ ...pastExpired, now })).toBe(
+      false,
+    );
+
+    // Future boundary + 1ms (now + 300,001ms) -> rejected
+    const futureExpired = createSignedRequest({
+      requestTimestamp: String(now + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 1),
+      requestId: `boundary-future-expired-${crypto.randomUUID()}`,
+    });
+    expect(await verifyWeleticShopifyRequest({ ...futureExpired, now })).toBe(
+      false,
+    );
+  });
+
+  test("prevents replay of future-skewed requests across the 6-minute window", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+
+    const t0 = now;
+    // Skewed into the future: now + 4m59s (299,000ms)
+    const futureSkewMs = 4 * 60 * 1000 + 59 * 1000;
+    const futureTimestamp = String(t0 + futureSkewMs);
+    const nonce = `future-skew-${crypto.randomUUID()}`;
+    const input = createSignedRequest({
+      requestTimestamp: futureTimestamp,
+      requestId: nonce,
+    });
+
+    // T0: First attempt at T0 is valid (within +5 min clock skew)
+    expect(await verifyWeleticShopifyRequest({ ...input, now: t0 })).toBe(true);
+
+    // T6: Fast-forward 6 minutes (360,000ms later)
+    const t6 = t0 + 6 * 60 * 1000;
+    // At T6, the request timestamp (t0 + 299s) is now in the past: (t6 - (t0 + 299s)) = 61s in the past.
+    // That is STILL inside the [-5min, +5min] acceptance window (Math.abs(t6 - timestamp) = 61,000 <= 300,000).
+    // An attacker attempts replay with the same signed request.
+    // It MUST be rejected because nonce TTL is 720s (> 600s acceptance window)!
+    expect(await verifyWeleticShopifyRequest({ ...input, now: t6 })).toBe(false);
+  });
+
+  test("handles Redis connection failure with scoped fail-open in-memory fallback", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
+    vi.stubEnv("WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE", "fallback_memory");
+
+    mockRedisSet.mockRejectedValue(new Error("Redis connection timeout"));
+
+    const input = createSignedRequest({
+      requestId: `scoped-failopen-${crypto.randomUUID()}`,
+    });
+    // First attempt falls back to in-memory cache and passes
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(true);
+    // Second attempt with same nonce on same instance is blocked by in-memory cache
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
+  });
+
+  test("handles Redis connection failure with fail-closed mode", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
+    vi.stubEnv("WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE", "fail_closed");
+
+    mockRedisSet.mockRejectedValue(new Error("Redis network partition"));
+
+    const input = createSignedRequest({
+      requestId: `fail-closed-${crypto.randomUUID()}`,
+    });
+    // In fail_closed mode, request is immediately rejected if Redis is down
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
+  });
+
+  test("allows legitimate retries by resigning with new requestId while rejecting adversary replay", async () => {
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+
+    // Attempt 1
+    const attempt1 = createSignedRequest({
+      requestId: `retry-attempt-1-${crypto.randomUUID()}`,
+    });
+    expect(await verifyWeleticShopifyRequest({ ...attempt1, now })).toBe(true);
+
+    // Adversary attempts replay of attempt 1 -> rejected!
+    expect(
+      await verifyWeleticShopifyRequest({ ...attempt1, now: now + 2000 }),
+    ).toBe(false);
+
+    // Legitimate caller retries with fresh requestId and timestamp -> accepted!
+    const attempt2 = createSignedRequest({
+      requestId: `retry-attempt-2-${crypto.randomUUID()}`,
+      requestTimestamp: String(now + 2000),
+    });
+    expect(
+      await verifyWeleticShopifyRequest({ ...attempt2, now: now + 2000 }),
+    ).toBe(true);
+  });
+
+  test("e2e integration: packages/shopify-app caller communicates with verifyWeleticShopifyRequest across dual modes", async () => {
+    vi.stubEnv("WELETIC_API_URL", "https://app.weletic.com");
+    vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+
+    // Strict mode
+    vi.stubEnv("WELETIC_SERVICE_AUTH_REQUIRE_REQUEST_ID", "true");
+    let verifiedHeaders: Headers | null = null;
+    const fetchMock = vi.fn(
+      async (input: URL | RequestInfo, init?: RequestInit) => {
+        const request = new Request(input, init);
+        verifiedHeaders = request.headers;
+        const requestBody = String(init?.body ?? "");
+        const requestTime = Number(
+          request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER),
+        );
+        const isValid = await verifyWeleticShopifyRequest({
+          request,
+          body: requestBody,
+          now: requestTime,
+        });
+        expect(isValid).toBe(true);
+        return new Response("{}", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await weleticApiRequest(path, { method: "POST", body });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(
+      verifiedHeaders!.get(WELETIC_SHOPIFY_REQUEST_ID_HEADER),
+    ).toBeTruthy();
+
+    // Transition mode (WELETIC_SERVICE_AUTH_REQUIRE_REQUEST_ID=false)
+    vi.stubEnv("WELETIC_SERVICE_AUTH_REQUIRE_REQUEST_ID", "false");
+    await weleticApiRequest(path, { method: "POST", body });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("static analysis: ensures 100% of verifyWeleticShopifyRequest call sites in production routes use await", async () => {
+    const fs = await import("node:fs");
+    const pathMod = await import("node:path");
+
+    function findSourceFiles(dir: string): string[] {
+      const results: string[] = [];
+      if (!fs.existsSync(dir)) return results;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = pathMod.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          results.push(...findSourceFiles(fullPath));
+        } else if (
+          entry.isFile() &&
+          (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))
+        ) {
+          results.push(fullPath);
+        }
+      }
+      return results;
+    }
+
+    const targetDirs = [
+      pathMod.resolve(__dirname, "../../app/api/internal/shopify"),
+      pathMod.resolve(__dirname, "../../lib/weletic"),
+    ];
+
+    const sourceFiles = targetDirs.flatMap(findSourceFiles);
+    expect(sourceFiles.length).toBeGreaterThan(50);
+
+    const violations: string[] = [];
+    let checkedCallSites = 0;
+
+    for (const filePath of sourceFiles) {
+      const content = fs.readFileSync(filePath, "utf8");
+      if (!content.includes("verifyWeleticShopifyRequest")) continue;
+
+      const lines = content.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (
+          line.includes("import ") ||
+          line.includes("export ") ||
+          line.includes("function verifyWeleticShopifyRequest") ||
+          line.includes("typeof verifyWeleticShopifyRequest")
+        ) {
+          continue;
+        }
+        if (line.includes("verifyWeleticShopifyRequest(")) {
+          checkedCallSites++;
+          if (!line.includes("await verifyWeleticShopifyRequest(")) {
+            const prevLine = i > 0 ? lines[i - 1] : "";
+            if (!prevLine.includes("await")) {
+              violations.push(
+                `${pathMod.relative(process.cwd(), filePath)}:${i + 1}: ${line.trim()}`,
+              );
+            }
+          }
+        }
+      }
+    }
+
+    expect(checkedCallSites).toBeGreaterThan(40);
+    expect(violations).toEqual([]);
+  });
+
+  test("rejects stale requests", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
     const staleTimestamp = String(now - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS - 1);
     const input = createSignedRequest({ requestTimestamp: staleTimestamp });
-    expect(verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
+    expect(await verifyWeleticShopifyRequest({ ...input, now })).toBe(false);
   });
 
-  test("rejects requests without a valid signature", () => {
+  test("rejects requests without a valid signature", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
     const request = new Request(`https://app.weletic.com${path}`, {
       method: "POST",
-      headers: { [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp },
+      headers: {
+        [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: "req_without_sig",
+      },
       body,
     });
-    expect(verifyWeleticShopifyRequest({ request, body, now })).toBe(false);
+    expect(await verifyWeleticShopifyRequest({ request, body, now })).toBe(
+      false,
+    );
   });
 
-  test("fails closed when the dedicated service secret is missing", () => {
+  test("fails closed when the dedicated service secret is missing", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", "");
     vi.stubEnv(
       "ENCRYPTION_KEY",
@@ -184,7 +552,9 @@ describe("Weletic Shopify service authentication", () => {
     );
     const input = createSignedRequest();
 
-    expect(() => verifyWeleticShopifyRequest({ ...input, now })).toThrow(
+    await expect(
+      verifyWeleticShopifyRequest({ ...input, now }),
+    ).rejects.toThrow(
       "WELETIC_SHOPIFY_SERVICE_SECRET must be at least 32 characters",
     );
   });
@@ -218,7 +588,7 @@ describe("Weletic Shopify service authentication", () => {
           request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER),
         );
         expect(
-          verifyWeleticShopifyRequest({
+          await verifyWeleticShopifyRequest({
             request,
             body: requestBody,
             now: requestTime,
@@ -410,7 +780,7 @@ describe("Weletic Shopify service authentication", () => {
           request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER),
         );
         expect(
-          verifyWeleticShopifyRequest({
+          await verifyWeleticShopifyRequest({
             request,
             body: requestBody,
             now: requestTime,

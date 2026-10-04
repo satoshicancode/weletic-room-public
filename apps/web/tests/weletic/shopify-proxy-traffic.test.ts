@@ -17,6 +17,12 @@ vi.mock("../../../../packages/shopify-app/app/shopify.server", () => ({
   },
 }));
 
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: vi.fn().mockResolvedValue("OK"),
+  },
+}));
+
 const secret = "test-shopify-service-secret-with-32-characters";
 
 describe("Shopify Storefront App Proxy Traffic Termination", () => {
@@ -38,7 +44,7 @@ describe("Shopify Storefront App Proxy Traffic Termination", () => {
         expect(timestamp).toBeTruthy();
         expect(signature).toBeTruthy();
         expect(
-          verifyWeleticShopifyRequest({
+          await verifyWeleticShopifyRequest({
             request: req,
             body: String(init?.body || ""),
             now: Number(timestamp),

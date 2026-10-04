@@ -38,7 +38,7 @@ export function createStoreReviewSettingsRoute(operation: "read" | "write") {
       });
       if (bytes === null) return reply({ error: "invalid_request" }, 400);
       const body = new TextDecoder().decode(bytes);
-      if (!verifyWeleticShopifyRequest({ request, body }))
+      if (!await verifyWeleticShopifyRequest({ request, body }))
         return reply({ error: "unauthorized" }, 401);
       let value: unknown;
       try {
