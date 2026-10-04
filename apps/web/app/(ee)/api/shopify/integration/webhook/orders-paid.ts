@@ -197,6 +197,8 @@ async function ordersPaidUnlocked({
     customer: orderCustomer,
     checkout_token: checkoutToken,
     discount_codes: discountCodes,
+    created_at: createdAt,
+    processed_at: processedAt,
   } = orderSchema.parse(event);
 
   // Stage 2: Optional affiliate attribution dispatch
@@ -228,7 +230,7 @@ async function ordersPaidUnlocked({
 
   // Check if the order was created using a program discount code
   if (discountCodes && discountCodes.length > 0 && workspace.defaultProgramId) {
-    const programDiscountCodes = await prisma.discountCode.findMany({
+    const rawProgramDiscountCodes = await prisma.discountCode.findMany({
       where: {
         programId: workspace.defaultProgramId,
         code: {
@@ -243,16 +245,55 @@ async function ordersPaidUnlocked({
       },
     });
 
-    if (programDiscountCodes.length > 0) {
-      let link = programDiscountCodes[0].link;
+    const orderCreatedAtRaw = createdAt ?? processedAt;
+    const orderCreatedAt = orderCreatedAtRaw
+      ? new Date(orderCreatedAtRaw)
+      : null;
+    const isOrderCreatedAtValid =
+      orderCreatedAt !== null && !isNaN(orderCreatedAt.getTime());
+
+    const isTemporarilyValid = (
+      disabledAt: Date | string | null | undefined,
+    ) => {
+      if (!disabledAt) {
+        return true;
+      }
+      const disabledDate =
+        disabledAt instanceof Date ? disabledAt : new Date(disabledAt);
+      if (isNaN(disabledDate.getTime())) {
+        return true;
+      }
+      if (
+        isOrderCreatedAtValid &&
+        orderCreatedAt.getTime() > disabledDate.getTime()
+      ) {
+        return false;
+      }
+      return true;
+    };
+
+    const programDiscountCodes = rawProgramDiscountCodes.filter((code) =>
+      isTemporarilyValid(code.disabledAt),
+    );
+
+    for (const discountCode of programDiscountCodes) {
+      let link = discountCode.link;
+      if (link && !isTemporarilyValid(link.disabledAt)) {
+        link = null;
+      }
+
       if (!link) {
         link = await prisma.link.findFirst({
           where: {
             programId: workspace.defaultProgramId,
-            partnerId: programDiscountCodes[0].partnerId,
+            partnerId: discountCode.partnerId,
           },
           orderBy: { createdAt: "asc" },
         });
+
+        if (link && !isTemporarilyValid(link.disabledAt)) {
+          link = null;
+        }
       }
 
       if (link) {
