@@ -13,6 +13,7 @@ import {
   getPartnerCatalogPreferences,
   savePartnerCatalogPreferences,
 } from "@/lib/weletic/partner-preferences";
+import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import { BlurImage, Button, LoadingSpinner } from "@dub/ui";
 import {
   ArrowLeft,
@@ -594,7 +595,9 @@ export function WeleticProductDetailPageClient() {
           </h3>
           <div
             className="prose prose-sm max-w-none leading-relaxed text-neutral-700"
-            dangerouslySetInnerHTML={{ __html: product.descriptionHtml }}
+            dangerouslySetInnerHTML={{
+              __html: sanitizeProductDescriptionHtml(product.descriptionHtml),
+            }}
           />
         </div>
       )}

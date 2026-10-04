@@ -7,6 +7,7 @@ import {
   serializeGroupRewardCommission,
 } from "@/lib/weletic/commissions/rules";
 import { weleticCatalogQuerySchema } from "@/lib/zod/schemas/weletic-commerce";
+import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import { NextResponse } from "next/server";
 
 export const GET = withPartnerProfile(
@@ -152,8 +153,9 @@ export const GET = withPartnerProfile(
           externalId: product.externalId,
           handle: product.handle,
           title: translation?.title ?? product.title,
-          descriptionHtml:
+          descriptionHtml: sanitizeProductDescriptionHtml(
             translation?.descriptionHtml ?? product.descriptionHtml,
+          ),
           imageUrl: product.featuredImageUrl,
           vendor: product.vendor,
           productType: product.productType,
