@@ -13,7 +13,6 @@ import {
   getPartnerCatalogPreferences,
   savePartnerCatalogPreferences,
 } from "@/lib/weletic/partner-preferences";
-import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import { BlurImage, Button, LoadingSpinner } from "@dub/ui";
 import {
   ArrowLeft,
@@ -589,14 +588,14 @@ export function WeleticProductDetailPageClient() {
 
       {/* Main Section 3: Product Description / Information */}
       {product.descriptionHtml && (
-        <div className="shadow-xs space-y-4 rounded-2xl border border-neutral-200 bg-white p-6">
+        <div className="shadow-xs relative overflow-hidden space-y-4 rounded-2xl border border-neutral-200 bg-white p-6">
           <h3 className="border-b border-neutral-100 pb-3 text-base font-bold text-neutral-900">
             Mô tả sản phẩm
           </h3>
           <div
             className="prose prose-sm max-w-none leading-relaxed text-neutral-700"
             dangerouslySetInnerHTML={{
-              __html: sanitizeProductDescriptionHtml(product.descriptionHtml),
+              __html: product.descriptionHtml,
             }}
           />
         </div>

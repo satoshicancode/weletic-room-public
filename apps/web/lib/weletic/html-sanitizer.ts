@@ -31,8 +31,11 @@ export const ALLOWED_PRODUCT_DESCRIPTION_TAGS = [
 ] as const;
 
 const SAFE_STYLE_VALUE_REGEX = [
-  /^(?!.*(?:javascript|expression|behavior|vbscript|url\s*\(|@import|-moz-binding)).*$/i,
+  /^(?!.*(?:javascript|expression|behavior|vbscript|url\s*\(|image-set\s*\(|@import|-moz-binding)).*$/i,
 ];
+
+const POSITION_STYLE_REGEX = [/^(?:static|relative|sticky)$/i];
+const Z_INDEX_STYLE_REGEX = [/^(?:[0-9]|10)$/];
 
 export const ALLOWED_CSS_PROPERTIES = [
   // Layout & Box model
@@ -83,7 +86,6 @@ export const ALLOWED_CSS_PROPERTIES = [
   // Colors & Backgrounds
   "color",
   "background-color",
-  "background",
   // Borders
   "border",
   "border-top",
@@ -107,37 +109,45 @@ export const PRODUCT_DESCRIPTION_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [...ALLOWED_PRODUCT_DESCRIPTION_TAGS],
   allowedAttributes: {
     a: ["href", "target", "rel"],
-    div: ["style", "class"],
-    table: ["style", "class"],
-    thead: ["style", "class"],
-    tbody: ["style", "class"],
-    tr: ["style", "class"],
-    th: ["style", "class", "colspan", "rowspan", "scope"],
-    td: ["style", "class", "colspan", "rowspan"],
-    p: ["style", "class"],
-    span: ["style", "class"],
-    ul: ["style", "class"],
-    ol: ["style", "class"],
-    li: ["style", "class"],
-    h1: ["style", "class"],
-    h2: ["style", "class"],
-    h3: ["style", "class"],
-    h4: ["style", "class"],
-    h5: ["style", "class"],
-    h6: ["style", "class"],
-    blockquote: ["style", "class"],
-    strong: ["style", "class"],
-    b: ["style", "class"],
-    em: ["style", "class"],
-    i: ["style", "class"],
-    u: ["style", "class"],
-    hr: ["style", "class"],
+    div: ["style"],
+    table: ["style"],
+    thead: ["style"],
+    tbody: ["style"],
+    tr: ["style"],
+    th: ["style", "colspan", "rowspan", "scope"],
+    td: ["style", "colspan", "rowspan"],
+    p: ["style"],
+    span: ["style"],
+    ul: ["style"],
+    ol: ["style"],
+    li: ["style"],
+    h1: ["style"],
+    h2: ["style"],
+    h3: ["style"],
+    h4: ["style"],
+    h5: ["style"],
+    h6: ["style"],
+    blockquote: ["style"],
+    strong: ["style"],
+    b: ["style"],
+    em: ["style"],
+    i: ["style"],
+    u: ["style"],
+    hr: ["style"],
   },
   allowedSchemes: ["http", "https", "mailto"],
   allowProtocolRelative: false,
   allowedStyles: {
     "*": Object.fromEntries(
-      ALLOWED_CSS_PROPERTIES.map((prop) => [prop, SAFE_STYLE_VALUE_REGEX]),
+      ALLOWED_CSS_PROPERTIES.map((prop) => {
+        if (prop === "position") {
+          return [prop, POSITION_STYLE_REGEX];
+        }
+        if (prop === "z-index") {
+          return [prop, Z_INDEX_STYLE_REGEX];
+        }
+        return [prop, SAFE_STYLE_VALUE_REGEX];
+      }),
     ),
   },
   transformTags: {

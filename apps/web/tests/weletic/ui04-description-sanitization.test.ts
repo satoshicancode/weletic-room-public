@@ -362,4 +362,70 @@ describe("Milestone M2: UI-04 Product Description Sanitization Suite", () => {
       expect(data.product.title).toBe("ヤマックス レギンス");
     });
   });
+
+  describe("Test Case 4: UI Redress, Overlay Phishing & CSS Exfiltration Hardening", () => {
+    it("strips position: fixed, position: absolute, and extreme z-index styles while preserving safe positioning", () => {
+      const fixedOverlayPayload = `<div style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 99999; background-color: #fff;"><a href="https://evil-phishing.com">Click to update account</a></div>`;
+      const absoluteOverlayPayload = `<div style="position: absolute; top: -100px; left: 0; z-index: 999; display: block;">Overlay</div>`;
+      const safePositionPayload = `<div style="position: sticky; left: 0px; z-index: 1; position: relative;">Safe sticky</div>`;
+
+      const cleanedFixed = sanitizeProductDescriptionHtml(fixedOverlayPayload);
+      expect(cleanedFixed).not.toContain("position:fixed");
+      expect(cleanedFixed).not.toContain("position");
+      expect(cleanedFixed).not.toContain("z-index:99999");
+      expect(cleanedFixed).not.toContain("z-index");
+      expect(cleanedFixed).toContain('href="https://evil-phishing.com"');
+
+      const cleanedAbsolute = sanitizeProductDescriptionHtml(absoluteOverlayPayload);
+      expect(cleanedAbsolute).not.toContain("position:absolute");
+      expect(cleanedAbsolute).not.toContain("position");
+      expect(cleanedAbsolute).not.toContain("z-index:999");
+      expect(cleanedAbsolute).not.toContain("z-index");
+
+      const cleanedSafe = sanitizeProductDescriptionHtml(safePositionPayload);
+      expect(cleanedSafe).toContain("position:sticky");
+      expect(cleanedSafe).toContain("z-index:1");
+      expect(cleanedSafe).toContain("left:0px");
+    });
+
+    it("strips class attributes completely to neutralize Tailwind overlay phishing vectors", () => {
+      const classOverlayPayload = `<div class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center"><p class="text-white text-lg">Phishing Modal</p></div>`;
+      const cleaned = sanitizeProductDescriptionHtml(classOverlayPayload);
+      expect(cleaned).not.toContain("class=");
+      expect(cleaned).not.toContain("fixed");
+      expect(cleaned).not.toContain("inset-0");
+      expect(cleaned).not.toContain("z-50");
+      expect(cleaned).toContain("<div><p>Phishing Modal</p></div>");
+    });
+
+    it("strips background shorthand property and blocks outbound asset tracking via image-set() or escaped url()", () => {
+      const imageSetPayload = `<div style="background: image-set('https://attacker.com/leak.png' 1x); color: red;">Leak</div>`;
+      const backslashUrlPayload = `<div style="background: u\\rl('https://evil.com/leak'); color: blue;">Leak 2</div>`;
+      const safeBackgroundColorPayload = `<div style="background-color: rgb(249, 249, 249); color: #333;">Safe Background</div>`;
+
+      const cleanedImageSet = sanitizeProductDescriptionHtml(imageSetPayload);
+      expect(cleanedImageSet).not.toContain("background:");
+      expect(cleanedImageSet).not.toContain("image-set");
+      expect(cleanedImageSet).not.toContain("attacker.com");
+      expect(cleanedImageSet).toContain("color:red");
+
+      const cleanedBackslash = sanitizeProductDescriptionHtml(backslashUrlPayload);
+      expect(cleanedBackslash).not.toContain("background:");
+      expect(cleanedBackslash).not.toContain("evil.com");
+      expect(cleanedBackslash).toContain("color:blue");
+
+      const cleanedSafe = sanitizeProductDescriptionHtml(safeBackgroundColorPayload);
+      expect(cleanedSafe).toContain("background-color:rgb(249, 249, 249)");
+      expect(cleanedSafe).toContain("color:#333");
+    });
+
+    it("preserves z-index between 0 and 10 and rejects z-index > 10 or negative z-index", () => {
+      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 0;">0</div>`)).toContain("z-index:0");
+      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 1;">1</div>`)).toContain("z-index:1");
+      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 10;">10</div>`)).toContain("z-index:10");
+      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 11;">11</div>`)).not.toContain("z-index");
+      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 99999;">99999</div>`)).not.toContain("z-index");
+      expect(sanitizeProductDescriptionHtml(`<div style="z-index: -1;">-1</div>`)).not.toContain("z-index");
+    });
+  });
 });
