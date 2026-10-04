@@ -33,6 +33,12 @@ const { mockRedisSet, redisStore } = vi.hoisted(() => {
   return { mockRedisSet: fn, redisStore: store };
 });
 
+vi.mock("../../lib/upstash/redis", () => ({
+  redis: {
+    set: (...args: any[]) => (mockRedisSet as any)(...args),
+  },
+}));
+
 vi.mock("@/lib/upstash/redis", () => ({
   redis: {
     set: (...args: any[]) => (mockRedisSet as any)(...args),

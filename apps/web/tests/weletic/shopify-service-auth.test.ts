@@ -99,6 +99,12 @@ const mockRedisSet = vi.fn(
   },
 );
 
+vi.mock("../../lib/upstash/redis", () => ({
+  redis: {
+    set: (...args: any[]) => (mockRedisSet as any)(...args),
+  },
+}));
+
 vi.mock("@/lib/upstash/redis", () => ({
   redis: {
     set: (...args: any[]) => (mockRedisSet as any)(...args),

@@ -116,13 +116,13 @@ export async function readWeleticShopifyRequestBody(request: Request) {
 
 const inMemoryNonceCache = new Map<string, number>();
 
-type RedisSetClient = {
-  set: (
+export interface RedisSetClient {
+  set(
     key: string,
     value: string,
     opts?: { nx?: boolean; ex?: number },
-  ) => Promise<unknown>;
-};
+  ): Promise<unknown>;
+}
 
 let cachedRedisClient: RedisSetClient | null | undefined = undefined;
 let redisClientPromise: Promise<RedisSetClient | null> | null = null;
@@ -165,16 +165,16 @@ async function getRedisClient(): Promise<RedisSetClient | null> {
   if (!redisClientPromise) {
     redisClientPromise = (async () => {
       try {
-        // @ts-ignore
-        const mod = await import("@/lib/upstash/redis");
-        return mod?.redis ? (mod.redis as unknown as RedisSetClient) : null;
-      } catch {
-        try {
-          const mod = await import("../../upstash/redis");
-          return mod?.redis ? (mod.redis as unknown as RedisSetClient) : null;
-        } catch {
-          return null;
-        }
+        const mod = (await import("../../upstash/redis")) as {
+          redis?: RedisSetClient;
+        };
+        return mod?.redis ?? null;
+      } catch (err: any) {
+        console.warn(
+          "[service-auth] Failed to load Upstash Redis client, falling back to in-memory nonce cache:",
+          err?.message || String(err),
+        );
+        return null;
       }
     })();
   }
