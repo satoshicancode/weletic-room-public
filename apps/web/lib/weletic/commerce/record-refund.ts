@@ -75,16 +75,15 @@ export function calculateRefundReversal({
   return reversal > BigInt(0) ? reversal : BigInt(0);
 }
 
-function toSafeInt(value: bigint, field: string) {
-  const number = Number(value);
-  if (
-    !Number.isSafeInteger(number) ||
-    number > 2_147_483_647 ||
-    number < -2_147_483_648
-  ) {
-    throw new Error(`${field} exceeds the Dub integer money range.`);
+const MAX_SAFE_BIGINT = BigInt("9223372036854775807");
+const MIN_SAFE_BIGINT = BigInt("-9223372036854775808");
+
+export function toSafeBigInt(value: bigint | number, field: string): bigint {
+  const bigValue = typeof value === "bigint" ? value : BigInt(value);
+  if (bigValue > MAX_SAFE_BIGINT || bigValue < MIN_SAFE_BIGINT) {
+    throw new Error(`${field} exceeds the 64-bit integer money range.`);
   }
-  return number;
+  return bigValue;
 }
 
 async function assertRefundStoreAcceptsWrite({
@@ -775,9 +774,9 @@ async function recordWeleticRefundUnlocked({
             eventId: `weletic:shopify:refund:${store.id}:${externalId}`,
             description: `Refund for Shopify order ${order.orderName ?? order.externalId}`,
             type: "custom",
-            amount: 0,
+            amount: BigInt(0),
             quantity: lines.reduce((total, line) => total + line.quantity, 0),
-            earnings: toSafeInt(totalEarnings, "Refund reversal"),
+            earnings: toSafeBigInt(totalEarnings, "Refund reversal"),
             currency: order.accountingCurrency,
             status: "pending",
             sourceCommissionId,

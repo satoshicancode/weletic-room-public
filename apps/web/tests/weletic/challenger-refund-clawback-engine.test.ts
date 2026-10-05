@@ -784,7 +784,7 @@ describe("Challenger 2: Financial Settlement & ADR 0004 Proportional Refund Claw
       const refundCommissions = Array.from(db.commissions.values());
       expect(refundCommissions).toHaveLength(1);
       const refundComm1 = refundCommissions[0];
-      expect(refundComm1.earnings).toBe(-800); // -$8.00 (50% of $16.00)
+      expect(refundComm1.earnings).toBe(BigInt(-800)); // -$8.00 (50% of $16.00)
       expect(refundComm1.partnerId).toBe("partner_hiro");
       expect(refundComm1.status).toBe("pending");
 
@@ -835,7 +835,7 @@ describe("Challenger 2: Financial Settlement & ADR 0004 Proportional Refund Claw
       expect(allCommissions).toHaveLength(2);
       const refundComm2 = allCommissions[1];
       // Remaining $8.00 from Line 1 + full $4.00 from Line 2 = -$12.00 (-1200 cents)
-      expect(refundComm2.earnings).toBe(-1200);
+      expect(refundComm2.earnings).toBe(BigInt(-1200));
 
       // Verify total net commission across entire order: $20.00 original - $8.00 - $12.00 = $0.00
       const totalCommissionNet =
