@@ -17,6 +17,25 @@ else
 end
 `;
 
+interface InMemoryLockRecord {
+  token: string;
+  expiresAt: number;
+}
+
+const inMemoryLocks = new Map<string, InMemoryLockRecord>();
+
+function cleanExpiredInMemoryLocks(now = Date.now()) {
+  for (const [k, lock] of inMemoryLocks.entries()) {
+    if (lock.expiresAt <= now) {
+      inMemoryLocks.delete(k);
+    }
+  }
+}
+
+export function resetInMemoryLocks() {
+  inMemoryLocks.clear();
+}
+
 export async function acquireDistributedLock({
   key,
   ttlSeconds = 60,
@@ -32,8 +51,17 @@ export async function acquireDistributedLock({
     });
     return { acquired: Boolean(result), token };
   } catch (error) {
-    console.error(`[DistributedLock] Failed to acquire lock for ${key}`, error);
-    return { acquired: false, token };
+    if (!process.env.UPSTASH_REDIS_REST_URL?.includes("upstash.invalid")) {
+      console.error(`[DistributedLock] Failed to acquire lock for ${key}`, error);
+    }
+    const now = Date.now();
+    cleanExpiredInMemoryLocks(now);
+    const existing = inMemoryLocks.get(key);
+    if (existing && existing.expiresAt > now) {
+      return { acquired: false, token };
+    }
+    inMemoryLocks.set(key, { token, expiresAt: now + ttlSeconds * 1000 });
+    return { acquired: true, token };
   }
 }
 
@@ -46,9 +74,20 @@ export async function releaseDistributedLock({
 }): Promise<boolean> {
   try {
     const result = await redis.eval(RELEASE_LOCK_SCRIPT, [key], [token]);
+    const memoryLock = inMemoryLocks.get(key);
+    if (memoryLock && memoryLock.token === token) {
+      inMemoryLocks.delete(key);
+    }
     return Number(result) === 1;
   } catch (error) {
-    console.error(`[DistributedLock] Failed to release lock for ${key}`, error);
+    if (!process.env.UPSTASH_REDIS_REST_URL?.includes("upstash.invalid")) {
+      console.error(`[DistributedLock] Failed to release lock for ${key}`, error);
+    }
+    const memoryLock = inMemoryLocks.get(key);
+    if (memoryLock && memoryLock.token === token) {
+      inMemoryLocks.delete(key);
+      return true;
+    }
     return false;
   }
 }
@@ -68,9 +107,21 @@ export async function renewDistributedLock({
       [key],
       [token, String(ttlSeconds)],
     );
+    const memoryLock = inMemoryLocks.get(key);
+    if (memoryLock && memoryLock.token === token) {
+      memoryLock.expiresAt = Date.now() + ttlSeconds * 1000;
+    }
     return Number(result) === 1;
   } catch (error) {
-    console.error(`[DistributedLock] Failed to renew lock for ${key}`, error);
+    if (!process.env.UPSTASH_REDIS_REST_URL?.includes("upstash.invalid")) {
+      console.error(`[DistributedLock] Failed to renew lock for ${key}`, error);
+    }
+    const now = Date.now();
+    const memoryLock = inMemoryLocks.get(key);
+    if (memoryLock && memoryLock.token === token && memoryLock.expiresAt > now) {
+      memoryLock.expiresAt = now + ttlSeconds * 1000;
+      return true;
+    }
     return false;
   }
 }

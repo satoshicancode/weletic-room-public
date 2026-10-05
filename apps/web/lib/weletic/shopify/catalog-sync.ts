@@ -11,7 +11,13 @@ import {
   decimalToMinorUnits,
   normalizeCurrency,
 } from "@/lib/weletic/money";
-import { withDistributedLock } from "@/lib/weletic/redis-lock";
+import {
+  acquireDistributedLock,
+  releaseDistributedLock,
+  renewDistributedLock,
+  withDistributedLock,
+} from "@/lib/weletic/redis-lock";
+import { waitUntil } from "@vercel/functions";
 import {
   Prisma,
   WeleticProductStatus,
@@ -362,9 +368,11 @@ async function withCatalogWriteFence<T>({
 async function performWeleticShopifyCatalogSync({
   workspaceId,
   expectedInstallationGeneration,
+  existingRunId,
 }: {
   workspaceId: string;
   expectedInstallationGeneration?: string | null;
+  existingRunId?: string;
 }) {
   const installation = await getWeleticShopifyInstallation(workspaceId);
   const credentialInstallationGeneration =
@@ -383,6 +391,27 @@ async function performWeleticShopifyCatalogSync({
       expectedInstallationGeneration: credentialInstallationGeneration,
       tx,
     });
+    if (existingRunId) {
+      const existing = await tx.weleticShopifySyncRun.findUnique({
+        where: { id: existingRunId },
+        include: { store: true },
+      });
+      if (existing) {
+        await tx.weleticShopifyStore.update({
+          where: { id: existing.storeId },
+          data: { syncStatus: WeleticSyncStatus.running },
+        });
+        const updated = await tx.weleticShopifySyncRun.update({
+          where: { id: existingRunId },
+          data: {
+            status: WeleticSyncStatus.running,
+            startedAt: new Date(),
+          },
+          include: { store: true },
+        });
+        return updated;
+      }
+    }
     const createdRun = await tx.weleticShopifySyncRun.create({
       data: {
         id: createWeleticId("wsync_"),
@@ -1168,6 +1197,153 @@ async function performWeleticShopifyCatalogSync({
   }
 }
 
+export async function runCatalogSyncWorker({
+  workspaceId,
+  runId,
+  lockToken,
+  expectedInstallationGeneration,
+}: {
+  workspaceId: string;
+  runId: string;
+  lockToken?: string;
+  expectedInstallationGeneration?: string | null;
+}) {
+  const lockKey = `weletic:catalog-sync:${workspaceId}`;
+  const ttlSeconds = 120;
+  let renewalInFlight = false;
+  const renewalTimer = lockToken
+    ? setInterval(() => {
+        if (renewalInFlight) return;
+        renewalInFlight = true;
+        void renewDistributedLock({
+          key: lockKey,
+          token: lockToken,
+          ttlSeconds,
+        }).finally(() => {
+          renewalInFlight = false;
+        });
+      }, 40_000)
+    : null;
+  renewalTimer?.unref?.();
+
+  try {
+    return await performWeleticShopifyCatalogSync({
+      workspaceId,
+      expectedInstallationGeneration,
+      existingRunId: runId,
+    });
+  } finally {
+    if (renewalTimer) clearInterval(renewalTimer);
+    if (lockToken) {
+      await releaseDistributedLock({ key: lockKey, token: lockToken });
+    }
+  }
+}
+
+export async function dispatchWeleticShopifyCatalogSync({
+  workspaceId,
+  expectedInstallationGeneration,
+}: {
+  workspaceId: string;
+  expectedInstallationGeneration?: string | null;
+}): Promise<{ runId: string; status: "pending" }> {
+  await assertShopifyStoreAcceptsOperationalWrites({
+    workspaceId,
+    action: "catalog_sync_start",
+    allowMissing: true,
+  });
+
+  const lockKey = `weletic:catalog-sync:${workspaceId}`;
+  const { acquired, token } = await acquireDistributedLock({
+    key: lockKey,
+    ttlSeconds: 120,
+  });
+  if (!acquired) {
+    throw new Error("A Shopify catalog sync is already running.");
+  }
+
+  const activeRun = await prisma.weleticShopifySyncRun.findFirst({
+    where: {
+      store: { projectId: workspaceId },
+      status: { in: [WeleticSyncStatus.pending, WeleticSyncStatus.running] },
+      updatedAt: { gte: new Date(Date.now() - 120_000) },
+    },
+  });
+  if (activeRun) {
+    await releaseDistributedLock({ key: lockKey, token });
+    throw new Error("A Shopify catalog sync is already running.");
+  }
+
+  const installation = await getWeleticShopifyInstallation(workspaceId);
+  const credentialInstallationGeneration =
+    installation.installationGeneration ?? null;
+  if (
+    expectedInstallationGeneration !== undefined &&
+    expectedInstallationGeneration !== credentialInstallationGeneration
+  ) {
+    await releaseDistributedLock({ key: lockKey, token });
+    throw new Error("Shopify catalog trigger belongs to a stale installation.");
+  }
+
+  const runId = createWeleticId("wsync_");
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await assertShopifyStoreAcceptsOperationalWrites({
+        workspaceId,
+        action: "catalog_sync_start",
+        allowMissing: true,
+        expectedInstallationGeneration: credentialInstallationGeneration,
+        tx,
+      });
+
+      const store = await tx.weleticShopifyStore.upsert({
+        where: { projectId: workspaceId },
+        create: {
+          id: createWeleticId("wstore_"),
+          projectId: workspaceId,
+          programId: installation.programId,
+          shopDomain: installation.shopDomain,
+          shopCurrency: "USD",
+          installationGeneration: credentialInstallationGeneration,
+          apiVersion: SHOPIFY_ADMIN_API_VERSION,
+          syncStatus: WeleticSyncStatus.pending,
+        },
+        update: {
+          syncStatus: WeleticSyncStatus.pending,
+        },
+      });
+
+      await tx.weleticShopifySyncRun.create({
+        data: {
+          id: runId,
+          storeId: store.id,
+          kind: "full_catalog",
+          status: WeleticSyncStatus.pending,
+          stats: { products: 0, variants: 0, markets: 0, marketPrices: 0 },
+          startedAt: new Date(),
+        },
+      });
+    });
+
+    waitUntil(
+      runCatalogSyncWorker({
+        workspaceId,
+        runId,
+        lockToken: token,
+        expectedInstallationGeneration: credentialInstallationGeneration,
+      }).catch((err) => {
+        console.error(`[CatalogSync] Background sync ${runId} failed:`, err);
+      }),
+    );
+
+    return { runId, status: "pending" };
+  } catch (err) {
+    await releaseDistributedLock({ key: lockKey, token });
+    throw err;
+  }
+}
+
 export async function syncWeleticShopifyCatalog({
   workspaceId,
   expectedInstallationGeneration,
@@ -1178,7 +1354,7 @@ export async function syncWeleticShopifyCatalog({
   const lockKey = `weletic:catalog-sync:${workspaceId}`;
   return await withDistributedLock({
     key: lockKey,
-    ttlSeconds: 30 * 60,
+    ttlSeconds: 120,
     onLocked: () => {
       throw new Error("A Shopify catalog sync is already running.");
     },
