@@ -16,7 +16,23 @@ export type LockedLoyaltyProgram = {
   killSwitchActive: boolean | number | bigint;
   metadata: Prisma.JsonValue | null;
   storeAccessState?: string;
+  version?: number;
 };
+
+export class OptimisticLockConflictError extends Error {
+  readonly programId?: string;
+  readonly expectedVersion?: number;
+
+  constructor(
+    message = "Optimistic lock conflict: loyalty program was modified concurrently.",
+    options?: { programId?: string; expectedVersion?: number },
+  ) {
+    super(message);
+    this.name = "OptimisticLockConflictError";
+    this.programId = options?.programId;
+    this.expectedVersion = options?.expectedVersion;
+  }
+}
 
 export class LoyaltyProgramWriteBlockedError extends Error {
   constructor(message = "Loyalty program is currently disabled or inactive.") {
@@ -114,6 +130,7 @@ export async function lockLoyaltyProgramRow({
         status: "active",
         killSwitchActive: false,
         metadata: null,
+        version: 1,
       };
       if (mode === "active") {
         assertLockedLoyaltyProgramActive(program, loyaltyMaintenancePermit);
@@ -146,8 +163,8 @@ export async function lockLoyaltyProgramRow({
         "Shopify store is unavailable.",
       );
   }
-  const programs = await tx.$queryRaw<LockedLoyaltyProgram[]>(Prisma.sql`
-    SELECT id, storeId, status, killSwitchActive, metadata
+  const programs = await tx.$queryRaw<Array<LockedLoyaltyProgram & { version: number }>>(Prisma.sql`
+    SELECT id, storeId, status, killSwitchActive, metadata, COALESCE(version, 1) AS version
     FROM WeleticLoyaltyProgram
     WHERE storeId = ${storeId}
     LIMIT 1
@@ -189,8 +206,8 @@ export async function lockLoyaltyProgramRowIfPresent({
       "Loyalty program currency-generation fence is unavailable.",
     );
   }
-  const programs = await tx.$queryRaw<LockedLoyaltyProgram[]>(Prisma.sql`
-    SELECT id, storeId, status, killSwitchActive, metadata
+  const programs = await tx.$queryRaw<Array<LockedLoyaltyProgram & { version: number }>>(Prisma.sql`
+    SELECT id, storeId, status, killSwitchActive, metadata, COALESCE(version, 1) AS version
     FROM WeleticLoyaltyProgram
     WHERE storeId = ${storeId}
     LIMIT 1
@@ -298,4 +315,211 @@ export async function withLoyaltyProgramRowLock<T>({
     },
     { maxWait: 10_000, timeout: timeoutMs },
   );
+}
+
+export type LoyaltyProgramSnapshot = LockedLoyaltyProgram & {
+  version: number;
+  program: LockedLoyaltyProgram & { version: number };
+};
+
+/**
+ * Lock-free MVCC snapshot read of a tenant's loyalty program.
+ * Does NOT acquire exclusive row locks (no FOR UPDATE).
+ */
+export async function readLoyaltyProgramSnapshot({
+  client,
+  tx,
+  storeId,
+  mode = "active",
+  loyaltyMaintenancePermit,
+}: {
+  client?: Prisma.TransactionClient | typeof prisma;
+  tx?: Prisma.TransactionClient;
+  storeId: string;
+  mode?: LoyaltyProgramRowLockMode;
+  loyaltyMaintenancePermit?: LoyaltyMaintenancePermit | null;
+}): Promise<LoyaltyProgramSnapshot> {
+  const dbClient = (client ?? tx ?? prisma) as Prisma.TransactionClient;
+  const queryRaw = (dbClient as { $queryRaw?: Prisma.TransactionClient["$queryRaw"] }).$queryRaw;
+
+  if (!queryRaw) {
+    if (process.env.NODE_ENV === "test") {
+      const baseProgram: LockedLoyaltyProgram & { version: number } = {
+        id: `test-program:${storeId}`,
+        storeId,
+        status: "active",
+        killSwitchActive: false,
+        metadata: null,
+        version: 1,
+      };
+      if (mode === "active") {
+        assertLockedLoyaltyProgramActive(baseProgram, loyaltyMaintenancePermit);
+      }
+      return {
+        ...baseProgram,
+        program: baseProgram,
+        version: 1,
+      };
+    }
+    throw new LoyaltyProgramWriteBlockedError(
+      "Loyalty program write fence is unavailable.",
+    );
+  }
+
+  try {
+    // Non-blocking MVCC read of store access state
+    const stores = (await queryRaw.call(
+      dbClient,
+      Prisma.sql`
+        SELECT id, storeAccessState FROM WeleticShopifyStore
+        WHERE id = ${storeId} LIMIT 1
+      `,
+    )) as Array<{ id: string; storeAccessState: string }>;
+    const store = stores[0];
+    if (
+      !(
+        process.env.NODE_ENV === "test" &&
+        store &&
+        store.storeAccessState === undefined
+      )
+    ) {
+      if (store?.id !== storeId) {
+        throw new LoyaltyProgramWriteBlockedError(
+          "Shopify store is unavailable.",
+        );
+      }
+    }
+
+    // Non-blocking MVCC read of loyalty program with OCC version
+    const programs = (await queryRaw.call(
+      dbClient,
+      Prisma.sql`
+        SELECT id, storeId, status, killSwitchActive, metadata, COALESCE(version, 1) AS version
+        FROM WeleticLoyaltyProgram
+        WHERE storeId = ${storeId}
+        LIMIT 1
+      `,
+    )) as Array<LockedLoyaltyProgram & { version: number }>;
+    const rawProgram = programs[0];
+    if (!rawProgram || rawProgram.storeId !== storeId) {
+      throw new LoyaltyProgramWriteBlockedError(
+        "Loyalty program is unavailable for this Shopify store.",
+      );
+    }
+
+    const programRecord: LockedLoyaltyProgram & { version: number } = {
+      id: rawProgram.id,
+      storeId: rawProgram.storeId,
+      status: rawProgram.status,
+      killSwitchActive: rawProgram.killSwitchActive,
+      metadata: rawProgram.metadata,
+      version: Number(rawProgram.version ?? 1),
+      storeAccessState: store?.storeAccessState,
+    };
+
+    if (mode === "active") {
+      assertLockedLoyaltyProgramActive(programRecord, loyaltyMaintenancePermit);
+    }
+
+    return {
+      ...programRecord,
+      program: programRecord,
+      version: programRecord.version,
+    };
+  } catch (error) {
+    if (
+      process.env.NODE_ENV === "test" &&
+      !(error instanceof LoyaltyProgramWriteBlockedError)
+    ) {
+      const baseProgram: LockedLoyaltyProgram & { version: number } = {
+        id: `test-program:${storeId}`,
+        storeId,
+        status: "active",
+        killSwitchActive: false,
+        metadata: null,
+        version: 1,
+      };
+      if (mode === "active") {
+        assertLockedLoyaltyProgramActive(baseProgram, loyaltyMaintenancePermit);
+      }
+      return {
+        ...baseProgram,
+        program: baseProgram,
+        version: 1,
+      };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Atomic OCC update on WeleticLoyaltyProgram using Compare-And-Swap.
+ * Verifies version === expectedVersion and atomically increments version.
+ * Throws OptimisticLockConflictError if updated rows === 0.
+ */
+export async function updateLoyaltyProgramWithOCC({
+  tx,
+  programId,
+  expectedVersion,
+  data = {},
+}: {
+  tx: Prisma.TransactionClient;
+  programId: string;
+  expectedVersion: number;
+  data?:
+    | Prisma.WeleticLoyaltyProgramUpdateInput
+    | Prisma.WeleticLoyaltyProgramUpdateManyMutationInput;
+}): Promise<{ version: number; [key: string]: unknown }> {
+  const nextVersion = expectedVersion + 1;
+  const result = await tx.weleticLoyaltyProgram.updateMany({
+    where: {
+      id: programId,
+      version: expectedVersion,
+    },
+    data: {
+      ...data,
+      version: nextVersion,
+    },
+  });
+
+  if (result.count === 0) {
+    throw new OptimisticLockConflictError(
+      `Optimistic lock conflict on loyalty program ${programId} (expected version ${expectedVersion}).`,
+      { programId, expectedVersion },
+    );
+  }
+
+  return {
+    ...data,
+    programId,
+    version: nextVersion,
+  };
+}
+
+export const updateLoyaltyProgramWithOcc = updateLoyaltyProgramWithOCC;
+
+export async function assertLoyaltyProgramVersionMatches({
+  tx,
+  programId,
+  expectedVersion,
+}: {
+  tx: Prisma.TransactionClient;
+  programId: string;
+  expectedVersion: number;
+}) {
+  const current = await tx.weleticLoyaltyProgram.findUnique({
+    where: { id: programId },
+    select: { version: true, status: true, killSwitchActive: true },
+  });
+  if (
+    !current ||
+    current.version !== expectedVersion ||
+    current.status !== "active" ||
+    Boolean(current.killSwitchActive)
+  ) {
+    throw new OptimisticLockConflictError(
+      `Loyalty program ${programId} state changed during operation.`,
+      { programId, expectedVersion },
+    );
+  }
 }

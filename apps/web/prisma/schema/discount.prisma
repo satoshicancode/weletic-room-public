@@ -46,4 +46,6 @@ model DiscountCode {
   @@index([programId, partnerId])
   @@index(discountId)
   @@index(partnerId)
+  @@index([programId, disabledAt])
+  @@index([partnerId, disabledAt])
 }

@@ -7,9 +7,16 @@ import { parseHistoricalImportSource } from "@/lib/weletic/loyalty/historical-im
 import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ lock: vi.fn(), preview: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  lock: vi.fn(),
+  snapshot: vi.fn(),
+  preview: vi.fn(),
+  assertVersion: vi.fn(),
+}));
 vi.mock("@/lib/weletic/loyalty/program-write-fence", () => ({
   lockLoyaltyProgramRow: mocks.lock,
+  readLoyaltyProgramSnapshot: mocks.snapshot,
+  assertLoyaltyProgramVersionMatches: mocks.assertVersion,
 }));
 vi.mock("@/lib/weletic/loyalty/historical-import-preview", () => ({
   inspectHistoricalImportPreview: mocks.preview,
@@ -69,7 +76,14 @@ function fixture() {
   };
 }
 beforeEach(() => {
-  mocks.lock.mockReset().mockResolvedValue({ id: "program", storeId: "store" });
+  mocks.lock.mockReset().mockResolvedValue({ id: "program", storeId: "store", version: 1 });
+  mocks.snapshot.mockReset().mockResolvedValue({
+    id: "program",
+    storeId: "store",
+    version: 1,
+    program: { id: "program", storeId: "store", version: 1 },
+  });
+  mocks.assertVersion.mockReset().mockResolvedValue(undefined);
   mocks.preview.mockReset().mockResolvedValue({ valid: true });
 });
 describe("historical import staging", () => {
