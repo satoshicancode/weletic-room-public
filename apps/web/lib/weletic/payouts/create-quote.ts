@@ -37,6 +37,10 @@ export async function createWeleticPayoutQuote({
       },
     },
   });
+
+  if (payout.amount <= 0) {
+    throw new Error("Cannot create payout quote for non-positive payout");
+  }
   const preferredPayoutCurrency = payout.partner.preferredPayoutCurrency
     ? normalizeCurrency(payout.partner.preferredPayoutCurrency)
     : null;
@@ -174,6 +178,7 @@ export async function refreshWeleticOpenPayoutQuotes({
       partnerId,
       programId,
       status: { in: ["pending", "processing", "processed"] },
+      amount: { gt: 0 },
     },
     select: { id: true },
   });
