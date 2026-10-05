@@ -195,11 +195,44 @@ mutation WeleticStoreCreditDebit(
   }
 }`;
 
+const CUSTOMER_STORE_CREDIT_AUDIT_QUERY = `
+query WeleticCustomerStoreCreditAudit($id: ID!) {
+  customer(id: $id) {
+    id
+    storeCreditAccounts(first: 5) {
+      edges {
+        node {
+          id
+          balance {
+            amount
+            currencyCode
+          }
+          transactions(first: 20, reverse: true) {
+            edges {
+              node {
+                id
+                amount {
+                  amount
+                  currencyCode
+                }
+                createdAt
+                ... on StoreCreditAccountCreditTransaction {
+                  expiresAt
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
 function normalizeDate(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : null;
 }
 
-function sameMoney(left: string, right: string) {
+export function sameMoney(left: string, right: string) {
   // Remote Decimal values must match exactly, without floating-point rounding.
   const canonical = (value: string) => {
     if (!/^-?\d+(?:\.\d+)?$/.test(value)) return null;
@@ -696,4 +729,73 @@ export async function debitShopifyStoreCredit({
   } catch (error) {
     return mapTransportError(error);
   }
+}
+
+export type ShopifyCustomerStoreCreditTransaction = {
+  id: string;
+  accountId: string;
+  amount: string;
+  currencyCode: string;
+  createdAt: Date;
+  expiresAt: Date | null;
+};
+
+export async function auditShopifyCustomerStoreCreditTransactions({
+  credentials,
+  customerId,
+  customFetch,
+}: {
+  credentials: ResolvedShopifyCredentials;
+  customerId: string;
+  customFetch?: typeof fetch;
+}): Promise<ShopifyCustomerStoreCreditTransaction[]> {
+  assertFinancialRewardScope({ credentials, rewardType: "store_credit" });
+  const data = await shopifyAdminGraphqlRequest<{
+    customer: {
+      id: string;
+      storeCreditAccounts: {
+        edges: Array<{
+          node: {
+            id: string;
+            balance: { amount: string; currencyCode: string };
+            transactions: {
+              edges: Array<{
+                node: {
+                  id: string;
+                  amount: { amount: string; currencyCode: string };
+                  createdAt: string;
+                  expiresAt?: string | null;
+                };
+              }>;
+            };
+          };
+        }>;
+      } | null;
+    } | null;
+  }>({
+    shopDomain: credentials.shopDomain,
+    accessToken: credentials.accessToken,
+    query: CUSTOMER_STORE_CREDIT_AUDIT_QUERY,
+    variables: { id: formatShopifyGid("Customer", customerId) },
+    customFetch,
+    maxRetries: 1,
+  });
+
+  const transactions: ShopifyCustomerStoreCreditTransaction[] = [];
+  const accounts = data.customer?.storeCreditAccounts?.edges ?? [];
+  for (const accEdge of accounts) {
+    const acc = accEdge.node;
+    for (const txEdge of acc.transactions.edges) {
+      transactions.push({
+        id: txEdge.node.id,
+        accountId: acc.id,
+        amount: txEdge.node.amount.amount,
+        currencyCode: txEdge.node.amount.currencyCode,
+        createdAt: new Date(txEdge.node.createdAt),
+        expiresAt: txEdge.node.expiresAt ? new Date(txEdge.node.expiresAt) : null,
+      });
+    }
+  }
+
+  return transactions;
 }

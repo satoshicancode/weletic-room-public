@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { createWeleticId } from "@/lib/weletic/ids";
 import {
+  hasRemoteProvisionAttempt,
   markFinancialRewardExpired,
   provisionFinancialRewardReservation,
 } from "@/lib/weletic/loyalty/financial-reward-saga";
+import { reconcilePendingStoreCreditRedemption } from "@/lib/weletic/loyalty/store-credit-reconciliation";
 import { handleFlowTrigger } from "@/lib/weletic/loyalty/flow-trigger-worker";
 import { ShopifyFlowDispatchError } from "@/lib/weletic/loyalty/flow-triggers";
 import { releaseHoldingPeriodGrant } from "@/lib/weletic/loyalty/holding-period";
@@ -158,7 +160,11 @@ type OutboxExecutionResult = {
     | "healed"
     | "financial_expired"
     | "financial_issued"
-    | "dedicated_referral_recovery";
+    | "dedicated_referral_recovery"
+    | "confirmed"
+    | "refunded_and_failed"
+    | "deferred"
+    | "skipped";
   voucherPrivacyCleanupOutcome?:
     | "deactivated"
     | "verified_absent"
@@ -2555,6 +2561,20 @@ async function handleFinancialRedemptionRecovery({
       `Financial redemption ${redemption.id} is missing its immutable provisioning snapshot.`,
     );
   }
+
+  if (
+    redemption.artifactKind === WeleticRewardArtifactKind.store_credit &&
+    hasRemoteProvisionAttempt(redemption.metadata)
+  ) {
+    const reconciliation = await reconcilePendingStoreCreditRedemption({
+      storeId,
+      redemptionId: redemption.id,
+      now,
+      loyaltyMaintenancePermit,
+    });
+    return reconciliation.outcome;
+  }
+
   await provisionFinancialRewardReservation({
     storeId,
     accountId: redemption.accountId,
