@@ -1,4 +1,5 @@
 import { decrypt, decryptOrPassthrough } from "@/lib/encryption";
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { integrationCredentialsSchema } from "@/lib/integrations/shopify/schema";
 import { prisma } from "@/lib/prisma";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
@@ -87,7 +88,7 @@ export async function fetchVerifiedShopifyShopDetails({
 
   try {
     const response = await customFetch(
-      `https://${expectedShop}/admin/api/2026-07/graphql.json`,
+      `https://${expectedShop}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/graphql.json`,
       {
         method: "POST",
         headers: {
@@ -370,11 +371,42 @@ export async function resolveShopifyStoreByDomain(
   const domain = normalizeShopDomain(rawDomain);
   if (!domain) return null;
 
-  // 1. Direct database lookup by project.shopifyStoreId or
-  // weleticShopifyStore.shopDomain. Every invocation re-reads the credential;
-  // no raw token survives a same-generation refresh in a process-local cache.
+  // 1. Direct database lookup by weleticShopifyStore.shopDomain or project.shopifyStoreId.
+  // Every invocation re-reads the credential; no raw token survives a same-generation refresh in a process-local cache.
+  let matchingStore: any = null;
   let matchingProject: any = null;
-  if (typeof prisma?.project?.findUnique === "function") {
+
+  // First, check if there is a store record matching shopDomain directly
+  if (typeof prisma?.weleticShopifyStore?.findUnique === "function") {
+    matchingStore = await prisma.weleticShopifyStore.findUnique({
+      where: { shopDomain: domain },
+      select: {
+        id: true,
+        projectId: true,
+        shopDomain: true,
+        installationGeneration: true,
+      },
+    });
+  }
+
+  if (matchingStore?.projectId && typeof prisma?.project?.findUnique === "function") {
+    matchingProject = await prisma.project.findUnique({
+      where: { id: matchingStore.projectId },
+      select: {
+        id: true,
+        shopifyStoreId: true,
+        defaultProgramId: true,
+        installedIntegrations: {
+          where: { integrationId: SHOPIFY_INTEGRATION_ID },
+          take: 1,
+          select: { id: true, credentials: true, updatedAt: true },
+        },
+      },
+    });
+  }
+
+  // If not found by store.shopDomain, check project.shopifyStoreId
+  if (!matchingProject && typeof prisma?.project?.findUnique === "function") {
     matchingProject = await prisma.project.findUnique({
       where: { shopifyStoreId: domain },
       select: {
@@ -385,13 +417,6 @@ export async function resolveShopifyStoreByDomain(
           where: { integrationId: SHOPIFY_INTEGRATION_ID },
           take: 1,
           select: { id: true, credentials: true, updatedAt: true },
-        },
-        weleticShopifyStore: {
-          select: {
-            id: true,
-            shopDomain: true,
-            installationGeneration: true,
-          },
         },
       },
     });
@@ -406,7 +431,6 @@ export async function resolveShopifyStoreByDomain(
             shopifyStoreId:
               domain.replace(".myshopify.com", "") + ".myshopify.com",
           },
-          { weleticShopifyStore: { shopDomain: domain } },
         ],
       },
       select: {
@@ -417,13 +441,6 @@ export async function resolveShopifyStoreByDomain(
           where: { integrationId: SHOPIFY_INTEGRATION_ID },
           take: 1,
           select: { id: true, credentials: true, updatedAt: true },
-        },
-        weleticShopifyStore: {
-          select: {
-            id: true,
-            shopDomain: true,
-            installationGeneration: true,
-          },
         },
       },
     });
@@ -448,13 +465,6 @@ export async function resolveShopifyStoreByDomain(
             id: true,
             shopifyStoreId: true,
             defaultProgramId: true,
-            weleticShopifyStore: {
-              select: {
-                id: true,
-                shopDomain: true,
-                installationGeneration: true,
-              },
-            },
           },
         },
       },
@@ -464,6 +474,28 @@ export async function resolveShopifyStoreByDomain(
       matchingProject = exactIntegration.project;
       matchedOnlyByCredentialAlias = true;
     }
+  }
+
+  // Adopt in-memory or mock weleticShopifyStore from matchingProject if not already found
+  if (!matchingStore && (matchingProject as any)?.weleticShopifyStore) {
+    matchingStore = (matchingProject as any).weleticShopifyStore;
+  }
+
+  // If project found, ensure matchingStore is fetched by projectId if not already fetched
+  if (matchingProject && !matchingStore && typeof prisma?.weleticShopifyStore?.findUnique === "function") {
+    matchingStore = await prisma.weleticShopifyStore.findUnique({
+      where: { projectId: matchingProject.id },
+      select: {
+        id: true,
+        projectId: true,
+        shopDomain: true,
+        installationGeneration: true,
+      },
+    });
+  }
+
+  if (matchingProject && matchingStore) {
+    matchingProject.weleticShopifyStore = matchingStore;
   }
 
   if (!matchingProject?.defaultProgramId) {

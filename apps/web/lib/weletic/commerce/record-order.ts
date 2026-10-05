@@ -1,5 +1,6 @@
 import { createId } from "@/lib/api/create-id";
 import { syncTotalCommissions } from "@/lib/api/partners/sync-total-commissions";
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { orderSchema } from "@/lib/integrations/shopify/schema";
 import { prisma } from "@/lib/prisma";
 import { calculateRefundReversal } from "@/lib/weletic/commerce/record-refund";
@@ -639,7 +640,7 @@ async function recordWeleticOrderUnlocked({
       programId: effectiveProgramId,
       shopDomain: workspace.shopifyStoreId,
       shopCurrency,
-      apiVersion: "2026-07",
+      apiVersion: SHOPIFY_ADMIN_API_VERSION,
     },
     // Existing store identity is owned by install/catalog and compliance
     // lifecycles. A stale order may have read the raw project domain just

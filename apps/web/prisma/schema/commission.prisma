@@ -49,7 +49,6 @@ model Commission {
   reward              Reward?                        @relation(fields: [rewardId], references: [id])
   bountySubmission    BountySubmission?
   user                User?                          @relation(fields: [userId], references: [id])
-  weleticCalculations WeleticCommissionCalculation[]
 
   @@unique([invoiceId, programId])
   @@index([earnings, programId, partnerId, status]) // old index

@@ -27,18 +27,31 @@ import { POST as postAdjust } from "../../app/(ee)/api/shopify/loyalty/admin/adj
 import { GET as getAnalyticsCohorts } from "../../app/(ee)/api/shopify/loyalty/admin/analytics/cohorts/route";
 import { GET as getAnalyticsExport } from "../../app/(ee)/api/shopify/loyalty/admin/analytics/export/route";
 import { GET as getAnalytics } from "../../app/(ee)/api/shopify/loyalty/admin/analytics/route";
-import { POST as postBackfill } from "../../app/(ee)/api/shopify/loyalty/admin/backfill/route";
+import {
+  GET as getBackfill,
+  POST as postBackfill,
+} from "../../app/(ee)/api/shopify/loyalty/admin/backfill/route";
 import {
   GET as getBranding,
   POST as postBranding,
 } from "../../app/(ee)/api/shopify/loyalty/admin/branding/route";
-import { POST as postCampaigns } from "../../app/(ee)/api/shopify/loyalty/admin/campaigns/route";
-import { POST as postEarnRules } from "../../app/(ee)/api/shopify/loyalty/admin/earn-rules/route";
 import {
+  GET as getCampaigns,
+  POST as postCampaigns,
+} from "../../app/(ee)/api/shopify/loyalty/admin/campaigns/route";
+import {
+  GET as getEarnRules,
+  POST as postEarnRules,
+} from "../../app/(ee)/api/shopify/loyalty/admin/earn-rules/route";
+import {
+  GET as getReferrals,
   PATCH as patchReferrals,
   POST as postReferrals,
 } from "../../app/(ee)/api/shopify/loyalty/admin/referrals/route";
-import { POST as postRewards } from "../../app/(ee)/api/shopify/loyalty/admin/rewards/route";
+import {
+  GET as getRewards,
+  POST as postRewards,
+} from "../../app/(ee)/api/shopify/loyalty/admin/rewards/route";
 import {
   GET as getSettings,
   POST as postSettings,
@@ -247,7 +260,7 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
         programId: "affiliate_lifecycle",
         shopDomain: "lifecycle.myshopify.com",
         defaultLocale: "en",
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
         syncStatus: "pending" as const,
         lastFullSyncAt: null,
         lastIncrementalAt: null,
@@ -2745,5 +2758,280 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
         ).toBe((BigInt(300) + BigInt(delta)).toString());
       },
     );
+  });
+
+  describe("Adversarial Edge-Case Stress Testing (Milestone 4 Iteration 2 Gate Verification)", () => {
+    describe("Missing Store Records Across Loyalty Admin APIs (404 Fail-Closed)", () => {
+      beforeEach(() => {
+        currentTestRole = "owner";
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue(null);
+      });
+
+      const missingStoreEndpoints = [
+        { name: "GET /settings", call: () => getSettings(new Request("http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "POST /settings", call: () => postSettings(new Request("http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Updated" }) }) as any, { params: Promise.resolve({}) }) },
+        { name: "GET /analytics", call: () => getAnalytics(new Request("http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "GET /analytics/cohorts", call: () => getAnalyticsCohorts(new Request("http://localhost/api/shopify/loyalty/admin/analytics/cohorts?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "GET /analytics/export", call: () => getAnalyticsExport(new Request("http://localhost/api/shopify/loyalty/admin/analytics/export?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "GET /accounts", call: () => getAccounts(new Request("http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "POST /accounts", call: () => postAccounts(new Request("http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: "acc_1", pointsDelta: 10 }) }) as any, { params: Promise.resolve({}) }) },
+        { name: "POST /adjust", call: () => postAdjust(new Request("http://localhost/api/shopify/loyalty/admin/adjust?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: "acc_1", pointsDelta: 10 }) }) as any, { params: Promise.resolve({}) }) },
+        { name: "GET /activity", call: () => getActivity(new Request("http://localhost/api/shopify/loyalty/admin/activity?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "GET /branding", call: () => getBranding(new Request("http://localhost/api/shopify/loyalty/admin/branding?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "POST /branding", call: () => postBranding(new Request("http://localhost/api/shopify/loyalty/admin/branding?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branding: { primaryColor: "#112233" } }) }) as any, { params: Promise.resolve({}) }) },
+        { name: "GET /campaigns", call: () => getCampaigns(new Request("http://localhost/api/shopify/loyalty/admin/campaigns?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "POST /campaigns", call: () => postCampaigns(new Request("http://localhost/api/shopify/loyalty/admin/campaigns?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Summer", multiplierBps: 20000 }) }) as any, { params: Promise.resolve({}) }) },
+        { name: "GET /earn-rules", call: () => getEarnRules(new Request("http://localhost/api/shopify/loyalty/admin/earn-rules?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "POST /earn-rules", call: () => postEarnRules(new Request("http://localhost/api/shopify/loyalty/admin/earn-rules?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ triggerCode: "account_created", pointsAwarded: 100 }) }) as any, { params: Promise.resolve({}) }) },
+        { name: "GET /referrals", call: () => getReferrals(new Request("http://localhost/api/shopify/loyalty/admin/referrals?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "POST /referrals", call: () => postReferrals(new Request("http://localhost/api/shopify/loyalty/admin/referrals?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ advocatePointsReward: 100, refereePointsReward: 50 }) }) as any, { params: Promise.resolve({}) }) },
+        { name: "PATCH /referrals", call: () => patchReferrals(new Request("http://localhost/api/shopify/loyalty/admin/referrals?workspaceId=ws_tenant_a", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ advocatePointsReward: 100 }) }) as any, { params: Promise.resolve({}) }) },
+        { name: "GET /rewards", call: () => getRewards(new Request("http://localhost/api/shopify/loyalty/admin/rewards?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "POST /rewards", call: () => postRewards(new Request("http://localhost/api/shopify/loyalty/admin/rewards?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "10 Off", type: "amount_off", pointsCost: 500, discountValue: 1000 }) }) as any, { params: Promise.resolve({}) }) },
+        { name: "GET /backfill", call: () => getBackfill(new Request("http://localhost/api/shopify/loyalty/admin/backfill?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
+        { name: "POST /backfill", call: () => postBackfill(new Request("http://localhost/api/shopify/loyalty/admin/backfill?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", lookbackDays: 30 }) }) as any, { params: Promise.resolve({}) }) },
+      ];
+
+      it.each(missingStoreEndpoints)(
+        "returns 404 when store not connected: $name",
+        async ({ call }) => {
+          const res = await call();
+          expect(res.status).toBe(404);
+          const body = await res.json();
+          expect(body.error).toBeDefined();
+          expect(body.error.code).toBe("not_found");
+          expect(body.error.message).toContain("Shopify store not connected to this workspace");
+        },
+      );
+    });
+
+    describe("Unmocked Database Delegates & Decoupled Program Resolution", () => {
+      beforeEach(() => {
+        currentTestRole = "owner";
+        expect((prisma as any).program).toBeUndefined();
+      });
+
+      const storeWithDecoupledProgramId = {
+        id: "store_decoupled_test",
+        projectId: "ws_tenant_a",
+        shopDomain: "decoupled.myshopify.com",
+        shopCurrency: "EUR",
+        programId: "prog_orphan_456",
+      };
+
+      it("GET /settings falls back to store.shopCurrency without throwing TypeError when prisma.program is unmocked", async () => {
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(storeWithDecoupledProgramId as any);
+        vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValueOnce({
+          id: "wprog_existing",
+          storeId: storeWithDecoupledProgramId.id,
+          name: "Test Loyalty",
+          status: "active",
+          pointsExpiryDays: 365,
+          vipGracePeriodDays: 30,
+          store: {
+            id: storeWithDecoupledProgramId.id,
+            shopDomain: storeWithDecoupledProgramId.shopDomain,
+            shopCurrency: storeWithDecoupledProgramId.shopCurrency,
+          },
+          referralRules: [],
+        } as any);
+
+        const res = await getSettings(
+          new Request("http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a") as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.data.accountingCurrency).toBe("EUR");
+      });
+
+      it("POST /settings (PATCH liability valuation) validates against fallback shopCurrency without throwing TypeError", async () => {
+        const compliantStore = {
+          ...storeWithDecoupledProgramId,
+          complianceState: "active",
+          currencyVerifiedAt: new Date("2026-09-01T00:00:00Z"),
+          installationGeneration: "sgen_decoupled_test",
+        };
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue(compliantStore as any);
+        vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValue({
+          id: "wprog_existing",
+          storeId: compliantStore.id,
+          status: "draft",
+          killSwitchActive: false,
+          pointsExpiryDays: 0,
+          pointsExpiryMonths: 0,
+          pointsExpiryWarningDays: 30,
+          pointsExpiryLastChanceDays: 3,
+          pointsExpiryWarningEnabled: true,
+          pointsExpiryLastChanceEnabled: true,
+          vipAutoDowngradeEnabled: false,
+        } as any);
+        vi.mocked(prisma.weleticLoyaltyProgram.upsert).mockResolvedValue({
+          id: "wprog_existing",
+          storeId: compliantStore.id,
+          status: "draft",
+        } as any);
+
+        const res = await postSettings(
+          new Request("http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              liabilityValuationCurrency: "EUR",
+              liabilityMinorUnitsNumerator: "100",
+              liabilityPointsDenominator: "100",
+            }),
+          }) as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(200);
+      });
+
+      it("GET /analytics resolves financialConfiguration with shopCurrency without throwing TypeError", async () => {
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce({
+          ...storeWithDecoupledProgramId,
+          loyaltyProgram: null,
+        } as any);
+
+        const res = await getAnalytics(
+          new Request("http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a") as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.data.currency).toBe("EUR");
+      });
+
+      it("GET /analytics/cohorts calculates attribution with shopCurrency without throwing TypeError", async () => {
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(storeWithDecoupledProgramId as any);
+        vi.mocked(prisma.weleticLoyaltyAccount.findMany).mockResolvedValueOnce([]);
+
+        const res = await getAnalyticsCohorts(
+          new Request("http://localhost/api/shopify/loyalty/admin/analytics/cohorts?workspaceId=ws_tenant_a") as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.data).toBeDefined();
+      });
+
+      it("GET /analytics/export generates CSV with shopCurrency without throwing TypeError", async () => {
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce({
+          ...storeWithDecoupledProgramId,
+          loyaltyProgram: {
+            liabilityValuationCurrency: "EUR",
+            liabilityMinorUnitsNumerator: 100,
+            liabilityPointsDenominator: 100,
+          },
+        } as any);
+        vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValueOnce([]);
+
+        const res = await getAnalyticsExport(
+          new Request("http://localhost/api/shopify/loyalty/admin/analytics/export?workspaceId=ws_tenant_a&format=csv") as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(200);
+        expect(res.headers.get("Content-Type")).toContain("text/csv");
+      });
+    });
+
+    describe("Empty and Edge-Case Parameters Across Loyalty Admin APIs", () => {
+      beforeEach(() => {
+        currentTestRole = "owner";
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
+          id: "store_edge_cases",
+          projectId: "ws_tenant_a",
+          shopDomain: "edge.myshopify.com",
+          shopCurrency: "USD",
+          program: { accountingCurrency: "USD" },
+          loyaltyProgram: null,
+        } as any);
+      });
+
+      it("GET /activity defaults gracefully when all query params are empty strings", async () => {
+        vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValueOnce([]);
+        vi.mocked(prisma.weleticPointsLedgerEntry.count).mockResolvedValueOnce(0);
+
+        const res = await getActivity(
+          new Request("http://localhost/api/shopify/loyalty/admin/activity?workspaceId=ws_tenant_a&search=&type=&page=&limit=&format=") as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.data.pagination.page).toBe(1);
+        expect(body.data.pagination.limit).toBe(25);
+      });
+
+      it.each([
+        ["page=0", /page must be a positive safe integer/],
+        ["page=-1", /page must be a positive safe integer/],
+        ["page=1.5", /page must be a positive safe integer/],
+        ["page=abc", /page must be a positive safe integer/],
+        ["limit=0", /limit must be an integer between 1 and 100/],
+        ["limit=101", /limit must be an integer between 1 and 100/],
+        ["limit=9999", /limit must be an integer between 1 and 100/],
+        ["type=NOT_REAL_TYPE", /type must be a valid loyalty ledger entry type/],
+      ])("GET /activity rejects invalid parameter: %s", async (query, errRegex) => {
+        const res = await getActivity(
+          new Request(`http://localhost/api/shopify/loyalty/admin/activity?workspaceId=ws_tenant_a&${query}`) as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error.message).toMatch(errRegex);
+      });
+
+      it("GET /analytics handles empty date range parameters gracefully with defaults", async () => {
+        const res = await getAnalytics(
+          new Request("http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a&startDate=&endDate=") as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(200);
+      });
+
+      it.each([
+        ["startDate=not-a-date", /startDate must be a valid date/],
+        ["endDate=not-a-date", /endDate must be a valid date/],
+        ["startDate=2026-10-05T00:00:00Z&endDate=2026-10-01T00:00:00Z", /startDate must not be after endDate/],
+      ])("GET /analytics rejects invalid dates: %s", async (query, errRegex) => {
+        const res = await getAnalytics(
+          new Request(`http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a&${query}`) as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(400);
+        const body = await res.json();
+        expect(body.error.message).toMatch(errRegex);
+      });
+
+      it("GET /accounts handles empty string query parameters gracefully", async () => {
+        vi.mocked(prisma.weleticLoyaltyAccount.findMany).mockResolvedValueOnce([]);
+        vi.mocked(prisma.weleticLoyaltyAccount.count).mockResolvedValueOnce(0);
+
+        const res = await getAccounts(
+          new Request("http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a&query=&search=&accountId=&tierId=") as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(200);
+      });
+
+      it.each([
+        ["empty body", {}],
+        ["missing pointsDelta", { accountId: "acc_1" }],
+        ["zero pointsDelta", { accountId: "acc_1", pointsDelta: 0 }],
+        ["missing target identifiers", { pointsDelta: 100 }],
+        ["non-integer pointsDelta string", { accountId: "acc_1", pointsDelta: "abc" }],
+        ["floating point pointsDelta", { accountId: "acc_1", pointsDelta: 1.5 }],
+      ])("POST /adjust rejects malformed body: %s", async (_, body) => {
+        const res = await postAdjust(
+          new Request("http://localhost/api/shopify/loyalty/admin/adjust?workspaceId=ws_tenant_a", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          }) as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(res.status).toBe(400);
+      });
+    });
   });
 });

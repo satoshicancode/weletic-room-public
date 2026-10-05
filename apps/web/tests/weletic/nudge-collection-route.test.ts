@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "../../app/api/internal/shopify/loyalty/customer/nudge-collections/route";
 import { signWeleticShopifyRequest } from "../../lib/weletic/shopify/service-auth";
 const mocks = vi.hoisted(() => ({
@@ -101,3 +101,63 @@ it("sanitizes unexpected failures", async () => {
   expect(response.status).toBe(503);
   expect(await response.text()).not.toContain("private details");
 });
+
+describe("Adversarial Edge-Case Stress Testing (Milestone 4 Iteration 2)", () => {
+  it("returns 404 store_not_found when store records are missing (empty array)", async () => {
+    mocks.resolve.mockResolvedValue([]);
+    const response = await GET(request());
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "store_not_found",
+        message: "Store unavailable",
+      },
+    });
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+
+  it("handles unmocked database delegates (prisma.project undefined) without throwing", async () => {
+    const response = await GET(request());
+    expect(response.status).toBe(200);
+    expect(mocks.read).toHaveBeenCalled();
+  });
+
+  it("handles unmocked weleticShopifyStore delegate (throws TypeError) by sanitizing to 503", async () => {
+    mocks.resolve.mockImplementationOnce(() => {
+      throw new TypeError("Cannot read properties of undefined (reading 'findMany')");
+    });
+    const response = await GET(request());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "unavailable",
+        message: "Membership lookup unavailable",
+      },
+    });
+  });
+
+  it.each([
+    ["empty query string", ""],
+    ["missing shop", "customerId=123&productIds=1"],
+    ["empty shop", "shop=&customerId=123&productIds=1"],
+    ["non-myshopify domain", "shop=fixture.example.com&customerId=123&productIds=1"],
+    ["uppercase myshopify domain", "shop=FIXTURE.myshopify.com&customerId=123&productIds=1"],
+    ["missing customerId", "shop=fixture.myshopify.com&productIds=1"],
+    ["empty customerId", "shop=fixture.myshopify.com&customerId=&productIds=1"],
+    ["whitespace customerId", "shop=fixture.myshopify.com&customerId=%20123&productIds=1"],
+    ["negative customerId", "shop=fixture.myshopify.com&customerId=-123&productIds=1"],
+    ["customerId zero", "shop=fixture.myshopify.com&customerId=0&productIds=1"],
+    ["customerId with letters", "shop=fixture.myshopify.com&customerId=123a&productIds=1"],
+    ["missing productIds", "shop=fixture.myshopify.com&customerId=123"],
+    ["empty productIds", "shop=fixture.myshopify.com&customerId=123&productIds="],
+    ["productIds trailing comma", "shop=fixture.myshopify.com&customerId=123&productIds=1,"],
+    ["productIds with letters", "shop=fixture.myshopify.com&customerId=123&productIds=1,abc"],
+    ["duplicate shop parameter", "shop=fixture.myshopify.com&shop=fixture.myshopify.com&customerId=123&productIds=1"],
+    ["unexpected extra parameter", "shop=fixture.myshopify.com&customerId=123&productIds=1&extra=bad"],
+  ])("adversarially rejects edge-case parameter: %s", async (_, query) => {
+    const response = await GET(request(query));
+    expect(response.status).toBe(400);
+    expect(mocks.read).not.toHaveBeenCalled();
+  });
+});
+

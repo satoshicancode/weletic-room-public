@@ -24,6 +24,16 @@ export async function register() {
       configurable: true,
     });
   }
+
+  const { registerWeleticPermissions } = await import(
+    "@/lib/weletic/rbac/register"
+  );
+  registerWeleticPermissions();
+
+  const { registerWeleticSettlementHook } = await import(
+    "@/lib/weletic/payouts/settlement-hook"
+  );
+  registerWeleticSettlementHook();
 }
 
 export const onRequestError = createOnRequestError(logger);

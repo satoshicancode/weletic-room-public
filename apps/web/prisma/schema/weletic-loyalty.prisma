@@ -1029,8 +1029,6 @@ model WeleticShopifyInstallIntent {
   consumedAt  DateTime?
   createdAt   DateTime  @default(now())
 
-  workspace Project @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-
   @@index([workspaceId, shopDomain])
   @@index(expiresAt)
 }

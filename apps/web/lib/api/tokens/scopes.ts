@@ -1,8 +1,9 @@
 import { WorkspaceRole } from "@prisma/client";
 import { PermissionAction } from "../rbac/permissions";
+import { permissionRegistry } from "../rbac/plugin-registry";
 import { ResourceKey } from "../rbac/resources";
 
-export const SCOPES = [
+export const DUB_SCOPES = [
   "links.read",
   "links.write",
   "tags.read",
@@ -18,16 +19,15 @@ export const SCOPES = [
   "webhooks.write",
   "groups.read",
   "groups.write",
-  "loyalty.read",
-  "loyalty.write",
   "apis.all", // All API scopes
   "apis.read", // All read scopes
 ] as const;
 
-export type Scope = (typeof SCOPES)[number];
+export type DubScope = (typeof DUB_SCOPES)[number];
+export type Scope = DubScope | (string & {});
 
 // Scopes available for Workspace API keys
-export const RESOURCE_SCOPES: {
+export const DUB_RESOURCE_SCOPES: {
   scope: Scope;
   roles: WorkspaceRole[];
   permissions: PermissionAction[];
@@ -140,20 +140,6 @@ export const RESOURCE_SCOPES: {
     resource: "webhooks",
   },
   {
-    scope: "loyalty.read",
-    roles: ["owner", "member", "viewer", "billing"],
-    permissions: ["loyalty.read"],
-    type: "read",
-    resource: "loyalty",
-  },
-  {
-    scope: "loyalty.write",
-    roles: ["owner", "member"],
-    permissions: ["loyalty.write", "loyalty.read"],
-    type: "write",
-    resource: "loyalty",
-  },
-  {
     scope: "apis.read",
     roles: ["owner", "member", "viewer", "billing"],
     permissions: [
@@ -164,7 +150,6 @@ export const RESOURCE_SCOPES: {
       "workspaces.read",
       "analytics.read",
       "groups.read",
-      "loyalty.read",
     ],
   },
   {
@@ -184,71 +169,133 @@ export const RESOURCE_SCOPES: {
       "analytics.read",
       "groups.read",
       "groups.write",
-      "loyalty.read",
-      "loyalty.write",
     ],
   },
 ];
 
-export const SCOPES_BY_RESOURCE = RESOURCE_SCOPES.reduce((acc, scope) => {
-  if (!scope.resource || !scope.type) {
-    return acc;
-  }
+function getCombinedScopes(): string[] {
+  const pluginScopes = permissionRegistry.getRegisteredScopes();
+  const baseScopes = DUB_SCOPES.filter(
+    (s) => s !== "apis.all" && s !== "apis.read",
+  );
+  return [...baseScopes, ...pluginScopes, "apis.all", "apis.read"];
+}
 
-  if (!acc[scope.resource]) {
-    acc[scope.resource] = [];
-  }
+export const SCOPES = new Proxy([] as unknown as readonly Scope[], {
+  get(_target, prop, receiver) {
+    const combined = getCombinedScopes();
+    if (prop === "length") return combined.length;
+    if (prop === Symbol.iterator)
+      return combined[Symbol.iterator].bind(combined);
+    if (typeof prop === "string" && !isNaN(Number(prop)))
+      return combined[Number(prop)];
+    const val = (combined as any)[prop];
+    if (typeof val === "function") return val.bind(combined);
+    return Reflect.get(combined, prop, receiver);
+  },
+}) as readonly Scope[];
 
-  acc[scope.resource].push({
-    scope: scope.scope,
-    type: scope.type,
-    roles: scope.roles,
-  });
+function getCombinedResourceScopes(): typeof DUB_RESOURCE_SCOPES {
+  const pluginScopes = permissionRegistry.getRegisteredResourceScopes();
+  return [...DUB_RESOURCE_SCOPES, ...pluginScopes];
+}
 
-  return acc;
-}, {});
+export const RESOURCE_SCOPES = new Proxy(
+  [] as unknown as typeof DUB_RESOURCE_SCOPES,
+  {
+    get(_target, prop, receiver) {
+      const combined = getCombinedResourceScopes();
+      if (prop === "length") return combined.length;
+      if (prop === Symbol.iterator)
+        return combined[Symbol.iterator].bind(combined);
+      if (typeof prop === "string" && !isNaN(Number(prop)))
+        return combined[Number(prop)];
+      const val = (combined as any)[prop];
+      if (typeof val === "function") return val.bind(combined);
+      return Reflect.get(combined, prop, receiver);
+    },
+  },
+) as typeof DUB_RESOURCE_SCOPES;
 
-// Scope to permissions mapping
-export const SCOPE_PERMISSIONS_MAP = RESOURCE_SCOPES.reduce((acc, scope) => {
-  acc[scope.scope] = scope.permissions;
-  return acc;
-}, {});
+export const SCOPES_BY_RESOURCE = new Proxy({} as Record<string, any>, {
+  get(_target, prop) {
+    const current = getCombinedResourceScopes().reduce((acc, scope) => {
+      if (!scope.resource || !scope.type) {
+        return acc;
+      }
+      if (!acc[scope.resource]) {
+        acc[scope.resource] = [];
+      }
+      acc[scope.resource].push({
+        scope: scope.scope,
+        type: scope.type,
+        roles: scope.roles,
+      });
+      return acc;
+    }, {});
+    return (current as any)[prop];
+  },
+});
 
-// WorkspaceRole to scopes mapping
-export const ROLE_SCOPES_MAP = RESOURCE_SCOPES.reduce((acc, scope) => {
-  scope.roles.forEach((role) => {
-    if (!acc[role]) {
-      acc[role] = [];
-    }
+export const SCOPE_PERMISSIONS_MAP = new Proxy({} as Record<string, any>, {
+  get(_target, prop) {
+    const current = getCombinedResourceScopes().reduce((acc, scope) => {
+      acc[scope.scope] = scope.permissions;
+      return acc;
+    }, {});
+    return (current as any)[prop];
+  },
+});
 
-    acc[role].push(scope.scope);
-  });
-
-  return acc;
-}, {});
+export const ROLE_SCOPES_MAP = new Proxy({} as Record<string, any>, {
+  get(_target, prop) {
+    const current = getCombinedResourceScopes().reduce((acc, scope) => {
+      scope.roles.forEach((role) => {
+        if (!acc[role]) {
+          acc[role] = [];
+        }
+        acc[role].push(scope.scope);
+      });
+      return acc;
+    }, {});
+    return (current as any)[prop];
+  },
+});
 
 // For each scope, get the permissions it grants access to and return array of permissions
 export const mapScopesToPermissions = (scopes: Scope[]) => {
   const permissions: PermissionAction[] = [];
+  const currentResourceScopes = getCombinedResourceScopes();
+  const currentScopePermissionsMap = currentResourceScopes.reduce(
+    (acc, scope) => {
+      acc[scope.scope] = scope.permissions;
+      return acc;
+    },
+    {},
+  );
 
   scopes.forEach((scope) => {
-    if (SCOPE_PERMISSIONS_MAP[scope]) {
-      permissions.push(...SCOPE_PERMISSIONS_MAP[scope]);
+    if (currentScopePermissionsMap[scope]) {
+      permissions.push(...currentScopePermissionsMap[scope]);
     }
+    const extra = permissionRegistry.mapPluginScopesToPermissions(scope);
+    permissions.push(...extra);
   });
 
-  return permissions;
+  return [...new Set(permissions)];
 };
 
 // Get SCOPES_BY_RESOURCE based on user role in a workspace
 export const getScopesByResourceForRole = (role: WorkspaceRole) => {
   const groupedByResource = {};
 
-  const allowedScopes = RESOURCE_SCOPES.map((scope) => {
-    if (scope.roles.includes(role)) {
-      return scope;
-    }
-  }).filter(Boolean);
+  const allowedScopes = getCombinedResourceScopes()
+    .map((scope) => {
+      if (scope.roles.includes(role)) {
+        return scope;
+      }
+    })
+    .filter(Boolean);
 
   allowedScopes.forEach((scope) => {
     if (scope && scope.resource) {
@@ -303,7 +350,17 @@ export const scopesToName = (scopes: string[]) => {
 };
 
 export const validateScopesForRole = (scopes: Scope[], role: WorkspaceRole) => {
-  const allowedScopes = ROLE_SCOPES_MAP[role];
+  const currentResourceScopes = getCombinedResourceScopes();
+  const currentRoleScopesMap = currentResourceScopes.reduce((acc, scope) => {
+    scope.roles.forEach((r) => {
+      if (!acc[r]) {
+        acc[r] = [];
+      }
+      acc[r].push(scope.scope);
+    });
+    return acc;
+  }, {});
+  const allowedScopes = currentRoleScopesMap[role] || [];
   const invalidScopes = scopes.filter(
     (scope) => !allowedScopes.includes(scope),
   );
@@ -313,7 +370,17 @@ export const validateScopesForRole = (scopes: Scope[], role: WorkspaceRole) => {
 
 // Get the scopes for a role
 export const getScopesForRole = (role: WorkspaceRole) => {
-  return ROLE_SCOPES_MAP[role];
+  const currentResourceScopes = getCombinedResourceScopes();
+  const currentRoleScopesMap = currentResourceScopes.reduce((acc, scope) => {
+    scope.roles.forEach((r) => {
+      if (!acc[r]) {
+        acc[r] = [];
+      }
+      acc[r].push(scope.scope);
+    });
+    return acc;
+  }, {});
+  return currentRoleScopesMap[role] || [];
 };
 
 // Consolidate scopes to avoid duplication and show only the most permissive scope
