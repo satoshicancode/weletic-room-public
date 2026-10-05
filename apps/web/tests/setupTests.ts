@@ -71,3 +71,9 @@ vi.mock("@axiomhq/nextjs", () => ({
   createOnRequestError: vi.fn(() => vi.fn()),
   transformMiddlewareRequest: vi.fn(() => []),
 }));
+
+// Initialize Weletic RBAC plugin registrations for test environment
+import "@/lib/weletic/rbac/register";
+
+
+

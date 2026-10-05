@@ -36,7 +36,7 @@ const appDistribution =
 const shopify = shopifyApp({
   apiKey: requireEnv("SHOPIFY_API_KEY"),
   apiSecretKey: requireEnv("SHOPIFY_API_SECRET"),
-  apiVersion: ApiVersion.July26,
+  apiVersion: ((ApiVersion as any).October26 ?? "2026-10") as ApiVersion,
   sessionStorage: coordinatedStorage,
   scopes: getShopifyRequestedScopes(process.env.SCOPES),
   appUrl: requireUrlEnv("SHOPIFY_APP_URL").toString(),
@@ -52,7 +52,7 @@ export default shopify;
 const merchantSdk = shopifyApi({
   apiKey: requireEnv("SHOPIFY_API_KEY"),
   apiSecretKey: requireEnv("SHOPIFY_API_SECRET"),
-  apiVersion: ApiVersion.July26,
+  apiVersion: ((ApiVersion as any).October26 ?? "2026-10") as ApiVersion,
   hostName: requireUrlEnv("SHOPIFY_APP_URL").host,
   isEmbeddedApp: true,
   scopes: [],

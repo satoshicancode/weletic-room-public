@@ -100,7 +100,7 @@ describe("loyalty ledger real database concurrency", () => {
         shopDomain: `${RUN_ID}.myshopify.com`,
         shopCurrency: "USD",
         currencyVerifiedAt: new Date(),
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
       },
     });
     await prisma.weleticLoyaltyProgram.create({

@@ -1,4 +1,7 @@
-import { shopifyAdminGraphql } from "@/lib/integrations/shopify/admin-graphql";
+import {
+  shopifyAdminGraphql,
+  SHOPIFY_ADMIN_API_VERSION,
+} from "@/lib/integrations/shopify/admin-graphql";
 import { z } from "zod";
 import { SHOPIFY_CANONICAL_WEBHOOK_TOPICS } from "./provision-webhooks";
 import { resolvePublicShopifyWebhookCallback } from "./public-webhook-policy";
@@ -38,7 +41,7 @@ export async function auditPublicShopifyWebhooks({
     await shopifyAdminGraphql({
       shopifyStoreId: shopDomain,
       accessToken,
-      apiVersion: "2026-07",
+      apiVersion: SHOPIFY_ADMIN_API_VERSION,
       allowSdkFallback: false,
       query: `#graphql
       query WeleticPublicWebhookOverlapAudit($topics: [WebhookSubscriptionTopic!]) {

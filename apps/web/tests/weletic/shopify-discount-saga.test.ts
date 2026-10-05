@@ -481,7 +481,7 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
     });
   });
 
-  describe("2. Shopify GraphQL Discount Adapters (API 2026-07)", () => {
+  describe("2. Shopify GraphQL Discount Adapters (API 2026-10)", () => {
     it("creates fixed amount discount via discountCodeBasicCreate mutation", async () => {
       const mockFetch = vi.fn().mockResolvedValueOnce({
         ok: true,

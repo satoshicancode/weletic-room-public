@@ -40,7 +40,7 @@ describe("Shopify POS loyalty extension", () => {
     );
     expect(manifest).toContain('target = "pos.home.tile.render"');
     expect(manifest).toContain('target = "pos.home.modal.render"');
-    expect(manifest).toContain('api_version = "2026-07"');
+    expect(manifest).toContain('api_version = "2026-10"');
   });
 
   it("only presents amount and percentage rewards enabled for POS", () => {

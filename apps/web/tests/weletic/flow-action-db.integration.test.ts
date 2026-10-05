@@ -945,7 +945,7 @@ describe("Flow action persistence on isolated MySQL", () => {
         programId: `flow-${id}`,
         shopDomain: `flow-${id}.myshopify.com`,
         shopCurrency: "JPY",
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
         installationGeneration: "generation-1",
         storeAccessState: "active",
         complianceState: "frozen",

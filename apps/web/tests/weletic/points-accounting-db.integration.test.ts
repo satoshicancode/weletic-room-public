@@ -143,7 +143,7 @@ async function seed(holdingPeriodDays = 0, signup = BigInt("0")) {
       shopDomain: `${id}.myshopify.com`,
       shopCurrency: "USD",
       currencyVerifiedAt: epoch,
-      apiVersion: "2026-07",
+      apiVersion: "2026-10",
       storeAccessState: "active",
       complianceState: "active",
       installationGeneration: "g1",

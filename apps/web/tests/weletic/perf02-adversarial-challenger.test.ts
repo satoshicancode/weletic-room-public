@@ -102,7 +102,7 @@ const mockDefaultShopifyGraphqlHandler = async ({ query }: { query: string }) =>
 };
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
-  SHOPIFY_ADMIN_API_VERSION: "2025-01",
+  SHOPIFY_ADMIN_API_VERSION: "2026-10",
   shopifyAdminGraphql: vi.fn((args: any) => mockDefaultShopifyGraphqlHandler(args)),
 }));
 
@@ -304,7 +304,7 @@ vi.mock("@/lib/prisma", () => {
             shopDomain: create.shopDomain,
             shopCurrency: create.shopCurrency ?? "USD",
             installationGeneration: create.installationGeneration ?? null,
-            apiVersion: create.apiVersion ?? "2025-01",
+            apiVersion: create.apiVersion ?? "2026-10",
             syncStatus: create.syncStatus ?? "pending",
             lastFullSyncAt: null,
             lastSyncError: null,
@@ -483,7 +483,7 @@ describe("EMPIRICAL CHALLENGER: PERF-02 Async Catalog Sync Adversarial Stress Te
       shopDomain: `${ws}.myshopify.com`,
       shopCurrency: "USD",
       installationGeneration: `gen_${ws}_1`,
-      apiVersion: "2025-01",
+      apiVersion: "2026-10",
       syncStatus: "pending",
       lastFullSyncAt: null,
       lastSyncError: null,
@@ -923,7 +923,7 @@ describe("EMPIRICAL CHALLENGER: PERF-02 Async Catalog Sync Adversarial Stress Te
         shopDomain: "my-custom-store.myshopify.com",
         shopCurrency: "JPY",
         installationGeneration: "gen_ws_custom_tenant_1",
-        apiVersion: "2025-01",
+        apiVersion: "2026-10",
         syncStatus: "pending",
         lastFullSyncAt: null,
         lastSyncError: null,

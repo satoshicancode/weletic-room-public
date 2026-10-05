@@ -112,7 +112,7 @@ describe("signed session API boundaries with real MySQL", () => {
         programId: `sprogram_${suffix}`,
         shopDomain: fixture.shop,
         shopCurrency: "JPY",
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
         installationGeneration: "generation-1",
       },
     });

@@ -1,3 +1,4 @@
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { createHash, randomUUID } from "node:crypto";
@@ -321,7 +322,7 @@ async function bootstrapStore(
         shopDomain: input.shop,
         shopCurrency: plan.shopCurrency,
         currencyVerifiedAt: first.now,
-        apiVersion: "2026-07",
+        apiVersion: SHOPIFY_ADMIN_API_VERSION,
         installationGeneration: input.expectedInstallationGeneration,
         storeAccessState: plan.storeAccessState,
         storeAccessRevision: 1,

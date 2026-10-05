@@ -1,4 +1,7 @@
-import { shopifyAdminGraphql } from "@/lib/integrations/shopify/admin-graphql";
+import {
+  shopifyAdminGraphql,
+  SHOPIFY_ADMIN_API_VERSION,
+} from "@/lib/integrations/shopify/admin-graphql";
 import { prisma } from "@/lib/prisma";
 import { getWeleticShopifyInstallation } from "./get-installation";
 import { writeShopifyCustomerSegmentCache } from "./privacy-cache";
@@ -26,7 +29,7 @@ export async function getShopifyCustomerOrderHistory({
   }>({
     shopifyStoreId: installation.shopDomain,
     accessToken: installation.accessToken,
-    apiVersion: "2026-07",
+    apiVersion: SHOPIFY_ADMIN_API_VERSION,
     query: `#graphql
       query WeleticCustomerOrderHistory($customerId: ID!) {
         customer(id: $customerId) {
@@ -65,7 +68,7 @@ export async function listShopifyCustomerSegments({
   }>({
     shopifyStoreId: installation.shopDomain,
     accessToken: installation.accessToken,
-    apiVersion: "2026-07",
+    apiVersion: SHOPIFY_ADMIN_API_VERSION,
     query: `#graphql
       query WeleticCustomerSegments($query: String) {
         segments(first: 100, query: $query) {
@@ -164,7 +167,7 @@ export async function getShopifyCustomerSegmentIds({
   }>({
     shopifyStoreId: installation.shopDomain,
     accessToken: installation.accessToken,
-    apiVersion: "2026-07",
+    apiVersion: SHOPIFY_ADMIN_API_VERSION,
     query: `#graphql
       query WeleticCustomerSegmentMembership(
         $customerId: ID!

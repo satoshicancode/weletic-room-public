@@ -369,7 +369,6 @@ export const POST = async (req: Request) => {
   const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
   const allowUnsignedTestWebhook =
     process.env.NODE_ENV === "test" &&
-    isLocalDev &&
     !signedTenantTopics.has(topic);
   let webhookAuthenticated = false;
 

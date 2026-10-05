@@ -13,6 +13,7 @@ import {
 
 const transport = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
+  SHOPIFY_ADMIN_API_VERSION: "2026-10",
   shopifyAdminGraphql: transport,
 }));
 const callback = `${PUBLIC_LOYALTY_API_ORIGIN}/api/shopify/integration/webhook`;

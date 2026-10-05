@@ -287,7 +287,7 @@ describe("loyalty reward lifecycle on isolated MySQL", () => {
         storeAccessState: "active",
         shopCurrency: "USD",
         currencyVerifiedAt: new Date("2026-09-24T00:00:00Z"),
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
         installationGeneration: generation,
       },
     });

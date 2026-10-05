@@ -1,3 +1,4 @@
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { APP_DOMAIN_WITH_NGROK } from "@dub/utils";
 import "dotenv-flow/config";
 import crypto from "node:crypto";
@@ -406,7 +407,7 @@ export async function dispatchShopifyWebhook({
     "x-shopify-shop-domain": shopDomain,
     "x-shopify-hmac-sha256": signature,
     "x-shopify-webhook-id": webhookId,
-    "x-shopify-api-version": "2026-07",
+    "x-shopify-api-version": SHOPIFY_ADMIN_API_VERSION,
     // Shopify supplies this delivery timestamp as a separate header. The
     // body HMAC does not cryptographically bind the header value; compliance
     // ingress validates its timestamp policy independently.

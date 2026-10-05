@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { processOutboxJobsBatch } from "@/lib/weletic/loyalty/outbox";
+import { resolveShopifyStoreByDomain } from "@/lib/weletic/shopify/store-resolver";
 import "dotenv-flow/config";
 import { hostname } from "node:os";
 import { runOutboxWorker } from "./outbox-worker-runtime";
@@ -27,11 +28,11 @@ async function waitForNextPoll() {
 
 runOutboxWorker(process.argv.slice(2), {
   workerId,
-  findStore: (shopDomain) =>
-    prisma.weleticShopifyStore.findUnique({
-      where: { shopDomain },
-      select: { id: true, shopDomain: true },
-    }),
+  findStore: async (shopDomain) => {
+    const resolved = await resolveShopifyStoreByDomain(shopDomain);
+    if (!resolved?.storeId) return null;
+    return { id: resolved.storeId, shopDomain: resolved.myshopifyDomain };
+  },
   processBatch: processOutboxJobsBatch,
   shouldStop: () => stopping,
   waitForNextPoll,
