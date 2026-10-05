@@ -142,21 +142,11 @@ export async function recordWeleticRefund(
   const refundEvent = refundSchema.parse(input.event);
   let workspaceId = input.workspaceId;
   if (!workspaceId && input.shopDomain) {
-    const store =
-      (await prisma.weleticShopifyStore?.findFirst?.({
-        where: { shopDomain: input.shopDomain },
-      })) ||
-      (await prisma.weleticShopifyStore?.findUnique?.({
-        where: { shopDomain: input.shopDomain } as any,
-      }));
-    if (store?.projectId || store?.id) {
-      workspaceId = (store.projectId || store.id) as string;
-    } else {
-      const resolved = await resolveShopifyStoreByDomain(input.shopDomain);
-      if (resolved?.workspaceId) {
-        workspaceId = resolved.workspaceId;
-      }
+    const resolved = await resolveShopifyStoreByDomain(input.shopDomain);
+    if (!resolved?.workspaceId) {
+      throw new Error(`Shopify store ${input.shopDomain} could not be resolved`);
     }
+    workspaceId = resolved.workspaceId;
   }
   if (!workspaceId) {
     throw new Error(`Shopify store ${input.shopDomain} could not be resolved`);
@@ -473,16 +463,9 @@ async function recordWeleticRefundUnlocked({
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
 }) {
   const refundEvent = refundSchema.parse(event);
-  const store =
-    (await prisma.weleticShopifyStore.findUnique({
-      where: { projectId: workspaceId },
-    })) ||
-    (await prisma.weleticShopifyStore.findUnique({
-      where: { id: workspaceId } as any,
-    })) ||
-    (await prisma.weleticShopifyStore.findFirst?.({
-      where: { OR: [{ projectId: workspaceId }, { id: workspaceId }] },
-    }));
+  const store = await prisma.weleticShopifyStore.findUnique({
+    where: { projectId: workspaceId },
+  });
   if (!store)
     throw new Error(`Weletic Shopify store ${workspaceId} was not synced.`);
   await assertRefundStoreAcceptsWrite({

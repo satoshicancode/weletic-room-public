@@ -301,6 +301,19 @@ vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
   assertShopifyStoreAcceptsOperationalWrites: vi.fn(),
 }));
 
+vi.mock("@/lib/weletic/shopify/store-resolver", () => ({
+  resolveShopifyStoreByDomain: vi.fn().mockResolvedValue({
+    workspaceId: "ws_wholesale",
+    storeId: "store_wholesale",
+    shopId: "shop_ws_wholesale",
+    primaryDomain: "wholesale-test.myshopify.com",
+    myshopifyDomain: "wholesale-test.myshopify.com",
+    allDomains: ["wholesale-test.myshopify.com"],
+    programId: "prog_wholesale",
+    accessToken: "shpat_mock",
+  }),
+}));
+
 vi.mock("@/lib/weletic/shopify/customer-settlement-lock", () => ({
   withShopifySettlementLocks: async ({ fn }: any) => fn(),
   assertShopifySettlementLockContext: vi.fn(),

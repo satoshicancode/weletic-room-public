@@ -63,7 +63,7 @@ vi.mock("@/lib/weletic/loyalty/shopper-privacy", () => ({
 }));
 
 // In-memory Database Store
-const db = {
+const db = vi.hoisted(() => ({
   projects: new Map<string, any>(),
   programs: new Map<string, any>(),
   weleticShopifyStores: new Map<string, any>(),
@@ -81,7 +81,27 @@ const db = {
   reconciliationIssues: new Map<string, any>(),
   programEnrollments: new Map<string, any>(),
   rewards: new Map<string, any>(),
-};
+}));
+
+vi.mock("@/lib/weletic/shopify/store-resolver", () => ({
+  resolveShopifyStoreByDomain: vi.fn(async (shopDomain: string) => {
+    const store = Array.from(db.weleticShopifyStores.values()).find(
+      (s) => s.shopDomain === shopDomain,
+    );
+    return store
+      ? {
+          workspaceId: store.projectId || `ws_${store.id}`,
+          storeId: store.id,
+          shopId: `shop_${store.id}`,
+          primaryDomain: shopDomain,
+          myshopifyDomain: shopDomain,
+          allDomains: [shopDomain],
+          programId: store.programId,
+          accessToken: "shpat_mock",
+        }
+      : null;
+  }),
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -225,6 +245,16 @@ vi.mock("@/lib/prisma", () => ({
     }),
     weleticShopifyStore: {
       findUnique: vi.fn(async ({ where }: any) => {
+        if (where.projectId) {
+          for (const s of db.weleticShopifyStores.values()) {
+            if (
+              s.projectId === where.projectId ||
+              `ws_${s.id}` === where.projectId ||
+              s.id === where.projectId
+            )
+              return s;
+          }
+        }
         if (where.shopDomain) {
           for (const s of db.weleticShopifyStores.values()) {
             if (s.shopDomain === where.shopDomain) return s;
