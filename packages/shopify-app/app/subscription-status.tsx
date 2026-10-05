@@ -1,7 +1,7 @@
 import { useLocation } from "@remix-run/react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { useEffect, useMemo, useState } from "react";
-import { subscriptionPageSchema } from "../../../apps/web/lib/weletic/shopify/app-pricing-contract";
+import { subscriptionPageSchema } from "@weletic/contracts/shopify/app-pricing-contract";
 import { useMerchantLocale } from "./merchant-locale";
 import {
   createMerchantJsonPost,

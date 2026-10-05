@@ -1,4 +1,4 @@
-import type { ReviewDeliveryHistory as History } from "../../../../apps/web/lib/weletic/reviews/delivery-history";
+import type { ReviewDeliveryHistory as History } from "@weletic/contracts/reviews/delivery-history";
 import { reviewDeliveryCopy } from "../review-delivery-copy";
 
 export function ReviewDeliveryHistory({

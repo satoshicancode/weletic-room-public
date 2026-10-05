@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type {
   verifyHistoricalImportExecutionResponse,
   verifyHistoricalImportStatusResponse,
-} from "../../../apps/web/lib/weletic/loyalty/historical-import-contract";
+} from "@weletic/contracts/loyalty/historical-import-contract";
 import {
   ImportReconciliationPanel,
   type ReconcileImport,

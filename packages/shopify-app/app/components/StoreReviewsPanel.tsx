@@ -1,7 +1,7 @@
 import { BlockStack, Button, Text } from "@shopify/polaris";
 import { useEffect, useRef, useState } from "react";
-import type { AuditedReviewModerationInput } from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
-import type { StoreMerchantListPage } from "../../../../apps/web/lib/weletic/reviews/store-merchant-contract";
+import type { AuditedReviewModerationInput } from "@weletic/contracts/reviews/moderation-contract";
+import type { StoreMerchantListPage } from "@weletic/contracts/reviews/store-merchant-contract";
 import type { createMerchantStoreReviewsClient } from "../merchant-store-reviews-client";
 import { StaffAccessClientError } from "../staff-access-client";
 import { storeReviewsCopy } from "../store-reviews-copy";

@@ -3,12 +3,13 @@ import {
   type HeadersFunction,
   type LoaderFunctionArgs,
 } from "@remix-run/node";
-import { Link, useRouteError } from "@remix-run/react";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { useRouteError } from "@remix-run/react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { useId, useMemo, useState } from "react";
-import { ShopperBrowserSession } from "../../../../apps/web/ui/weletic/shoppers/shopper-browser";
+import { ShopperBrowserSession } from "~/ui/shoppers/shopper-browser";
 import styles from "../customers.css?url";
+import { useMerchantLocale } from "../merchant-locale";
 import { createMerchantCustomersClient } from "../merchant-customers-client";
 import { authenticate } from "../shopify.server";
 
@@ -34,6 +35,7 @@ export function action() {
 
 export default function CustomersPage() {
   const shopify = useAppBridge();
+  const [locale] = useMerchantLocale();
   const scopeKey = useId();
   const [shopperId, select] = useState<string | null>(null);
   const transport = useMemo(
@@ -43,11 +45,13 @@ export default function CustomersPage() {
     }),
     [scopeKey, shopify],
   );
+
+  const pageTitle =
+    locale === "ja" ? "顧客" : locale === "vi" ? "Khách hàng" : "Customers";
+
   return (
     <main className="weletic-shoppers">
-      <nav aria-label="Weletic">
-        <Link to="/">Weletic</Link>
-      </nav>
+      <TitleBar title={pageTitle} />
       <ShopperBrowserSession
         transport={transport}
         shopperId={shopperId}

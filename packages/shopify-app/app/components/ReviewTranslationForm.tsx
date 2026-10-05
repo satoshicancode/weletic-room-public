@@ -5,7 +5,7 @@ import {
   manualReviewTranslationInputSchema,
   type ManualReviewTranslationInput,
   type ManualReviewTranslationPage,
-} from "../../../../apps/web/lib/weletic/reviews/translation-contract";
+} from "@weletic/contracts/reviews/translation-contract";
 import { reviewTranslationCopy } from "../review-translation-copy";
 
 type Props = {

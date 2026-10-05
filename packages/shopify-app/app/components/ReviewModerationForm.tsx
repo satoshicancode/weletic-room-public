@@ -4,7 +4,7 @@ import {
   auditedReviewModerationInputSchema,
   reviewModerationReasonSchema,
   type AuditedReviewModerationInput,
-} from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
+} from "@weletic/contracts/reviews/moderation-contract";
 import { reviewModerationCopy } from "../review-moderation-copy";
 
 export function ReviewModerationForm({

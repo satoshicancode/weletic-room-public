@@ -1,4 +1,4 @@
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import {
   Banner,
   BlockStack,
@@ -16,7 +16,7 @@ import {
   SHOPIFY_STAFF_PERMISSIONS,
   type ShopifyStaffGrantView,
   type ShopifyStaffPermission,
-} from "../../../../apps/web/lib/weletic/shopify/staff-contract";
+} from "@weletic/contracts/shopify/staff-contract";
 import { StaffExport } from "../components/StaffExport";
 import { useMerchantLocale } from "../merchant-locale";
 import {
@@ -127,6 +127,7 @@ export default function StaffAccessPage() {
       setNextCursor(page.nextCursor);
       setReloadRequired(false);
       setSaved(true);
+      shopify.toast?.show?.(copy.saved);
       resetEditor();
     } catch (failure) {
       fail(failure);
@@ -138,6 +139,7 @@ export default function StaffAccessPage() {
   return (
     <div lang={locale}>
       <Page title={copy.title}>
+        <TitleBar title={copy.title} />
         <BlockStack gap="400">
           <Select
             label={copy.language}

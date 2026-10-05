@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import {
   storeReviewSettingsPolicySchema,
   type StoreReviewSettingsWriteInput,
-} from "../../../../apps/web/lib/weletic/reviews/store-settings-contract";
+} from "@weletic/contracts/reviews/store-settings-contract";
 import type { createMerchantStoreReviewSettingsClient } from "../merchant-store-review-settings-client";
 import { storeReviewSettingsCopy } from "../store-review-settings-copy";
 

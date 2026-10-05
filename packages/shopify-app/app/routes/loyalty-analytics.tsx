@@ -1,7 +1,8 @@
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { useMemo } from "react";
-import { MerchantAnalyticsScreen } from "../../../../apps/web/ui/weletic/loyalty/merchant-analytics-screen";
+import { MerchantAnalyticsScreen } from "~/ui/loyalty/merchant-analytics-screen";
 import { LoyaltyNavigation } from "../loyalty-navigation";
+import { useMerchantLocale } from "../merchant-locale";
 import { createMerchantAccountRowExportClient } from "../merchant-account-row-export-client";
 import { createMerchantAnalyticsClient } from "../merchant-analytics-client";
 import { createMerchantLedgerRowExportClient } from "../merchant-ledger-row-export-client";
@@ -11,6 +12,7 @@ import { createMerchantTierHistoryExportClient } from "../merchant-tier-history-
 export { action, ErrorBoundary, headers, links, loader } from "./settings";
 export default function LoyaltyAnalyticsPage() {
   const shopify = useAppBridge();
+  const [locale] = useMerchantLocale();
   const request = useMemo(
     () => createMerchantAnalyticsClient(() => shopify.idToken()),
     [shopify],
@@ -31,8 +33,17 @@ export default function LoyaltyAnalyticsPage() {
     () => createMerchantAccountRowExportClient(() => shopify.idToken()),
     [shopify],
   );
+
+  const pageTitle =
+    locale === "ja"
+      ? "ロイヤルティ分析"
+      : locale === "vi"
+        ? "Phân tích khách hàng thân thiết"
+        : "Loyalty Analytics";
+
   return (
     <main className="weletic-shoppers">
+      <TitleBar title={pageTitle} />
       <LoyaltyNavigation />
       <MerchantAnalyticsScreen
         request={request}

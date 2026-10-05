@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { verifyHistoricalImportReconciliationResponse } from "../../../apps/web/lib/weletic/loyalty/historical-import-contract";
+import type { verifyHistoricalImportReconciliationResponse } from "@weletic/contracts/loyalty/historical-import-contract";
 import { importReconciliationCopy } from "./import-reconciliation-copy";
 type Result = ReturnType<typeof verifyHistoricalImportReconciliationResponse>;
 export type ReconcileImport = (request: unknown) => Promise<Result>;
