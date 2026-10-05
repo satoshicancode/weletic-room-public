@@ -52,6 +52,7 @@ module.exports = withPlausibleProxy({
     "@dub/ui",
     "@dub/utils",
     "@boxyhq/saml-jackson",
+    "@weletic/contracts",
   ],
   outputFileTracingIncludes: {
     "/api/auth/saml/token": [

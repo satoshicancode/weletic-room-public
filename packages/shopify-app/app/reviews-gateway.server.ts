@@ -1,4 +1,4 @@
-import { openReviewSubmissionSchema } from "../../../apps/web/lib/weletic/reviews/open-submission-contract";
+import { openReviewSubmissionSchema } from "@weletic/contracts/reviews/open-submission-contract";
 import { reviewFormResponse } from "./reviews-form.server";
 import {
   privateCustomerJson,

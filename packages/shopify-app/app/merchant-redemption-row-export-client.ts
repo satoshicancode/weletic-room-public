@@ -2,7 +2,7 @@ import {
   merchantRedemptionRowExportRequestSchema,
   verifyMerchantRedemptionRowExportResponse,
   type MerchantRedemptionRowExportRequest,
-} from "../../../apps/web/lib/weletic/loyalty/redemption-row-export-contract";
+} from "@weletic/contracts/loyalty/redemption-row-export-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

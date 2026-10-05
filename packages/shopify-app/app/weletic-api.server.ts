@@ -247,7 +247,13 @@ export async function weleticApiRequest(
   const method = (init.method || "GET").toUpperCase();
   const body = init.body || "";
   const timestamp = String(Date.now());
-  const requestId = crypto.randomUUID();
+  const customRequestId =
+    init.headers instanceof Headers
+      ? init.headers.get(WELETIC_REQUEST_ID_HEADER)
+      : (init.headers as Record<string, string> | undefined)?.[
+          WELETIC_REQUEST_ID_HEADER
+        ];
+  const requestId = customRequestId || crypto.randomUUID();
   const signedPath = `${url.pathname}${url.search}`;
   const signature = signRequest({
     timestamp,

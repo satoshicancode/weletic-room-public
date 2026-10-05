@@ -1,4 +1,4 @@
-import { isCoreLaunch } from "../../../apps/web/lib/weletic/core-launch-policy";
+import { isCoreLaunch } from "@weletic/contracts/core-launch-policy";
 
 const deferredPaths = new Set([
   "/loyalty-referrals",

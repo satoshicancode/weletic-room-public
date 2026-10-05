@@ -2,12 +2,12 @@ import {
   auditedReviewModerationInputSchema,
   auditedReviewModerationResponseSchema,
   type AuditedReviewModerationInput,
-} from "../../../apps/web/lib/weletic/reviews/moderation-contract";
+} from "@weletic/contracts/reviews/moderation-contract";
 import {
   storeMerchantListInputSchema,
   storeMerchantListResponseSchema,
   type StoreMerchantListInput,
-} from "../../../apps/web/lib/weletic/reviews/store-merchant-contract";
+} from "@weletic/contracts/reviews/store-merchant-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

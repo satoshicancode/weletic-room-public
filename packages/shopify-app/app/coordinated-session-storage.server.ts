@@ -6,16 +6,16 @@ import type {
   ShopifySessionMutationFence,
   ShopifySessionObservation,
   ShopifySessionSnapshot,
-} from "../../../apps/web/lib/weletic/shopify/session-contract";
+} from "@weletic/contracts/shopify/session-contract";
 import {
   bindShopifyOnlineSession,
   shopifyOnlineSessionBindingSchema,
-} from "../../../apps/web/lib/weletic/shopify/session-online-binding";
-import { readOnlineSessionEvidence } from "../../../apps/web/lib/weletic/shopify/session-online-evidence";
+} from "@weletic/contracts/shopify/session-online-binding";
+import { readOnlineSessionEvidence } from "@weletic/contracts/shopify/session-online-evidence";
 import {
   isFreshShopifyMerchantActor,
   shopifyMerchantActorEnvelopeSchema,
-} from "../../../apps/web/lib/weletic/shopify/staff-contract";
+} from "@weletic/contracts/shopify/staff-contract";
 import {
   deserializeShopifySession,
   serializeShopifySession,
