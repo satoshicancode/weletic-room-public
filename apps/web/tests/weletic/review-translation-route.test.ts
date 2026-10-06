@@ -34,7 +34,12 @@ const patch = {
   title: "翻訳",
   body: "翻訳されたレビュー",
 };
-function request(operation: string, body: string, signedBody = body) {
+function request(
+  operation: string,
+  body: string,
+  signedBody = body,
+  requestId = "req_" + Math.random().toString(36).slice(2),
+) {
   const path =
     "/api/internal/shopify/merchant/reviews/translations/" + operation;
   const timestamp = String(Date.now());
@@ -43,11 +48,13 @@ function request(operation: string, body: string, signedBody = body) {
     body,
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "POST",
         path,
         body: signedBody,
+        requestId,
         secret,
       }),
     },
