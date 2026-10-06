@@ -1,6 +1,5 @@
 import { Prisma } from "@prisma/client";
 import { createHmac } from "node:crypto";
-import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -67,7 +66,10 @@ class InMemoryWebhookDB {
     return { ...record };
   }
 
-  async findUnique(where: { webhookId?: string; id?: string }): Promise<StoredWebhookEvent | null> {
+  async findUnique(where: {
+    webhookId?: string;
+    id?: string;
+  }): Promise<StoredWebhookEvent | null> {
     if (where.webhookId) {
       const rec = this.eventsByWebhookId.get(where.webhookId);
       return rec ? { ...rec } : null;
@@ -84,15 +86,19 @@ class InMemoryWebhookDB {
     return all
       .filter((rec) => {
         if (where.topic && rec.topic !== where.topic) return false;
-        if (where.storeId?.in && !where.storeId.in.includes(rec.storeId)) return false;
-        if (where.attempts?.lt && rec.attempts >= where.attempts.lt) return false;
-        if (where.attempts?.gte && rec.attempts < where.attempts.gte) return false;
+        if (where.storeId?.in && !where.storeId.in.includes(rec.storeId))
+          return false;
+        if (where.attempts?.lt && rec.attempts >= where.attempts.lt)
+          return false;
+        if (where.attempts?.gte && rec.attempts < where.attempts.gte)
+          return false;
 
         if (where.OR) {
           const matchOr = where.OR.some((orClause: any) => {
             if (orClause.status && rec.status !== orClause.status) return false;
             if (orClause.updatedAt?.lt) {
-              if (rec.updatedAt.getTime() >= orClause.updatedAt.lt.getTime()) return false;
+              if (rec.updatedAt.getTime() >= orClause.updatedAt.lt.getTime())
+                return false;
             }
             return true;
           });
@@ -104,7 +110,10 @@ class InMemoryWebhookDB {
       .map((r) => ({ ...r }));
   }
 
-  async updateMany(params: { where: any; data: any }): Promise<{ count: number }> {
+  async updateMany(params: {
+    where: any;
+    data: any;
+  }): Promise<{ count: number }> {
     let count = 0;
     const { where, data } = params;
 
@@ -113,14 +122,18 @@ class InMemoryWebhookDB {
       if (where.storeId && rec.storeId !== where.storeId) continue;
       if (where.topic && rec.topic !== where.topic) continue;
       if (where.status && rec.status !== where.status) continue;
-      if (where.attempts !== undefined && rec.attempts !== where.attempts) continue;
+      if (where.attempts !== undefined && rec.attempts !== where.attempts)
+        continue;
       if (
         where.storeInstallationGeneration !== undefined &&
         rec.storeInstallationGeneration !== where.storeInstallationGeneration
       ) {
         continue;
       }
-      if (where.updatedAt?.lt && rec.updatedAt.getTime() >= where.updatedAt.lt.getTime()) {
+      if (
+        where.updatedAt?.lt &&
+        rec.updatedAt.getTime() >= where.updatedAt.lt.getTime()
+      ) {
         continue;
       }
 
@@ -138,7 +151,12 @@ class InMemoryWebhookDB {
   }
 
   // Forcefully set updatedAt for time travel testing
-  setTimeTravel(webhookId: string, ageMs: number, status?: "received" | "failed" | "processed", attempts?: number) {
+  setTimeTravel(
+    webhookId: string,
+    ageMs: number,
+    status?: "received" | "failed" | "processed",
+    attempts?: number,
+  ) {
     const rec = this.eventsByWebhookId.get(webhookId);
     if (rec) {
       rec.updatedAt = new Date(Date.now() - ageMs);
@@ -249,13 +267,12 @@ vi.mock("@/lib/axiom/server", () => ({
 
 import { POST } from "../../app/(ee)/api/shopify/integration/webhook/route";
 import {
-  recoverStuckOrdersPaidWebhooks,
   auditTerminalFailedOrdersPaidWebhooks,
   executeClaimedOrdersPaidEvent,
   getFailedRetryBackoffMs,
   IN_FLIGHT_LEASE_THRESHOLD_MS,
+  recoverStuckOrdersPaidWebhooks,
 } from "../../lib/weletic/shopify/orders-paid-recovery";
-import { GET as cronGET } from "../../app/(ee)/api/cron/weletic/shopify/orders-paid-recovery/route";
 import { createAllShopifyWebhookBodyDigests } from "../../lib/weletic/shopify/privacy-identity";
 
 const secret = "challenger-orders-paid-secret-key-32chars";
@@ -340,7 +357,10 @@ describe("Empirical Challenger M5: Concurrency, Idempotency & In-flight Lease Im
   });
 
   it("CHALLENGE 1: Concurrent Webhook Burst (N=5 simultaneous requests with identical webhookId) guarantees exactly 1 execution and < 100ms response time", async () => {
-    const ordersPaidExecutionLog: Array<{ timestamp: number; payloadId: number }> = [];
+    const ordersPaidExecutionLog: Array<{
+      timestamp: number;
+      payloadId: number;
+    }> = [];
 
     // Simulate heavy downstream processing (120ms settlement time)
     mocks.ordersPaid.mockImplementation(async (args: any) => {
@@ -358,7 +378,11 @@ describe("Empirical Challenger M5: Concurrency, Idempotency & In-flight Lease Im
       total_price: "249.00",
       customer: { id: 77701, email: "vip@yamax.test" },
       line_items: [
-        { id: 991, title: "Yamax Agile High Support Leggings", price: "129.00" },
+        {
+          id: 991,
+          title: "Yamax Agile High Support Leggings",
+          price: "129.00",
+        },
         { id: 992, title: "Yamax Flow Cropped Tank Top", price: "120.00" },
       ],
       discount_codes: [{ code: "YAMAXVIP", amount: "24.90" }],
@@ -404,7 +428,9 @@ describe("Empirical Challenger M5: Concurrency, Idempotency & In-flight Lease Im
     );
 
     const queuedResponses = responseBodies.filter((b) => b.queued === true);
-    const duplicateResponses = responseBodies.filter((b) => b.duplicate === true);
+    const duplicateResponses = responseBodies.filter(
+      (b) => b.duplicate === true,
+    );
 
     expect(queuedResponses).toHaveLength(1);
     expect(duplicateResponses).toHaveLength(4);
@@ -754,7 +780,9 @@ describe("Empirical Challenger M5: Concurrency, Idempotency & In-flight Lease Im
     expect(cronResults[0].webhookId).toBe("wh_backoff_mature");
 
     // Immature event remains untouched on attempt 2
-    const immatureEvent = await db.findUnique({ webhookId: "wh_backoff_immature" });
+    const immatureEvent = await db.findUnique({
+      webhookId: "wh_backoff_immature",
+    });
     expect(immatureEvent!.attempts).toBe(2);
     expect(immatureEvent!.status).toBe("failed");
   });

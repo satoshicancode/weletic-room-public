@@ -43,7 +43,9 @@ async function setupLoyaltyTestEnvironment(
   });
 
   const shopperId = `shopper_${Date.now()}_${randomName("c")}`;
-  const shopifyCustomerId = String(Date.now() + Math.floor(Math.random() * 10000));
+  const shopifyCustomerId = String(
+    Date.now() + Math.floor(Math.random() * 10000),
+  );
   const shopper = await prisma.weleticShopper.create({
     data: {
       id: shopperId,
@@ -404,5 +406,7 @@ test("GET /api/shopify/loyalty/admin/activity – validates query parameters and
   );
 
   expect(status).toBe(400);
-  expect(data.error.message).toContain("limit must be an integer between 1 and 100");
+  expect(data.error.message).toContain(
+    "limit must be an integer between 1 and 100",
+  );
 });

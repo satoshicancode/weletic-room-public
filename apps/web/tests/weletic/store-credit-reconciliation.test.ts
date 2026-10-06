@@ -2,12 +2,8 @@ import {
   createLoyaltyRedemptionProvisioningSnapshot,
   getShopifyCustomerSelectionDigest,
 } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
+import { auditShopifyCustomerStoreCreditTransactions } from "@/lib/weletic/loyalty/shopify-financial-rewards";
 import {
-  auditShopifyCustomerStoreCreditTransactions,
-  type ShopifyCustomerStoreCreditTransaction,
-} from "@/lib/weletic/loyalty/shopify-financial-rewards";
-import {
-  DEFAULT_STORE_CREDIT_RECONCILIATION_HORIZON_MS,
   reconcilePendingStoreCreditRedemption,
   reconcilePendingStoreCreditRedemptionsSweep,
 } from "@/lib/weletic/loyalty/store-credit-reconciliation";
@@ -135,11 +131,7 @@ vi.mock("@/lib/prisma", () => ({
 
 vi.mock("@/lib/weletic/loyalty/program-write-fence", () => ({
   withLoyaltyProgramRowLock: vi.fn(
-    async ({
-      operation,
-    }: {
-      operation: (tx: any) => Promise<any>;
-    }) => {
+    async ({ operation }: { operation: (tx: any) => Promise<any> }) => {
       const { prisma } = await import("@/lib/prisma");
       return operation(prisma);
     },
@@ -188,9 +180,10 @@ vi.mock("@/lib/weletic/loyalty/saga", () => ({
 }));
 
 vi.mock("@/lib/weletic/loyalty/shopify-discounts", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/lib/weletic/loyalty/shopify-discounts")
-  >();
+  const actual =
+    await importOriginal<
+      typeof import("@/lib/weletic/loyalty/shopify-discounts")
+    >();
   return {
     ...actual,
     resolveShopifyOfflineCredentials: vi.fn(

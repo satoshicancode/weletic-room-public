@@ -355,9 +355,9 @@ describe("Tier 2: Boundary & Corner Cases (Weletic Loyalty Production-Core)", ()
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: "invalid-non-hex-sig",
         },
       });
-      expect(await verifyWeleticShopifyRequest({ request: req, body: "" })).toBe(
-        false,
-      );
+      expect(
+        await verifyWeleticShopifyRequest({ request: req, body: "" }),
+      ).toBe(false);
     });
 
     it("rejects request when timestamp is outside 5-minute clock skew window", async () => {
@@ -381,9 +381,9 @@ describe("Tier 2: Boundary & Corner Cases (Weletic Loyalty Production-Core)", ()
         },
       });
 
-      expect(await verifyWeleticShopifyRequest({ request: req, body: "", now })).toBe(
-        false,
-      );
+      expect(
+        await verifyWeleticShopifyRequest({ request: req, body: "", now }),
+      ).toBe(false);
     });
   });
 

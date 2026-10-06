@@ -1,6 +1,5 @@
 import { getRewardAmount } from "@/lib/partners/get-reward-amount";
 import { RewardProps } from "@/lib/types";
-import { Commission } from "@prisma/client";
 
 /* 
   Calculate the commission earned for a sale

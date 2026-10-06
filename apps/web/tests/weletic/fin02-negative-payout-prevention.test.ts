@@ -69,7 +69,9 @@ const prismaMock = vi.hoisted(() => {
   const partnerGroupGroupBy = vi.fn();
   const partnerGroupFindMany = vi.fn();
   const weleticPayoutQuoteUpsert = vi.fn().mockResolvedValue({ id: "quote_1" });
-  const weleticPayoutStatementUpsert = vi.fn().mockResolvedValue({ id: "stmt_1" });
+  const weleticPayoutStatementUpsert = vi
+    .fn()
+    .mockResolvedValue({ id: "stmt_1" });
   const executeRaw = vi.fn().mockResolvedValue(1);
 
   const tx = {
@@ -126,25 +128,29 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 import { reconcilePayoutAmounts } from "@/lib/api/commissions/reconcile-payout-amounts";
+import { MUTABLE_PAYOUT_STATUSES } from "@/lib/constants/payouts";
 import {
   createWeleticPayoutQuote,
   refreshWeleticOpenPayoutQuotes,
 } from "@/lib/weletic/payouts/create-quote";
-import { sendPaypalPayouts } from "../../app/(ee)/api/cron/payouts/charge-succeeded/send-paypal-payouts";
+import { CommissionStatus } from "@prisma/client";
 import { POST as aggregateDueCommissionsPOST } from "../../app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route";
-import { MUTABLE_PAYOUT_STATUSES } from "@/lib/constants/payouts";
-import { CommissionStatus, PayoutStatus } from "@prisma/client";
+import { sendPaypalPayouts } from "../../app/(ee)/api/cron/payouts/charge-succeeded/send-paypal-payouts";
 
 describe("FIN-02: Negative & Zero Payout Prevention and Rollover Recovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.tx.commission.groupBy.mockReset();
-    prismaMock.tx.commission.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    prismaMock.tx.commission.updateMany
+      .mockReset()
+      .mockResolvedValue({ count: 1 });
     prismaMock.tx.payout.deleteMany.mockReset().mockResolvedValue({ count: 1 });
     prismaMock.tx.payout.update.mockReset().mockResolvedValue({ id: "po_1" });
     prismaMock.commission.findMany.mockReset().mockResolvedValue([]);
     prismaMock.commission.aggregate.mockReset();
-    prismaMock.commission.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    prismaMock.commission.updateMany
+      .mockReset()
+      .mockResolvedValue({ count: 1 });
     prismaMock.payout.findMany.mockReset().mockResolvedValue([]);
     prismaMock.payout.findUniqueOrThrow.mockReset();
     prismaMock.payout.create.mockReset();
@@ -153,8 +159,12 @@ describe("FIN-02: Negative & Zero Payout Prevention and Rollover Recovery", () =
     prismaMock.program.findUnique.mockReset();
     prismaMock.partnerGroup.groupBy.mockReset();
     prismaMock.partnerGroup.findMany.mockReset().mockResolvedValue([]);
-    prismaMock.weleticPayoutQuote.upsert.mockReset().mockResolvedValue({ id: "quote_1" });
-    prismaMock.weleticPayoutStatement.upsert.mockReset().mockResolvedValue({ id: "stmt_1" });
+    prismaMock.weleticPayoutQuote.upsert
+      .mockReset()
+      .mockResolvedValue({ id: "quote_1" });
+    prismaMock.weleticPayoutStatement.upsert
+      .mockReset()
+      .mockResolvedValue({ id: "stmt_1" });
     prismaMock.$executeRaw.mockReset().mockResolvedValue(1);
     paypalMock.createPayPalBatchPayout.mockReset();
   });
@@ -407,11 +417,18 @@ describe("FIN-02: Negative & Zero Payout Prevention and Rollover Recovery", () =
         amount: 5000,
         programId: "prog_1",
         program: { accountingCurrency: "USD", name: "Yamax" },
-        partner: { preferredLocale: "en", preferredPayoutCurrency: "USD", weleticPayoutProfiles: [] },
+        partner: {
+          preferredLocale: "en",
+          preferredPayoutCurrency: "USD",
+          weleticPayoutProfiles: [],
+        },
         commissions: [],
       });
 
-      await refreshWeleticOpenPayoutQuotes({ partnerId: "part_1", programId: "prog_1" });
+      await refreshWeleticOpenPayoutQuotes({
+        partnerId: "part_1",
+        programId: "prog_1",
+      });
 
       expect(prismaMock.payout.findMany).toHaveBeenCalledWith({
         where: {
@@ -434,7 +451,10 @@ describe("FIN-02: Negative & Zero Payout Prevention and Rollover Recovery", () =
           id: "payout_pos",
           amount: 8000,
           currency: "USD",
-          partner: { email: "partner@example.com", paypalEmail: "partner@paypal.com" },
+          partner: {
+            email: "partner@example.com",
+            paypalEmail: "partner@paypal.com",
+          },
           program: { name: "Yamax", logo: null },
         },
       ]);
@@ -498,7 +518,10 @@ describe("FIN-02: Negative & Zero Payout Prevention and Rollover Recovery", () =
           id: "payout_zero",
           amount: 0,
           currency: "USD",
-          partner: { email: "zero@example.com", paypalEmail: "zero@paypal.com" },
+          partner: {
+            email: "zero@example.com",
+            paypalEmail: "zero@paypal.com",
+          },
           program: { name: "Yamax", logo: null },
         },
       ]);
@@ -651,7 +674,12 @@ describe("FIN-02: Negative & Zero Payout Prevention and Rollover Recovery", () =
         ])
         // 2. Claimed commissions fetch inside aggregateDueCommissionsForPartner
         .mockResolvedValueOnce([
-          { id: "comm_1", amount: BigInt(20000), earnings: BigInt(15000), status: CommissionStatus.processed },
+          {
+            id: "comm_1",
+            amount: BigInt(20000),
+            earnings: BigInt(15000),
+            status: CommissionStatus.processed,
+          },
         ])
         // 3. Second iteration in while loop: no more commissions -> break
         .mockResolvedValueOnce([]);
@@ -673,7 +701,11 @@ describe("FIN-02: Negative & Zero Payout Prevention and Rollover Recovery", () =
         amount: 15000,
         programId: "prog_test",
         program: { accountingCurrency: "USD", name: "Yamax Affiliate" },
-        partner: { preferredLocale: "en", preferredPayoutCurrency: "USD", weleticPayoutProfiles: [] },
+        partner: {
+          preferredLocale: "en",
+          preferredPayoutCurrency: "USD",
+          weleticPayoutProfiles: [],
+        },
         commissions: [],
       });
 
@@ -703,7 +735,10 @@ describe("FIN-02: Negative & Zero Payout Prevention and Rollover Recovery", () =
         { id: "comm_2", earnings: -10000, payoutId: null, status: "pending" },
       ];
 
-      const period1Net = period1Commissions.reduce((sum, c) => sum + c.earnings, 0);
+      const period1Net = period1Commissions.reduce(
+        (sum, c) => sum + c.earnings,
+        0,
+      );
       expect(period1Net).toBe(-6000);
 
       // Reconcile/aggregation rule: If net <= 0, commissions remain unassigned (payoutId: null, status: "pending")
@@ -722,7 +757,10 @@ describe("FIN-02: Negative & Zero Payout Prevention and Rollover Recovery", () =
         ...period2NewCommissions,
       ];
 
-      const period2Net = period2EligibleCommissions.reduce((sum, c) => sum + c.earnings, 0);
+      const period2Net = period2EligibleCommissions.reduce(
+        (sum, c) => sum + c.earnings,
+        0,
+      );
       // Net is: +4000 - 10000 + 25000 = +19000 ($190.00)
       expect(period2Net).toBe(19000);
 

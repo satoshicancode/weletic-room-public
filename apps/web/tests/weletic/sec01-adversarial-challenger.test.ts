@@ -1,9 +1,5 @@
-import crypto from "node:crypto";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { redis } from "@/lib/upstash/redis";
 import {
   WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
-  WELETIC_SHOPIFY_NONCE_TTL_SECONDS,
   WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
@@ -12,16 +8,14 @@ import {
   signWeleticShopifyRequest,
   verifyWeleticShopifyRequest,
 } from "@/lib/weletic/shopify/service-auth";
+import crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { POST as catalogPostHandler } from "../../app/api/internal/shopify/catalog/route";
 
 // Hoisted Redis mock state
 const redisStore = new Map<string, number>();
 const mockRedisSet = vi.fn(
-  async (
-    key: string,
-    value: string,
-    opts?: { nx?: boolean; ex?: number },
-  ) => {
+  async (key: string, value: string, opts?: { nx?: boolean; ex?: number }) => {
     const now = Date.now();
     const existingExpiry = redisStore.get(key);
     if (opts?.nx && existingExpiry !== undefined && existingExpiry > now) {
@@ -90,17 +84,19 @@ const BASE_PATH = "/api/internal/shopify/catalog?shop=test-store.myshopify.com";
 const BASE_URL = `https://app.weletic.com${BASE_PATH}`;
 const BASE_BODY = "{}";
 
-function buildSignedRequest(options: {
-  timestamp?: number;
-  requestId?: string;
-  body?: string;
-  path?: string;
-  method?: string;
-  secret?: string;
-  headers?: Record<string, string>;
-  omitRequestIdHeader?: boolean;
-  tamperedRequestIdHeader?: string;
-} = {}) {
+function buildSignedRequest(
+  options: {
+    timestamp?: number;
+    requestId?: string;
+    body?: string;
+    path?: string;
+    method?: string;
+    secret?: string;
+    headers?: Record<string, string>;
+    omitRequestIdHeader?: boolean;
+    tamperedRequestIdHeader?: string;
+  } = {},
+) {
   const reqTimestamp = String(options.timestamp ?? BASE_NOW);
   const reqId = options.requestId ?? `req-${crypto.randomUUID()}`;
   const reqBody = options.body ?? BASE_BODY;
@@ -136,7 +132,13 @@ function buildSignedRequest(options: {
     body: reqBody,
   });
 
-  return { request, body: reqBody, signature, requestId: reqId, timestamp: reqTimestamp };
+  return {
+    request,
+    body: reqBody,
+    signature,
+    requestId: reqId,
+    timestamp: reqTimestamp,
+  };
 }
 
 describe("SEC-01 Adversarial Challenger Attack & Bypass Suite", () => {
@@ -326,9 +328,12 @@ describe("SEC-01 Adversarial Challenger Attack & Bypass Suite", () => {
         // verifyWeleticShopifyRequest strictly enforces /^[A-Za-z0-9_-]{1,128}$/
         const mockHeaders = {
           get: (name: string) => {
-            if (name.toLowerCase() === WELETIC_SHOPIFY_REQUEST_ID_HEADER) return rawId;
-            if (name.toLowerCase() === WELETIC_SHOPIFY_TIMESTAMP_HEADER) return String(BASE_NOW);
-            if (name.toLowerCase() === WELETIC_SHOPIFY_SIGNATURE_HEADER) return "a".repeat(64);
+            if (name.toLowerCase() === WELETIC_SHOPIFY_REQUEST_ID_HEADER)
+              return rawId;
+            if (name.toLowerCase() === WELETIC_SHOPIFY_TIMESTAMP_HEADER)
+              return String(BASE_NOW);
+            if (name.toLowerCase() === WELETIC_SHOPIFY_SIGNATURE_HEADER)
+              return "a".repeat(64);
             return null;
           },
         };
@@ -503,7 +508,9 @@ describe("SEC-01 Adversarial Challenger Attack & Bypass Suite", () => {
     test("Redis client unavailable in fail_closed mode -> rejects immediately without exception", async () => {
       vi.stubEnv("WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE", "fail_closed");
 
-      mockRedisSet.mockRejectedValue(new Error("Redis client connection failed"));
+      mockRedisSet.mockRejectedValue(
+        new Error("Redis client connection failed"),
+      );
 
       const { request, body: reqBody } = buildSignedRequest({
         timestamp: BASE_NOW,
@@ -597,8 +604,10 @@ describe("SEC-01 Adversarial Challenger Attack & Bypass Suite", () => {
     });
 
     test("Cross-store replay prevention: eavesdropped request for Store A cannot be replayed against Store B", async () => {
-      const storeAPath = "/api/internal/shopify/catalog?shop=store-a.myshopify.com";
-      const storeBPath = "/api/internal/shopify/catalog?shop=store-b.myshopify.com";
+      const storeAPath =
+        "/api/internal/shopify/catalog?shop=store-a.myshopify.com";
+      const storeBPath =
+        "/api/internal/shopify/catalog?shop=store-b.myshopify.com";
 
       const storeAReq = buildSignedRequest({
         path: storeAPath,
@@ -615,11 +624,14 @@ describe("SEC-01 Adversarial Challenger Attack & Bypass Suite", () => {
       ).toBe(true);
 
       // Attacker takes Store A's signature and headers, but sends it to Store B's endpoint URL
-      const tamperedUrlReq = new Request(`https://app.weletic.com${storeBPath}`, {
-        method: "POST",
-        headers: storeAReq.request.headers,
-        body: storeAReq.body,
-      });
+      const tamperedUrlReq = new Request(
+        `https://app.weletic.com${storeBPath}`,
+        {
+          method: "POST",
+          headers: storeAReq.request.headers,
+          body: storeAReq.body,
+        },
+      );
 
       // Signature verification fails because canonical request binds the URL path & search query
       expect(

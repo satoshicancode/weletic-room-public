@@ -579,9 +579,15 @@ export function WeleticProductDetailPageClient() {
             <thead className="border-b border-neutral-200 bg-neutral-50 font-semibold text-neutral-500">
               <tr>
                 <th className="px-4 py-3">{detailI18n[locale].channelType}</th>
-                <th className="px-4 py-3">{detailI18n[locale].storeCommission}</th>
-                <th className="px-4 py-3">{detailI18n[locale].bonusCommission}</th>
-                <th className="px-4 py-3 text-right">{detailI18n[locale].estCommissionAmount}</th>
+                <th className="px-4 py-3">
+                  {detailI18n[locale].storeCommission}
+                </th>
+                <th className="px-4 py-3">
+                  {detailI18n[locale].bonusCommission}
+                </th>
+                <th className="px-4 py-3 text-right">
+                  {detailI18n[locale].estCommissionAmount}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 font-medium text-neutral-800">
@@ -689,7 +695,7 @@ export function WeleticProductDetailPageClient() {
 
       {/* Main Section 3: Product Description / Information */}
       {product.descriptionHtml && (
-        <div className="shadow-xs relative overflow-hidden space-y-4 rounded-2xl border border-neutral-200 bg-white p-6">
+        <div className="shadow-xs relative space-y-4 overflow-hidden rounded-2xl border border-neutral-200 bg-white p-6">
           <h3 className="border-b border-neutral-100 pb-3 text-base font-bold text-neutral-900">
             Mô tả sản phẩm
           </h3>

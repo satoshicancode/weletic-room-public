@@ -1,21 +1,7 @@
-import {
-  PERMISSION_ACTIONS,
-  ROLE_PERMISSIONS,
-  getPermissionsByRole,
-} from "@/lib/api/rbac/permissions";
-import {
-  permissionRegistry,
-  PluginPermissionDefinition,
-} from "@/lib/api/rbac/plugin-registry";
-import {
-  RESOURCE_KEYS,
-  RESOURCES,
-} from "@/lib/api/rbac/resources";
-import {
-  SCOPES,
-  mapScopesToPermissions,
-  validateScopesForRole,
-} from "@/lib/api/tokens/scopes";
+import { getPermissionsByRole } from "@/lib/api/rbac/permissions";
+import { permissionRegistry } from "@/lib/api/rbac/plugin-registry";
+import { RESOURCE_KEYS } from "@/lib/api/rbac/resources";
+import { SCOPES } from "@/lib/api/tokens/scopes";
 import {
   executeTransferPreProcessingHook,
   registerTransferPreProcessingHook,
@@ -23,7 +9,7 @@ import {
   TransferPreProcessingContext,
 } from "@/lib/partners/transfer-hooks";
 import { weleticSettlementHook } from "@/lib/weletic/payouts/settlement-hook";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 describe("Auditor M4 Adversarial Stress Testing", () => {
   describe("RBAC Plugin Registry Proxy & Array Methods", () => {
@@ -57,7 +43,9 @@ describe("Auditor M4 Adversarial Stress Testing", () => {
           roles: ["owner"],
         },
       ]);
-      expect(permissionRegistry.getRegisteredActions().length).toBe(initialCount);
+      expect(permissionRegistry.getRegisteredActions().length).toBe(
+        initialCount,
+      );
     });
 
     it("handles actions without resource or scope cleanly", () => {
@@ -144,14 +132,36 @@ describe("Auditor M4 Adversarial Stress Testing", () => {
         weleticSettlementHook({
           partner: { id: "p1" },
           allPayouts: [
-            { id: "p1", amount: 100, currency: "USD", program: { id: "pr1", name: "PR1", logo: null, workspaceId: "ws1" } } as any,
-            { id: "p2", amount: 100, currency: "JPY", program: { id: "pr1", name: "PR1", logo: null, workspaceId: "ws1" } } as any,
+            {
+              id: "p1",
+              amount: 100,
+              currency: "USD",
+              program: {
+                id: "pr1",
+                name: "PR1",
+                logo: null,
+                workspaceId: "ws1",
+              },
+            } as any,
+            {
+              id: "p2",
+              amount: 100,
+              currency: "JPY",
+              program: {
+                id: "pr1",
+                name: "PR1",
+                logo: null,
+                workspaceId: "ws1",
+              },
+            } as any,
           ],
           totalTransferableAmount: 200,
           withdrawalFee: 0,
           forceWithdrawal: false,
         }),
-      ).rejects.toThrow("Automatic Stripe settlement currently requires USD accounting payouts.");
+      ).rejects.toThrow(
+        "Automatic Stripe settlement currently requires USD accounting payouts.",
+      );
     });
   });
 });

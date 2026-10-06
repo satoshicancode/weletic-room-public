@@ -108,9 +108,8 @@ export async function reconcilePendingStoreCreditRedemption({
     expectedCurrency,
   );
 
-  const attemptTimeStr = (
-    redemption.metadata as Record<string, unknown> | null
-  )?.remoteProvisionAttemptedAt;
+  const attemptTimeStr = (redemption.metadata as Record<string, unknown> | null)
+    ?.remoteProvisionAttemptedAt;
   const remoteAttemptAt =
     typeof attemptTimeStr === "string" ? new Date(attemptTimeStr) : null;
   const attemptBase = remoteAttemptAt ?? redemption.createdAt;

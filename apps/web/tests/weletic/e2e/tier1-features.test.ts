@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { redis } from "@/lib/upstash/redis";
 import {
   calculatePointsLiability,
   calculateReferralEconomics,
@@ -57,7 +58,6 @@ import {
   WeleticRewardStatus,
   WeleticRewardType,
 } from "@prisma/client";
-import { redis } from "@/lib/upstash/redis";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/upstash/redis", () => ({
@@ -275,7 +275,9 @@ describe("Tier 1: Feature Coverage (Weletic Loyalty Production-Core)", () => {
         body,
         requestId,
       });
-      expect(canonical).toBe(`${timestamp}\nPOST\n${path}\n${body}\n${requestId}`);
+      expect(canonical).toBe(
+        `${timestamp}\nPOST\n${path}\n${body}\n${requestId}`,
+      );
 
       const signature = signWeleticShopifyRequest({
         timestamp,

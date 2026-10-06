@@ -118,7 +118,8 @@ export const GET = withWorkspace(
           totalProducts: null,
           errors,
           stats: statsObj,
-          startedAt: run.startedAt?.toISOString() ?? run.createdAt.toISOString(),
+          startedAt:
+            run.startedAt?.toISOString() ?? run.createdAt.toISOString(),
           completedAt: run.completedAt?.toISOString() ?? null,
         },
         { status: 200 },

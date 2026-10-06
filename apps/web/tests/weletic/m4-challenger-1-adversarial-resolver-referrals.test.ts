@@ -1,4 +1,13 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -115,10 +124,8 @@ import { readShopifyCredentialSource } from "@/lib/weletic/shopify/credential-so
 import {
   canonicalizeShopifyDomain,
   normalizeShopDomain,
-  readShopifyCredentialTokenHash,
   resolveShopifyStoreByDomain,
   shopifyCredentialVerificationHash,
-  verifyAndBindShopifyIntegrationCredential,
 } from "@/lib/weletic/shopify/store-resolver";
 
 describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate Verification", () => {
@@ -130,7 +137,8 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
   const mockFetch = vi.fn<typeof fetch>();
 
   beforeAll(() => {
-    process.env.ENCRYPTION_KEY = "challenger-gate-verification-encryption-key-32b";
+    process.env.ENCRYPTION_KEY =
+      "challenger-gate-verification-encryption-key-32b";
     encryptedToken = encrypt(testAccessToken);
   });
 
@@ -149,13 +157,23 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
     mockFetch.mockReset().mockRejectedValue(new Error("Network unmocked"));
     vi.stubGlobal("fetch", mockFetch);
 
-    vi.mocked(readShopifyCredentialSource).mockReset().mockResolvedValue({ source: "legacy" } as any);
+    vi.mocked(readShopifyCredentialSource)
+      .mockReset()
+      .mockResolvedValue({ source: "legacy" } as any);
     vi.mocked(prisma.project.findUnique).mockReset().mockResolvedValue(null);
     vi.mocked(prisma.project.findFirst).mockReset().mockResolvedValue(null);
-    vi.mocked(prisma.weleticShopifyStore.findUnique).mockReset().mockResolvedValue(null);
-    vi.mocked(prisma.installedIntegration.findFirst).mockReset().mockResolvedValue(null);
-    vi.mocked(prisma.installedIntegration.findUnique).mockReset().mockResolvedValue(null);
-    vi.mocked(prisma.installedIntegration.update).mockReset().mockResolvedValue({} as any);
+    vi.mocked(prisma.weleticShopifyStore.findUnique)
+      .mockReset()
+      .mockResolvedValue(null);
+    vi.mocked(prisma.installedIntegration.findFirst)
+      .mockReset()
+      .mockResolvedValue(null);
+    vi.mocked(prisma.installedIntegration.findUnique)
+      .mockReset()
+      .mockResolvedValue(null);
+    vi.mocked(prisma.installedIntegration.update)
+      .mockReset()
+      .mockResolvedValue({} as any);
     vi.mocked(prisma.weleticLoyaltyAccount.updateMany).mockImplementation(
       (async ({ where }: any) => ({
         count: Array.isArray(where?.id?.in) ? where.id.in.length : 1,
@@ -221,20 +239,26 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
       expect(canonicalizeShopifyDomain("   ")).toBeNull();
 
       // Protocols, trailing slashes, path traversal and queries
-      expect(normalizeShopDomain("https://STORE-A.myshopify.com/")).toBe("store-a.myshopify.com");
-      expect(normalizeShopDomain("http://STORE-B.myshopify.com/admin/auth?shop=test")).toBe(
-        "store-b.myshopify.com",
+      expect(normalizeShopDomain("https://STORE-A.myshopify.com/")).toBe(
+        "store-a.myshopify.com",
       );
-      expect(canonicalizeShopifyDomain("https://VALID-STORE.myshopify.com/path")).toBe(
-        "valid-store.myshopify.com",
-      );
+      expect(
+        normalizeShopDomain(
+          "http://STORE-B.myshopify.com/admin/auth?shop=test",
+        ),
+      ).toBe("store-b.myshopify.com");
+      expect(
+        canonicalizeShopifyDomain("https://VALID-STORE.myshopify.com/path"),
+      ).toBe("valid-store.myshopify.com");
 
       // Attack vectors: leading/trailing dashes, consecutive dots, symbols
       expect(canonicalizeShopifyDomain("-invalid.myshopify.com")).toBeNull();
       expect(canonicalizeShopifyDomain("invalid-.myshopify.com")).toBeNull();
       expect(canonicalizeShopifyDomain("double..dot.myshopify.com")).toBeNull();
       expect(canonicalizeShopifyDomain("store.attacker.com")).toBeNull();
-      expect(canonicalizeShopifyDomain("store.myshopify.com.evil.com")).toBeNull();
+      expect(
+        canonicalizeShopifyDomain("store.myshopify.com.evil.com"),
+      ).toBeNull();
       expect(normalizeShopDomain("store.myshopify.com/../../etc/passwd")).toBe(
         "store.myshopify.com",
       );
@@ -280,12 +304,18 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         installationGeneration: "gen_prim",
       };
 
-      (prisma.weleticShopifyStore.findUnique as any).mockImplementation(async (args: any) => {
-        if (args?.where?.shopDomain === shop || args?.where?.projectId === workspaceId || args?.where?.id === "store_prim_1") {
-          return storeRecord as any;
-        }
-        return null;
-      });
+      (prisma.weleticShopifyStore.findUnique as any).mockImplementation(
+        async (args: any) => {
+          if (
+            args?.where?.shopDomain === shop ||
+            args?.where?.projectId === workspaceId ||
+            args?.where?.id === "store_prim_1"
+          ) {
+            return storeRecord as any;
+          }
+          return null;
+        },
+      );
 
       vi.mocked(prisma.project.findUnique).mockResolvedValue({
         id: workspaceId,
@@ -298,7 +328,8 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
               shop,
               accessToken: encryptedToken,
               shopVerifiedAt: "2026-10-01T00:00:00.000Z",
-              shopVerificationTokenHash: shopifyCredentialVerificationHash(testAccessToken),
+              shopVerificationTokenHash:
+                shopifyCredentialVerificationHash(testAccessToken),
               installationGeneration: "gen_prim",
             },
           },
@@ -312,7 +343,8 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
           shop,
           accessToken: encryptedToken,
           shopVerifiedAt: "2026-10-01T00:00:00.000Z",
-          shopVerificationTokenHash: shopifyCredentialVerificationHash(testAccessToken),
+          shopVerificationTokenHash:
+            shopifyCredentialVerificationHash(testAccessToken),
           installationGeneration: "gen_prim",
         },
       } as any);
@@ -339,12 +371,17 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         installationGeneration: "gen_leg",
       };
 
-      (prisma.weleticShopifyStore.findUnique as any).mockImplementation(async (args: any) => {
-        if (args?.where?.id === "store_legacy_1" || args?.where?.projectId === workspaceId) {
-          return storeRecord as any;
-        }
-        return null;
-      });
+      (prisma.weleticShopifyStore.findUnique as any).mockImplementation(
+        async (args: any) => {
+          if (
+            args?.where?.id === "store_legacy_1" ||
+            args?.where?.projectId === workspaceId
+          ) {
+            return storeRecord as any;
+          }
+          return null;
+        },
+      );
 
       // InstalledIntegration lookup by credentials.shop matches legacy alias
       vi.mocked(prisma.installedIntegration.findFirst).mockResolvedValueOnce({
@@ -353,7 +390,8 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
           shop: legacyAlias,
           accessToken: encryptedToken,
           shopVerifiedAt: "2026-09-01T00:00:00.000Z",
-          shopVerificationTokenHash: shopifyCredentialVerificationHash(testAccessToken),
+          shopVerificationTokenHash:
+            shopifyCredentialVerificationHash(testAccessToken),
           installationGeneration: "gen_leg",
         },
         project: {
@@ -371,7 +409,8 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
           shop: legacyAlias,
           accessToken: encryptedToken,
           shopVerifiedAt: "2026-09-01T00:00:00.000Z",
-          shopVerificationTokenHash: shopifyCredentialVerificationHash(testAccessToken),
+          shopVerificationTokenHash:
+            shopifyCredentialVerificationHash(testAccessToken),
           installationGeneration: "gen_leg",
         },
       } as any);
@@ -474,7 +513,8 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
           shop: domain,
           accessToken: encryptedToken,
           installationGeneration: "gen_OLD", // old generation
-          shopVerificationTokenHash: shopifyCredentialVerificationHash(testAccessToken),
+          shopVerificationTokenHash:
+            shopifyCredentialVerificationHash(testAccessToken),
         },
         project: {
           id: workspaceId,
@@ -560,19 +600,21 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
       const canonicalShop = "native-canonical.myshopify.com";
       const aliasQuery = "native-alias.myshopify.com";
 
-      (prisma.weleticShopifyStore.findUnique as any).mockImplementation(async (args: any) => {
-        if (args?.where?.projectId === workspaceId) {
-          return {
-            id: "store_native_1",
-            projectId: workspaceId,
-            shopDomain: canonicalShop,
-            complianceState: "active",
-            storeAccessState: "active",
-            installationGeneration: "gen_nat",
-          } as any;
-        }
-        return null;
-      });
+      (prisma.weleticShopifyStore.findUnique as any).mockImplementation(
+        async (args: any) => {
+          if (args?.where?.projectId === workspaceId) {
+            return {
+              id: "store_native_1",
+              projectId: workspaceId,
+              shopDomain: canonicalShop,
+              complianceState: "active",
+              storeAccessState: "active",
+              installationGeneration: "gen_nat",
+            } as any;
+          }
+          return null;
+        },
+      );
 
       vi.mocked(prisma.project.findUnique).mockResolvedValue({
         id: workspaceId,
@@ -598,13 +640,30 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
   describe("3. Zero-Hardcoding Invariant (Invariant 4) Verification", () => {
     it("dynamically resolves arbitrary tenant domains without hardcoded domain checks", async () => {
       const arbitraryTenants = [
-        { domain: "brand-alpha.myshopify.com", ws: "ws_alpha", prog: "prog_alpha", token: "tok_alpha" },
-        { domain: "brand-beta.myshopify.com", ws: "ws_beta", prog: "prog_beta", token: "tok_beta" },
-        { domain: "custom-tenant-gamma.myshopify.com", ws: "ws_gamma", prog: "prog_gamma", token: "tok_gamma" },
+        {
+          domain: "brand-alpha.myshopify.com",
+          ws: "ws_alpha",
+          prog: "prog_alpha",
+          token: "tok_alpha",
+        },
+        {
+          domain: "brand-beta.myshopify.com",
+          ws: "ws_beta",
+          prog: "prog_beta",
+          token: "tok_beta",
+        },
+        {
+          domain: "custom-tenant-gamma.myshopify.com",
+          ws: "ws_gamma",
+          prog: "prog_gamma",
+          token: "tok_gamma",
+        },
       ];
 
       for (const tenant of arbitraryTenants) {
-        vi.mocked(readShopifyCredentialSource).mockResolvedValue({ source: "legacy" } as any);
+        vi.mocked(readShopifyCredentialSource).mockResolvedValue({
+          source: "legacy",
+        } as any);
         const encTok = encrypt(tenant.token);
         const tHash = shopifyCredentialVerificationHash(tenant.token);
         const stRec = {
@@ -616,12 +675,18 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
           installationGeneration: "gen_dyn",
         };
 
-        (prisma.weleticShopifyStore.findUnique as any).mockImplementation(async (args: any) => {
-          if (args?.where?.shopDomain === tenant.domain || args?.where?.projectId === tenant.ws || args?.where?.id === `store_${tenant.ws}`) {
-            return stRec as any;
-          }
-          return null;
-        });
+        (prisma.weleticShopifyStore.findUnique as any).mockImplementation(
+          async (args: any) => {
+            if (
+              args?.where?.shopDomain === tenant.domain ||
+              args?.where?.projectId === tenant.ws ||
+              args?.where?.id === `store_${tenant.ws}`
+            ) {
+              return stRec as any;
+            }
+            return null;
+          },
+        );
 
         vi.mocked(prisma.project.findUnique).mockResolvedValue({
           id: tenant.ws,
@@ -708,7 +773,11 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         referralCode,
         status: "active",
         metadata: null,
-        shopper: { id: "sh_1", firstName: "Hiro", shopifyCustomerId: "gid://shopify/Customer/123" },
+        shopper: {
+          id: "sh_1",
+          firstName: "Hiro",
+          shopifyCustomerId: "gid://shopify/Customer/123",
+        },
         store: {
           id: storeId,
           shopDomain,
@@ -729,10 +798,12 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         },
       };
 
-      (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(async (args: any) => {
-        if (args?.where?.id === accountId) return mockAccount as any;
-        return null;
-      });
+      (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(
+        async (args: any) => {
+          if (args?.where?.id === accountId) return mockAccount as any;
+          return null;
+        },
+      );
 
       vi.mocked(prisma.link.findFirst).mockResolvedValueOnce(null);
       vi.mocked(prisma.link.create).mockResolvedValueOnce({
@@ -743,7 +814,10 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         shortLink,
       } as any);
 
-      const linkResult = await ensureAccountReferralLink({ storeId, accountId });
+      const linkResult = await ensureAccountReferralLink({
+        storeId,
+        accountId,
+      });
       expect(linkResult.referralCode).toBe(referralCode);
       expect(linkResult.referralLink).toBe(shortLink);
       expect(linkResult.dubLinkId).toBe("link_gate_created");
@@ -770,7 +844,11 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         referralCode: "GATE-UNVERIFIED",
         status: "active",
         metadata: null,
-        shopper: { id: "sh_1", firstName: "Hiro", shopifyCustomerId: "gid://shopify/Customer/123" },
+        shopper: {
+          id: "sh_1",
+          firstName: "Hiro",
+          shopifyCustomerId: "gid://shopify/Customer/123",
+        },
         store: {
           id: storeId,
           shopDomain,
@@ -782,10 +860,12 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         },
       };
 
-      (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(async (args: any) => {
-        if (args?.where?.id === accountId) return mockAccount as any;
-        return null;
-      });
+      (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(
+        async (args: any) => {
+          if (args?.where?.id === accountId) return mockAccount as any;
+          return null;
+        },
+      );
 
       // Project lookup returns empty domains (because none are primary+verified+unarchived)
       vi.mocked(prisma.project.findUnique).mockResolvedValueOnce({
@@ -793,9 +873,14 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         domains: [], // No verified primary domains!
       } as any);
 
-      const linkResult = await ensureAccountReferralLink({ storeId, accountId });
+      const linkResult = await ensureAccountReferralLink({
+        storeId,
+        accountId,
+      });
       expect(linkResult.referralCode).toBe("GATE-UNVERIFIED");
-      expect(linkResult.referralLink).toBe(`https://${shopDomain}?ref=GATE-UNVERIFIED`);
+      expect(linkResult.referralLink).toBe(
+        `https://${shopDomain}?ref=GATE-UNVERIFIED`,
+      );
       expect(linkResult.dubLinkId).toBeNull();
       expect(prisma.link.create).not.toHaveBeenCalled();
     });
@@ -813,7 +898,11 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         referralCode,
         status: "active",
         metadata: null,
-        shopper: { id: "sh_1", firstName: "Hiro", shopifyCustomerId: "gid://shopify/Customer/123" },
+        shopper: {
+          id: "sh_1",
+          firstName: "Hiro",
+          shopifyCustomerId: "gid://shopify/Customer/123",
+        },
         store: {
           id: storeId,
           shopDomain,
@@ -824,10 +913,12 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         },
       };
 
-      (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(async (args: any) => {
-        if (args?.where?.id === accountId) return mockAccount as any;
-        return null;
-      });
+      (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(
+        async (args: any) => {
+          if (args?.where?.id === accountId) return mockAccount as any;
+          return null;
+        },
+      );
 
       vi.mocked(prisma.project.findUnique).mockResolvedValueOnce({
         id: projectId,
@@ -850,7 +941,10 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         shortLink,
       } as any);
 
-      const linkResult = await ensureAccountReferralLink({ storeId, accountId });
+      const linkResult = await ensureAccountReferralLink({
+        storeId,
+        accountId,
+      });
       expect(linkResult.referralCode).toBe(referralCode);
       expect(linkResult.referralLink).toBe(shortLink);
       expect(prisma.project.findUnique).toHaveBeenCalledWith({
@@ -875,7 +969,11 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
           referralCode: "SAFE-NO-DELEGATE",
           status: "active",
           metadata: null,
-          shopper: { id: "sh_1", firstName: "Hiro", shopifyCustomerId: "gid://shopify/Customer/123" },
+          shopper: {
+            id: "sh_1",
+            firstName: "Hiro",
+            shopifyCustomerId: "gid://shopify/Customer/123",
+          },
           store: {
             id: storeId,
             shopDomain,
@@ -886,14 +984,18 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
           },
         };
 
-        (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(async (args: any) => {
-          if (args?.where?.id === accountId) return mockAccount as any;
-          return null;
-        });
+        (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(
+          async (args: any) => {
+            if (args?.where?.id === accountId) return mockAccount as any;
+            return null;
+          },
+        );
 
         const result = await ensureAccountReferralLink({ storeId, accountId });
         expect(result.referralCode).toBe("SAFE-NO-DELEGATE");
-        expect(result.referralLink).toBe(`https://${shopDomain}?ref=SAFE-NO-DELEGATE`);
+        expect(result.referralLink).toBe(
+          `https://${shopDomain}?ref=SAFE-NO-DELEGATE`,
+        );
         expect(result.dubLinkId).toBeNull();
       } finally {
         (prisma as any).project = originalProjectDelegate;
@@ -905,7 +1007,11 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         id: accountId,
         storeId: "store_foreign_99",
         status: "active",
-        shopper: { id: "sh_1", firstName: "Hiro", shopifyCustomerId: "gid://shopify/Customer/123" },
+        shopper: {
+          id: "sh_1",
+          firstName: "Hiro",
+          shopifyCustomerId: "gid://shopify/Customer/123",
+        },
         store: {
           id: "store_foreign_99",
           shopDomain,
@@ -915,10 +1021,12 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         },
       };
 
-      (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(async (args: any) => {
-        if (args?.where?.id === accountId) return mockAccount as any;
-        return null;
-      });
+      (prisma.weleticLoyaltyAccount.findUnique as any).mockImplementation(
+        async (args: any) => {
+          if (args?.where?.id === accountId) return mockAccount as any;
+          return null;
+        },
+      );
 
       await expect(
         ensureAccountReferralLink({ storeId: "store_victim_01", accountId }),
@@ -1003,7 +1111,11 @@ describe("Milestone 4 Challenger 1: Adversarial Store Resolver & Referrals Gate 
         store: { id: storeId, projectId: workspaceId, programId },
       } as any);
 
-      const advocateIpHash = hashAbuseSignal({ storeId, kind: "ip", signal: commonIp });
+      const advocateIpHash = hashAbuseSignal({
+        storeId,
+        kind: "ip",
+        signal: commonIp,
+      });
 
       vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValueOnce({
         id: "acc_advocate_ip",

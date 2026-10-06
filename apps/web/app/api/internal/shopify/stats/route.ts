@@ -19,7 +19,7 @@ function unauthorized() {
 }
 
 export async function GET(request: Request) {
-  if (!await verifyWeleticShopifyRequest({ request, body: "" })) {
+  if (!(await verifyWeleticShopifyRequest({ request, body: "" }))) {
     return unauthorized();
   }
 

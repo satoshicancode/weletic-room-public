@@ -1,4 +1,3 @@
-import React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Banner,
@@ -20,6 +19,7 @@ import {
   type ReferralConfigurationResponse,
   type ReferralConfigurationWrite,
 } from "@weletic/contracts/loyalty/referral-configuration-contract";
+import React from "react";
 
 export type ReferralConfigurationTransport = {
   scopeKey: string;
@@ -261,9 +261,7 @@ function ConfigurationForm({
                     autoComplete="off"
                     value={fields[`${side}PointsReward`]}
                     error={errors.includes(`${side}PointsReward`)}
-                    onChange={(val) =>
-                      update(`${side}PointsReward`, val)
-                    }
+                    onChange={(val) => update(`${side}PointsReward`, val)}
                   />
                 ) : (
                   <Select
@@ -581,36 +579,37 @@ function ConfigurationVisit({
                     <p>{text.legacy}</p>
                   </Banner>
                 )}
-                {view.capabilities.configure && view.programId && view.active && (
-                  <InlineStack gap="300">
-                    <Button
-                      disabled={busy}
-                      onClick={() => setConfirm(true)}
-                    >
-                      {text.pause}
-                    </Button>
-                    {confirm && (
-                      <div role="group" aria-label={text.confirm}>
-                        <InlineStack gap="200">
-                          <Button
-                            tone="critical"
-                            variant="primary"
-                            disabled={busy}
-                            onClick={() => mutate(() => transport.pause(expected!))}
-                          >
-                            {text.confirm}
-                          </Button>
-                          <Button
-                            disabled={busy}
-                            onClick={() => setConfirm(false)}
-                          >
-                            {text.cancel}
-                          </Button>
-                        </InlineStack>
-                      </div>
-                    )}
-                  </InlineStack>
-                )}
+                {view.capabilities.configure &&
+                  view.programId &&
+                  view.active && (
+                    <InlineStack gap="300">
+                      <Button disabled={busy} onClick={() => setConfirm(true)}>
+                        {text.pause}
+                      </Button>
+                      {confirm && (
+                        <div role="group" aria-label={text.confirm}>
+                          <InlineStack gap="200">
+                            <Button
+                              tone="critical"
+                              variant="primary"
+                              disabled={busy}
+                              onClick={() =>
+                                mutate(() => transport.pause(expected!))
+                              }
+                            >
+                              {text.confirm}
+                            </Button>
+                            <Button
+                              disabled={busy}
+                              onClick={() => setConfirm(false)}
+                            >
+                              {text.cancel}
+                            </Button>
+                          </InlineStack>
+                        </div>
+                      )}
+                    </InlineStack>
+                  )}
               </BlockStack>
             </Card>
             {view.fields && view.programId && view.shopCurrency && (
@@ -621,7 +620,11 @@ function ConfigurationVisit({
                 busy={busy || !view.capabilities.configure}
                 onSave={(fields) =>
                   mutate(() =>
-                    transport.save({ ...expected!, ruleId: view.ruleId, fields }),
+                    transport.save({
+                      ...expected!,
+                      ruleId: view.ruleId,
+                      fields,
+                    }),
                   )
                 }
               />

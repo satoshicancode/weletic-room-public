@@ -2764,32 +2764,298 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
     describe("Missing Store Records Across Loyalty Admin APIs (404 Fail-Closed)", () => {
       beforeEach(() => {
         currentTestRole = "owner";
-        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue(null);
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue(
+          null,
+        );
       });
 
       const missingStoreEndpoints = [
-        { name: "GET /settings", call: () => getSettings(new Request("http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "POST /settings", call: () => postSettings(new Request("http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Updated" }) }) as any, { params: Promise.resolve({}) }) },
-        { name: "GET /analytics", call: () => getAnalytics(new Request("http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "GET /analytics/cohorts", call: () => getAnalyticsCohorts(new Request("http://localhost/api/shopify/loyalty/admin/analytics/cohorts?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "GET /analytics/export", call: () => getAnalyticsExport(new Request("http://localhost/api/shopify/loyalty/admin/analytics/export?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "GET /accounts", call: () => getAccounts(new Request("http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "POST /accounts", call: () => postAccounts(new Request("http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: "acc_1", pointsDelta: 10 }) }) as any, { params: Promise.resolve({}) }) },
-        { name: "POST /adjust", call: () => postAdjust(new Request("http://localhost/api/shopify/loyalty/admin/adjust?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: "acc_1", pointsDelta: 10 }) }) as any, { params: Promise.resolve({}) }) },
-        { name: "GET /activity", call: () => getActivity(new Request("http://localhost/api/shopify/loyalty/admin/activity?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "GET /branding", call: () => getBranding(new Request("http://localhost/api/shopify/loyalty/admin/branding?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "POST /branding", call: () => postBranding(new Request("http://localhost/api/shopify/loyalty/admin/branding?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branding: { primaryColor: "#112233" } }) }) as any, { params: Promise.resolve({}) }) },
-        { name: "GET /campaigns", call: () => getCampaigns(new Request("http://localhost/api/shopify/loyalty/admin/campaigns?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "POST /campaigns", call: () => postCampaigns(new Request("http://localhost/api/shopify/loyalty/admin/campaigns?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Summer", multiplierBps: 20000 }) }) as any, { params: Promise.resolve({}) }) },
-        { name: "GET /earn-rules", call: () => getEarnRules(new Request("http://localhost/api/shopify/loyalty/admin/earn-rules?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "POST /earn-rules", call: () => postEarnRules(new Request("http://localhost/api/shopify/loyalty/admin/earn-rules?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ triggerCode: "account_created", pointsAwarded: 100 }) }) as any, { params: Promise.resolve({}) }) },
-        { name: "GET /referrals", call: () => getReferrals(new Request("http://localhost/api/shopify/loyalty/admin/referrals?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "POST /referrals", call: () => postReferrals(new Request("http://localhost/api/shopify/loyalty/admin/referrals?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ advocatePointsReward: 100, refereePointsReward: 50 }) }) as any, { params: Promise.resolve({}) }) },
-        { name: "PATCH /referrals", call: () => patchReferrals(new Request("http://localhost/api/shopify/loyalty/admin/referrals?workspaceId=ws_tenant_a", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ advocatePointsReward: 100 }) }) as any, { params: Promise.resolve({}) }) },
-        { name: "GET /rewards", call: () => getRewards(new Request("http://localhost/api/shopify/loyalty/admin/rewards?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "POST /rewards", call: () => postRewards(new Request("http://localhost/api/shopify/loyalty/admin/rewards?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "10 Off", type: "amount_off", pointsCost: 500, discountValue: 1000 }) }) as any, { params: Promise.resolve({}) }) },
-        { name: "GET /backfill", call: () => getBackfill(new Request("http://localhost/api/shopify/loyalty/admin/backfill?workspaceId=ws_tenant_a") as any, { params: Promise.resolve({}) }) },
-        { name: "POST /backfill", call: () => postBackfill(new Request("http://localhost/api/shopify/loyalty/admin/backfill?workspaceId=ws_tenant_a", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", lookbackDays: 30 }) }) as any, { params: Promise.resolve({}) }) },
+        {
+          name: "GET /settings",
+          call: () =>
+            getSettings(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "POST /settings",
+          call: () =>
+            postSettings(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: "Updated" }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /analytics",
+          call: () =>
+            getAnalytics(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /analytics/cohorts",
+          call: () =>
+            getAnalyticsCohorts(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/analytics/cohorts?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /analytics/export",
+          call: () =>
+            getAnalyticsExport(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/analytics/export?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /accounts",
+          call: () =>
+            getAccounts(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "POST /accounts",
+          call: () =>
+            postAccounts(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ accountId: "acc_1", pointsDelta: 10 }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "POST /adjust",
+          call: () =>
+            postAdjust(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/adjust?workspaceId=ws_tenant_a",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ accountId: "acc_1", pointsDelta: 10 }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /activity",
+          call: () =>
+            getActivity(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/activity?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /branding",
+          call: () =>
+            getBranding(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/branding?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "POST /branding",
+          call: () =>
+            postBranding(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/branding?workspaceId=ws_tenant_a",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    branding: { primaryColor: "#112233" },
+                  }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /campaigns",
+          call: () =>
+            getCampaigns(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/campaigns?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "POST /campaigns",
+          call: () =>
+            postCampaigns(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/campaigns?workspaceId=ws_tenant_a",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    name: "Summer",
+                    multiplierBps: 20000,
+                  }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /earn-rules",
+          call: () =>
+            getEarnRules(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/earn-rules?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "POST /earn-rules",
+          call: () =>
+            postEarnRules(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/earn-rules?workspaceId=ws_tenant_a",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    triggerCode: "account_created",
+                    pointsAwarded: 100,
+                  }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /referrals",
+          call: () =>
+            getReferrals(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/referrals?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "POST /referrals",
+          call: () =>
+            postReferrals(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/referrals?workspaceId=ws_tenant_a",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    advocatePointsReward: 100,
+                    refereePointsReward: 50,
+                  }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "PATCH /referrals",
+          call: () =>
+            patchReferrals(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/referrals?workspaceId=ws_tenant_a",
+                {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ advocatePointsReward: 100 }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /rewards",
+          call: () =>
+            getRewards(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/rewards?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "POST /rewards",
+          call: () =>
+            postRewards(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/rewards?workspaceId=ws_tenant_a",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    name: "10 Off",
+                    type: "amount_off",
+                    pointsCost: 500,
+                    discountValue: 1000,
+                  }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "GET /backfill",
+          call: () =>
+            getBackfill(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/backfill?workspaceId=ws_tenant_a",
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
+        {
+          name: "POST /backfill",
+          call: () =>
+            postBackfill(
+              new Request(
+                "http://localhost/api/shopify/loyalty/admin/backfill?workspaceId=ws_tenant_a",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "preview", lookbackDays: 30 }),
+                },
+              ) as any,
+              { params: Promise.resolve({}) },
+            ),
+        },
       ];
 
       it.each(missingStoreEndpoints)(
@@ -2800,7 +3066,9 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
           const body = await res.json();
           expect(body.error).toBeDefined();
           expect(body.error.code).toBe("not_found");
-          expect(body.error.message).toContain("Shopify store not connected to this workspace");
+          expect(body.error.message).toContain(
+            "Shopify store not connected to this workspace",
+          );
         },
       );
     });
@@ -2820,8 +3088,12 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
       };
 
       it("GET /settings falls back to store.shopCurrency without throwing TypeError when prisma.program is unmocked", async () => {
-        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(storeWithDecoupledProgramId as any);
-        vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValueOnce({
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+          storeWithDecoupledProgramId as any,
+        );
+        vi.mocked(
+          prisma.weleticLoyaltyProgram.findUnique,
+        ).mockResolvedValueOnce({
           id: "wprog_existing",
           storeId: storeWithDecoupledProgramId.id,
           name: "Test Loyalty",
@@ -2837,7 +3109,9 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
         } as any);
 
         const res = await getSettings(
-          new Request("http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a") as any,
+          new Request(
+            "http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a",
+          ) as any,
           { params: Promise.resolve({}) },
         );
         expect(res.status).toBe(200);
@@ -2852,7 +3126,9 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
           currencyVerifiedAt: new Date("2026-09-01T00:00:00Z"),
           installationGeneration: "sgen_decoupled_test",
         };
-        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue(compliantStore as any);
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue(
+          compliantStore as any,
+        );
         vi.mocked(prisma.weleticLoyaltyProgram.findUnique).mockResolvedValue({
           id: "wprog_existing",
           storeId: compliantStore.id,
@@ -2873,15 +3149,18 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
         } as any);
 
         const res = await postSettings(
-          new Request("http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              liabilityValuationCurrency: "EUR",
-              liabilityMinorUnitsNumerator: "100",
-              liabilityPointsDenominator: "100",
-            }),
-          }) as any,
+          new Request(
+            "http://localhost/api/shopify/loyalty/admin/settings?workspaceId=ws_tenant_a",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                liabilityValuationCurrency: "EUR",
+                liabilityMinorUnitsNumerator: "100",
+                liabilityPointsDenominator: "100",
+              }),
+            },
+          ) as any,
           { params: Promise.resolve({}) },
         );
         expect(res.status).toBe(200);
@@ -2894,7 +3173,9 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
         } as any);
 
         const res = await getAnalytics(
-          new Request("http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a") as any,
+          new Request(
+            "http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a",
+          ) as any,
           { params: Promise.resolve({}) },
         );
         expect(res.status).toBe(200);
@@ -2903,11 +3184,17 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
       });
 
       it("GET /analytics/cohorts calculates attribution with shopCurrency without throwing TypeError", async () => {
-        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(storeWithDecoupledProgramId as any);
-        vi.mocked(prisma.weleticLoyaltyAccount.findMany).mockResolvedValueOnce([]);
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+          storeWithDecoupledProgramId as any,
+        );
+        vi.mocked(prisma.weleticLoyaltyAccount.findMany).mockResolvedValueOnce(
+          [],
+        );
 
         const res = await getAnalyticsCohorts(
-          new Request("http://localhost/api/shopify/loyalty/admin/analytics/cohorts?workspaceId=ws_tenant_a") as any,
+          new Request(
+            "http://localhost/api/shopify/loyalty/admin/analytics/cohorts?workspaceId=ws_tenant_a",
+          ) as any,
           { params: Promise.resolve({}) },
         );
         expect(res.status).toBe(200);
@@ -2924,10 +3211,14 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
             liabilityPointsDenominator: 100,
           },
         } as any);
-        vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValueOnce([]);
+        vi.mocked(
+          prisma.weleticPointsLedgerEntry.findMany,
+        ).mockResolvedValueOnce([]);
 
         const res = await getAnalyticsExport(
-          new Request("http://localhost/api/shopify/loyalty/admin/analytics/export?workspaceId=ws_tenant_a&format=csv") as any,
+          new Request(
+            "http://localhost/api/shopify/loyalty/admin/analytics/export?workspaceId=ws_tenant_a&format=csv",
+          ) as any,
           { params: Promise.resolve({}) },
         );
         expect(res.status).toBe(200);
@@ -2949,11 +3240,17 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
       });
 
       it("GET /activity defaults gracefully when all query params are empty strings", async () => {
-        vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValueOnce([]);
-        vi.mocked(prisma.weleticPointsLedgerEntry.count).mockResolvedValueOnce(0);
+        vi.mocked(
+          prisma.weleticPointsLedgerEntry.findMany,
+        ).mockResolvedValueOnce([]);
+        vi.mocked(prisma.weleticPointsLedgerEntry.count).mockResolvedValueOnce(
+          0,
+        );
 
         const res = await getActivity(
-          new Request("http://localhost/api/shopify/loyalty/admin/activity?workspaceId=ws_tenant_a&search=&type=&page=&limit=&format=") as any,
+          new Request(
+            "http://localhost/api/shopify/loyalty/admin/activity?workspaceId=ws_tenant_a&search=&type=&page=&limit=&format=",
+          ) as any,
           { params: Promise.resolve({}) },
         );
         expect(res.status).toBe(200);
@@ -2970,20 +3267,30 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
         ["limit=0", /limit must be an integer between 1 and 100/],
         ["limit=101", /limit must be an integer between 1 and 100/],
         ["limit=9999", /limit must be an integer between 1 and 100/],
-        ["type=NOT_REAL_TYPE", /type must be a valid loyalty ledger entry type/],
-      ])("GET /activity rejects invalid parameter: %s", async (query, errRegex) => {
-        const res = await getActivity(
-          new Request(`http://localhost/api/shopify/loyalty/admin/activity?workspaceId=ws_tenant_a&${query}`) as any,
-          { params: Promise.resolve({}) },
-        );
-        expect(res.status).toBe(400);
-        const body = await res.json();
-        expect(body.error.message).toMatch(errRegex);
-      });
+        [
+          "type=NOT_REAL_TYPE",
+          /type must be a valid loyalty ledger entry type/,
+        ],
+      ])(
+        "GET /activity rejects invalid parameter: %s",
+        async (query, errRegex) => {
+          const res = await getActivity(
+            new Request(
+              `http://localhost/api/shopify/loyalty/admin/activity?workspaceId=ws_tenant_a&${query}`,
+            ) as any,
+            { params: Promise.resolve({}) },
+          );
+          expect(res.status).toBe(400);
+          const body = await res.json();
+          expect(body.error.message).toMatch(errRegex);
+        },
+      );
 
       it("GET /analytics handles empty date range parameters gracefully with defaults", async () => {
         const res = await getAnalytics(
-          new Request("http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a&startDate=&endDate=") as any,
+          new Request(
+            "http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a&startDate=&endDate=",
+          ) as any,
           { params: Promise.resolve({}) },
         );
         expect(res.status).toBe(200);
@@ -2992,23 +3299,35 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
       it.each([
         ["startDate=not-a-date", /startDate must be a valid date/],
         ["endDate=not-a-date", /endDate must be a valid date/],
-        ["startDate=2026-10-05T00:00:00Z&endDate=2026-10-01T00:00:00Z", /startDate must not be after endDate/],
-      ])("GET /analytics rejects invalid dates: %s", async (query, errRegex) => {
-        const res = await getAnalytics(
-          new Request(`http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a&${query}`) as any,
-          { params: Promise.resolve({}) },
-        );
-        expect(res.status).toBe(400);
-        const body = await res.json();
-        expect(body.error.message).toMatch(errRegex);
-      });
+        [
+          "startDate=2026-10-05T00:00:00Z&endDate=2026-10-01T00:00:00Z",
+          /startDate must not be after endDate/,
+        ],
+      ])(
+        "GET /analytics rejects invalid dates: %s",
+        async (query, errRegex) => {
+          const res = await getAnalytics(
+            new Request(
+              `http://localhost/api/shopify/loyalty/admin/analytics?workspaceId=ws_tenant_a&${query}`,
+            ) as any,
+            { params: Promise.resolve({}) },
+          );
+          expect(res.status).toBe(400);
+          const body = await res.json();
+          expect(body.error.message).toMatch(errRegex);
+        },
+      );
 
       it("GET /accounts handles empty string query parameters gracefully", async () => {
-        vi.mocked(prisma.weleticLoyaltyAccount.findMany).mockResolvedValueOnce([]);
+        vi.mocked(prisma.weleticLoyaltyAccount.findMany).mockResolvedValueOnce(
+          [],
+        );
         vi.mocked(prisma.weleticLoyaltyAccount.count).mockResolvedValueOnce(0);
 
         const res = await getAccounts(
-          new Request("http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a&query=&search=&accountId=&tierId=") as any,
+          new Request(
+            "http://localhost/api/shopify/loyalty/admin/accounts?workspaceId=ws_tenant_a&query=&search=&accountId=&tierId=",
+          ) as any,
           { params: Promise.resolve({}) },
         );
         expect(res.status).toBe(200);
@@ -3019,15 +3338,24 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
         ["missing pointsDelta", { accountId: "acc_1" }],
         ["zero pointsDelta", { accountId: "acc_1", pointsDelta: 0 }],
         ["missing target identifiers", { pointsDelta: 100 }],
-        ["non-integer pointsDelta string", { accountId: "acc_1", pointsDelta: "abc" }],
-        ["floating point pointsDelta", { accountId: "acc_1", pointsDelta: 1.5 }],
+        [
+          "non-integer pointsDelta string",
+          { accountId: "acc_1", pointsDelta: "abc" },
+        ],
+        [
+          "floating point pointsDelta",
+          { accountId: "acc_1", pointsDelta: 1.5 },
+        ],
       ])("POST /adjust rejects malformed body: %s", async (_, body) => {
         const res = await postAdjust(
-          new Request("http://localhost/api/shopify/loyalty/admin/adjust?workspaceId=ws_tenant_a", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          }) as any,
+          new Request(
+            "http://localhost/api/shopify/loyalty/admin/adjust?workspaceId=ws_tenant_a",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            },
+          ) as any,
           { params: Promise.resolve({}) },
         );
         expect(res.status).toBe(400);

@@ -43,7 +43,9 @@ describe("isSafeLinkHref", () => {
 
   it("rejects unsafe or malicious schemes", () => {
     expect(isSafeLinkHref("javascript:alert(1)")).toBe(false);
-    expect(isSafeLinkHref("data:text/html,<script>alert(1)</script>")).toBe(false);
+    expect(isSafeLinkHref("data:text/html,<script>alert(1)</script>")).toBe(
+      false,
+    );
     expect(isSafeLinkHref("vbscript:msgbox(1)")).toBe(false);
   });
 
@@ -58,11 +60,15 @@ describe("isSafeLinkHref", () => {
 describe("getUrlFromString & helpers", () => {
   it("adds https to bare domains", () => {
     expect(getUrlFromString("dub.co")).toBe("https://dub.co/");
-    expect(getUrlFromString("sub.domain.org/path")).toBe("https://sub.domain.org/path");
+    expect(getUrlFromString("sub.domain.org/path")).toBe(
+      "https://sub.domain.org/path",
+    );
   });
 
   it("preserves already valid URLs", () => {
-    expect(getUrlFromString("https://dub.co/pricing")).toBe("https://dub.co/pricing");
+    expect(getUrlFromString("https://dub.co/pricing")).toBe(
+      "https://dub.co/pricing",
+    );
   });
 
   it("handles strings with spaces gracefully", () => {
@@ -92,7 +98,9 @@ describe("searchParams extraction", () => {
   });
 
   it("getSearchParamsWithArray handles multiple values for same key", () => {
-    const params = getSearchParamsWithArray("https://dub.co?tag=tech&tag=news&single=val");
+    const params = getSearchParamsWithArray(
+      "https://dub.co?tag=tech&tag=news&single=val",
+    );
     expect(params).toEqual({
       tag: ["tech", "news"],
       single: "val",
@@ -123,16 +131,20 @@ describe("UTM parameters manipulation", () => {
   });
 
   it("constructURLFromUTMParams removes empty/null parameters", () => {
-    const result = constructURLFromUTMParams("https://dub.co?utm_source=google&keep=1", {
-      utm_source: null,
-    });
+    const result = constructURLFromUTMParams(
+      "https://dub.co?utm_source=google&keep=1",
+      {
+        utm_source: null,
+      },
+    );
     const parsed = new URL(result);
     expect(parsed.searchParams.has("utm_source")).toBe(false);
     expect(parsed.searchParams.get("keep")).toBe("1");
   });
 
   it("getUTMParamsFromURL extracts only recognized UTM tags", () => {
-    const url = "https://dub.co?utm_source=twitter&utm_medium=social&custom_param=123&ref=partner";
+    const url =
+      "https://dub.co?utm_source=twitter&utm_medium=social&custom_param=123&ref=partner";
     const utms = getUTMParamsFromURL(url);
     expect(utms).toEqual({
       utm_source: "twitter",
@@ -142,7 +154,8 @@ describe("UTM parameters manipulation", () => {
   });
 
   it("getUrlWithoutUTMParams removes UTM parameters while keeping other params", () => {
-    const url = "https://dub.co/blog?utm_source=google&utm_campaign=launch&page=2&sort=recent";
+    const url =
+      "https://dub.co/blog?utm_source=google&utm_campaign=launch&page=2&sort=recent";
     const cleaned = getUrlWithoutUTMParams(url);
     const parsed = new URL(cleaned);
     expect(parsed.searchParams.has("utm_source")).toBe(false);
@@ -156,26 +169,34 @@ describe("URL normalization and formatting", () => {
   it("getPrettyUrl removes protocol, www and trailing slash", () => {
     expect(getPrettyUrl("https://www.dub.co/pricing/")).toBe("dub.co/pricing");
     expect(getPrettyUrl("http://dub.co")).toBe("dub.co");
-    expect(getPrettyUrl("https://sub.domain.com/path")).toBe("sub.domain.com/path");
+    expect(getPrettyUrl("https://sub.domain.com/path")).toBe(
+      "sub.domain.com/path",
+    );
     expect(getPrettyUrl(null)).toBe("");
     expect(getPrettyUrl("")).toBe("");
   });
 
   it("normalizeUrl strips query parameters and hash fragments", () => {
-    expect(normalizeUrl("https://dub.co/features?ref=producthunt&dark=true#pricing")).toBe(
-      "https://dub.co/features",
-    );
+    expect(
+      normalizeUrl("https://dub.co/features?ref=producthunt&dark=true#pricing"),
+    ).toBe("https://dub.co/features");
   });
 
   it("getFileExtension extracts extension uppercase", () => {
     expect(getFileExtension("https://dub.co/assets/logo.png")).toBe("PNG");
-    expect(getFileExtension("https://dub.co/docs/report.pdf?version=2")).toBe("PDF");
+    expect(getFileExtension("https://dub.co/docs/report.pdf?version=2")).toBe(
+      "PDF",
+    );
     expect(getFileExtension("https://dub.co/archive.tar.gz")).toBe("GZ");
   });
 
   it("getPathnameFromUrl extracts relative pathname with search params", () => {
-    expect(getPathnameFromUrl("https://dub.co/features?tab=sync")).toBe("features?tab=sync");
-    expect(getPathnameFromUrl("/dashboard/analytics")).toBe("dashboard/analytics");
+    expect(getPathnameFromUrl("https://dub.co/features?tab=sync")).toBe(
+      "features?tab=sync",
+    );
+    expect(getPathnameFromUrl("/dashboard/analytics")).toBe(
+      "dashboard/analytics",
+    );
   });
 
   it("buildUrl constructs valid URLs with parameters", () => {

@@ -68,8 +68,12 @@ const prismaMock = vi.hoisted(() => {
   const programFindUnique = vi.fn();
   const partnerGroupGroupBy = vi.fn();
   const partnerGroupFindMany = vi.fn();
-  const weleticPayoutQuoteUpsert = vi.fn().mockResolvedValue({ id: "quote_ch_1" });
-  const weleticPayoutStatementUpsert = vi.fn().mockResolvedValue({ id: "stmt_ch_1" });
+  const weleticPayoutQuoteUpsert = vi
+    .fn()
+    .mockResolvedValue({ id: "quote_ch_1" });
+  const weleticPayoutStatementUpsert = vi
+    .fn()
+    .mockResolvedValue({ id: "stmt_ch_1" });
   const executeRaw = vi.fn().mockResolvedValue(1);
 
   const tx = {
@@ -126,25 +130,28 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 import { reconcilePayoutAmounts } from "@/lib/api/commissions/reconcile-payout-amounts";
-import {
-  createWeleticPayoutQuote,
-  refreshWeleticOpenPayoutQuotes,
-} from "@/lib/weletic/payouts/create-quote";
-import { sendPaypalPayouts } from "../../app/(ee)/api/cron/payouts/charge-succeeded/send-paypal-payouts";
-import { POST as aggregateDueCommissionsPOST } from "../../app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route";
 import { MUTABLE_PAYOUT_STATUSES } from "@/lib/constants/payouts";
-import { CommissionStatus, PayoutStatus } from "@prisma/client";
+import { createWeleticPayoutQuote } from "@/lib/weletic/payouts/create-quote";
+import { CommissionStatus } from "@prisma/client";
+import { POST as aggregateDueCommissionsPOST } from "../../app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route";
+import { sendPaypalPayouts } from "../../app/(ee)/api/cron/payouts/charge-succeeded/send-paypal-payouts";
 
 describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     prismaMock.tx.commission.groupBy.mockReset();
-    prismaMock.tx.commission.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    prismaMock.tx.commission.updateMany
+      .mockReset()
+      .mockResolvedValue({ count: 1 });
     prismaMock.tx.payout.deleteMany.mockReset().mockResolvedValue({ count: 1 });
-    prismaMock.tx.payout.update.mockReset().mockResolvedValue({ id: "po_ch_1" });
+    prismaMock.tx.payout.update
+      .mockReset()
+      .mockResolvedValue({ id: "po_ch_1" });
     prismaMock.commission.findMany.mockReset().mockResolvedValue([]);
     prismaMock.commission.aggregate.mockReset();
-    prismaMock.commission.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    prismaMock.commission.updateMany
+      .mockReset()
+      .mockResolvedValue({ count: 1 });
     prismaMock.payout.findMany.mockReset().mockResolvedValue([]);
     prismaMock.payout.findUniqueOrThrow.mockReset();
     prismaMock.payout.create.mockReset();
@@ -153,8 +160,12 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
     prismaMock.program.findUnique.mockReset();
     prismaMock.partnerGroup.groupBy.mockReset();
     prismaMock.partnerGroup.findMany.mockReset().mockResolvedValue([]);
-    prismaMock.weleticPayoutQuote.upsert.mockReset().mockResolvedValue({ id: "quote_ch_1" });
-    prismaMock.weleticPayoutStatement.upsert.mockReset().mockResolvedValue({ id: "stmt_ch_1" });
+    prismaMock.weleticPayoutQuote.upsert
+      .mockReset()
+      .mockResolvedValue({ id: "quote_ch_1" });
+    prismaMock.weleticPayoutStatement.upsert
+      .mockReset()
+      .mockResolvedValue({ id: "stmt_ch_1" });
     prismaMock.$executeRaw.mockReset().mockResolvedValue(1);
     paypalMock.createPayPalBatchPayout.mockReset();
   });
@@ -345,7 +356,11 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
         amount: -1,
         programId: "prog_1",
         program: { accountingCurrency: "USD", name: "Yamax" },
-        partner: { preferredLocale: "en", preferredPayoutCurrency: "USD", weleticPayoutProfiles: [] },
+        partner: {
+          preferredLocale: "en",
+          preferredPayoutCurrency: "USD",
+          weleticPayoutProfiles: [],
+        },
         commissions: [],
       });
 
@@ -358,7 +373,11 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
         amount: -100000,
         programId: "prog_1",
         program: { accountingCurrency: "USD", name: "Yamax" },
-        partner: { preferredLocale: "en", preferredPayoutCurrency: "USD", weleticPayoutProfiles: [] },
+        partner: {
+          preferredLocale: "en",
+          preferredPayoutCurrency: "USD",
+          weleticPayoutProfiles: [],
+        },
         commissions: [],
       });
 
@@ -386,7 +405,10 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
         { id: "c4", earnings: -4000, payoutId: null, status: "pending" },
       ];
       const cumulativePeriod2 = [...period1, ...period2];
-      const netPeriod2 = cumulativePeriod2.reduce((sum, c) => sum + c.earnings, 0);
+      const netPeriod2 = cumulativePeriod2.reduce(
+        (sum, c) => sum + c.earnings,
+        0,
+      );
       expect(netPeriod2).toBe(-7000); // -$70 debt
       const period2PayoutEligible = netPeriod2 > 0;
       expect(period2PayoutEligible).toBe(false);
@@ -396,7 +418,10 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
         { id: "c5", earnings: -1000, payoutId: null, status: "pending" },
       ];
       const cumulativePeriod3 = [...cumulativePeriod2, ...period3];
-      const netPeriod3 = cumulativePeriod3.reduce((sum, c) => sum + c.earnings, 0);
+      const netPeriod3 = cumulativePeriod3.reduce(
+        (sum, c) => sum + c.earnings,
+        0,
+      );
       expect(netPeriod3).toBe(-8000); // -$80 debt
       const period3PayoutEligible = netPeriod3 > 0;
       expect(period3PayoutEligible).toBe(false);
@@ -406,7 +431,10 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
         { id: "c6", earnings: 30000, payoutId: null, status: "pending" },
       ];
       const cumulativePeriod4 = [...cumulativePeriod3, ...period4];
-      const netPeriod4 = cumulativePeriod4.reduce((sum, c) => sum + c.earnings, 0);
+      const netPeriod4 = cumulativePeriod4.reduce(
+        (sum, c) => sum + c.earnings,
+        0,
+      );
       // Net is: -8000 + 30000 = +22000 (+$220.00)
       expect(netPeriod4).toBe(22000);
       const period4PayoutEligible = netPeriod4 > 0;
@@ -425,7 +453,10 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
       // Partial Refund 3: -$30.00 (-3000)
       // Total Refunds: -$110.00 (-11000) => Net: -$10.00 (-1000)
       prismaMock.tx.commission.groupBy.mockResolvedValueOnce([
-        { payoutId: "payout_partial_overflow", _sum: { earnings: BigInt(-1000) } },
+        {
+          payoutId: "payout_partial_overflow",
+          _sum: { earnings: BigInt(-1000) },
+        },
       ]);
 
       await reconcilePayoutAmounts(["payout_partial_overflow"]);
@@ -448,7 +479,10 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
 
   describe("Edge Case 5: Payment Gateway Dispatch & Quote Creation Lockdown", () => {
     it("sendPaypalPayouts: enforces double-lock preventing zero or negative payouts from reaching PayPal", async () => {
-      const mockInvoice = { id: "inv_adversarial", payoutMode: "internal" as const };
+      const mockInvoice = {
+        id: "inv_adversarial",
+        payoutMode: "internal" as const,
+      };
 
       // DB returns adversary injection containing non-positive items
       prismaMock.payout.findMany.mockResolvedValueOnce([
@@ -485,7 +519,9 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
       paypalMock.createPayPalBatchPayout.mockResolvedValueOnce({
         successfulPayoutIds: ["payout_legit_pos"],
         failedPayoutIds: [],
-        results: [{ currency: "USD", success: true, batchId: "BATCH_SAFE_789" }],
+        results: [
+          { currency: "USD", success: true, batchId: "BATCH_SAFE_789" },
+        ],
       });
 
       await sendPaypalPayouts({ invoice: mockInvoice });
@@ -520,7 +556,10 @@ describe("FIN-02 Challenger: Adversarial Stress Tests & Extreme Boundary Audits"
     });
 
     it("sendPaypalPayouts: strictly aborts and dispatches 0 API calls when all payouts are non-positive", async () => {
-      const mockInvoice = { id: "inv_all_negative", payoutMode: "internal" as const };
+      const mockInvoice = {
+        id: "inv_all_negative",
+        payoutMode: "internal" as const,
+      };
 
       prismaMock.payout.findMany.mockResolvedValueOnce([
         {

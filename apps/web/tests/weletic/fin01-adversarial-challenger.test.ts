@@ -3,16 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // 1. Activate defensive BigInt JSON fallback
 import "../../instrumentation";
 
-import { getCommissionsCount } from "@/lib/api/commissions/get-commissions-count";
-import { formatCommissionsForExport } from "@/lib/api/commissions/format-commissions-for-export";
-import {
-  CommissionSchema,
-  CommissionEnrichedSchema,
-} from "@/lib/zod/schemas/commissions";
 import { toSafeBigInt as toSafeBigIntOrder } from "@/lib/weletic/commerce/record-order";
-import { toSafeBigInt as toSafeBigIntRefund } from "@/lib/weletic/commerce/record-refund";
-import { calculateRefundReversal } from "@/lib/weletic/commerce/record-refund";
-import { NextResponse } from "next/server";
+import {
+  calculateRefundReversal,
+  toSafeBigInt as toSafeBigIntRefund,
+} from "@/lib/weletic/commerce/record-refund";
+import { CommissionSchema } from "@/lib/zod/schemas/commissions";
 import { CommissionStatus, CommissionType } from "@prisma/client";
 
 // In-memory mock database state
@@ -394,24 +390,24 @@ describe("FIN-01 Adversarial Challenger: Boundary & Stress Suite", () => {
         INT32_MAX_PLUS_1,
       );
 
-      expect(toSafeBigIntOrder(INT32_MAX_PLUS_2, "Int32 Max + 2 (2^31 + 1)")).toBe(
-        INT32_MAX_PLUS_2,
-      );
-      expect(toSafeBigIntRefund(INT32_MAX_PLUS_2, "Int32 Max + 2 (2^31 + 1)")).toBe(
-        INT32_MAX_PLUS_2,
-      );
+      expect(
+        toSafeBigIntOrder(INT32_MAX_PLUS_2, "Int32 Max + 2 (2^31 + 1)"),
+      ).toBe(INT32_MAX_PLUS_2);
+      expect(
+        toSafeBigIntRefund(INT32_MAX_PLUS_2, "Int32 Max + 2 (2^31 + 1)"),
+      ).toBe(INT32_MAX_PLUS_2);
     });
 
     it("verifies negative boundary transition at -2^31 and -(2^31 + 1)", () => {
       expect(toSafeBigIntOrder(INT32_MIN, "Int32 Min")).toBe(INT32_MIN);
       expect(toSafeBigIntRefund(INT32_MIN, "Int32 Min")).toBe(INT32_MIN);
 
-      expect(toSafeBigIntOrder(INT32_MIN_MINUS_1, "Int32 Min - 1 (-(2^31 + 1))")).toBe(
-        INT32_MIN_MINUS_1,
-      );
-      expect(toSafeBigIntRefund(INT32_MIN_MINUS_1, "Int32 Min - 1 (-(2^31 + 1))")).toBe(
-        INT32_MIN_MINUS_1,
-      );
+      expect(
+        toSafeBigIntOrder(INT32_MIN_MINUS_1, "Int32 Min - 1 (-(2^31 + 1))"),
+      ).toBe(INT32_MIN_MINUS_1);
+      expect(
+        toSafeBigIntRefund(INT32_MIN_MINUS_1, "Int32 Min - 1 (-(2^31 + 1))"),
+      ).toBe(INT32_MIN_MINUS_1);
     });
 
     it("records orders at exact Int32 boundary 2,147,483,647 and 2,147,483,648", async () => {
@@ -439,7 +435,10 @@ describe("FIN-01 Adversarial Challenger: Boundary & Stress Suite", () => {
               quantity: 1,
               price_set: {
                 shop_money: { amount: boundaryAmount, currency_code: "VND" },
-                presentment_money: { amount: boundaryAmount, currency_code: "VND" },
+                presentment_money: {
+                  amount: boundaryAmount,
+                  currency_code: "VND",
+                },
               },
               total_discount_set: {
                 shop_money: { amount: "0", currency_code: "VND" },
@@ -470,7 +469,8 @@ describe("FIN-01 Adversarial Challenger: Boundary & Stress Suite", () => {
         expect(commission.amount).toBe(BigInt(boundaryAmount));
         // 10% commission with half-up rounding
         const expectedEarnings =
-          (BigInt(boundaryAmount) * BigInt(1000) + BigInt(5000)) / BigInt(10000);
+          (BigInt(boundaryAmount) * BigInt(1000) + BigInt(5000)) /
+          BigInt(10000);
         expect(commission.earnings).toBe(expectedEarnings);
       }
     });
@@ -481,10 +481,26 @@ describe("FIN-01 Adversarial Challenger: Boundary & Stress Suite", () => {
   // =========================================================================
   describe("Suite 2: Multi-Billion VND Wholesale Stress", () => {
     const testCases = [
-      { amountStr: "5000000000", expectedAmt: BigInt("5000000000"), label: "5 Billion VND" },
-      { amountStr: "50000000000", expectedAmt: BigInt("50000000000"), label: "50 Billion VND" },
-      { amountStr: "500000000000", expectedAmt: BigInt("500000000000"), label: "500 Billion VND" },
-      { amountStr: "5000000000000", expectedAmt: BigInt("5000000000000"), label: "5 Trillion VND" },
+      {
+        amountStr: "5000000000",
+        expectedAmt: BigInt("5000000000"),
+        label: "5 Billion VND",
+      },
+      {
+        amountStr: "50000000000",
+        expectedAmt: BigInt("50000000000"),
+        label: "50 Billion VND",
+      },
+      {
+        amountStr: "500000000000",
+        expectedAmt: BigInt("500000000000"),
+        label: "500 Billion VND",
+      },
+      {
+        amountStr: "5000000000000",
+        expectedAmt: BigInt("5000000000000"),
+        label: "5 Trillion VND",
+      },
     ];
 
     testCases.forEach(({ amountStr, expectedAmt, label }) => {
@@ -587,7 +603,10 @@ describe("FIN-01 Adversarial Challenger: Boundary & Stress Suite", () => {
             quantity: 1,
             price_set: {
               shop_money: { amount: "50000000000", currency_code: "JPY" },
-              presentment_money: { amount: "50000000000", currency_code: "JPY" },
+              presentment_money: {
+                amount: "50000000000",
+                currency_code: "JPY",
+              },
             },
             total_discount_set: {
               shop_money: { amount: "0", currency_code: "JPY" },
@@ -716,7 +735,10 @@ describe("FIN-01 Adversarial Challenger: Boundary & Stress Suite", () => {
             quantity: 1,
             subtotal_set: {
               shop_money: { amount: "10000000000", currency_code: "VND" },
-              presentment_money: { amount: "10000000000", currency_code: "VND" },
+              presentment_money: {
+                amount: "10000000000",
+                currency_code: "VND",
+              },
             },
           },
         ],
@@ -813,7 +835,9 @@ describe("FIN-01 Adversarial Challenger: Boundary & Stress Suite", () => {
       expect(parsed.negative).toBe(-5_000_000_000);
       expect(parsed.largePositive).toBe(50_000_000_000);
       expect(parsed.maxSafe).toBe(Number.MAX_SAFE_INTEGER);
-      expect(parsed.beyondSafe).toBe((BigInt(Number.MAX_SAFE_INTEGER) + BigInt(100)).toString());
+      expect(parsed.beyondSafe).toBe(
+        (BigInt(Number.MAX_SAFE_INTEGER) + BigInt(100)).toString(),
+      );
     });
   });
 });

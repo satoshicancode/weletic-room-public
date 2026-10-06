@@ -12,13 +12,19 @@ const activeRedisLocks = new Map<string, string>();
 
 vi.mock("@/lib/upstash", () => ({
   redis: {
-    set: vi.fn(async (key: string, value: string, opts?: { nx?: boolean; ex?: number }) => {
-      if (opts?.nx && activeRedisLocks.has(key)) {
-        return null;
-      }
-      activeRedisLocks.set(key, value);
-      return "OK";
-    }),
+    set: vi.fn(
+      async (
+        key: string,
+        value: string,
+        opts?: { nx?: boolean; ex?: number },
+      ) => {
+        if (opts?.nx && activeRedisLocks.has(key)) {
+          return null;
+        }
+        activeRedisLocks.set(key, value);
+        return "OK";
+      },
+    ),
     eval: vi.fn(async (script: string, keys: string[], args: string[]) => {
       const key = keys[0];
       const token = args[0];
@@ -678,7 +684,10 @@ describe("Empirical Challenger 1: Concurrency, Backfill & Performance Stress Har
       expect(lock2.acquired).toBe(false);
 
       // Release first lock
-      const released = await releaseDistributedLock({ key, token: lock1.token });
+      const released = await releaseDistributedLock({
+        key,
+        token: lock1.token,
+      });
       expect(released).toBe(true);
 
       // Third attempt succeeds after release

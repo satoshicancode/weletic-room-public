@@ -1,4 +1,3 @@
-import React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Badge,
@@ -16,6 +15,7 @@ import type {
   EarningRulesResponse,
   EarningRuleWrite,
 } from "@weletic/contracts/loyalty/earning-rule-contract";
+import React from "react";
 import { useCoreLaunch } from "~/core-launch-context";
 import { earningRuleCopy, type EarningRuleLocale } from "./earning-rule-copy";
 import { EarningRuleEditor } from "./earning-rule-editor";
@@ -365,7 +365,8 @@ function ScopeScreen({
             <Card>
               <Text as="p" variant="bodySm" tone="subdued">
                 {earningRuleCopy[locale].shopCurrency}:{" "}
-                {view.shopCurrency ?? earningRuleCopy[locale].currencyUnavailable}
+                {view.shopCurrency ??
+                  earningRuleCopy[locale].currencyUnavailable}
                 . {earningRuleCopy[locale].currencyBasis}
               </Text>
               {!view.capabilities.configure && (

@@ -1,6 +1,6 @@
 import {
-  shopifyAdminGraphql,
   SHOPIFY_ADMIN_API_VERSION,
+  shopifyAdminGraphql,
 } from "@/lib/integrations/shopify/admin-graphql";
 import { getWeleticShopifyInstallation } from "./get-installation";
 

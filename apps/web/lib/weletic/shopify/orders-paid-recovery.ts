@@ -1,9 +1,6 @@
 import { captureWebhookLog } from "@/lib/api-logs/capture-webhook-log";
 import { prisma } from "@/lib/prisma";
-import {
-  isLoyaltyMaintenanceBlockedError,
-  type LoyaltyMaintenancePermit,
-} from "@/lib/weletic/loyalty/maintenance-write-fence";
+import { type LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import {
   assertShopifyStoreAcceptsOperationalWrites,
   assertShopifyStoreMatchesInstallationGeneration,
@@ -44,13 +41,12 @@ export async function assertOrdersPaidStoreAcceptsWrite({
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
   tx?: Prisma.TransactionClient;
 }) {
-  const financialStore =
-    await assertShopifyStoreMatchesInstallationGeneration({
-      storeId,
-      action,
-      expectedInstallationGeneration,
-      tx,
-    });
+  const financialStore = await assertShopifyStoreMatchesInstallationGeneration({
+    storeId,
+    action,
+    expectedInstallationGeneration,
+    tx,
+  });
   if (financialStore.complianceState !== "active") return financialStore;
   return assertShopifyStoreAcceptsOperationalWrites({
     storeId,

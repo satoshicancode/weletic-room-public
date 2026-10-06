@@ -17,12 +17,12 @@ import {
   renewDistributedLock,
   withDistributedLock,
 } from "@/lib/weletic/redis-lock";
-import { waitUntil } from "@vercel/functions";
 import {
   Prisma,
   WeleticProductStatus,
   WeleticSyncStatus,
 } from "@prisma/client";
+import { waitUntil } from "@vercel/functions";
 import { getWeleticShopifyInstallation } from "./get-installation";
 import { ensureShopifyWebhooksRegistered } from "./provision-webhooks";
 import { assertShopifyStoreAcceptsOperationalWrites } from "./store-compliance-state";
@@ -847,8 +847,15 @@ async function performWeleticShopifyCatalogSync({
         });
 
         const VARIANT_BATCH_SIZE = 20;
-        for (let offset = 0; offset < variantsList.length; offset += VARIANT_BATCH_SIZE) {
-          const variants = variantsList.slice(offset, offset + VARIANT_BATCH_SIZE);
+        for (
+          let offset = 0;
+          offset < variantsList.length;
+          offset += VARIANT_BATCH_SIZE
+        ) {
+          const variants = variantsList.slice(
+            offset,
+            offset + VARIANT_BATCH_SIZE,
+          );
           await withCurrentCatalogWriteFence({
             action: "catalog_sync_variants",
             operation: async (tx) => {
@@ -872,7 +879,10 @@ async function performWeleticShopifyCatalogSync({
                       imageUrl: variant.image?.url,
                       availableForSale: variant.availableForSale,
                       inventoryQuantity: variant.inventoryQuantity,
-                      shopPrice: decimalToMinorUnits(variant.price, shopCurrency),
+                      shopPrice: decimalToMinorUnits(
+                        variant.price,
+                        shopCurrency,
+                      ),
                       shopCompareAtPrice: variant.compareAtPrice
                         ? decimalToMinorUnits(
                             variant.compareAtPrice,
@@ -890,7 +900,10 @@ async function performWeleticShopifyCatalogSync({
                       imageUrl: variant.image?.url,
                       availableForSale: variant.availableForSale,
                       inventoryQuantity: variant.inventoryQuantity,
-                      shopPrice: decimalToMinorUnits(variant.price, shopCurrency),
+                      shopPrice: decimalToMinorUnits(
+                        variant.price,
+                        shopCurrency,
+                      ),
                       shopCompareAtPrice: variant.compareAtPrice
                         ? decimalToMinorUnits(
                             variant.compareAtPrice,

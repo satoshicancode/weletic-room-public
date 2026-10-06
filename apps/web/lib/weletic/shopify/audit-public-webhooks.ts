@@ -1,6 +1,6 @@
 import {
-  shopifyAdminGraphql,
   SHOPIFY_ADMIN_API_VERSION,
+  shopifyAdminGraphql,
 } from "@/lib/integrations/shopify/admin-graphql";
 import { z } from "zod";
 import { SHOPIFY_CANONICAL_WEBHOOK_TOPICS } from "./provision-webhooks";

@@ -25,6 +25,10 @@ import {
   LOCAL_CATALOG_CLAIM_MS,
   localCatalogWebhookResponse,
 } from "@/lib/weletic/shopify/local-catalog-webhook";
+import {
+  executeClaimedOrdersPaidEvent,
+  IN_FLIGHT_LEASE_THRESHOLD_MS,
+} from "@/lib/weletic/shopify/orders-paid-recovery";
 import { handlePendingInstallationPrivacy } from "@/lib/weletic/shopify/pending-installation-privacy";
 import { createAllShopifyWebhookBodyDigests } from "@/lib/weletic/shopify/privacy-identity";
 import {
@@ -45,14 +49,9 @@ import { verifyShopifyWebhookSignature } from "@/lib/weletic/shopify/webhook-sig
 import { log } from "@dub/utils";
 import { Prisma } from "@prisma/client";
 import { waitUntil } from "@vercel/functions";
-import {
-  executeClaimedOrdersPaidEvent,
-  IN_FLIGHT_LEASE_THRESHOLD_MS,
-} from "@/lib/weletic/shopify/orders-paid-recovery";
 import { customerSegmentMembershipChanged } from "./customer-segment-membership";
 import { customersSync } from "./customers-sync";
 import { discountsDelete, discountsUpdate } from "./discounts-sync";
-import { ordersPaid } from "./orders-paid";
 import { refundsCreate } from "./refunds-create";
 
 const relevantTopics = new Set([
@@ -368,8 +367,7 @@ export const POST = async (req: Request) => {
 
   const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
   const allowUnsignedTestWebhook =
-    process.env.NODE_ENV === "test" &&
-    !signedTenantTopics.has(topic);
+    process.env.NODE_ENV === "test" && !signedTenantTopics.has(topic);
   let webhookAuthenticated = false;
 
   // Local/ngrok is still a real ingress boundary. Only non-compliance test
@@ -1297,7 +1295,9 @@ export const POST = async (req: Request) => {
         message: `Shopify webhook completion failed. Error: ${errorMessage}`,
         type: "errors",
       }).catch(() => {});
-      return new Response(`[Shopify] Webhook completion failed.`, { status: 500 });
+      return new Response(`[Shopify] Webhook completion failed.`, {
+        status: 500,
+      });
     }
     if (completed.count !== 1) {
       return new Response(

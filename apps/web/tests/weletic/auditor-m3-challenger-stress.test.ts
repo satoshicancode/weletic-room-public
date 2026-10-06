@@ -175,9 +175,10 @@ vi.mock("@/lib/weletic/loyalty/saga", () => ({
 }));
 
 vi.mock("@/lib/weletic/loyalty/shopify-discounts", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/lib/weletic/loyalty/shopify-discounts")
-  >();
+  const actual =
+    await importOriginal<
+      typeof import("@/lib/weletic/loyalty/shopify-discounts")
+    >();
   return {
     ...actual,
     resolveShopifyOfflineCredentials: vi.fn(
@@ -310,7 +311,8 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
       remoteAttemptedAt: "2026-10-05T10:00:07.000Z",
     });
 
-    const txId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_shared_single";
+    const txId =
+      "gid://shopify/StoreCreditAccountCreditTransaction/tx_shared_single";
 
     const customFetch = vi.fn(async () => ({
       ok: true,
@@ -355,7 +357,9 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
       customFetch,
     });
     expect(res1).toEqual({ outcome: "confirmed", transactionId: txId });
-    expect(mockDb.redemptions.get("redemp_first").shopifyStoreCreditTransactionId).toBe(txId);
+    expect(
+      mockDb.redemptions.get("redemp_first").shopifyStoreCreditTransactionId,
+    ).toBe(txId);
 
     // 2. Reconcile second redemption: txId is already bound to redemp_first in DB!
     // Since horizon is 5 minutes and now is 1 min later, it must be DEFERRED, NOT confirmed with txId!
@@ -366,7 +370,9 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
       customFetch,
     });
     expect(res2).toEqual({ outcome: "deferred" });
-    expect(mockDb.redemptions.get("redemp_second").shopifyStoreCreditTransactionId).toBeNull();
+    expect(
+      mockDb.redemptions.get("redemp_second").shopifyStoreCreditTransactionId,
+    ).toBeNull();
 
     // 3. Reconcile second redemption after horizon (10 minutes later): must transition to failed & refund points
     const res3 = await reconcilePendingStoreCreditRedemption({
@@ -376,7 +382,9 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
       customFetch,
     });
     expect(res3).toEqual({ outcome: "refunded_and_failed" });
-    expect(mockDb.redemptions.get("redemp_second").status).toBe(WeleticRedemptionStatus.failed);
+    expect(mockDb.redemptions.get("redemp_second").status).toBe(
+      WeleticRedemptionStatus.failed,
+    );
   });
 
   // --------------------------------------------------------------------------
@@ -437,7 +445,9 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
 
     // Since USD != JPY, the transaction is rejected; horizon expired -> refunded_and_failed
     expect(res).toEqual({ outcome: "refunded_and_failed" });
-    expect(mockDb.redemptions.get("redemp_jpy").status).toBe(WeleticRedemptionStatus.failed);
+    expect(mockDb.redemptions.get("redemp_jpy").status).toBe(
+      WeleticRedemptionStatus.failed,
+    );
   });
 
   // --------------------------------------------------------------------------
@@ -452,7 +462,9 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
     });
 
     // Transaction was created 121 seconds BEFORE the attempt (outside [-120s, +10min] window)
-    const staleTxCreatedAt = new Date(attemptTime.getTime() - 121_000).toISOString();
+    const staleTxCreatedAt = new Date(
+      attemptTime.getTime() - 121_000,
+    ).toISOString();
 
     const customFetch = vi.fn(async () => ({
       ok: true,
@@ -498,7 +510,9 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
 
     // Stale transaction should not match; outcome is deferred
     expect(res).toEqual({ outcome: "deferred" });
-    expect(mockDb.redemptions.get("redemp_temporal").status).toBe(WeleticRedemptionStatus.provisioning);
+    expect(mockDb.redemptions.get("redemp_temporal").status).toBe(
+      WeleticRedemptionStatus.provisioning,
+    );
   });
 
   // --------------------------------------------------------------------------
@@ -550,7 +564,10 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
                                 {
                                   node: {
                                     id: "gid://shopify/StoreCreditAccountCreditTransaction/tx_batch",
-                                    amount: { amount: "10.00", currencyCode: "USD" },
+                                    amount: {
+                                      amount: "10.00",
+                                      currencyCode: "USD",
+                                    },
                                     createdAt: "2026-10-05T09:00:06.000Z",
                                     expiresAt: null,
                                   },
@@ -583,7 +600,9 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
         expect.objectContaining({
           redemptionId: "sweep_error_2",
           outcome: "error",
-          error: expect.stringContaining("Simulated Shopify 503 Service Unavailable"),
+          error: expect.stringContaining(
+            "Simulated Shopify 503 Service Unavailable",
+          ),
         }),
       ]),
     );
@@ -599,7 +618,8 @@ describe("Auditor Challenger Stress Tests: FIN-03 Store Credit Reconciliation", 
       snapshotOverride: "NONE",
     });
     // Manually delete provisioningSnapshot from metadata
-    mockDb.redemptions.get("redemp_no_snapshot").metadata.provisioningSnapshot = null;
+    mockDb.redemptions.get("redemp_no_snapshot").metadata.provisioningSnapshot =
+      null;
 
     const res1 = await reconcilePendingStoreCreditRedemption({
       storeId,

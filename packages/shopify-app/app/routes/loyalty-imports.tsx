@@ -8,7 +8,11 @@ export default function LoyaltyImportsRoute() {
   const shopify = useAppBridge();
   const [locale] = useMerchantLocale();
   const pageTitle =
-    locale === "ja" ? "インポート" : locale === "vi" ? "Nhập dữ liệu" : "Imports";
+    locale === "ja"
+      ? "インポート"
+      : locale === "vi"
+        ? "Nhập dữ liệu"
+        : "Imports";
 
   return (
     <>

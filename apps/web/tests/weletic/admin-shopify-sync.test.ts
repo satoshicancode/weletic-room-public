@@ -72,11 +72,11 @@ vi.mock("@/lib/upstash", () => ({
   },
 }));
 
-import { NextRequest } from "next/server";
 import { syncShopifyCatalogAction } from "@/lib/actions/partners/sync-shopify-catalog";
 import { redis } from "@/lib/upstash";
 import * as redisLockModule from "@/lib/weletic/redis-lock";
 import * as catalogSyncModule from "@/lib/weletic/shopify/catalog-sync";
+import { NextRequest } from "next/server";
 import { POST as syncRouteHandler } from "../../app/(ee)/api/shopify/integration/sync/route";
 
 describe("Requirement R2: Admin 1-Click Shopify Catalog Sync & UI Control", () => {

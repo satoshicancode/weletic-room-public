@@ -22,7 +22,13 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/weletic/shopify/store-resolver", () => ({
   resolveShopifyStoreByDomain: mocks.resolveStore,
   normalizeShopDomain: vi.fn((domain: string) =>
-    domain ? domain.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "") : "",
+    domain
+      ? domain
+          .trim()
+          .toLowerCase()
+          .replace(/^https?:\/\//, "")
+          .replace(/\/.*$/, "")
+      : "",
   ),
 }));
 
@@ -53,7 +59,9 @@ vi.mock("@/lib/prisma", () => ({
         },
         commission: { create: mocks.createCommission },
         weleticReviewRequest: { findMany: vi.fn().mockResolvedValue([]) },
-        weleticLoyaltyEarnGrant: { findUnique: vi.fn().mockResolvedValue(null) },
+        weleticLoyaltyEarnGrant: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
         weleticLoyaltyReferral: { findFirst: vi.fn().mockResolvedValue(null) },
       }),
     ),
@@ -69,7 +77,9 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
-  assertShopifyStoreAcceptsOperationalWrites: vi.fn().mockResolvedValue(undefined),
+  assertShopifyStoreAcceptsOperationalWrites: vi
+    .fn()
+    .mockResolvedValue(undefined),
   assertShopifyStoreMatchesInstallationGeneration: vi.fn(),
 }));
 
@@ -95,8 +105,8 @@ vi.mock("@/lib/weletic/fx", () => ({
   persistFxQuote: vi.fn().mockResolvedValue({ id: "fx_snap_001" }),
 }));
 
-import { recordWeleticRefund } from "@/lib/weletic/commerce/record-refund";
 import { shopifyOrderSettlementLockKey } from "@/lib/weletic/commerce/order-attribution";
+import { recordWeleticRefund } from "@/lib/weletic/commerce/record-refund";
 
 describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy Isolation", () => {
   const sampleRefundEvent = {
@@ -121,7 +131,11 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
     order_adjustments: [],
   };
 
-  const createSampleStore = (storeId: string, workspaceId: string, domain: string) => ({
+  const createSampleStore = (
+    storeId: string,
+    workspaceId: string,
+    domain: string,
+  ) => ({
     id: storeId,
     projectId: workspaceId,
     programId: `prog_${workspaceId}`,
@@ -180,9 +194,15 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
     });
 
     mocks.findUniqueRefund.mockResolvedValue(null);
-    mocks.aggregateRefunds.mockResolvedValue({ _sum: { accountingAmount: BigInt(0) } });
-    mocks.aggregateRefundLines.mockResolvedValue({ _sum: { accountingAmount: BigInt(0) } });
-    mocks.aggregateCalculations.mockResolvedValue({ _sum: { earnings: BigInt(0) } });
+    mocks.aggregateRefunds.mockResolvedValue({
+      _sum: { accountingAmount: BigInt(0) },
+    });
+    mocks.aggregateRefundLines.mockResolvedValue({
+      _sum: { accountingAmount: BigInt(0) },
+    });
+    mocks.aggregateCalculations.mockResolvedValue({
+      _sum: { earnings: BigInt(0) },
+    });
     mocks.createRefund.mockResolvedValue({ id: "wref_created_001" });
     mocks.createRefundLines.mockResolvedValue({ count: 1 });
     mocks.createCalculations.mockResolvedValue({ count: 1 });
@@ -207,8 +227,12 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
         accessToken: "shpat_test",
       });
 
-      mocks.findUniqueStore.mockResolvedValueOnce(createSampleStore(internalStoreId, canonicalWorkspace, domain));
-      mocks.findUniqueOrder.mockResolvedValueOnce(createSampleOrder(internalStoreId));
+      mocks.findUniqueStore.mockResolvedValueOnce(
+        createSampleStore(internalStoreId, canonicalWorkspace, domain),
+      );
+      mocks.findUniqueOrder.mockResolvedValueOnce(
+        createSampleOrder(internalStoreId),
+      );
 
       await recordWeleticRefund({
         event: sampleRefundEvent,
@@ -217,7 +241,9 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
 
       // 1. Lock key must strictly use canonical workspaceId, NEVER storeId
       expect(mocks.acquiredLockKeys).toHaveLength(1);
-      expect(mocks.acquiredLockKeys[0]).toBe(`weletic:shopify:order:${canonicalWorkspace}:11223344`);
+      expect(mocks.acquiredLockKeys[0]).toBe(
+        `weletic:shopify:order:${canonicalWorkspace}:11223344`,
+      );
       expect(mocks.acquiredLockKeys[0]).not.toContain(internalStoreId);
 
       // 2. Downstream store lookup must strictly query { projectId: canonicalWorkspace }
@@ -316,7 +342,9 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
           event: sampleRefundEvent,
           shopDomain: domain,
         }),
-      ).rejects.toThrow(`Weletic Shopify store ${internalStoreId} was not synced.`);
+      ).rejects.toThrow(
+        `Weletic Shopify store ${internalStoreId} was not synced.`,
+      );
     });
   });
 
@@ -400,7 +428,9 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
     for (const tc of aliasTestCases) {
       it(`resolves ${tc.name} ('${tc.inputDomain}') to the canonical workspace`, async () => {
         mocks.resolveStore.mockResolvedValueOnce(tc.resolvedPayload);
-        mocks.findUniqueStore.mockResolvedValueOnce(createSampleStore(storeId, canonicalWorkspace, "brand.com"));
+        mocks.findUniqueStore.mockResolvedValueOnce(
+          createSampleStore(storeId, canonicalWorkspace, "brand.com"),
+        );
         mocks.findUniqueOrder.mockResolvedValueOnce(createSampleOrder(storeId));
 
         const result = await recordWeleticRefund({
@@ -410,7 +440,9 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
 
         expect(mocks.resolveStore).toHaveBeenCalledWith(tc.inputDomain);
         expect(mocks.acquiredLockKeys).toHaveLength(1);
-        expect(mocks.acquiredLockKeys[0]).toBe(`weletic:shopify:order:${canonicalWorkspace}:11223344`);
+        expect(mocks.acquiredLockKeys[0]).toBe(
+          `weletic:shopify:order:${canonicalWorkspace}:11223344`,
+        );
         expect(mocks.findUniqueStore).toHaveBeenCalledWith({
           where: { projectId: canonicalWorkspace },
         });
@@ -437,7 +469,9 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
 
     it("throws exact error when resolver throws an unexpected network error", async () => {
       const domain = "network-fail.myshopify.com";
-      mocks.resolveStore.mockRejectedValueOnce(new Error("Shopify Admin API timeout"));
+      mocks.resolveStore.mockRejectedValueOnce(
+        new Error("Shopify Admin API timeout"),
+      );
 
       await expect(
         recordWeleticRefund({
@@ -501,8 +535,12 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
         workspaceId: tenantA.workspaceId,
         storeId: tenantA.storeId,
       });
-      mocks.findUniqueStore.mockResolvedValueOnce(createSampleStore(tenantA.storeId, tenantA.workspaceId, tenantA.domain));
-      mocks.findUniqueOrder.mockResolvedValueOnce(createSampleOrder(tenantA.storeId));
+      mocks.findUniqueStore.mockResolvedValueOnce(
+        createSampleStore(tenantA.storeId, tenantA.workspaceId, tenantA.domain),
+      );
+      mocks.findUniqueOrder.mockResolvedValueOnce(
+        createSampleOrder(tenantA.storeId),
+      );
 
       await recordWeleticRefund({
         event: refundEvent,
@@ -514,8 +552,12 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
         workspaceId: tenantB.workspaceId,
         storeId: tenantB.storeId,
       });
-      mocks.findUniqueStore.mockResolvedValueOnce(createSampleStore(tenantB.storeId, tenantB.workspaceId, tenantB.domain));
-      mocks.findUniqueOrder.mockResolvedValueOnce(createSampleOrder(tenantB.storeId));
+      mocks.findUniqueStore.mockResolvedValueOnce(
+        createSampleStore(tenantB.storeId, tenantB.workspaceId, tenantB.domain),
+      );
+      mocks.findUniqueOrder.mockResolvedValueOnce(
+        createSampleOrder(tenantB.storeId),
+      );
 
       await recordWeleticRefund({
         event: refundEvent,
@@ -527,10 +569,18 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
       const lockB = mocks.acquiredLockKeys[1];
 
       // Verification of lock key formula
-      expect(lockA).toBe(shopifyOrderSettlementLockKey(tenantA.workspaceId, orderNumber));
-      expect(lockB).toBe(shopifyOrderSettlementLockKey(tenantB.workspaceId, orderNumber));
-      expect(lockA).toBe(`weletic:shopify:order:${tenantA.workspaceId}:${orderNumber}`);
-      expect(lockB).toBe(`weletic:shopify:order:${tenantB.workspaceId}:${orderNumber}`);
+      expect(lockA).toBe(
+        shopifyOrderSettlementLockKey(tenantA.workspaceId, orderNumber),
+      );
+      expect(lockB).toBe(
+        shopifyOrderSettlementLockKey(tenantB.workspaceId, orderNumber),
+      );
+      expect(lockA).toBe(
+        `weletic:shopify:order:${tenantA.workspaceId}:${orderNumber}`,
+      );
+      expect(lockB).toBe(
+        `weletic:shopify:order:${tenantB.workspaceId}:${orderNumber}`,
+      );
 
       // Lock keys MUST NEVER collide between tenants
       expect(lockA).not.toBe(lockB);
@@ -540,9 +590,12 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
       const workspaceId = "ws_gid_normalization_test";
 
       // Test helper directly for GID and string formats
-      expect(shopifyOrderSettlementLockKey(workspaceId, "gid://shopify/Order/77665544")).toBe(
-        `weletic:shopify:order:${workspaceId}:77665544`,
-      );
+      expect(
+        shopifyOrderSettlementLockKey(
+          workspaceId,
+          "gid://shopify/Order/77665544",
+        ),
+      ).toBe(`weletic:shopify:order:${workspaceId}:77665544`);
       expect(shopifyOrderSettlementLockKey(workspaceId, 77665544)).toBe(
         `weletic:shopify:order:${workspaceId}:77665544`,
       );
@@ -559,7 +612,9 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
         workspaceId,
         storeId,
       });
-      mocks.findUniqueStore.mockResolvedValueOnce(createSampleStore(storeId, workspaceId, domain));
+      mocks.findUniqueStore.mockResolvedValueOnce(
+        createSampleStore(storeId, workspaceId, domain),
+      );
       mocks.findUniqueOrder.mockResolvedValueOnce(createSampleOrder(storeId));
 
       await recordWeleticRefund({
@@ -568,7 +623,9 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
       });
 
       expect(mocks.acquiredLockKeys).toHaveLength(1);
-      expect(mocks.acquiredLockKeys[0]).toBe(`weletic:shopify:order:${workspaceId}:77665544`);
+      expect(mocks.acquiredLockKeys[0]).toBe(
+        `weletic:shopify:order:${workspaceId}:77665544`,
+      );
     });
 
     it("serializes multiple concurrent refunds for the same workspace and order under the identical lock key", async () => {
@@ -584,7 +641,9 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
         workspaceId,
         storeId,
       });
-      mocks.findUniqueStore.mockResolvedValue(createSampleStore(storeId, workspaceId, domain));
+      mocks.findUniqueStore.mockResolvedValue(
+        createSampleStore(storeId, workspaceId, domain),
+      );
       mocks.findUniqueOrder.mockResolvedValue(createSampleOrder(storeId));
 
       await Promise.all([
@@ -593,8 +652,12 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
       ]);
 
       expect(mocks.acquiredLockKeys).toHaveLength(2);
-      expect(mocks.acquiredLockKeys[0]).toBe(`weletic:shopify:order:${workspaceId}:${orderId}`);
-      expect(mocks.acquiredLockKeys[1]).toBe(`weletic:shopify:order:${workspaceId}:${orderId}`);
+      expect(mocks.acquiredLockKeys[0]).toBe(
+        `weletic:shopify:order:${workspaceId}:${orderId}`,
+      );
+      expect(mocks.acquiredLockKeys[1]).toBe(
+        `weletic:shopify:order:${workspaceId}:${orderId}`,
+      );
       expect(mocks.acquiredLockKeys[0]).toBe(mocks.acquiredLockKeys[1]);
     });
   });
@@ -613,9 +676,15 @@ describe("Adversarial Empirical Challenger: SYNC-01 Store Resolution & Tenancy I
           storeId: `wstore_dyn_${dynamicWs}`,
         });
         mocks.findUniqueStore.mockResolvedValueOnce(
-          createSampleStore(`wstore_dyn_${dynamicWs}`, dynamicWs, `${dynamicWs}.myshopify.com`),
+          createSampleStore(
+            `wstore_dyn_${dynamicWs}`,
+            dynamicWs,
+            `${dynamicWs}.myshopify.com`,
+          ),
         );
-        mocks.findUniqueOrder.mockResolvedValueOnce(createSampleOrder(`wstore_dyn_${dynamicWs}`));
+        mocks.findUniqueOrder.mockResolvedValueOnce(
+          createSampleOrder(`wstore_dyn_${dynamicWs}`),
+        );
 
         await recordWeleticRefund({
           event: sampleRefundEvent,

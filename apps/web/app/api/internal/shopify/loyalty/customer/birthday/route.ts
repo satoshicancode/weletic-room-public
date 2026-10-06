@@ -99,7 +99,7 @@ export async function POST(request: Request) {
   const bodyText = await readWeleticShopifyRequestBody(request);
   if (
     bodyText === null ||
-    !await verifyWeleticShopifyRequest({ request, body: bodyText })
+    !(await verifyWeleticShopifyRequest({ request, body: bodyText }))
   ) {
     return loyaltyErrorResponse(
       "unauthorized",

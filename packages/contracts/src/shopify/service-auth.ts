@@ -241,7 +241,9 @@ async function verifyAndRecordNonce(
   try {
     const redisClient = await getRedisClient(redisClientOverride);
     if (!redisClient) {
-      if (process.env.WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE === "fail_closed") {
+      if (
+        process.env.WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE === "fail_closed"
+      ) {
         return false;
       }
       console.warn(
@@ -338,7 +340,9 @@ export async function verifyWeleticShopifyRequest({
   if (requestId) {
     const dynamicTtlSeconds = Math.max(
       WELETIC_SHOPIFY_NONCE_TTL_SECONDS,
-      Math.ceil((timestampMs + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS - now) / 1000) + 60,
+      Math.ceil(
+        (timestampMs + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS - now) / 1000,
+      ) + 60,
     );
     const isUnique = await verifyAndRecordNonce(
       requestId,
@@ -393,7 +397,10 @@ export async function verifyWeleticShopifyServiceAuthHeaders({
   const request = new Request(`https://internal-service.local${path}`, {
     method,
     headers: reqHeaders,
-    body: method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD" ? body : undefined,
+    body:
+      method.toUpperCase() !== "GET" && method.toUpperCase() !== "HEAD"
+        ? body
+        : undefined,
   });
 
   return verifyWeleticShopifyRequest({

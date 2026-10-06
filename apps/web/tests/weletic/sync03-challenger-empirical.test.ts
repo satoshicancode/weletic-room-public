@@ -1,6 +1,6 @@
+import { prisma } from "@/lib/prisma";
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { prisma } from "@/lib/prisma";
 
 vi.mock("server-only", () => ({}));
 
@@ -125,12 +125,15 @@ vi.mock("@/lib/prisma", () => ({
     discountCode: {
       findFirst: vi.fn(async ({ where }: any) => {
         for (const dc of db.discountCodes.values()) {
-          if (where.linkId !== undefined && dc.linkId !== where.linkId) continue;
-          if (where.programId !== undefined && dc.programId !== where.programId) continue;
+          if (where.linkId !== undefined && dc.linkId !== where.linkId)
+            continue;
+          if (where.programId !== undefined && dc.programId !== where.programId)
+            continue;
           if (where.code !== undefined && dc.code !== where.code) continue;
           if (where.disabledAt === null && dc.disabledAt !== null) continue;
           if (where.disabledAt && where.disabledAt.not !== undefined) {
-            if (where.disabledAt.not === null && dc.disabledAt === null) continue;
+            if (where.disabledAt.not === null && dc.disabledAt === null)
+              continue;
           }
           return { ...dc };
         }
@@ -139,7 +142,8 @@ vi.mock("@/lib/prisma", () => ({
       findMany: vi.fn(async ({ where }: any) => {
         const results: any[] = [];
         for (const dc of db.discountCodes.values()) {
-          if (where.linkId !== undefined && dc.linkId !== where.linkId) continue;
+          if (where.linkId !== undefined && dc.linkId !== where.linkId)
+            continue;
           if (where.disabledAt === null && dc.disabledAt !== null) continue;
           results.push({ ...dc });
         }
@@ -149,12 +153,24 @@ vi.mock("@/lib/prisma", () => ({
         let count = 0;
         for (const dc of db.discountCodes.values()) {
           let match = true;
-          if (where.linkId !== undefined && dc.linkId !== where.linkId) match = false;
+          if (where.linkId !== undefined && dc.linkId !== where.linkId)
+            match = false;
           if (where.disabledAt !== undefined) {
-            if (where.disabledAt === null && dc.disabledAt !== null) match = false;
-            if (where.disabledAt.not !== undefined && where.disabledAt.not === null && dc.disabledAt === null) match = false;
+            if (where.disabledAt === null && dc.disabledAt !== null)
+              match = false;
+            if (
+              where.disabledAt.not !== undefined &&
+              where.disabledAt.not === null &&
+              dc.disabledAt === null
+            )
+              match = false;
           }
-          if (where.id !== undefined && where.id.not !== undefined && dc.id === where.id.not) match = false;
+          if (
+            where.id !== undefined &&
+            where.id.not !== undefined &&
+            dc.id === where.id.not
+          )
+            match = false;
 
           if (match) {
             if (data.linkId !== undefined) dc.linkId = data.linkId;
@@ -176,7 +192,9 @@ vi.mock("@/lib/prisma", () => ({
         return { ...dc };
       }),
       create: vi.fn(async ({ data }: any) => {
-        const id = data.id || `dcode_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        const id =
+          data.id ||
+          `dcode_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         const record: TestDiscountCode = {
           id,
           code: data.code,
@@ -213,9 +231,13 @@ vi.mock("@/lib/prisma", () => ({
           if (enr) {
             const partner = db.partners.get(enr.partnerId);
             const program = db.programs.get(enr.programId);
-            const discount = enr.discountId ? db.discounts.get(enr.discountId) : null;
+            const discount = enr.discountId
+              ? db.discounts.get(enr.discountId)
+              : null;
             res.programEnrollment = {
-              partner: partner ? { ...partner } : { id: enr.partnerId, name: "Partner" },
+              partner: partner
+                ? { ...partner }
+                : { id: enr.partnerId, name: "Partner" },
               program: program ? { ...program } : { id: enr.programId },
               discount: discount ? { ...discount } : null,
             };
@@ -229,7 +251,10 @@ vi.mock("@/lib/prisma", () => ({
           let foundCode: TestDiscountCode | null = null;
           for (const dc of db.discountCodes.values()) {
             if (dc.linkId === link.id) {
-              if (select.discountCode.where?.disabledAt === null && dc.disabledAt !== null) {
+              if (
+                select.discountCode.where?.disabledAt === null &&
+                dc.disabledAt !== null
+              ) {
                 continue;
               }
               foundCode = dc;
@@ -264,7 +289,9 @@ vi.mock("@/lib/prisma", () => ({
         }
         if (include?.partnerGroup) {
           res.partnerGroup = {
-            discount: enrollment.discountId ? db.discounts.get(enrollment.discountId) : null,
+            discount: enrollment.discountId
+              ? db.discounts.get(enrollment.discountId)
+              : null,
             saleReward: null,
           };
         }
@@ -272,16 +299,25 @@ vi.mock("@/lib/prisma", () => ({
           const matchingLinks: any[] = [];
           for (const l of db.links.values()) {
             if (l.programEnrollmentId === enrollment.id) {
-              const linkObj: any = { id: l.id, partnerGroupDefaultLinkId: l.partnerGroupDefaultLinkId };
+              const linkObj: any = {
+                id: l.id,
+                partnerGroupDefaultLinkId: l.partnerGroupDefaultLinkId,
+              };
               if (include.links.include?.discountCode) {
                 const dcFilter = include.links.include.discountCode.where;
                 let foundDc: TestDiscountCode | null = null;
                 for (const dc of db.discountCodes.values()) {
                   if (dc.linkId === l.id) {
-                    if (dcFilter?.disabledAt === null && dc.disabledAt !== null) {
+                    if (
+                      dcFilter?.disabledAt === null &&
+                      dc.disabledAt !== null
+                    ) {
                       continue;
                     }
-                    if (dcFilter?.disabledAt?.not !== undefined && dc.disabledAt === null) {
+                    if (
+                      dcFilter?.disabledAt?.not !== undefined &&
+                      dc.disabledAt === null
+                    ) {
                       continue;
                     }
                     foundDc = dc;
@@ -303,12 +339,20 @@ vi.mock("@/lib/prisma", () => ({
           if (where.programId && enr.programId !== where.programId) continue;
           if (where.discountId && enr.discountId !== where.discountId) continue;
 
-          const item: any = { id: enr.id, partnerId: enr.partnerId, discountId: enr.discountId };
+          const item: any = {
+            id: enr.id,
+            partnerId: enr.partnerId,
+            discountId: enr.discountId,
+          };
           if (select?.links) {
             const matchingLinks: any[] = [];
             for (const l of db.links.values()) {
               if (l.programEnrollmentId !== enr.id) continue;
-              if (select.links.where?.partnerGroupDefaultLinkId?.not !== undefined && l.partnerGroupDefaultLinkId === null) {
+              if (
+                select.links.where?.partnerGroupDefaultLinkId?.not !==
+                  undefined &&
+                l.partnerGroupDefaultLinkId === null
+              ) {
                 continue;
               }
 
@@ -330,7 +374,11 @@ vi.mock("@/lib/prisma", () => ({
                     matchesOr = true;
                     break;
                   }
-                  if (cond.discountCode?.disabledAt?.not !== undefined && linkedDc && linkedDc.disabledAt !== null) {
+                  if (
+                    cond.discountCode?.disabledAt?.not !== undefined &&
+                    linkedDc &&
+                    linkedDc.disabledAt !== null
+                  ) {
                     matchesOr = true;
                     break;
                   }
@@ -356,7 +404,10 @@ vi.mock("@/lib/prisma", () => ({
           ...disc,
           program: {
             id: disc.programId,
-            workspace: { id: "ws_emp_1", shopifyStoreId: "store.myshopify.com" },
+            workspace: {
+              id: "ws_emp_1",
+              shopifyStoreId: "store.myshopify.com",
+            },
           },
         };
       }),
@@ -380,10 +431,10 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 // Import target routes and real createDiscountCode
-import { POST as createDiscountCodeCron } from "../../app/(ee)/api/cron/discount-codes/create/route";
 import { POST as queueBatchesCron } from "../../app/(ee)/api/cron/discount-codes/create/queue-batches/route";
-import { GET as getPartnerProducts } from "../../app/(ee)/api/partner-profile/programs/[programId]/products/route";
+import { POST as createDiscountCodeCron } from "../../app/(ee)/api/cron/discount-codes/create/route";
 import { GET as getPartnerProductById } from "../../app/(ee)/api/partner-profile/programs/[programId]/products/[productId]/route";
+import { GET as getPartnerProducts } from "../../app/(ee)/api/partner-profile/programs/[programId]/products/route";
 
 describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transitions", () => {
   beforeEach(() => {
@@ -478,7 +529,9 @@ describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transition
 
       // Verify Pre-condition: link has old disabled code
       expect(db.discountCodes.get(oldCodeId)?.linkId).toBe(linkId);
-      expect(db.discountCodes.get(oldCodeId)?.disabledAt).toEqual(oldDisabledAt);
+      expect(db.discountCodes.get(oldCodeId)?.disabledAt).toEqual(
+        oldDisabledAt,
+      );
 
       // Invoke the Cron endpoint
       const response = await createDiscountCodeCron(
@@ -545,7 +598,9 @@ describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transition
 
       expect(response.status).toBe(200);
       const text = await response.text();
-      expect(text).toContain("already has an active discount code. Skipping...");
+      expect(text).toContain(
+        "already has an active discount code. Skipping...",
+      );
 
       // Empirically verify no mutation:
       expect(db.discountCodes.get(activeCodeId)?.linkId).toBe(linkId);
@@ -653,7 +708,9 @@ describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transition
       });
 
       const response = await getPartnerProducts(
-        new NextRequest("http://localhost/api/partner-profile/programs/prog_emp_1/products"),
+        new NextRequest(
+          "http://localhost/api/partner-profile/programs/prog_emp_1/products",
+        ),
         { params: Promise.resolve({ programId: "prog_emp_1" }) },
       );
 
@@ -685,8 +742,15 @@ describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transition
       });
 
       const response = await getPartnerProductById(
-        new NextRequest("http://localhost/api/partner-profile/programs/prog_emp_1/products/prod_1"),
-        { params: Promise.resolve({ programId: "prog_emp_1", productId: "prod_1" }) },
+        new NextRequest(
+          "http://localhost/api/partner-profile/programs/prog_emp_1/products/prod_1",
+        ),
+        {
+          params: Promise.resolve({
+            programId: "prog_emp_1",
+            productId: "prod_1",
+          }),
+        },
       );
 
       expect(response.status).toBe(200);
@@ -735,13 +799,17 @@ describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transition
       });
 
       const response = await getPartnerProducts(
-        new NextRequest("http://localhost/api/partner-profile/programs/prog_emp_1/products"),
+        new NextRequest(
+          "http://localhost/api/partner-profile/programs/prog_emp_1/products",
+        ),
         { params: Promise.resolve({ programId: "prog_emp_1" }) },
       );
 
       expect(response.status).toBe(200);
       const data = await response.json();
-      expect(data.products[0].customerDiscount.couponCode).toBe("FRESH_ACTIVE_CODE");
+      expect(data.products[0].customerDiscount.couponCode).toBe(
+        "FRESH_ACTIVE_CODE",
+      );
     });
   });
 
@@ -825,17 +893,21 @@ describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transition
       });
 
       const response = await queueBatchesCron(
-        new NextRequest("http://localhost/api/cron/discount-codes/create/queue-batches", {
-          method: "POST",
-          body: JSON.stringify({ discountId: "disc_emp_1" }),
-        }),
+        new NextRequest(
+          "http://localhost/api/cron/discount-codes/create/queue-batches",
+          {
+            method: "POST",
+            body: JSON.stringify({ discountId: "disc_emp_1" }),
+          },
+        ),
         { params: Promise.resolve({}) },
       );
 
       expect(response.status).toBe(200);
 
       // Verify enrollments selected
-      const enrs = await (vi.mocked(prisma.programEnrollment.findMany) as any).mock.results[0].value;
+      const enrs = await (vi.mocked(prisma.programEnrollment.findMany) as any)
+        .mock.results[0].value;
       const matchingEnrollment = enrs.find((e: any) => e.id === enrId);
       expect(matchingEnrollment).toBeDefined();
 
@@ -870,11 +942,15 @@ describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transition
         },
       });
 
-      const activeCall = vi.mocked(prisma.programEnrollment.findUnique).mock.calls.at(-1)?.[0];
+      const activeCall = vi
+        .mocked(prisma.programEnrollment.findUnique)
+        .mock.calls.at(-1)?.[0];
       expect(activeCall?.include?.discountCodes).toEqual({
         where: { disabledAt: null },
       });
-      expect((activeCall?.include?.links as any)?.include?.discountCode).toEqual({
+      expect(
+        (activeCall?.include?.links as any)?.include?.discountCode,
+      ).toEqual({
         where: { disabledAt: null },
       });
 
@@ -889,11 +965,15 @@ describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transition
         },
       });
 
-      const archivedCall = vi.mocked(prisma.programEnrollment.findUnique).mock.calls.at(-1)?.[0];
+      const archivedCall = vi
+        .mocked(prisma.programEnrollment.findUnique)
+        .mock.calls.at(-1)?.[0];
       expect(archivedCall?.include?.discountCodes).toEqual({
         where: { disabledAt: { not: null } },
       });
-      expect((archivedCall?.include?.links as any)?.include?.discountCode).toEqual({
+      expect(
+        (archivedCall?.include?.links as any)?.include?.discountCode,
+      ).toEqual({
         where: { disabledAt: { not: null } },
       });
 
@@ -908,7 +988,9 @@ describe("Empirical Challenger: SYNC-03 Soft-Delete Coherence & State Transition
         },
       });
 
-      const allCall = vi.mocked(prisma.programEnrollment.findUnique).mock.calls.at(-1)?.[0];
+      const allCall = vi
+        .mocked(prisma.programEnrollment.findUnique)
+        .mock.calls.at(-1)?.[0];
       expect(allCall?.include?.discountCodes).toEqual({
         where: {},
       });

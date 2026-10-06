@@ -176,10 +176,7 @@ function signRequest({
       ? `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}\n${requestId}`
       : `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}`;
 
-  return crypto
-    .createHmac("sha256", secret)
-    .update(canonical)
-    .digest("hex");
+  return crypto.createHmac("sha256", secret).update(canonical).digest("hex");
 }
 
 export function verifyWeleticInternalRequest({

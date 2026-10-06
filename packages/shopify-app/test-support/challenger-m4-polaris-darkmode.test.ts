@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { describe, expect, it } from "vitest";
 
 describe("Milestone 4 Adversarial Challenger: Static Analysis, Dark Mode & App Bridge", () => {
   const shopifyAppDir = path.resolve(__dirname, "..");
@@ -11,7 +11,9 @@ describe("Milestone 4 Adversarial Challenger: Static Analysis, Dark Mode & App B
 
   it("asserts 0 occurrences of raw <input> across all loyalty UI components", () => {
     expect(fs.existsSync(loyaltyUiDir)).toBe(true);
-    const files = fs.readdirSync(loyaltyUiDir).filter((f) => f.endsWith(".tsx") || f.endsWith(".ts"));
+    const files = fs
+      .readdirSync(loyaltyUiDir)
+      .filter((f) => f.endsWith(".tsx") || f.endsWith(".ts"));
     expect(files.length).toBeGreaterThan(0);
 
     const violations: { file: string; line: number; text: string }[] = [];
@@ -66,16 +68,28 @@ describe("Milestone 4 Adversarial Challenger: Static Analysis, Dark Mode & App B
 
   it("asserts dark mode fallback contrast ratio meets WCAG AA standards (>= 4.5:1)", () => {
     const cssContent = fs.readFileSync(customersCssPath, "utf-8");
-    
+
     // Extract --p-color-bg-surface and --p-color-text
-    const bgSurfaceMatch = cssContent.match(/--p-color-bg-surface:\s*rgba\((\d+),\s*(\d+),\s*(\d+)/);
-    const textMatch = cssContent.match(/--p-color-text:\s*rgba\((\d+),\s*(\d+),\s*(\d+)/);
+    const bgSurfaceMatch = cssContent.match(
+      /--p-color-bg-surface:\s*rgba\((\d+),\s*(\d+),\s*(\d+)/,
+    );
+    const textMatch = cssContent.match(
+      /--p-color-text:\s*rgba\((\d+),\s*(\d+),\s*(\d+)/,
+    );
 
     expect(bgSurfaceMatch).not.toBeNull();
     expect(textMatch).not.toBeNull();
 
-    const [r1, g1, b1] = [Number(bgSurfaceMatch![1]), Number(bgSurfaceMatch![2]), Number(bgSurfaceMatch![3])];
-    const [r2, g2, b2] = [Number(textMatch![1]), Number(textMatch![2]), Number(textMatch![3])];
+    const [r1, g1, b1] = [
+      Number(bgSurfaceMatch![1]),
+      Number(bgSurfaceMatch![2]),
+      Number(bgSurfaceMatch![3]),
+    ];
+    const [r2, g2, b2] = [
+      Number(textMatch![1]),
+      Number(textMatch![2]),
+      Number(textMatch![3]),
+    ];
 
     const relativeLuminance = (r: number, g: number, b: number) => {
       const [rs, gs, bs] = [r, g, b].map((c) => {
@@ -156,32 +170,45 @@ describe("Milestone 4 Adversarial Challenger: Static Analysis, Dark Mode & App B
     }
   });
 
-  it("asserts zero inverted imports from packages/shopify-app into " + ["apps", "web"].join("/"), () => {
-    const appDir = path.join(shopifyAppDir, "app");
-    const forbiddenTarget = ["apps", "web"].join("/");
-    const forbiddenRel = `../../${forbiddenTarget}`;
-    const forbiddenDirect = `${forbiddenTarget}/`;
+  it(
+    "asserts zero inverted imports from packages/shopify-app into " +
+      ["apps", "web"].join("/"),
+    () => {
+      const appDir = path.join(shopifyAppDir, "app");
+      const forbiddenTarget = ["apps", "web"].join("/");
+      const forbiddenRel = `../../${forbiddenTarget}`;
+      const forbiddenDirect = `${forbiddenTarget}/`;
 
-    const scanDir = (dir: string): { file: string; line: number; text: string }[] => {
-      const violations: { file: string; line: number; text: string }[] = [];
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          violations.push(...scanDir(full));
-        } else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) {
-          const lines = fs.readFileSync(full, "utf-8").split("\n");
-          lines.forEach((line, idx) => {
-            if (line.includes(forbiddenRel) || line.includes(forbiddenDirect)) {
-              violations.push({ file: full, line: idx + 1, text: line.trim() });
-            }
-          });
+      const scanDir = (
+        dir: string,
+      ): { file: string; line: number; text: string }[] => {
+        const violations: { file: string; line: number; text: string }[] = [];
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            violations.push(...scanDir(full));
+          } else if (/\.(ts|tsx|js|jsx)$/.test(entry.name)) {
+            const lines = fs.readFileSync(full, "utf-8").split("\n");
+            lines.forEach((line, idx) => {
+              if (
+                line.includes(forbiddenRel) ||
+                line.includes(forbiddenDirect)
+              ) {
+                violations.push({
+                  file: full,
+                  line: idx + 1,
+                  text: line.trim(),
+                });
+              }
+            });
+          }
         }
-      }
-      return violations;
-    };
+        return violations;
+      };
 
-    const violations = scanDir(appDir);
-    expect(violations).toEqual([]);
-  });
+      const violations = scanDir(appDir);
+      expect(violations).toEqual([]);
+    },
+  );
 });

@@ -1,4 +1,3 @@
-import React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Badge,
@@ -20,6 +19,7 @@ import type {
   RewardCatalogResponse,
   RewardCatalogWrite,
 } from "@weletic/contracts/loyalty/reward-catalog-contract";
+import React from "react";
 import { useCoreLaunch } from "~/core-launch-context";
 import {
   changeRewardCatalogType,
@@ -403,28 +403,24 @@ function RewardEditor({
                 );
               }
               if (options[key]) {
-                const selectOptions = options[key]!
-                  .filter(
-                    ([value]) =>
-                      !coreLaunch ||
-                      ![
-                        "rewardType",
-                        "exchangeType",
-                        "purchaseType",
-                      ].includes(key) ||
-                      value ===
-                        (
-                          {
-                            rewardType: "amount_off",
-                            exchangeType: "fixed",
-                            purchaseType: "one_time",
-                          } as Record<string, string>
-                        )[key],
-                  )
-                  .map(([value, ...text]) => ({
-                    label: text[language],
-                    value,
-                  }));
+                const selectOptions = options[key]!.filter(
+                  ([value]) =>
+                    !coreLaunch ||
+                    !["rewardType", "exchangeType", "purchaseType"].includes(
+                      key,
+                    ) ||
+                    value ===
+                      (
+                        {
+                          rewardType: "amount_off",
+                          exchangeType: "fixed",
+                          purchaseType: "one_time",
+                        } as Record<string, string>
+                      )[key],
+                ).map(([value, ...text]) => ({
+                  label: text[language],
+                  value,
+                }));
                 return (
                   <Select
                     key={key}
@@ -611,7 +607,10 @@ function CatalogVisit({
     <Page
       title={text.title}
       primaryAction={
-        view?.capabilities.configure && view.shopCurrency && !draft && !containment
+        view?.capabilities.configure &&
+        view.shopCurrency &&
+        !draft &&
+        !containment
           ? {
               content: text.create,
               onAction: () =>
@@ -705,7 +704,10 @@ function CatalogVisit({
                     >
                       {text.confirm}
                     </Button>
-                    <Button disabled={busy} onClick={() => setContainment(null)}>
+                    <Button
+                      disabled={busy}
+                      onClick={() => setContainment(null)}
+                    >
                       {text.cancel}
                     </Button>
                   </InlineStack>
@@ -751,7 +753,10 @@ function CatalogVisit({
                     .map((reward) => (
                       <Card key={reward.id}>
                         <BlockStack gap="300">
-                          <InlineStack align="space-between" blockAlign="center">
+                          <InlineStack
+                            align="space-between"
+                            blockAlign="center"
+                          >
                             <Text as="h2" variant="headingSm">
                               {reward.name}
                             </Text>

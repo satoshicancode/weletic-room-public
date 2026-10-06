@@ -1,5 +1,3 @@
-import React from "react";
-import useSWR, { SWRConfig } from "swr";
 import type {
   MerchantShopperDirectory,
   MerchantShopperProfile,
@@ -11,6 +9,8 @@ import {
   shopperSegmentSchema,
   type ShopperSegment,
 } from "@weletic/contracts/shoppers/segment-query";
+import React from "react";
+import useSWR, { SWRConfig } from "swr";
 import { shopperCopy, type ShopperCopy, type ShopperLocale } from "./copy";
 import { SegmentFields } from "./segment-fields";
 import { shopperValue } from "./values";

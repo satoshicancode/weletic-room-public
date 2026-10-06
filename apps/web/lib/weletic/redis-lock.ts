@@ -52,7 +52,10 @@ export async function acquireDistributedLock({
     return { acquired: Boolean(result), token };
   } catch (error) {
     if (!process.env.UPSTASH_REDIS_REST_URL?.includes("upstash.invalid")) {
-      console.error(`[DistributedLock] Failed to acquire lock for ${key}`, error);
+      console.error(
+        `[DistributedLock] Failed to acquire lock for ${key}`,
+        error,
+      );
     }
     const now = Date.now();
     cleanExpiredInMemoryLocks(now);
@@ -81,7 +84,10 @@ export async function releaseDistributedLock({
     return Number(result) === 1;
   } catch (error) {
     if (!process.env.UPSTASH_REDIS_REST_URL?.includes("upstash.invalid")) {
-      console.error(`[DistributedLock] Failed to release lock for ${key}`, error);
+      console.error(
+        `[DistributedLock] Failed to release lock for ${key}`,
+        error,
+      );
     }
     const memoryLock = inMemoryLocks.get(key);
     if (memoryLock && memoryLock.token === token) {
@@ -118,7 +124,11 @@ export async function renewDistributedLock({
     }
     const now = Date.now();
     const memoryLock = inMemoryLocks.get(key);
-    if (memoryLock && memoryLock.token === token && memoryLock.expiresAt > now) {
+    if (
+      memoryLock &&
+      memoryLock.token === token &&
+      memoryLock.expiresAt > now
+    ) {
       memoryLock.expiresAt = now + ttlSeconds * 1000;
       return true;
     }

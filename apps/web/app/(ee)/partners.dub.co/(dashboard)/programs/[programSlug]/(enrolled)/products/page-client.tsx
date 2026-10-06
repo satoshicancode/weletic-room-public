@@ -16,12 +16,7 @@ import {
   getPartnerCatalogPreferences,
   savePartnerCatalogPreferences,
 } from "@/lib/weletic/partner-preferences";
-import {
-  BlurImage,
-  LoadingSpinner,
-  PaginationControls,
-  usePagination,
-} from "@dub/ui";
+import { BlurImage, PaginationControls, usePagination } from "@dub/ui";
 import { ChevronDown, Eye, Search } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -277,13 +272,16 @@ export function WeleticProductsPageClient() {
   const t = catalogI18n[locale] || catalogI18n.en;
 
   // Extract unique categories from current products
-  const categories = useMemo(() => [
-    { id: "all", label: t.categories.all },
-    { id: "xtra", label: t.categories.xtra },
-    { id: "shoes", label: t.categories.shoes },
-    { id: "apparel", label: t.categories.apparel },
-    { id: "accessories", label: t.categories.accessories },
-  ], [t]);
+  const categories = useMemo(
+    () => [
+      { id: "all", label: t.categories.all },
+      { id: "xtra", label: t.categories.xtra },
+      { id: "shoes", label: t.categories.shoes },
+      { id: "apparel", label: t.categories.apparel },
+      { id: "accessories", label: t.categories.accessories },
+    ],
+    [t],
+  );
 
   // Filter products by category tab
   const filteredProducts = useMemo(() => {
@@ -345,12 +343,8 @@ export function WeleticProductsPageClient() {
       <div className="shadow-xs space-y-4 rounded-2xl border border-neutral-200 bg-white p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-xl font-bold text-neutral-900">
-              {t.title}
-            </h1>
-            <p className="mt-0.5 text-xs text-neutral-500">
-              {t.subtitle}
-            </p>
+            <h1 className="text-xl font-bold text-neutral-900">{t.title}</h1>
+            <p className="mt-0.5 text-xs text-neutral-500">{t.subtitle}</p>
           </div>
 
           {/* Market & Language selector */}

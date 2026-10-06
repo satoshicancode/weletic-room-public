@@ -16,12 +16,12 @@ import {
   Text,
 } from "@shopify/polaris";
 import { boundary } from "@shopify/shopify-app-remix/server";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   installationAdmissionStatusSchema,
   type InstallationAdmissionStatus,
 } from "@weletic/contracts/shopify/installation-admission-contract";
 import type { ShopifyMerchantOverview } from "@weletic/contracts/shopify/staff-contract";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { installationBootstrapError } from "../installation-bootstrap-error";
 import { createInstallationStatusClient } from "../installation-status-client";
 import { installationStatusCopy } from "../installation-status-copy";

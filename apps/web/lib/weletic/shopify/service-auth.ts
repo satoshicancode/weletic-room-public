@@ -1,6 +1,4 @@
-import {
-  registerServiceAuthRedisProvider,
-} from "@weletic/contracts/shopify/service-auth";
+import { registerServiceAuthRedisProvider } from "@weletic/contracts/shopify/service-auth";
 
 registerServiceAuthRedisProvider(async () => {
   try {

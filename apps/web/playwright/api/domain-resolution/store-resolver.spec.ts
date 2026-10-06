@@ -16,7 +16,10 @@ test.describe.configure({
 const DEFAULT_WEBHOOK_SECRET = "weletic_test_webhook_secret_key_mock_123";
 
 function calculateHmac(body: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(body, "utf8").digest("base64");
+  return crypto
+    .createHmac("sha256", secret)
+    .update(body, "utf8")
+    .digest("base64");
 }
 
 test("Domain normalization – handles protocol prefixes, paths, and casing safely", async () => {
@@ -27,7 +30,9 @@ test("Domain normalization – handles protocol prefixes, paths, and casing safe
   expect(normalizeShopDomain("http://MyStore.MyShopify.Com/")).toBe(
     "mystore.myshopify.com",
   );
-  expect(normalizeShopDomain("   custom-domain.com   ")).toBe("custom-domain.com");
+  expect(normalizeShopDomain("   custom-domain.com   ")).toBe(
+    "custom-domain.com",
+  );
   expect(normalizeShopDomain("")).toBe("");
 
   // Canonical myshopify domain validation
@@ -77,7 +82,8 @@ test("GET /api/internal/shopify/catalog – rejects unauthenticated service requ
 test("POST /api/shopify/integration/webhook – handles unknown shop domain gracefully without 500 error", async ({
   request,
 }) => {
-  const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
+  const webhookSecret =
+    process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
   const unknownDomain = `unknown-tenant-${randomName("shop")}.myshopify.com`;
   const body = JSON.stringify({ id: 999999 });
   const hmac = calculateHmac(body, webhookSecret);
@@ -102,7 +108,8 @@ test("POST /api/shopify/integration/webhook – handles unknown shop domain grac
 test("POST /api/shopify/integration/webhook – rejects empty shop domain safely", async ({
   request,
 }) => {
-  const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
+  const webhookSecret =
+    process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
   const body = JSON.stringify({ id: 999998 });
   const hmac = calculateHmac(body, webhookSecret);
 
@@ -195,7 +202,8 @@ test("Invariant 1: Multi-domain resolution across primary domain, myshopifyDomai
     }
 
     // 3. Test resolution by myshopifyDomain
-    const resolvedByMyshopify = await resolveShopifyStoreByDomain(myshopifyDomain);
+    const resolvedByMyshopify =
+      await resolveShopifyStoreByDomain(myshopifyDomain);
     if (resolvedByMyshopify) {
       expect(resolvedByMyshopify.workspaceId).toBe(workspace.id);
       expect(resolvedByMyshopify.programId).toBe(program.id);
@@ -203,14 +211,17 @@ test("Invariant 1: Multi-domain resolution across primary domain, myshopifyDomai
     }
 
     // 4. Test resolution by custom domain alias (project.shopifyStoreId)
-    const resolvedByCustomAlias = await resolveShopifyStoreByDomain(customPrimaryDomain);
+    const resolvedByCustomAlias =
+      await resolveShopifyStoreByDomain(customPrimaryDomain);
     if (resolvedByCustomAlias) {
       expect(resolvedByCustomAlias.workspaceId).toBe(workspace.id);
       expect(resolvedByCustomAlias.programId).toBe(program.id);
     }
 
     // 5. Resolution returns null for unknown domain
-    const nonExistent = await resolveShopifyStoreByDomain("completely-unknown-domain.com");
+    const nonExistent = await resolveShopifyStoreByDomain(
+      "completely-unknown-domain.com",
+    );
     expect(nonExistent).toBeNull();
   } finally {
     // Revert workspace shopifyStoreId

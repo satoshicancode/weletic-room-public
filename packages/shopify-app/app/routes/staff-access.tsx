@@ -11,12 +11,12 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   SHOPIFY_STAFF_PERMISSIONS,
   type ShopifyStaffGrantView,
   type ShopifyStaffPermission,
 } from "@weletic/contracts/shopify/staff-contract";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StaffExport } from "../components/StaffExport";
 import { useMerchantLocale } from "../merchant-locale";
 import {

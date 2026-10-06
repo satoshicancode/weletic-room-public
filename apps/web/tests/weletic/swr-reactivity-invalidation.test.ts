@@ -1,6 +1,6 @@
 import {
-  mutateComposite,
   mutateCommissions,
+  mutateComposite,
   mutateDiscountCodes,
   mutatePartner,
   mutatePartnerLinks,
@@ -1776,7 +1776,9 @@ describe("Weletic SWR Reactivity & Cache Invalidation Contract Suite", () => {
     it("T5.1: mutatePartner invokes swr.mutate with accurate key predicate", async () => {
       await mutatePartner("pn_sarah_456");
       expect(mutate).toHaveBeenCalled();
-      const predicate = vi.mocked(mutate).mock.calls[0][0] as (key: any) => boolean;
+      const predicate = vi.mocked(mutate).mock.calls[0][0] as (
+        key: any,
+      ) => boolean;
       expect(typeof predicate).toBe("function");
       expect(predicate("/api/partners/pn_sarah_456")).toBe(true);
       expect(predicate("/api/partners/pn_other_789")).toBe(false);
@@ -1787,21 +1789,29 @@ describe("Weletic SWR Reactivity & Cache Invalidation Contract Suite", () => {
     it("T5.2: mutateComposite invokes swr.mutate targeting includeComposite=true", async () => {
       await mutateComposite("pn_sarah_456");
       expect(mutate).toHaveBeenCalled();
-      const predicate = vi.mocked(mutate).mock.calls[0][0] as (key: any) => boolean;
+      const predicate = vi.mocked(mutate).mock.calls[0][0] as (
+        key: any,
+      ) => boolean;
       expect(typeof predicate).toBe("function");
-      expect(predicate("/api/partners/pn_sarah_456?includeComposite=true")).toBe(true);
+      expect(
+        predicate("/api/partners/pn_sarah_456?includeComposite=true"),
+      ).toBe(true);
       expect(predicate("/api/partners/pn_sarah_456")).toBe(false);
     });
 
     it("T5.3: mutatePrefix and mutateSuffix correctly trigger swr.mutate", async () => {
       await mutatePrefix("/api/links");
       expect(mutate).toHaveBeenCalled();
-      const prefixPred = vi.mocked(mutate).mock.calls[0][0] as (key: any) => boolean;
+      const prefixPred = vi.mocked(mutate).mock.calls[0][0] as (
+        key: any,
+      ) => boolean;
       expect(prefixPred("/api/links?page=1")).toBe(true);
       expect(prefixPred("/api/partners")).toBe(false);
 
       await mutateSuffix("/count");
-      const suffixPred = vi.mocked(mutate).mock.calls[1][0] as (key: any) => boolean;
+      const suffixPred = vi.mocked(mutate).mock.calls[1][0] as (
+        key: any,
+      ) => boolean;
       expect(suffixPred("/api/partners/count")).toBe(true);
       expect(suffixPred("/api/partners/list")).toBe(false);
     });

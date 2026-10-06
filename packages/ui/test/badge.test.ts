@@ -12,18 +12,37 @@ describe("badgeVariants", () => {
   });
 
   it("generates color variant classes", () => {
-    expect(badgeVariants({ variant: "violet" })).toContain("border-violet-600 bg-violet-600 text-white");
-    expect(badgeVariants({ variant: "blue" })).toContain("border-blue-500 bg-blue-500 text-white");
-    expect(badgeVariants({ variant: "green" })).toContain("border-green-200 bg-green-100 text-green-900");
-    expect(badgeVariants({ variant: "red" })).toContain("border-red-100 bg-red-100 text-red-800");
-    expect(badgeVariants({ variant: "amber" })).toContain("border-amber-200 bg-amber-100 text-amber-800");
-    expect(badgeVariants({ variant: "sky" })).toContain("border-sky-900 bg-sky-900 text-white");
-    expect(badgeVariants({ variant: "black" })).toContain("border-black bg-black text-white");
-    expect(badgeVariants({ variant: "rainbow" })).toContain("bg-gradient-to-r from-violet-600 to-pink-600");
+    expect(badgeVariants({ variant: "violet" })).toContain(
+      "border-violet-600 bg-violet-600 text-white",
+    );
+    expect(badgeVariants({ variant: "blue" })).toContain(
+      "border-blue-500 bg-blue-500 text-white",
+    );
+    expect(badgeVariants({ variant: "green" })).toContain(
+      "border-green-200 bg-green-100 text-green-900",
+    );
+    expect(badgeVariants({ variant: "red" })).toContain(
+      "border-red-100 bg-red-100 text-red-800",
+    );
+    expect(badgeVariants({ variant: "amber" })).toContain(
+      "border-amber-200 bg-amber-100 text-amber-800",
+    );
+    expect(badgeVariants({ variant: "sky" })).toContain(
+      "border-sky-900 bg-sky-900 text-white",
+    );
+    expect(badgeVariants({ variant: "black" })).toContain(
+      "border-black bg-black text-white",
+    );
+    expect(badgeVariants({ variant: "rainbow" })).toContain(
+      "bg-gradient-to-r from-violet-600 to-pink-600",
+    );
   });
 
   it("merges custom className with variant classes", () => {
-    const classes = badgeVariants({ variant: "green", className: "extra-custom-class" });
+    const classes = badgeVariants({
+      variant: "green",
+      className: "extra-custom-class",
+    });
     expect(classes).toContain("extra-custom-class");
     expect(classes).toContain("border-green-200");
   });
@@ -53,7 +72,11 @@ describe("Badge component rendering", () => {
 
   it("correctly includes additional custom class names", () => {
     const html = renderToStaticMarkup(
-      React.createElement(Badge, { variant: "green", className: "shadow-md uppercase" }, "Active"),
+      React.createElement(
+        Badge,
+        { variant: "green", className: "shadow-md uppercase" },
+        "Active",
+      ),
     );
 
     expect(html).toContain("shadow-md uppercase");

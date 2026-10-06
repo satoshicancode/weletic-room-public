@@ -792,7 +792,9 @@ export async function auditShopifyCustomerStoreCreditTransactions({
         amount: txEdge.node.amount.amount,
         currencyCode: txEdge.node.amount.currencyCode,
         createdAt: new Date(txEdge.node.createdAt),
-        expiresAt: txEdge.node.expiresAt ? new Date(txEdge.node.expiresAt) : null,
+        expiresAt: txEdge.node.expiresAt
+          ? new Date(txEdge.node.expiresAt)
+          : null,
       });
     }
   }

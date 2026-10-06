@@ -5,7 +5,6 @@ import {
   markFinancialRewardExpired,
   provisionFinancialRewardReservation,
 } from "@/lib/weletic/loyalty/financial-reward-saga";
-import { reconcilePendingStoreCreditRedemption } from "@/lib/weletic/loyalty/store-credit-reconciliation";
 import { handleFlowTrigger } from "@/lib/weletic/loyalty/flow-trigger-worker";
 import { ShopifyFlowDispatchError } from "@/lib/weletic/loyalty/flow-triggers";
 import { releaseHoldingPeriodGrant } from "@/lib/weletic/loyalty/holding-period";
@@ -65,6 +64,7 @@ import {
   lookupShopifyGiftCard,
 } from "@/lib/weletic/loyalty/shopify-financial-rewards";
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
+import { reconcilePendingStoreCreditRedemption } from "@/lib/weletic/loyalty/store-credit-reconciliation";
 import { evaluateTierMaintenanceCycle } from "@/lib/weletic/loyalty/tier-lifecycle";
 import {
   handleVoucherPrivacyCleanup,

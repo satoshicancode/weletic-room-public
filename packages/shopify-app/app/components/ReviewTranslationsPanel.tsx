@@ -1,6 +1,6 @@
 import { Button } from "@shopify/polaris";
-import { useCallback, useEffect, useRef, useState } from "react";
 import type { ManualReviewTranslationPage } from "@weletic/contracts/reviews/translation-contract";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { createMerchantReviewTranslationsClient } from "../merchant-review-translations-client";
 import { reviewTranslationCopy } from "../review-translation-copy";
 import { StaffAccessClientError } from "../staff-access-client";

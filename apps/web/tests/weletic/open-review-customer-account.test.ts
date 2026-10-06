@@ -96,7 +96,10 @@ it.each(["open-prepare", "open-submit", "open-upload"])(
     expect(query.get("customerId")).toBe("123");
     expect(query.get("source")).toBe("customer_account");
     expect(
-      await verifyWeleticShopifyRequest({ request, body: String(options.body) }),
+      await verifyWeleticShopifyRequest({
+        request,
+        body: String(options.body),
+      }),
     ).toBe(true);
     expect(options.body).toBe(JSON.stringify(content));
   },

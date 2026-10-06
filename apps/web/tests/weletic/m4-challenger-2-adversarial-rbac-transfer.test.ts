@@ -1,47 +1,28 @@
 import { throwIfNoPermission } from "@/lib/actions/throw-if-no-permission";
+import { getPermissionsByRole } from "@/lib/api/rbac/permissions";
 import {
-  PERMISSION_ACTIONS as DUB_PERMISSION_ACTIONS,
-  ROLE_PERMISSIONS as DUB_ROLE_PERMISSIONS,
-  getPermissionsByRole,
-} from "@/lib/api/rbac/permissions";
-import {
-  PluginPermissionDefinition,
   permissionRegistry,
+  PluginPermissionDefinition,
 } from "@/lib/api/rbac/plugin-registry";
+import { RESOURCE_KEYS, RESOURCES } from "@/lib/api/rbac/resources";
 import {
-  DUB_RESOURCE_KEYS,
-  DUB_RESOURCES,
-  RESOURCE_KEYS,
-  RESOURCES,
-} from "@/lib/api/rbac/resources";
-import { throwIfNoAccess } from "@/lib/api/tokens/throw-if-no-access";
-import {
-  DUB_RESOURCE_SCOPES,
   DUB_SCOPES,
-  getScopesByResourceForRole,
-  getScopesForRole,
   mapScopesToPermissions,
-  RESOURCE_SCOPES,
   ROLE_SCOPES_MAP,
   SCOPE_PERMISSIONS_MAP,
   SCOPES,
   SCOPES_BY_RESOURCE,
   validateScopesForRole,
 } from "@/lib/api/tokens/scopes";
-import {
-  BELOW_MIN_WITHDRAWAL_FEE_CENTS,
-  MIN_FORCE_WITHDRAWAL_AMOUNT_CENTS,
-  MIN_WITHDRAWAL_AMOUNT_CENTS,
-} from "@/lib/constants/payouts";
+import { throwIfNoAccess } from "@/lib/api/tokens/throw-if-no-access";
+import { BELOW_MIN_WITHDRAWAL_FEE_CENTS } from "@/lib/constants/payouts";
 import { createStripeTransfer } from "@/lib/partners/create-stripe-transfer";
 import {
-  TransferPreProcessingContext,
   executeTransferPreProcessingHook,
   registerTransferPreProcessingHook,
   transferHookRegistry,
+  TransferPreProcessingContext,
 } from "@/lib/partners/transfer-hooks";
-import { prisma } from "@/lib/prisma";
-import { stripe } from "@/lib/stripe";
 import { weleticSettlementHook } from "@/lib/weletic/payouts/settlement-hook";
 import { WorkspaceRole } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -313,7 +294,7 @@ describe("M4 Challenger 2: Adversarial RBAC & Transfer Hook Tests", () => {
             type: "read",
             resource: "audit",
             includeInApisRead: false, // NOT in apis.read
-            includeInApisAll: true,   // YES in apis.all
+            includeInApisAll: true, // YES in apis.all
           },
         },
         {
@@ -324,7 +305,7 @@ describe("M4 Challenger 2: Adversarial RBAC & Transfer Hook Tests", () => {
             type: "read",
             resource: "secret",
             includeInApisRead: false, // NOT in apis.read
-            includeInApisAll: false,  // NOT in apis.all
+            includeInApisAll: false, // NOT in apis.all
           },
         },
       ]);
@@ -411,8 +392,12 @@ describe("M4 Challenger 2: Adversarial RBAC & Transfer Hook Tests", () => {
       expect(RESOURCE_KEYS).not.toContain("loyalty");
       expect(SCOPES).not.toContain("loyalty.read");
       expect(SCOPES).not.toContain("loyalty.write");
-      expect(mapScopesToPermissions(["apis.read"])).not.toContain("loyalty.read");
-      expect(mapScopesToPermissions(["apis.all"])).not.toContain("loyalty.write");
+      expect(mapScopesToPermissions(["apis.read"])).not.toContain(
+        "loyalty.read",
+      );
+      expect(mapScopesToPermissions(["apis.all"])).not.toContain(
+        "loyalty.write",
+      );
 
       // Re-registering restores functionality seamlessly
       permissionRegistry.register(WELETIC_PERMISSIONS);

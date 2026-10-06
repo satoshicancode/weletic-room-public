@@ -99,13 +99,12 @@ vi.mock("@/lib/axiom/server", () => ({
 
 import { POST } from "../../app/(ee)/api/shopify/integration/webhook/route";
 import {
-  recoverStuckOrdersPaidWebhooks,
+  assertOrdersPaidStoreAcceptsWrite,
   auditTerminalFailedOrdersPaidWebhooks,
   executeClaimedOrdersPaidEvent,
-  assertOrdersPaidStoreAcceptsWrite,
   getFailedRetryBackoffMs,
   IN_FLIGHT_LEASE_THRESHOLD_MS,
-  MAX_RETRY_ATTEMPTS,
+  recoverStuckOrdersPaidWebhooks,
 } from "../../lib/weletic/shopify/orders-paid-recovery";
 import { createAllShopifyWebhookBodyDigests } from "../../lib/weletic/shopify/privacy-identity";
 
@@ -212,11 +211,15 @@ describe("CHALLENGER 2: Poison Pill Resilience, Exponential Backoff & Terminal A
             properties: { deeply: { nested: { invalid: null } } },
           },
         ],
-        note_attributes: [{ name: "injection", value: "'; DROP TABLE orders;--" }],
+        note_attributes: [
+          { name: "injection", value: "'; DROP TABLE orders;--" },
+        ],
       };
 
       mocks.ordersPaid.mockRejectedValueOnce(
-        new Error("FATAL_POISON_PILL: Memory corruption simulated in settlement engine"),
+        new Error(
+          "FATAL_POISON_PILL: Memory corruption simulated in settlement engine",
+        ),
       );
 
       const startTime = performance.now();
@@ -266,15 +269,16 @@ describe("CHALLENGER 2: Poison Pill Resilience, Exponential Backoff & Terminal A
           }),
           data: expect.objectContaining({
             status: "failed",
-            error: "FATAL_POISON_PILL: Memory corruption simulated in settlement engine",
+            error:
+              "FATAL_POISON_PILL: Memory corruption simulated in settlement engine",
           }),
         }),
       );
 
       // Assert error column was updated without wiping or setting payload to DbNull
       const updateCalls = mocks.webhookEventUpdateMany.mock.calls;
-      const failureCall = updateCalls.find((call: any[]) =>
-        call[0]?.data?.status === "failed",
+      const failureCall = updateCalls.find(
+        (call: any[]) => call[0]?.data?.status === "failed",
       );
       expect(failureCall).toBeDefined();
       expect(failureCall?.[0]?.data?.payload).toBeUndefined(); // Crucial: payload was NOT replaced with null or DbNull
@@ -453,7 +457,9 @@ describe("CHALLENGER 2: Poison Pill Resilience, Exponential Backoff & Terminal A
       ]);
 
       mocks.ordersPaid.mockRejectedValueOnce(
-        new Error("Shopify GraphQL persistent permission denied: read_orders revoked"),
+        new Error(
+          "Shopify GraphQL persistent permission denied: read_orders revoked",
+        ),
       );
 
       const results = await recoverStuckOrdersPaidWebhooks({
@@ -468,13 +474,17 @@ describe("CHALLENGER 2: Poison Pill Resilience, Exponential Backoff & Terminal A
       expect(res.isTerminal).toBe(true);
       expect(res.error).toContain("[TERMINAL_ERROR_AUDIT]");
       expect(res.error).toContain("Exceeded maximum retry attempts (5)");
-      expect(res.error).toContain("Shopify GraphQL persistent permission denied");
+      expect(res.error).toContain(
+        "Shopify GraphQL persistent permission denied",
+      );
 
       // Verify terminal alert log was emitted
       expect(mocks.log).toHaveBeenCalledWith(
         expect.objectContaining({
           type: "errors",
-          message: expect.stringContaining("[Shopify Webhook Terminal Failure]"),
+          message: expect.stringContaining(
+            "[Shopify Webhook Terminal Failure]",
+          ),
         }),
       );
 
@@ -700,16 +710,18 @@ describe("CHALLENGER 2: Poison Pill Resilience, Exponential Backoff & Terminal A
       });
 
       // In completion transaction, generation in DB has drifted to sgen_drifted_during_run
-      mocks.transaction.mockImplementationOnce(async (callback: any, client: any) => {
-        mocks.operationalStoreFindUnique.mockResolvedValueOnce({
-          id: "store_adv_01",
-          projectId: "ws_adv_01",
-          complianceState: "active",
-          shopCurrency: "USD",
-          installationGeneration: "sgen_drifted_during_run",
-        });
-        return callback(client);
-      });
+      mocks.transaction.mockImplementationOnce(
+        async (callback: any, client: any) => {
+          mocks.operationalStoreFindUnique.mockResolvedValueOnce({
+            id: "store_adv_01",
+            projectId: "ws_adv_01",
+            complianceState: "active",
+            shopCurrency: "USD",
+            installationGeneration: "sgen_drifted_during_run",
+          });
+          return callback(client);
+        },
+      );
 
       const execResult = await executeClaimedOrdersPaidEvent({
         claim: {

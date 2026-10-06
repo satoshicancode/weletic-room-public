@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { openReviewPolicySchema } from "@weletic/contracts/reviews/open-policy-contract";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import type { createMerchantOpenReviewPolicyClient } from "../merchant-open-review-policy-client";
 import { openReviewPolicyCopy } from "../open-review-policy-copy";
 import { StaffAccessClientError } from "../staff-access-client";

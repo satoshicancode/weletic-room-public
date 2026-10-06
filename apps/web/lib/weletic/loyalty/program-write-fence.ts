@@ -163,7 +163,9 @@ export async function lockLoyaltyProgramRow({
         "Shopify store is unavailable.",
       );
   }
-  const programs = await tx.$queryRaw<Array<LockedLoyaltyProgram & { version: number }>>(Prisma.sql`
+  const programs = await tx.$queryRaw<
+    Array<LockedLoyaltyProgram & { version: number }>
+  >(Prisma.sql`
     SELECT id, storeId, status, killSwitchActive, metadata, COALESCE(version, 1) AS version
     FROM WeleticLoyaltyProgram
     WHERE storeId = ${storeId}
@@ -206,7 +208,9 @@ export async function lockLoyaltyProgramRowIfPresent({
       "Loyalty program currency-generation fence is unavailable.",
     );
   }
-  const programs = await tx.$queryRaw<Array<LockedLoyaltyProgram & { version: number }>>(Prisma.sql`
+  const programs = await tx.$queryRaw<
+    Array<LockedLoyaltyProgram & { version: number }>
+  >(Prisma.sql`
     SELECT id, storeId, status, killSwitchActive, metadata, COALESCE(version, 1) AS version
     FROM WeleticLoyaltyProgram
     WHERE storeId = ${storeId}
@@ -340,7 +344,9 @@ export async function readLoyaltyProgramSnapshot({
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit | null;
 }): Promise<LoyaltyProgramSnapshot> {
   const dbClient = (client ?? tx ?? prisma) as Prisma.TransactionClient;
-  const queryRaw = (dbClient as { $queryRaw?: Prisma.TransactionClient["$queryRaw"] }).$queryRaw;
+  const queryRaw = (
+    dbClient as { $queryRaw?: Prisma.TransactionClient["$queryRaw"] }
+  ).$queryRaw;
 
   if (!queryRaw) {
     if (process.env.NODE_ENV === "test") {

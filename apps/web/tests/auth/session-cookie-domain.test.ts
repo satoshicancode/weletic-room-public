@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { getSessionCookieDomain } from "@/lib/auth/session-cookie";
 import { authOptions } from "@/lib/auth/options";
+import { getSessionCookieDomain } from "@/lib/auth/session-cookie";
 
 describe("SEC-04: Dynamic Session Cookie Domain in NextAuth", () => {
   const originalEnv = { ...process.env };

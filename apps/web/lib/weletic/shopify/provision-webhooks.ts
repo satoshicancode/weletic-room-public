@@ -1,6 +1,6 @@
 import {
-  shopifyAdminGraphql,
   SHOPIFY_ADMIN_API_VERSION,
+  shopifyAdminGraphql,
 } from "@/lib/integrations/shopify/admin-graphql";
 import { APP_DOMAIN_WITH_NGROK } from "@dub/utils";
 import { resolvePublicShopifyWebhookCallback } from "./public-webhook-policy";

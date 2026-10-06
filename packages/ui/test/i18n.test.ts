@@ -61,14 +61,25 @@ describe("i18n translation dictionaries", () => {
 
     for (const { name, dict } of dictionaries) {
       for (const section of requiredSections) {
-        expect(dict[section], `Dictionary ${name} missing section ${section}`).toBeDefined();
+        expect(
+          dict[section],
+          `Dictionary ${name} missing section ${section}`,
+        ).toBeDefined();
         expect(typeof dict[section]).toBe("object");
       }
     }
   });
 
   it("provides common actions across en, vi, ja", () => {
-    const commonActions = ["save", "cancel", "delete", "edit", "create", "confirm", "back"] as const;
+    const commonActions = [
+      "save",
+      "cancel",
+      "delete",
+      "edit",
+      "create",
+      "confirm",
+      "back",
+    ] as const;
 
     for (const action of commonActions) {
       expect((en.common as any).actions?.[action]).toBeDefined();

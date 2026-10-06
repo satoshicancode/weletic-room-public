@@ -1,4 +1,3 @@
-import React, { useRef, useState } from "react";
 import {
   Banner,
   BlockStack,
@@ -39,6 +38,7 @@ import type {
   MerchantTierHistoryExportResponse,
 } from "@weletic/contracts/loyalty/tier-history-export-contract";
 import { merchantTierHistoryExportRequestSchema } from "@weletic/contracts/loyalty/tier-history-export-contract";
+import React, { useRef, useState } from "react";
 import { merchantAnalyticsCopy } from "./merchant-analytics-copy";
 
 export type MerchantAnalyticsTransport = (
@@ -472,263 +472,270 @@ export function MerchantAnalyticsScreen({
             <p role="alert">{copy[error]}</p>
           </Banner>
         )}
-      {snapshot && (
-        <>
-          <p>
-            {copy.currency}: {snapshot.currency} · {copy.generated}:{" "}
-            {snapshot.generatedAt}
-          </p>
-          {snapshot.financialStatus !== "available" && (
-            <p role="status">{copy.financial}</p>
-          )}
-          <button
-            type="button"
-            disabled={busy || !snapshot.canExport}
-            onClick={() => void run("csv")}
-          >
-            {copy.csv}
-          </button>{" "}
-          <button
-            type="button"
-            disabled={busy || !snapshot.canExport}
-            onClick={() => void run("json")}
-          >
-            {copy.json}
-          </button>
-          {!snapshot.canExport && <p>{copy.exportNote}</p>}
-          {requestAccountRows && (
+        {snapshot && (
+          <>
+            <p>
+              {copy.currency}: {snapshot.currency} · {copy.generated}:{" "}
+              {snapshot.generatedAt}
+            </p>
+            {snapshot.financialStatus !== "available" && (
+              <p role="status">{copy.financial}</p>
+            )}
+            <button
+              type="button"
+              disabled={busy || !snapshot.canExport}
+              onClick={() => void run("csv")}
+            >
+              {copy.csv}
+            </button>{" "}
+            <button
+              type="button"
+              disabled={busy || !snapshot.canExport}
+              onClick={() => void run("json")}
+            >
+              {copy.json}
+            </button>
+            {!snapshot.canExport && <p>{copy.exportNote}</p>}
+            {requestAccountRows && (
+              <section>
+                <h2>{copy.accountRowsTitle}</h2>
+                <p>{copy.accountRowsSemantics}</p>
+                <button
+                  type="button"
+                  disabled={busy || !snapshot.canExport || !start || !end}
+                  onClick={() => void exportAccountRows()}
+                >
+                  {copy.accountRowsCsv}
+                </button>
+              </section>
+            )}
+            {requestTierHistory && (
+              <section>
+                <h2>{copy.tierHistoryTitle}</h2>
+                <p>{copy.tierHistorySemantics}</p>
+                <button
+                  type="button"
+                  disabled={busy || !snapshot.canExport || !start || !end}
+                  onClick={() => void exportTierHistory()}
+                >
+                  {copy.tierHistoryCsv}
+                </button>
+              </section>
+            )}
+            {requestLedgerRows && (
+              <section>
+                <h2>{copy.ledgerRowsTitle}</h2>
+                <p>{copy.ledgerRowsSemantics}</p>
+                <button
+                  type="button"
+                  disabled={busy || !snapshot.canExport || !start || !end}
+                  onClick={() => void exportLedgerRows()}
+                >
+                  {copy.ledgerRowsCsv}
+                </button>
+              </section>
+            )}
+            {requestRedemptionRows && (
+              <section>
+                <h2>{copy.redemptionRowsTitle}</h2>
+                <p>{copy.redemptionRowsSemantics}</p>
+                <button
+                  type="button"
+                  disabled={busy || !snapshot.canExport || !start || !end}
+                  onClick={() => void exportRedemptionRows()}
+                >
+                  {copy.redemptionRowsCsv}
+                </button>
+              </section>
+            )}
+            {metrics(copy.liability, snapshot.liability)}
+            {metrics(copy.activity, snapshot.activity)}
+            {snapshot.activitySeries.status === "available" ? (
+              table(copy.activitySeries, snapshot.activitySeries.rows)
+            ) : (
+              <section>
+                <h2>{copy.activitySeries}</h2>
+                <p role="status">{copy[snapshot.activitySeries.status]}</p>
+              </section>
+            )}
+            <p>{copy.ledgerNetSemantics}</p>
+            {snapshot.ledgerNetSeries.status === "available" ? (
+              <>
+                {metrics(copy.ledgerNetOpening, {
+                  openingNetPoints: snapshot.ledgerNetSeries.openingNetPoints,
+                })}
+                {table(copy.ledgerNetSeries, snapshot.ledgerNetSeries.rows)}
+              </>
+            ) : (
+              <section>
+                <h2>{copy.ledgerNetSeries}</h2>
+                <p role="status">{copy[snapshot.ledgerNetSeries.status]}</p>
+              </section>
+            )}
+            <p>{copy.firstRecordedEarnersSemantics}</p>
+            {snapshot.firstRecordedEarnersSeries.status === "available" ? (
+              table(
+                copy.firstRecordedEarnersSeries,
+                snapshot.firstRecordedEarnersSeries.rows,
+              )
+            ) : (
+              <section>
+                <h2>{copy.firstRecordedEarnersSeries}</h2>
+                <p role="status">
+                  {copy[snapshot.firstRecordedEarnersSeries.status]}
+                </p>
+              </section>
+            )}
+            <p>{copy.firstRecordedRedemptionDebitsSemantics}</p>
+            {snapshot.firstRecordedRedemptionDebitsSeries.status ===
+            "available" ? (
+              table(
+                copy.firstRecordedRedemptionDebitsSeries,
+                snapshot.firstRecordedRedemptionDebitsSeries.rows,
+              )
+            ) : (
+              <section>
+                <h2>{copy.firstRecordedRedemptionDebitsSeries}</h2>
+                <p role="status">
+                  {copy[snapshot.firstRecordedRedemptionDebitsSeries.status]}
+                </p>
+              </section>
+            )}
+            <p>{copy.firstRecordedConfirmedIssuancesSemantics}</p>
+            {snapshot.firstRecordedConfirmedIssuancesSeries.status ===
+            "available" ? (
+              table(
+                copy.firstRecordedConfirmedIssuancesSeries,
+                snapshot.firstRecordedConfirmedIssuancesSeries.rows,
+              )
+            ) : (
+              <section>
+                <h2>{copy.firstRecordedConfirmedIssuancesSeries}</h2>
+                <p role="status">
+                  {copy[snapshot.firstRecordedConfirmedIssuancesSeries.status]}
+                </p>
+              </section>
+            )}
+            <p>{copy.retainedEnrollmentSemantics}</p>
+            {snapshot.retainedEnrollmentSeries.status === "available" ? (
+              <>
+                {metrics(copy.retainedEnrollmentOpening, {
+                  openingRetainedAccounts:
+                    snapshot.retainedEnrollmentSeries.openingRetainedAccounts,
+                })}
+                {table(
+                  copy.retainedEnrollmentSeries,
+                  snapshot.retainedEnrollmentSeries.rows,
+                )}
+              </>
+            ) : (
+              <section>
+                <h2>{copy.retainedEnrollmentSeries}</h2>
+                <p role="status">
+                  {copy[snapshot.retainedEnrollmentSeries.status]}
+                </p>
+              </section>
+            )}
+            <p>{copy.recordedTierChangesSemantics}</p>
+            {snapshot.recordedTierChangesSeries.status === "available" ? (
+              table(
+                copy.recordedTierChangesSeries,
+                snapshot.recordedTierChangesSeries.rows,
+              )
+            ) : (
+              <section>
+                <h2>{copy.recordedTierChangesSeries}</h2>
+                <p role="status">
+                  {copy[snapshot.recordedTierChangesSeries.status]}
+                </p>
+              </section>
+            )}
+            <p>{copy.earningSourcesSemantics}</p>
+            {table(copy.earningSources, snapshot.earningSources.rows)}
+            <p>{copy.redemptionSourcesSemantics}</p>
+            {table(copy.redemptionSources, [
+              ...snapshot.redemptionSources.rows.map((row) => ({
+                group: copy.recordedReward,
+                rewardDefinitionId: row.rewardDefinitionId,
+                capturedName: row.capturedName,
+                rewardType: row.rewardType,
+                redemptionEvents: row.eventCount,
+                grossRedemptionPoints: row.pointsSpent,
+              })),
+              ...(snapshot.redemptionSources.other.eventCount !== "0"
+                ? [
+                    {
+                      group: copy.otherRewards,
+                      rewardDefinitionId: null,
+                      capturedName: null,
+                      rewardType: null,
+                      redemptionEvents:
+                        snapshot.redemptionSources.other.eventCount,
+                      grossRedemptionPoints:
+                        snapshot.redemptionSources.other.pointsSpent,
+                    },
+                  ]
+                : []),
+              ...(snapshot.redemptionSources.unknown.eventCount !== "0"
+                ? [
+                    {
+                      group: copy.unknownReward,
+                      rewardDefinitionId: null,
+                      capturedName: null,
+                      rewardType: null,
+                      redemptionEvents:
+                        snapshot.redemptionSources.unknown.eventCount,
+                      grossRedemptionPoints:
+                        snapshot.redemptionSources.unknown.pointsSpent,
+                    },
+                  ]
+                : []),
+            ])}
+            {metrics(copy.redemptionSourcesTotal, {
+              redemptionEvents: snapshot.redemptionSources.total.eventCount,
+              grossRedemptionPoints:
+                snapshot.redemptionSources.total.pointsSpent,
+            })}
+            <p>{copy.redemptionRateSemantics}</p>
+            {snapshot.redemptionRateSeries.status === "available" ? (
+              table(
+                copy.redemptionRateSeries,
+                snapshot.redemptionRateSeries.rows,
+              )
+            ) : (
+              <section>
+                <h2>{copy.redemptionRateSeries}</h2>
+                <p role="status">
+                  {copy[snapshot.redemptionRateSeries.status]}
+                </p>
+              </section>
+            )}
             <section>
-              <h2>{copy.accountRowsTitle}</h2>
-              <p>{copy.accountRowsSemantics}</p>
-              <button
-                type="button"
-                disabled={busy || !snapshot.canExport || !start || !end}
-                onClick={() => void exportAccountRows()}
-              >
-                {copy.accountRowsCsv}
-              </button>
+              <h2>{copy.rewardUsageRateTitle}</h2>
+              <p role="status">{copy.rewardUsageRateUnavailable}</p>
             </section>
-          )}
-          {requestTierHistory && (
-            <section>
-              <h2>{copy.tierHistoryTitle}</h2>
-              <p>{copy.tierHistorySemantics}</p>
-              <button
-                type="button"
-                disabled={busy || !snapshot.canExport || !start || !end}
-                onClick={() => void exportTierHistory()}
-              >
-                {copy.tierHistoryCsv}
-              </button>
-            </section>
-          )}
-          {requestLedgerRows && (
-            <section>
-              <h2>{copy.ledgerRowsTitle}</h2>
-              <p>{copy.ledgerRowsSemantics}</p>
-              <button
-                type="button"
-                disabled={busy || !snapshot.canExport || !start || !end}
-                onClick={() => void exportLedgerRows()}
-              >
-                {copy.ledgerRowsCsv}
-              </button>
-            </section>
-          )}
-          {requestRedemptionRows && (
-            <section>
-              <h2>{copy.redemptionRowsTitle}</h2>
-              <p>{copy.redemptionRowsSemantics}</p>
-              <button
-                type="button"
-                disabled={busy || !snapshot.canExport || !start || !end}
-                onClick={() => void exportRedemptionRows()}
-              >
-                {copy.redemptionRowsCsv}
-              </button>
-            </section>
-          )}
-          {metrics(copy.liability, snapshot.liability)}
-          {metrics(copy.activity, snapshot.activity)}
-          {snapshot.activitySeries.status === "available" ? (
-            table(copy.activitySeries, snapshot.activitySeries.rows)
-          ) : (
-            <section>
-              <h2>{copy.activitySeries}</h2>
-              <p role="status">{copy[snapshot.activitySeries.status]}</p>
-            </section>
-          )}
-          <p>{copy.ledgerNetSemantics}</p>
-          {snapshot.ledgerNetSeries.status === "available" ? (
-            <>
-              {metrics(copy.ledgerNetOpening, {
-                openingNetPoints: snapshot.ledgerNetSeries.openingNetPoints,
-              })}
-              {table(copy.ledgerNetSeries, snapshot.ledgerNetSeries.rows)}
-            </>
-          ) : (
-            <section>
-              <h2>{copy.ledgerNetSeries}</h2>
-              <p role="status">{copy[snapshot.ledgerNetSeries.status]}</p>
-            </section>
-          )}
-          <p>{copy.firstRecordedEarnersSemantics}</p>
-          {snapshot.firstRecordedEarnersSeries.status === "available" ? (
-            table(
-              copy.firstRecordedEarnersSeries,
-              snapshot.firstRecordedEarnersSeries.rows,
-            )
-          ) : (
-            <section>
-              <h2>{copy.firstRecordedEarnersSeries}</h2>
-              <p role="status">
-                {copy[snapshot.firstRecordedEarnersSeries.status]}
-              </p>
-            </section>
-          )}
-          <p>{copy.firstRecordedRedemptionDebitsSemantics}</p>
-          {snapshot.firstRecordedRedemptionDebitsSeries.status ===
-          "available" ? (
-            table(
-              copy.firstRecordedRedemptionDebitsSeries,
-              snapshot.firstRecordedRedemptionDebitsSeries.rows,
-            )
-          ) : (
-            <section>
-              <h2>{copy.firstRecordedRedemptionDebitsSeries}</h2>
-              <p role="status">
-                {copy[snapshot.firstRecordedRedemptionDebitsSeries.status]}
-              </p>
-            </section>
-          )}
-          <p>{copy.firstRecordedConfirmedIssuancesSemantics}</p>
-          {snapshot.firstRecordedConfirmedIssuancesSeries.status ===
-          "available" ? (
-            table(
-              copy.firstRecordedConfirmedIssuancesSeries,
-              snapshot.firstRecordedConfirmedIssuancesSeries.rows,
-            )
-          ) : (
-            <section>
-              <h2>{copy.firstRecordedConfirmedIssuancesSeries}</h2>
-              <p role="status">
-                {copy[snapshot.firstRecordedConfirmedIssuancesSeries.status]}
-              </p>
-            </section>
-          )}
-          <p>{copy.retainedEnrollmentSemantics}</p>
-          {snapshot.retainedEnrollmentSeries.status === "available" ? (
-            <>
-              {metrics(copy.retainedEnrollmentOpening, {
-                openingRetainedAccounts:
-                  snapshot.retainedEnrollmentSeries.openingRetainedAccounts,
-              })}
-              {table(
-                copy.retainedEnrollmentSeries,
-                snapshot.retainedEnrollmentSeries.rows,
-              )}
-            </>
-          ) : (
-            <section>
-              <h2>{copy.retainedEnrollmentSeries}</h2>
-              <p role="status">
-                {copy[snapshot.retainedEnrollmentSeries.status]}
-              </p>
-            </section>
-          )}
-          <p>{copy.recordedTierChangesSemantics}</p>
-          {snapshot.recordedTierChangesSeries.status === "available" ? (
-            table(
-              copy.recordedTierChangesSeries,
-              snapshot.recordedTierChangesSeries.rows,
-            )
-          ) : (
-            <section>
-              <h2>{copy.recordedTierChangesSeries}</h2>
-              <p role="status">
-                {copy[snapshot.recordedTierChangesSeries.status]}
-              </p>
-            </section>
-          )}
-          <p>{copy.earningSourcesSemantics}</p>
-          {table(copy.earningSources, snapshot.earningSources.rows)}
-          <p>{copy.redemptionSourcesSemantics}</p>
-          {table(copy.redemptionSources, [
-            ...snapshot.redemptionSources.rows.map((row) => ({
-              group: copy.recordedReward,
-              rewardDefinitionId: row.rewardDefinitionId,
-              capturedName: row.capturedName,
-              rewardType: row.rewardType,
-              redemptionEvents: row.eventCount,
-              grossRedemptionPoints: row.pointsSpent,
-            })),
-            ...(snapshot.redemptionSources.other.eventCount !== "0"
-              ? [
-                  {
-                    group: copy.otherRewards,
-                    rewardDefinitionId: null,
-                    capturedName: null,
-                    rewardType: null,
-                    redemptionEvents:
-                      snapshot.redemptionSources.other.eventCount,
-                    grossRedemptionPoints:
-                      snapshot.redemptionSources.other.pointsSpent,
-                  },
-                ]
-              : []),
-            ...(snapshot.redemptionSources.unknown.eventCount !== "0"
-              ? [
-                  {
-                    group: copy.unknownReward,
-                    rewardDefinitionId: null,
-                    capturedName: null,
-                    rewardType: null,
-                    redemptionEvents:
-                      snapshot.redemptionSources.unknown.eventCount,
-                    grossRedemptionPoints:
-                      snapshot.redemptionSources.unknown.pointsSpent,
-                  },
-                ]
-              : []),
-          ])}
-          {metrics(copy.redemptionSourcesTotal, {
-            redemptionEvents: snapshot.redemptionSources.total.eventCount,
-            grossRedemptionPoints: snapshot.redemptionSources.total.pointsSpent,
-          })}
-          <p>{copy.redemptionRateSemantics}</p>
-          {snapshot.redemptionRateSeries.status === "available" ? (
-            table(copy.redemptionRateSeries, snapshot.redemptionRateSeries.rows)
-          ) : (
-            <section>
-              <h2>{copy.redemptionRateSeries}</h2>
-              <p role="status">{copy[snapshot.redemptionRateSeries.status]}</p>
-            </section>
-          )}
-          <section>
-            <h2>{copy.rewardUsageRateTitle}</h2>
-            <p role="status">{copy.rewardUsageRateUnavailable}</p>
-          </section>
-          <p>{copy.orderEarningSemantics}</p>
-          {snapshot.orderEarningSeries.status === "available" ? (
-            table(copy.orderEarningSeries, snapshot.orderEarningSeries.rows)
-          ) : (
-            <section>
-              <h2>{copy.orderEarningSeries}</h2>
-              <p role="status">{copy[snapshot.orderEarningSeries.status]}</p>
-            </section>
-          )}
-          {metrics(copy.referralEconomics, snapshot.referralEconomics)}
-          {table(copy.referrals, snapshot.referrals)}
-          {table(copy.rewards, snapshot.rewards)}
-          {table(
-            copy.tiers,
-            snapshot.tiers.map(({ assignment, ...tier }) => ({
-              ...tier,
-              name: assignment === "configured" ? tier.name : label(assignment),
-            })),
-          )}
-        </>
-      )}
+            <p>{copy.orderEarningSemantics}</p>
+            {snapshot.orderEarningSeries.status === "available" ? (
+              table(copy.orderEarningSeries, snapshot.orderEarningSeries.rows)
+            ) : (
+              <section>
+                <h2>{copy.orderEarningSeries}</h2>
+                <p role="status">{copy[snapshot.orderEarningSeries.status]}</p>
+              </section>
+            )}
+            {metrics(copy.referralEconomics, snapshot.referralEconomics)}
+            {table(copy.referrals, snapshot.referrals)}
+            {table(copy.rewards, snapshot.rewards)}
+            {table(
+              copy.tiers,
+              snapshot.tiers.map(({ assignment, ...tier }) => ({
+                ...tier,
+                name:
+                  assignment === "configured" ? tier.name : label(assignment),
+              })),
+            )}
+          </>
+        )}
       </BlockStack>
     </article>
   );

@@ -1,16 +1,13 @@
-import crypto from "node:crypto";
-import { redis } from "@/lib/upstash/redis";
 import {
-  WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  resetServiceAuthNonceCache,
+  signWeleticShopifyRequest,
+  verifyWeleticShopifyRequest,
   WELETIC_SHOPIFY_NONCE_TTL_SECONDS,
   WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
-  createWeleticShopifyCanonicalRequest,
-  resetServiceAuthNonceCache,
-  signWeleticShopifyRequest,
-  verifyWeleticShopifyRequest,
 } from "@/lib/weletic/shopify/service-auth";
+import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   weleticApiRequest,
@@ -21,20 +18,23 @@ const TEST_SECRET = "challenger-test-secret-at-least-32-chars-long";
 const BASE_NOW = Date.parse("2026-10-04T12:00:00.000Z");
 const BASE_TIMESTAMP = String(BASE_NOW);
 const BASE_PATH = "/api/internal/shopify/sessions?shop=test.myshopify.com";
-const BASE_BODY = JSON.stringify({ shop: "test.myshopify.com", session: "sess_123" });
+const BASE_BODY = JSON.stringify({
+  shop: "test.myshopify.com",
+  session: "sess_123",
+});
 
 // Simulated Redis storage with TTL tracking
 const redisStore = new Map<string, number>();
 
 const mockRedisSet = vi.fn(
-  async (
-    key: string,
-    value: string,
-    opts?: { nx?: boolean; ex?: number },
-  ) => {
+  async (key: string, value: string, opts?: { nx?: boolean; ex?: number }) => {
     const currentNow = Date.now();
     const existingExpiry = redisStore.get(key);
-    if (opts?.nx && existingExpiry !== undefined && existingExpiry > currentNow) {
+    if (
+      opts?.nx &&
+      existingExpiry !== undefined &&
+      existingExpiry > currentNow
+    ) {
       return null;
     }
     const ttlSeconds = opts?.ex ?? WELETIC_SHOPIFY_NONCE_TTL_SECONDS;
@@ -49,17 +49,19 @@ vi.mock("@/lib/upstash/redis", () => ({
   },
 }));
 
-function createSignedRequestHelper(options: {
-  requestBody?: string;
-  signedBody?: string;
-  requestTimestamp?: string;
-  requestPath?: string;
-  requestMethod?: string;
-  requestId?: string;
-  signedRequestId?: string;
-  includeRequestIdHeader?: boolean;
-  secret?: string;
-} = {}) {
+function createSignedRequestHelper(
+  options: {
+    requestBody?: string;
+    signedBody?: string;
+    requestTimestamp?: string;
+    requestPath?: string;
+    requestMethod?: string;
+    requestId?: string;
+    signedRequestId?: string;
+    includeRequestIdHeader?: boolean;
+    secret?: string;
+  } = {},
+) {
   const {
     requestBody = BASE_BODY,
     signedBody = requestBody,
@@ -117,7 +119,11 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
       ) => {
         const currentNow = Date.now();
         const existingExpiry = redisStore.get(key);
-        if (opts?.nx && existingExpiry !== undefined && existingExpiry > currentNow) {
+        if (
+          opts?.nx &&
+          existingExpiry !== undefined &&
+          existingExpiry > currentNow
+        ) {
           return null;
         }
         const ttlSeconds = opts?.ex ?? WELETIC_SHOPIFY_NONCE_TTL_SECONDS;
@@ -261,7 +267,11 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
           opts?: { nx?: boolean; ex?: number },
         ) => {
           const existingExpiry = redisStore.get(key);
-          if (opts?.nx && existingExpiry !== undefined && existingExpiry > simulatedTime) {
+          if (
+            opts?.nx &&
+            existingExpiry !== undefined &&
+            existingExpiry > simulatedTime
+          ) {
             return null; // Key still exists and hasn't expired
           }
           const ttlSeconds = opts?.ex ?? WELETIC_SHOPIFY_NONCE_TTL_SECONDS;
@@ -368,50 +378,52 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
       let serverCallCount = 0;
 
       // Mock global fetch simulating upstream server that returns 503 on 1st call, 200 on 2nd
-      const mockFetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-        serverCallCount++;
-        const request = new Request(input, init);
-        const reqId = request.headers.get(WELETIC_SHOPIFY_REQUEST_ID_HEADER)!;
-        const reqTs = request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER)!;
-        const reqSig = request.headers.get(WELETIC_SHOPIFY_SIGNATURE_HEADER)!;
-        const reqBody = String(init?.body ?? "");
+      const mockFetch = vi.fn(
+        async (input: URL | RequestInfo, init?: RequestInit) => {
+          serverCallCount++;
+          const request = new Request(input, init);
+          const reqId = request.headers.get(WELETIC_SHOPIFY_REQUEST_ID_HEADER)!;
+          const reqTs = request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER)!;
+          const reqSig = request.headers.get(WELETIC_SHOPIFY_SIGNATURE_HEADER)!;
+          const reqBody = String(init?.body ?? "");
 
-        capturedRequestIds.push(reqId);
-        capturedTimestamps.push(reqTs);
-        capturedSignatures.push(reqSig);
+          capturedRequestIds.push(reqId);
+          capturedTimestamps.push(reqTs);
+          capturedSignatures.push(reqSig);
 
-        // Server-side verification using verifyWeleticShopifyRequest
-        const isValid = await verifyWeleticShopifyRequest({
-          request,
-          body: reqBody,
-          now: Number(reqTs),
-        });
+          // Server-side verification using verifyWeleticShopifyRequest
+          const isValid = await verifyWeleticShopifyRequest({
+            request,
+            body: reqBody,
+            now: Number(reqTs),
+          });
 
-        // The request MUST be cryptographically valid and nonce must be unique
-        expect(isValid).toBe(true);
+          // The request MUST be cryptographically valid and nonce must be unique
+          expect(isValid).toBe(true);
 
-        if (serverCallCount === 1) {
-          // Upstream is overloaded: return 503 Service Unavailable
+          if (serverCallCount === 1) {
+            // Upstream is overloaded: return 503 Service Unavailable
+            return new Response(
+              JSON.stringify({ error: "temporarily_unavailable" }),
+              {
+                status: 503,
+                statusText: "Service Unavailable",
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+          }
+
+          // Upstream recovered: return 200 OK
           return new Response(
-            JSON.stringify({ error: "temporarily_unavailable" }),
+            JSON.stringify({ success: true, attempt: serverCallCount }),
             {
-              status: 503,
-              statusText: "Service Unavailable",
+              status: 200,
+              statusText: "OK",
               headers: { "Content-Type": "application/json" },
             },
           );
-        }
-
-        // Upstream recovered: return 200 OK
-        return new Response(
-          JSON.stringify({ success: true, attempt: serverCallCount }),
-          {
-            status: 200,
-            statusText: "OK",
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      });
+        },
+      );
 
       vi.stubGlobal("fetch", mockFetch);
 
@@ -423,10 +435,13 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         attemptsMade++;
         try {
-          finalResponse = await weleticApiRequest("/api/internal/shopify/sessions", {
-            method: "POST",
-            body: JSON.stringify({ action: "coordinate" }),
-          });
+          finalResponse = await weleticApiRequest(
+            "/api/internal/shopify/sessions",
+            {
+              method: "POST",
+              body: JSON.stringify({ action: "coordinate" }),
+            },
+          );
           break; // Success!
         } catch (error: any) {
           if (
@@ -457,7 +472,8 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
       expect(capturedRequestIds[0]).not.toBe(capturedRequestIds[1]);
 
       // Both are valid UUIDs
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       expect(capturedRequestIds[0]).toMatch(uuidRegex);
       expect(capturedRequestIds[1]).toMatch(uuidRegex);
 
@@ -473,23 +489,31 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
       let firstRequestBody: string = "";
       let callCount = 0;
 
-      const mockFetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-        callCount++;
-        const request = new Request(input, init);
-        if (callCount === 1) {
-          firstRequestHeaders = request.headers;
-          firstRequestBody = String(init?.body ?? "");
-          // Verify first request
-          const ok = await verifyWeleticShopifyRequest({
-            request: request.clone(),
-            body: firstRequestBody,
-            now: Number(request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER)),
+      const mockFetch = vi.fn(
+        async (input: URL | RequestInfo, init?: RequestInit) => {
+          callCount++;
+          const request = new Request(input, init);
+          if (callCount === 1) {
+            firstRequestHeaders = request.headers;
+            firstRequestBody = String(init?.body ?? "");
+            // Verify first request
+            const ok = await verifyWeleticShopifyRequest({
+              request: request.clone(),
+              body: firstRequestBody,
+              now: Number(
+                request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER),
+              ),
+            });
+            expect(ok).toBe(true);
+            return new Response(JSON.stringify({ error: "busy" }), {
+              status: 503,
+            });
+          }
+          return new Response(JSON.stringify({ success: true }), {
+            status: 200,
           });
-          expect(ok).toBe(true);
-          return new Response(JSON.stringify({ error: "busy" }), { status: 503 });
-        }
-        return new Response(JSON.stringify({ success: true }), { status: 200 });
-      });
+        },
+      );
 
       vi.stubGlobal("fetch", mockFetch);
 
@@ -504,11 +528,14 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
       expect(firstRequestHeaders).not.toBeNull();
 
       // 2. Adversary intercepts Attempt 1 and attempts to replay it to the verifier
-      const replayedReq = new Request("https://app.weletic.com/api/internal/shopify/sessions", {
-        method: "POST",
-        headers: firstRequestHeaders!,
-        body: firstRequestBody,
-      });
+      const replayedReq = new Request(
+        "https://app.weletic.com/api/internal/shopify/sessions",
+        {
+          method: "POST",
+          headers: firstRequestHeaders!,
+          body: firstRequestBody,
+        },
+      );
       const replayVerification = await verifyWeleticShopifyRequest({
         request: replayedReq,
         body: firstRequestBody,
@@ -518,10 +545,13 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
       expect(replayVerification).toBe(false);
 
       // 3. Legitimate caller retries -> generates fresh requestId and succeeds
-      const retryResponse = await weleticApiRequest("/api/internal/shopify/sessions", {
-        method: "POST",
-        body: JSON.stringify({ step: 1 }),
-      });
+      const retryResponse = await weleticApiRequest(
+        "/api/internal/shopify/sessions",
+        {
+          method: "POST",
+          body: JSON.stringify({ step: 1 }),
+        },
+      );
       expect(retryResponse.status).toBe(200);
     });
   });
@@ -564,7 +594,8 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
       });
 
       // Attacker modifies query param to target attacker store
-      const tamperedUrl = "https://app.weletic.com/api/internal/shopify/catalog?shop=attacker.myshopify.com";
+      const tamperedUrl =
+        "https://app.weletic.com/api/internal/shopify/catalog?shop=attacker.myshopify.com";
       const tamperedReq = new Request(tamperedUrl, {
         method: "POST",
         headers: signedReq.request.headers,
@@ -737,24 +768,31 @@ describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 
       const requestIds: string[] = [];
       let attemptCount = 0;
 
-      const mockFetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-        attemptCount++;
-        const request = new Request(input, init);
-        const reqId = request.headers.get(WELETIC_SHOPIFY_REQUEST_ID_HEADER)!;
-        requestIds.push(reqId);
+      const mockFetch = vi.fn(
+        async (input: URL | RequestInfo, init?: RequestInit) => {
+          attemptCount++;
+          const request = new Request(input, init);
+          const reqId = request.headers.get(WELETIC_SHOPIFY_REQUEST_ID_HEADER)!;
+          requestIds.push(reqId);
 
-        const ok = await verifyWeleticShopifyRequest({
-          request,
-          body: String(init?.body ?? ""),
-          now: Number(request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER)),
-        });
-        expect(ok).toBe(true);
+          const ok = await verifyWeleticShopifyRequest({
+            request,
+            body: String(init?.body ?? ""),
+            now: Number(request.headers.get(WELETIC_SHOPIFY_TIMESTAMP_HEADER)),
+          });
+          expect(ok).toBe(true);
 
-        if (attemptCount < 3) {
-          return new Response(JSON.stringify({ error: "busy" }), { status: 503 });
-        }
-        return new Response(JSON.stringify({ success: true, attempts: attemptCount }), { status: 200 });
-      });
+          if (attemptCount < 3) {
+            return new Response(JSON.stringify({ error: "busy" }), {
+              status: 503,
+            });
+          }
+          return new Response(
+            JSON.stringify({ success: true, attempts: attemptCount }),
+            { status: 200 },
+          );
+        },
+      );
 
       vi.stubGlobal("fetch", mockFetch);
 

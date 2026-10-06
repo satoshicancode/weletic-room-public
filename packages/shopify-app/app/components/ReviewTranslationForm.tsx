@@ -1,11 +1,11 @@
 import { BlockStack, Button, Select, Text, TextField } from "@shopify/polaris";
-import { useEffect, useRef, useState } from "react";
 import {
   manualReviewLocaleSchema,
   manualReviewTranslationInputSchema,
   type ManualReviewTranslationInput,
   type ManualReviewTranslationPage,
 } from "@weletic/contracts/reviews/translation-contract";
+import { useEffect, useRef, useState } from "react";
 import { reviewTranslationCopy } from "../review-translation-copy";
 
 type Props = {

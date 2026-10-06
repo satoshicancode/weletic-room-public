@@ -1,5 +1,5 @@
-import React from "react";
 import type { ShopperSegment } from "@weletic/contracts/shoppers/segment-query";
+import React from "react";
 import type { ShopperLocale } from "./copy";
 
 export const segmentCopy = {

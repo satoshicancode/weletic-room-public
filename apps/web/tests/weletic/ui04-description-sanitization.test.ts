@@ -1,15 +1,14 @@
-import {
-  ALLOWED_CSS_PROPERTIES,
-  ALLOWED_PRODUCT_DESCRIPTION_TAGS,
-  sanitizeProductDescriptionHtml,
-} from "@/lib/weletic/html-sanitizer";
+import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import { NextRequest } from "next/server";
 import { describe, expect, it, vi } from "vitest";
 
 // Mock auth and dependencies for API route testing
 vi.mock("@/lib/auth/partner", () => ({
   withPartnerProfile: (handler: any) => {
-    return async (req: NextRequest, ctx: { params?: Promise<Record<string, string>> }) => {
+    return async (
+      req: NextRequest,
+      ctx: { params?: Promise<Record<string, string>> },
+    ) => {
       const params = (await ctx?.params) || {};
       const url = new URL(req.url, "http://localhost");
       const searchParams = Object.fromEntries(url.searchParams.entries());
@@ -188,7 +187,9 @@ describe("Milestone M2: UI-04 Product Description Sanitization Suite", () => {
       expect(cleaned).toContain("<p>Find the perfect balance");
       expect(cleaned).toContain("<ul>");
       expect(cleaned).toContain("<li><strong>Non-Slip Waistband</strong>:");
-      expect(cleaned).toContain("<li><strong>Flattering Glute Contours</strong>:");
+      expect(cleaned).toContain(
+        "<li><strong>Flattering Glute Contours</strong>:",
+      );
       expect(cleaned).toContain("<li><strong>Second-Skin Support</strong>:");
       expect(cleaned).toContain("Yenergy™");
     });
@@ -334,7 +335,8 @@ describe("Milestone M2: UI-04 Product Description Sanitization Suite", () => {
             locale: "ja",
             marketId: null,
             title: "ヤマックス レギンス",
-            descriptionHtml: "<p>最高のサポート</p><script>alert('ja-xss')</script><a href='javascript:steal()'>Link</a>",
+            descriptionHtml:
+              "<p>最高のサポート</p><script>alert('ja-xss')</script><a href='javascript:steal()'>Link</a>",
           },
         ],
       };
@@ -376,7 +378,9 @@ describe("Milestone M2: UI-04 Product Description Sanitization Suite", () => {
       expect(cleanedFixed).not.toContain("z-index");
       expect(cleanedFixed).toContain('href="https://evil-phishing.com"');
 
-      const cleanedAbsolute = sanitizeProductDescriptionHtml(absoluteOverlayPayload);
+      const cleanedAbsolute = sanitizeProductDescriptionHtml(
+        absoluteOverlayPayload,
+      );
       expect(cleanedAbsolute).not.toContain("position:absolute");
       expect(cleanedAbsolute).not.toContain("position");
       expect(cleanedAbsolute).not.toContain("z-index:999");
@@ -409,23 +413,40 @@ describe("Milestone M2: UI-04 Product Description Sanitization Suite", () => {
       expect(cleanedImageSet).not.toContain("attacker.com");
       expect(cleanedImageSet).toContain("color:red");
 
-      const cleanedBackslash = sanitizeProductDescriptionHtml(backslashUrlPayload);
+      const cleanedBackslash =
+        sanitizeProductDescriptionHtml(backslashUrlPayload);
       expect(cleanedBackslash).not.toContain("background:");
       expect(cleanedBackslash).not.toContain("evil.com");
       expect(cleanedBackslash).toContain("color:blue");
 
-      const cleanedSafe = sanitizeProductDescriptionHtml(safeBackgroundColorPayload);
+      const cleanedSafe = sanitizeProductDescriptionHtml(
+        safeBackgroundColorPayload,
+      );
       expect(cleanedSafe).toContain("background-color:rgb(249, 249, 249)");
       expect(cleanedSafe).toContain("color:#333");
     });
 
     it("preserves z-index between 0 and 10 and rejects z-index > 10 or negative z-index", () => {
-      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 0;">0</div>`)).toContain("z-index:0");
-      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 1;">1</div>`)).toContain("z-index:1");
-      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 10;">10</div>`)).toContain("z-index:10");
-      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 11;">11</div>`)).not.toContain("z-index");
-      expect(sanitizeProductDescriptionHtml(`<div style="z-index: 99999;">99999</div>`)).not.toContain("z-index");
-      expect(sanitizeProductDescriptionHtml(`<div style="z-index: -1;">-1</div>`)).not.toContain("z-index");
+      expect(
+        sanitizeProductDescriptionHtml(`<div style="z-index: 0;">0</div>`),
+      ).toContain("z-index:0");
+      expect(
+        sanitizeProductDescriptionHtml(`<div style="z-index: 1;">1</div>`),
+      ).toContain("z-index:1");
+      expect(
+        sanitizeProductDescriptionHtml(`<div style="z-index: 10;">10</div>`),
+      ).toContain("z-index:10");
+      expect(
+        sanitizeProductDescriptionHtml(`<div style="z-index: 11;">11</div>`),
+      ).not.toContain("z-index");
+      expect(
+        sanitizeProductDescriptionHtml(
+          `<div style="z-index: 99999;">99999</div>`,
+        ),
+      ).not.toContain("z-index");
+      expect(
+        sanitizeProductDescriptionHtml(`<div style="z-index: -1;">-1</div>`),
+      ).not.toContain("z-index");
     });
   });
 });

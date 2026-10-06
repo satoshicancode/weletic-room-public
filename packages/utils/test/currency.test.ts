@@ -26,11 +26,15 @@ describe("currencyFormatter", () => {
   it("formats zero-decimal currencies without decimal division", () => {
     // JPY tests
     expect(currencyFormatter(1000, { currency: "JPY" })).toBe("¥1,000");
-    expect(currencyFormatter(25000000n, { currency: "JPY" })).toBe("¥25,000,000");
+    expect(currencyFormatter(25000000n, { currency: "JPY" })).toBe(
+      "¥25,000,000",
+    );
 
     // VND tests
     expect(currencyFormatter(500000, { currency: "VND" })).toBe("₫500,000");
-    expect(currencyFormatter(2500000000n, { currency: "VND" })).toBe("₫2,500,000,000");
+    expect(currencyFormatter(2500000000n, { currency: "VND" })).toBe(
+      "₫2,500,000,000",
+    );
 
     // KRW tests
     expect(currencyFormatter(50000, { currency: "KRW" })).toBe("₩50,000");

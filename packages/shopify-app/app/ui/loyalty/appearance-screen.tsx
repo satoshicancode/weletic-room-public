@@ -1,4 +1,3 @@
-import React, { useEffect, useId, useRef, useState } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Banner,
@@ -22,6 +21,7 @@ import {
   LOYALTY_LAUNCHER_POSITIONS,
   type LoyaltyBranding,
 } from "@weletic/contracts/loyalty/branding";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { appearanceCopy } from "./appearance-copy";
 import { LauncherPresentationFields } from "./launcher-presentation-fields";
 
@@ -273,9 +273,7 @@ export function LoyaltyAppearanceScreen({
                     label={copy.enableFloatingLauncher}
                     disabled={disabled}
                     checked={draft.enableFloatingLauncher}
-                    onChange={(val) =>
-                      change("enableFloatingLauncher", val)
-                    }
+                    onChange={(val) => change("enableFloatingLauncher", val)}
                   />
                   <LauncherPresentationFields
                     value={draft.launcherPresentation}
@@ -285,11 +283,7 @@ export function LoyaltyAppearanceScreen({
                 </>
               )}
               <InlineStack gap="300">
-                <Button
-                  submit
-                  variant="primary"
-                  disabled={disabled || !dirty}
-                >
+                <Button submit variant="primary" disabled={disabled || !dirty}>
                   {copy.save}
                 </Button>
                 <Button

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
 import type {
   verifyHistoricalImportExecutionResponse,
   verifyHistoricalImportStatusResponse,
 } from "@weletic/contracts/loyalty/historical-import-contract";
+import { useEffect, useRef, useState } from "react";
 import {
   ImportReconciliationPanel,
   type ReconcileImport,

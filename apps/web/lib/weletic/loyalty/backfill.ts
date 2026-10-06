@@ -1130,11 +1130,10 @@ export async function generateBackfillPreview(
 
     const existingOrderCredits: Array<{ orderId: string }> = [];
     for (const chunk of chunkArray(orderIds, 1000)) {
-      const credits =
-        await prisma.weleticLoyaltyBackfillOrderCredit.findMany({
-          where: { storeId: job.storeId, orderId: { in: chunk } },
-          select: { orderId: true },
-        });
+      const credits = await prisma.weleticLoyaltyBackfillOrderCredit.findMany({
+        where: { storeId: job.storeId, orderId: { in: chunk } },
+        select: { orderId: true },
+      });
       existingOrderCredits.push(...credits);
     }
     const creditedOrderIds = new Set(

@@ -9,8 +9,8 @@ import { boundary } from "@shopify/shopify-app-remix/server";
 import { useId, useMemo, useState } from "react";
 import { ShopperBrowserSession } from "~/ui/shoppers/shopper-browser";
 import styles from "../customers.css?url";
-import { useMerchantLocale } from "../merchant-locale";
 import { createMerchantCustomersClient } from "../merchant-customers-client";
+import { useMerchantLocale } from "../merchant-locale";
 import { authenticate } from "../shopify.server";
 
 export const links = () => [{ rel: "stylesheet", href: styles }];

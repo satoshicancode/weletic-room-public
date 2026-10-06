@@ -215,9 +215,7 @@ export function LauncherPresentationFields({
           label={copy.shape}
           options={shapeOptions}
           value={current.shape}
-          onChange={(val) =>
-            change({ shape: val as typeof current.shape })
-          }
+          onChange={(val) => change({ shape: val as typeof current.shape })}
         />
         <Select
           label={copy.visibility}

@@ -144,7 +144,9 @@ export async function recordWeleticRefund(
   if (!workspaceId && input.shopDomain) {
     const resolved = await resolveShopifyStoreByDomain(input.shopDomain);
     if (!resolved?.workspaceId) {
-      throw new Error(`Shopify store ${input.shopDomain} could not be resolved`);
+      throw new Error(
+        `Shopify store ${input.shopDomain} could not be resolved`,
+      );
     }
     workspaceId = resolved.workspaceId;
   }

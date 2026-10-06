@@ -1,9 +1,4 @@
-import {
-  ALLOWED_CSS_PROPERTIES,
-  ALLOWED_PRODUCT_DESCRIPTION_TAGS,
-  PRODUCT_DESCRIPTION_SANITIZE_OPTIONS,
-  sanitizeProductDescriptionHtml,
-} from "@/lib/weletic/html-sanitizer";
+import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import { describe, expect, it } from "vitest";
 
 describe("Milestone M2 (UI-04) Challenger 2: Format Preservation & Layout Stability Stress Suite", () => {
@@ -45,7 +40,9 @@ describe("Milestone M2 (UI-04) Challenger 2: Format Preservation & Layout Stabil
       expect(cleaned).toContain("Yenergy™");
       expect(cleaned).toContain("<ul>");
       expect(cleaned).toContain("<li><strong>Non-Slip Waistband</strong>:");
-      expect(cleaned).toContain("<li><strong>Flattering Glute Contours</strong>:");
+      expect(cleaned).toContain(
+        "<li><strong>Flattering Glute Contours</strong>:",
+      );
       expect(cleaned).toContain("<li><strong>Second-Skin Support</strong>:");
       expect(cleaned).toContain("<h3>Shipping &amp; Delivery</h3>");
       expect(cleaned).toContain("¥6,000");
@@ -212,7 +209,9 @@ describe("Milestone M2 (UI-04) Challenger 2: Format Preservation & Layout Stabil
       expect(cleaned).toContain("CloudSoft™ 生地を採用しています。");
       expect(cleaned).toContain("¥6,000 以上のご注文で送料無料。");
       expect(cleaned).toContain("3–7 営業日以内にお届けいたします。");
-      expect(cleaned).toContain("<li><strong>ウエストバンド</strong>: 高張力複合ウエストでズレ落ちを徹底防止。</li>");
+      expect(cleaned).toContain(
+        "<li><strong>ウエストバンド</strong>: 高張力複合ウエストでズレ落ちを徹底防止。</li>",
+      );
       expect(cleaned).toContain("「洗濯機の手洗いモード」");
       expect(cleaned).toContain("『漂白剤』");
     });
@@ -240,7 +239,9 @@ describe("Milestone M2 (UI-04) Challenger 2: Format Preservation & Layout Stabil
     it("correctly preserves decomposed Unicode (NFD) without dropping combining accents", () => {
       const nfdString = "Quần lửng thể thao cao cấp Yenergy™".normalize("NFD");
       const cleaned = sanitizeProductDescriptionHtml(`<p>${nfdString}</p>`);
-      expect(cleaned.normalize("NFC")).toBe("<p>Quần lửng thể thao cao cấp Yenergy™</p>");
+      expect(cleaned.normalize("NFC")).toBe(
+        "<p>Quần lửng thể thao cao cấp Yenergy™</p>",
+      );
     });
 
     it("preserves special typographical punctuation, trademark symbols, and emojis", () => {
@@ -253,7 +254,9 @@ describe("Milestone M2 (UI-04) Challenger 2: Format Preservation & Layout Stabil
       expect(cleaned).toContain("Yamax Agile™");
       expect(cleaned).toContain("Yamax Flow™");
       expect(cleaned).toContain("© 2026 ®");
-      expect(cleaned).toContain("58 – 64 cm (±2cm) — strictly true to size • “Premium Quality”");
+      expect(cleaned).toContain(
+        "58 – 64 cm (±2cm) — strictly true to size • “Premium Quality”",
+      );
       expect(cleaned).toContain("‘CloudSoft™’");
       expect(cleaned).toContain("🏃‍♀️");
       expect(cleaned).toContain("🧘‍♂️");
@@ -317,7 +320,8 @@ describe("Milestone M2 (UI-04) Challenger 2: Format Preservation & Layout Stabil
     });
 
     it("resists ReDoS on repeated backtracking token patterns in style values", () => {
-      const backtrackPattern = "color: " + "javascript-safe-prefix-".repeat(1000) + ";";
+      const backtrackPattern =
+        "color: " + "javascript-safe-prefix-".repeat(1000) + ";";
       const html = `<div style="${backtrackPattern}">Text</div>`;
 
       const startMs = performance.now();
@@ -377,7 +381,8 @@ describe("Milestone M2 (UI-04) Challenger 2: Format Preservation & Layout Stabil
       const backslashUrlPayload = `<div style="background: u\\rl('https://evil.com/leak');">Remote Image</div>`;
       const imageSetPayload = `<div style="background: image-set('https://evil.com/leak' 1x);">Remote Image Set</div>`;
 
-      const cleanedBackslash = sanitizeProductDescriptionHtml(backslashUrlPayload);
+      const cleanedBackslash =
+        sanitizeProductDescriptionHtml(backslashUrlPayload);
       const cleanedImageSet = sanitizeProductDescriptionHtml(imageSetPayload);
 
       // Verify hardened behavior:

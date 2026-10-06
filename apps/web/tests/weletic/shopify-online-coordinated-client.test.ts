@@ -5,11 +5,11 @@ import { createMerchantAction } from "../../../../packages/shopify-app/app/merch
 import { createMerchantAuthenticator } from "../../../../packages/shopify-app/app/merchant-authentication.server";
 import { deserializeShopifySession } from "../../../../packages/shopify-app/app/session-properties.server";
 import { onlineTokenExchangeFixture } from "../../../../packages/shopify-app/test-support/online-token-exchange";
+import { verifyWeleticShopifyRequest } from "../../lib/weletic/shopify/service-auth";
 import type {
   ShopifySessionMutationFence,
   ShopifySessionProperty,
 } from "../../lib/weletic/shopify/session-contract";
-import { verifyWeleticShopifyRequest } from "../../lib/weletic/shopify/service-auth";
 
 vi.mock("@/lib/upstash/redis", () => ({
   redis: {

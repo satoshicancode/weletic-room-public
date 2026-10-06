@@ -1,4 +1,3 @@
-import React from "react";
 import {
   Banner,
   BlockStack,
@@ -12,6 +11,7 @@ import {
 import { isCustomerIntentTriggerCode } from "@weletic/contracts/loyalty/customer-intent-policy";
 import type { EarningRuleFields } from "@weletic/contracts/loyalty/earning-rule-contract";
 import { requiresUnverifiedSubscriptionCycle } from "@weletic/contracts/loyalty/purchase-policy";
+import React from "react";
 import { useCoreLaunch } from "~/core-launch-context";
 import { earningRuleCopy, type EarningRuleLocale } from "./earning-rule-copy";
 import {

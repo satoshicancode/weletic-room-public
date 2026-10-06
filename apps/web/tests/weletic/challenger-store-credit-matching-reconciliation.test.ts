@@ -2,12 +2,8 @@ import {
   createLoyaltyRedemptionProvisioningSnapshot,
   getShopifyCustomerSelectionDigest,
 } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
+import { sameMoney } from "@/lib/weletic/loyalty/shopify-financial-rewards";
 import {
-  sameMoney,
-  type ShopifyCustomerStoreCreditTransaction,
-} from "@/lib/weletic/loyalty/shopify-financial-rewards";
-import {
-  DEFAULT_STORE_CREDIT_RECONCILIATION_HORIZON_MS,
   reconcilePendingStoreCreditRedemption,
   reconcilePendingStoreCreditRedemptionsSweep,
 } from "@/lib/weletic/loyalty/store-credit-reconciliation";
@@ -135,11 +131,7 @@ vi.mock("@/lib/prisma", () => ({
 
 vi.mock("@/lib/weletic/loyalty/program-write-fence", () => ({
   withLoyaltyProgramRowLock: vi.fn(
-    async ({
-      operation,
-    }: {
-      operation: (tx: any) => Promise<any>;
-    }) => {
+    async ({ operation }: { operation: (tx: any) => Promise<any> }) => {
       const { prisma } = await import("@/lib/prisma");
       return operation(prisma);
     },
@@ -187,9 +179,10 @@ vi.mock("@/lib/weletic/loyalty/saga", () => ({
 }));
 
 vi.mock("@/lib/weletic/loyalty/shopify-discounts", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/lib/weletic/loyalty/shopify-discounts")
-  >();
+  const actual =
+    await importOriginal<
+      typeof import("@/lib/weletic/loyalty/shopify-discounts")
+    >();
   return {
     ...actual,
     resolveShopifyOfflineCredentials: vi.fn(
@@ -308,13 +301,15 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
     return { redemptionId };
   }
 
-  function createShopifyMockFetch(transactions: Array<{
-    id: string;
-    amount: string;
-    currencyCode: string;
-    createdAt: string;
-    expiresAt?: string | null;
-  }>) {
+  function createShopifyMockFetch(
+    transactions: Array<{
+      id: string;
+      amount: string;
+      currencyCode: string;
+      createdAt: string;
+      expiresAt?: string | null;
+    }>,
+  ) {
     return vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -393,7 +388,10 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
     });
 
     it("Matches when Shopify returns '5.0' for expected $5.00 (minor: 500 USD)", async () => {
-      const { redemptionId } = createFixture({ amountMinor: "500", currency: "USD" });
+      const { redemptionId } = createFixture({
+        amountMinor: "500",
+        currency: "USD",
+      });
       const customFetch = createShopifyMockFetch([
         {
           id: "gid://shopify/StoreCreditAccountCreditTransaction/tx_fmt_5_0",
@@ -412,13 +410,19 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
 
       expect(result).toEqual({
         outcome: "confirmed",
-        transactionId: "gid://shopify/StoreCreditAccountCreditTransaction/tx_fmt_5_0",
+        transactionId:
+          "gid://shopify/StoreCreditAccountCreditTransaction/tx_fmt_5_0",
       });
-      expect(mockState.redemptions.get(redemptionId).status).toBe(WeleticRedemptionStatus.issued);
+      expect(mockState.redemptions.get(redemptionId).status).toBe(
+        WeleticRedemptionStatus.issued,
+      );
     });
 
     it("Matches when Shopify returns integer '5' without decimal point for expected $5.00", async () => {
-      const { redemptionId } = createFixture({ amountMinor: "500", currency: "USD" });
+      const { redemptionId } = createFixture({
+        amountMinor: "500",
+        currency: "USD",
+      });
       const customFetch = createShopifyMockFetch([
         {
           id: "gid://shopify/StoreCreditAccountCreditTransaction/tx_fmt_5_int",
@@ -437,9 +441,12 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
 
       expect(result).toEqual({
         outcome: "confirmed",
-        transactionId: "gid://shopify/StoreCreditAccountCreditTransaction/tx_fmt_5_int",
+        transactionId:
+          "gid://shopify/StoreCreditAccountCreditTransaction/tx_fmt_5_int",
       });
-      expect(mockState.redemptions.get(redemptionId).status).toBe(WeleticRedemptionStatus.issued);
+      expect(mockState.redemptions.get(redemptionId).status).toBe(
+        WeleticRedemptionStatus.issued,
+      );
     });
 
     it("Matches zero-decimal JPY currency when Shopify returns '500.00' for expected ¥500", async () => {
@@ -465,9 +472,12 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
 
       expect(result).toEqual({
         outcome: "confirmed",
-        transactionId: "gid://shopify/StoreCreditAccountCreditTransaction/tx_jpy_500_dot_00",
+        transactionId:
+          "gid://shopify/StoreCreditAccountCreditTransaction/tx_jpy_500_dot_00",
       });
-      expect(mockState.redemptions.get(redemptionId).status).toBe(WeleticRedemptionStatus.issued);
+      expect(mockState.redemptions.get(redemptionId).status).toBe(
+        WeleticRedemptionStatus.issued,
+      );
     });
 
     it("Strictly rejects debit (negative amount) transactions even if absolute value matches", async () => {
@@ -496,7 +506,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
 
       // Negative amount does not match -> outcome deferred
       expect(result).toEqual({ outcome: "deferred" });
-      expect(mockState.redemptions.get(redemptionId).status).toBe(WeleticRedemptionStatus.provisioning);
+      expect(mockState.redemptions.get(redemptionId).status).toBe(
+        WeleticRedemptionStatus.provisioning,
+      );
     });
   });
 
@@ -513,7 +525,8 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         remoteAttemptedAt: attemptTime.toISOString(),
       });
 
-      const targetTxId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_target_correct";
+      const targetTxId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_target_correct";
 
       // 5 transactions in history:
       const customFetch = createShopifyMockFetch([
@@ -580,7 +593,8 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         remoteAttemptedAt: attemptTime.toISOString(),
       });
 
-      const lastTxId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_tail_match";
+      const lastTxId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_tail_match";
 
       // 9 non-matching transactions followed by 1 valid match at the tail
       const transactions = [
@@ -588,7 +602,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
           id: `gid://shopify/StoreCreditAccountCreditTransaction/tx_distractor_${i}`,
           amount: `${(i + 1) * 10}.00`,
           currencyCode: "USD",
-          createdAt: new Date(attemptTime.getTime() + (i + 1) * 1000).toISOString(),
+          createdAt: new Date(
+            attemptTime.getTime() + (i + 1) * 1000,
+          ).toISOString(),
         })),
         {
           id: lastTxId,
@@ -611,7 +627,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         outcome: "confirmed",
         transactionId: lastTxId,
       });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBe(lastTxId);
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBe(lastTxId);
     });
 
     it("Enforces minCreatedAt temporal window boundary (-120 seconds)", async () => {
@@ -624,7 +642,8 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
       });
 
       // Transaction 121 seconds prior: strictly outside (-120_000ms boundary)
-      const txOutsideId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_outside_window";
+      const txOutsideId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_outside_window";
       const customFetch = createShopifyMockFetch([
         {
           id: txOutsideId,
@@ -642,7 +661,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
       });
 
       expect(result).toEqual({ outcome: "deferred" });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBeNull();
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBeNull();
     });
   });
 
@@ -651,7 +672,8 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
   // ==========================================================================
   describe("Challenge 3: Collision Prevention & Double-Claim Protection", () => {
     it("Strictly refuses to claim a transaction ID already bound to another redemption in database", async () => {
-      const sharedTxId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_already_claimed";
+      const sharedTxId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_already_claimed";
 
       // 1. Pre-existing redemption that already claimed sharedTxId
       createFixture({
@@ -686,7 +708,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
       });
 
       expect(resultActive).toEqual({ outcome: "deferred" });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBeNull();
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBeNull();
 
       // Reconcile after horizon expiry -> must refund and fail without claiming sharedTxId
       const resultExpired = await reconcilePendingStoreCreditRedemption({
@@ -697,16 +721,25 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
       });
 
       expect(resultExpired).toEqual({ outcome: "refunded_and_failed" });
-      expect(mockState.redemptions.get(redemptionId).status).toBe(WeleticRedemptionStatus.failed);
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBeNull();
+      expect(mockState.redemptions.get(redemptionId).status).toBe(
+        WeleticRedemptionStatus.failed,
+      );
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBeNull();
 
       // Original owner remains untouched
-      expect(mockState.redemptions.get("redemp_existing_holder").shopifyStoreCreditTransactionId).toBe(sharedTxId);
+      expect(
+        mockState.redemptions.get("redemp_existing_holder")
+          .shopifyStoreCreditTransactionId,
+      ).toBe(sharedTxId);
     });
 
     it("Skips bound collision transaction and successfully binds the second unclaimed matching transaction", async () => {
-      const boundTxId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_bound_1";
-      const availableTxId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_available_2";
+      const boundTxId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_bound_1";
+      const availableTxId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_available_2";
 
       // Pre-bind boundTxId to redemp_prior
       createFixture({
@@ -750,13 +783,19 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         outcome: "confirmed",
         transactionId: availableTxId,
       });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBe(availableTxId);
-      expect(mockState.redemptions.get("redemp_prior").shopifyStoreCreditTransactionId).toBe(boundTxId);
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBe(availableTxId);
+      expect(
+        mockState.redemptions.get("redemp_prior")
+          .shopifyStoreCreditTransactionId,
+      ).toBe(boundTxId);
     });
 
     it("Tenant isolation: same transaction ID in another store is not a collision in multi-store DB", async () => {
       const otherStoreId = "store_other_tenant";
-      const txId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_tenant_test";
+      const txId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_tenant_test";
 
       // Bound in another store
       createFixture({
@@ -829,7 +868,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
 
       // Currency code JPY !== USD -> skipped, defer
       expect(result).toEqual({ outcome: "deferred" });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBeNull();
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBeNull();
     });
 
     it("Rejects transaction when amount is identical (5.00) but currency is EUR instead of USD", async () => {
@@ -857,7 +898,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
       });
 
       expect(result).toEqual({ outcome: "deferred" });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBeNull();
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBeNull();
     });
 
     it("Supports case-insensitive currency matching ('usd' in Shopify vs 'USD' in snapshot)", async () => {
@@ -884,9 +927,12 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
 
       expect(result).toEqual({
         outcome: "confirmed",
-        transactionId: "gid://shopify/StoreCreditAccountCreditTransaction/tx_lowercase_currency",
+        transactionId:
+          "gid://shopify/StoreCreditAccountCreditTransaction/tx_lowercase_currency",
       });
-      expect(mockState.redemptions.get(redemptionId).status).toBe(WeleticRedemptionStatus.issued);
+      expect(mockState.redemptions.get(redemptionId).status).toBe(
+        WeleticRedemptionStatus.issued,
+      );
     });
   });
 
@@ -902,9 +948,12 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
       });
 
       // Remove remoteProvisionAttemptedAt from metadata
-      mockState.redemptions.get(redemptionId).metadata.remoteProvisionAttemptedAt = null;
+      mockState.redemptions.get(
+        redemptionId,
+      ).metadata.remoteProvisionAttemptedAt = null;
 
-      const expectedTxId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_fallback_created_at";
+      const expectedTxId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_fallback_created_at";
       const customFetch = createShopifyMockFetch([
         {
           id: expectedTxId,
@@ -925,7 +974,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         outcome: "confirmed",
         transactionId: expectedTxId,
       });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBe(expectedTxId);
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBe(expectedTxId);
     });
 
     it("Sweeper continues executing subsequent redemptions even if one redemption encounters network failure", async () => {
@@ -936,7 +987,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         createdAt: new Date("2026-10-05T08:00:00.000Z"),
         remoteAttemptedAt: "2026-10-05T08:00:05.000Z",
       });
-      mockState.accounts.get("acc_store_adversarial_rewards").shopper.shopifyCustomerId = customerFailNumeric;
+      mockState.accounts.get(
+        "acc_store_adversarial_rewards",
+      ).shopper.shopifyCustomerId = customerFailNumeric;
 
       // Redemption 2: Succeeds and confirms on a second store/account
       const secondStoreId = "store_sweep_success";
@@ -947,7 +1000,8 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         createdAt: new Date("2026-10-05T08:00:00.000Z"),
         remoteAttemptedAt: "2026-10-05T08:00:05.000Z",
       });
-      mockState.accounts.get(`acc_${secondStoreId}`).shopper.shopifyCustomerId = customerSuccessNumeric;
+      mockState.accounts.get(`acc_${secondStoreId}`).shopper.shopifyCustomerId =
+        customerSuccessNumeric;
 
       const customFetch = vi.fn(async (_url: any, init: any) => {
         const body = JSON.parse(init.body);
@@ -1030,7 +1084,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         outcome: "skipped",
         reason: "status_issued",
       });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBe("existing_tx");
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBe("existing_tx");
       expect(mockState.compensations).toHaveLength(0);
     });
 
@@ -1042,7 +1098,8 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         pointsSpent: BigInt(5000000),
       });
 
-      const expectedTxId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_vnd_large";
+      const expectedTxId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_vnd_large";
       const customFetch = createShopifyMockFetch([
         {
           id: expectedTxId,
@@ -1063,7 +1120,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         outcome: "confirmed",
         transactionId: expectedTxId,
       });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBe(expectedTxId);
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBe(expectedTxId);
     });
 
     it("Multi-account customer: traverses multiple store credit accounts to locate matching transaction", async () => {
@@ -1072,7 +1131,8 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         currency: "USD",
       });
 
-      const targetTxId = "gid://shopify/StoreCreditAccountCreditTransaction/tx_in_second_account";
+      const targetTxId =
+        "gid://shopify/StoreCreditAccountCreditTransaction/tx_in_second_account";
 
       // Mock customer with two distinct store credit accounts (e.g. CAD and USD)
       const multiAccountFetch = vi.fn(async () => ({
@@ -1139,7 +1199,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
         outcome: "confirmed",
         transactionId: targetTxId,
       });
-      expect(mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId).toBe(targetTxId);
+      expect(
+        mockState.redemptions.get(redemptionId).shopifyStoreCreditTransactionId,
+      ).toBe(targetTxId);
     });
 
     it("Gracefully skips redemption when metadata or provisioning snapshot is missing/corrupted", async () => {
@@ -1160,7 +1222,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
 
     it("Gracefully skips redemption when customer identifier cannot be resolved", async () => {
       const { redemptionId } = createFixture();
-      mockState.accounts.get("acc_store_adversarial_rewards").shopper.shopifyCustomerId = null;
+      mockState.accounts.get(
+        "acc_store_adversarial_rewards",
+      ).shopper.shopifyCustomerId = null;
 
       const result = await reconcilePendingStoreCreditRedemption({
         storeId,
@@ -1196,7 +1260,9 @@ describe("Adversarial Challenge: Store Credit Reconciliation Matching & Edge Cas
       });
 
       expect(result).toEqual({ outcome: "refunded_and_failed" });
-      expect(mockState.redemptions.get(redemptionId).status).toBe(WeleticRedemptionStatus.failed);
+      expect(mockState.redemptions.get(redemptionId).status).toBe(
+        WeleticRedemptionStatus.failed,
+      );
       expect(mockState.compensations).toHaveLength(1);
     });
   });

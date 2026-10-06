@@ -3,8 +3,8 @@ import { useMemo, useState } from "react";
 import { CommunicationsScreen } from "~/ui/loyalty/communications-screen";
 import { useCommunicationsUnsavedGuard } from "../communications-unsaved-guard";
 import { LoyaltyNavigation } from "../loyalty-navigation";
-import { useMerchantLocale } from "../merchant-locale";
 import { createMerchantCommunicationsClient } from "../merchant-communications-client";
+import { useMerchantLocale } from "../merchant-locale";
 
 export { action, ErrorBoundary, headers, links, loader } from "./settings";
 export default function LoyaltyCommunicationsPage() {

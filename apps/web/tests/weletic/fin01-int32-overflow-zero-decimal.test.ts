@@ -3,17 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // 1. Activate defensive BigInt JSON fallback
 import "../../instrumentation";
 
-import { getCommissionsCount } from "@/lib/api/commissions/get-commissions-count";
 import { formatCommissionsForExport } from "@/lib/api/commissions/format-commissions-for-export";
-import {
-  CommissionSchema,
-  CommissionEnrichedSchema,
-  CommissionDetailSchema,
-} from "@/lib/zod/schemas/commissions";
+import { getCommissionsCount } from "@/lib/api/commissions/get-commissions-count";
 import { toSafeBigInt as toSafeBigIntOrder } from "@/lib/weletic/commerce/record-order";
 import { toSafeBigInt as toSafeBigIntRefund } from "@/lib/weletic/commerce/record-refund";
-import { NextResponse } from "next/server";
+import {
+  CommissionEnrichedSchema,
+  CommissionSchema,
+} from "@/lib/zod/schemas/commissions";
 import { CommissionStatus, CommissionType } from "@prisma/client";
+import { NextResponse } from "next/server";
 
 // Set up in-memory mock database delegates for commerce recorder tests
 const state = vi.hoisted(() => ({
@@ -379,28 +378,44 @@ describe("FIN-01: Zero-Decimal Currency (VND, JPY) Int32 Overflow Prevention Sui
     it("handles values exceeding Int32 max (2,147,483,647) up to 64-bit limits without throwing", () => {
       // 2.5 Billion VND (Wholesale order)
       const wholesaleVnd = BigInt(2_500_000_000);
-      expect(toSafeBigIntOrder(wholesaleVnd, "Order amount")).toBe(BigInt(2500000000));
-      expect(toSafeBigIntRefund(wholesaleVnd, "Order amount")).toBe(BigInt(2500000000));
+      expect(toSafeBigIntOrder(wholesaleVnd, "Order amount")).toBe(
+        BigInt(2500000000),
+      );
+      expect(toSafeBigIntRefund(wholesaleVnd, "Order amount")).toBe(
+        BigInt(2500000000),
+      );
 
       // 25 Million JPY and 2.5 Billion JPY
       const wholesaleJpy = BigInt(25_000_000);
       const megaWholesaleJpy = BigInt(2_500_000_000);
-      expect(toSafeBigIntOrder(wholesaleJpy, "Order amount")).toBe(BigInt(25000000));
-      expect(toSafeBigIntOrder(megaWholesaleJpy, "Order amount")).toBe(BigInt(2500000000));
+      expect(toSafeBigIntOrder(wholesaleJpy, "Order amount")).toBe(
+        BigInt(25000000),
+      );
+      expect(toSafeBigIntOrder(megaWholesaleJpy, "Order amount")).toBe(
+        BigInt(2500000000),
+      );
 
       // 10 Billion VND
       const tenBillion = BigInt(10_000_000_000);
-      expect(toSafeBigIntOrder(tenBillion, "Order amount")).toBe(BigInt("10000000000"));
+      expect(toSafeBigIntOrder(tenBillion, "Order amount")).toBe(
+        BigInt("10000000000"),
+      );
 
       // Accepts number input and returns bigint
-      expect(toSafeBigIntOrder(2500000000, "Order amount")).toBe(BigInt(2500000000));
+      expect(toSafeBigIntOrder(2500000000, "Order amount")).toBe(
+        BigInt(2500000000),
+      );
     });
 
     it("handles negative values beyond 32-bit negative limit (-2,147,483,648) for large refund clawbacks", () => {
       // -2.5 Billion VND clawback
       const negativeVnd = BigInt(-2_500_000_000);
-      expect(toSafeBigIntOrder(negativeVnd, "Refund reversal")).toBe(BigInt(-2500000000));
-      expect(toSafeBigIntRefund(negativeVnd, "Refund reversal")).toBe(BigInt(-2500000000));
+      expect(toSafeBigIntOrder(negativeVnd, "Refund reversal")).toBe(
+        BigInt(-2500000000),
+      );
+      expect(toSafeBigIntRefund(negativeVnd, "Refund reversal")).toBe(
+        BigInt(-2500000000),
+      );
     });
 
     it("strictly rejects values exceeding signed 64-bit integer limits", () => {

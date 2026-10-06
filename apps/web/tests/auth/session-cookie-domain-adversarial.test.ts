@@ -41,15 +41,18 @@ describe("Adversarial Stress-Testing: getSessionCookieDomain()", () => {
       ).toBeUndefined();
     });
 
-    it.fails("demonstrates defect: uppercase VERCEL_ENV ('Preview' or 'PREVIEW') bypasses preview check", () => {
-      // VercelEnv is checked strictly via === "preview" rather than .toLowerCase() === "preview"
-      expect(
-        getSessionCookieDomain({
-          vercelEnv: "Preview",
-          appDomain: "https://app.weletic.com",
-        }),
-      ).toBeUndefined();
-    });
+    it.fails(
+      "demonstrates defect: uppercase VERCEL_ENV ('Preview' or 'PREVIEW') bypasses preview check",
+      () => {
+        // VercelEnv is checked strictly via === "preview" rather than .toLowerCase() === "preview"
+        expect(
+          getSessionCookieDomain({
+            vercelEnv: "Preview",
+            appDomain: "https://app.weletic.com",
+          }),
+        ).toBeUndefined();
+      },
+    );
 
     it("returns undefined when NEXT_PUBLIC_VERCEL_ENV='preview'", () => {
       expect(
@@ -200,9 +203,9 @@ describe("Adversarial Stress-Testing: getSessionCookieDomain()", () => {
       expect(
         getSessionCookieDomain({ appDomain: "https://app.weletic.co.uk" }),
       ).toBe(".weletic.co.uk");
-      expect(
-        getSessionCookieDomain({ appDomain: "app.weletic.co.uk" }),
-      ).toBe(".weletic.co.uk");
+      expect(getSessionCookieDomain({ appDomain: "app.weletic.co.uk" })).toBe(
+        ".weletic.co.uk",
+      );
       expect(
         getSessionCookieDomain({
           appDomain: "https://deep.nested.sub.weletic.co.uk",
@@ -250,21 +253,27 @@ describe("Adversarial Stress-Testing: getSessionCookieDomain()", () => {
       ).toBe(".weletic.co.in");
     });
 
-    it.fails("demonstrates defect: non-whitelisted ccTLD second level 'ac.uk' leaks registry suffix '.ac.uk'", () => {
-      // Because SECOND_LEVEL_DOMAINS does not contain "ac", extractApexDomain slices -2
-      // returning "ac.uk" instead of "oxford.ac.uk", resulting in invalid cookie domain ".ac.uk".
-      expect(
-        getSessionCookieDomain({ appDomain: "https://app.oxford.ac.uk" }),
-      ).toBe(".oxford.ac.uk");
-    });
+    it.fails(
+      "demonstrates defect: non-whitelisted ccTLD second level 'ac.uk' leaks registry suffix '.ac.uk'",
+      () => {
+        // Because SECOND_LEVEL_DOMAINS does not contain "ac", extractApexDomain slices -2
+        // returning "ac.uk" instead of "oxford.ac.uk", resulting in invalid cookie domain ".ac.uk".
+        expect(
+          getSessionCookieDomain({ appDomain: "https://app.oxford.ac.uk" }),
+        ).toBe(".oxford.ac.uk");
+      },
+    );
 
-    it.fails("demonstrates defect: non-whitelisted ccTLD second level 'ne.jp' leaks registry suffix '.ne.jp'", () => {
-      // Because SECOND_LEVEL_DOMAINS does not contain "ne", extractApexDomain slices -2
-      // returning "ne.jp" instead of "service.ne.jp", resulting in invalid cookie domain ".ne.jp".
-      expect(
-        getSessionCookieDomain({ appDomain: "https://app.service.ne.jp" }),
-      ).toBe(".service.ne.jp");
-    });
+    it.fails(
+      "demonstrates defect: non-whitelisted ccTLD second level 'ne.jp' leaks registry suffix '.ne.jp'",
+      () => {
+        // Because SECOND_LEVEL_DOMAINS does not contain "ne", extractApexDomain slices -2
+        // returning "ne.jp" instead of "service.ne.jp", resulting in invalid cookie domain ".ne.jp".
+        expect(
+          getSessionCookieDomain({ appDomain: "https://app.service.ne.jp" }),
+        ).toBe(".service.ne.jp");
+      },
+    );
 
     it("distinguishes single-level ccTLDs (.in, .io, .co) from second-level combinations", () => {
       // .in is single-level ccTLD
@@ -272,9 +281,9 @@ describe("Adversarial Stress-Testing: getSessionCookieDomain()", () => {
         getSessionCookieDomain({ appDomain: "https://dashboard.weletic.in" }),
       ).toBe(".weletic.in");
       // .co is single-level ccTLD
-      expect(
-        getSessionCookieDomain({ appDomain: "https://app.dub.co" }),
-      ).toBe(".dub.co");
+      expect(getSessionCookieDomain({ appDomain: "https://app.dub.co" })).toBe(
+        ".dub.co",
+      );
       // .io is single-level ccTLD
       expect(
         getSessionCookieDomain({ appDomain: "https://app.weletic.io" }),
@@ -290,9 +299,9 @@ describe("Adversarial Stress-Testing: getSessionCookieDomain()", () => {
       expect(
         getSessionCookieDomain({ appDomain: "https://room.yamax.com" }),
       ).toBe(".yamax.com");
-      expect(
-        getSessionCookieDomain({ appDomain: "https://weletic.com" }),
-      ).toBe(".weletic.com");
+      expect(getSessionCookieDomain({ appDomain: "https://weletic.com" })).toBe(
+        ".weletic.com",
+      );
     });
   });
 
@@ -340,9 +349,9 @@ describe("Adversarial Stress-Testing: getSessionCookieDomain()", () => {
 
   describe("5. Case Sensitivity and Whitespace Resilience", () => {
     it("handles uppercase and mixed-case domain names", () => {
-      expect(
-        getSessionCookieDomain({ appDomain: "APP.WELETIC.COM" }),
-      ).toBe(".weletic.com");
+      expect(getSessionCookieDomain({ appDomain: "APP.WELETIC.COM" })).toBe(
+        ".weletic.com",
+      );
       expect(
         getSessionCookieDomain({ appDomain: "https://APP.WELETIC.COM" }),
       ).toBe(".weletic.com");
@@ -351,19 +360,22 @@ describe("Adversarial Stress-Testing: getSessionCookieDomain()", () => {
           appDomain: "https://Store.Example.COM.VN:8080",
         }),
       ).toBe(".example.com.vn");
-      expect(
-        getSessionCookieDomain({ appDomain: "ROOM.YAMAX.COM" }),
-      ).toBe(".yamax.com");
+      expect(getSessionCookieDomain({ appDomain: "ROOM.YAMAX.COM" })).toBe(
+        ".yamax.com",
+      );
     });
 
-    it.fails("demonstrates defect: fails on leading whitespace due to untrimmed string in URL constructor", () => {
-      // Because rawDomain is not trimmed, rawDomain.startsWith("http") is false,
-      // creating "https://  app.weletic.com  ", which throws TypeError in URL parser
-      // and silently falls back to undefined instead of the expected ".weletic.com".
-      expect(
-        getSessionCookieDomain({ appDomain: "  app.weletic.com  " }),
-      ).toBe(".weletic.com");
-    });
+    it.fails(
+      "demonstrates defect: fails on leading whitespace due to untrimmed string in URL constructor",
+      () => {
+        // Because rawDomain is not trimmed, rawDomain.startsWith("http") is false,
+        // creating "https://  app.weletic.com  ", which throws TypeError in URL parser
+        // and silently falls back to undefined instead of the expected ".weletic.com".
+        expect(
+          getSessionCookieDomain({ appDomain: "  app.weletic.com  " }),
+        ).toBe(".weletic.com");
+      },
+    );
 
     it("handles trailing whitespace and trailing slashes", () => {
       expect(
@@ -381,23 +393,36 @@ describe("Adversarial Stress-Testing: getSessionCookieDomain()", () => {
     it("returns undefined for standard invalid strings", () => {
       expect(getSessionCookieDomain({ appDomain: "" })).toBeUndefined();
       expect(getSessionCookieDomain({ appDomain: "   " })).toBeUndefined();
-      expect(getSessionCookieDomain({ appDomain: ":::bad-url:::" })).toBeUndefined();
-      expect(getSessionCookieDomain({ appDomain: "invalid_domain" })).toBeUndefined();
+      expect(
+        getSessionCookieDomain({ appDomain: ":::bad-url:::" }),
+      ).toBeUndefined();
+      expect(
+        getSessionCookieDomain({ appDomain: "invalid_domain" }),
+      ).toBeUndefined();
     });
 
-    it.fails("demonstrates defect: malformed dot string '.' produces invalid cookie domain '..'", () => {
-      // Due to missing DNS label validation in extractApexDomain, "." splits into ["", ""]
-      // and returns ".." which is an illegal RFC 6265 cookie domain.
-      expect(getSessionCookieDomain({ appDomain: "." })).toBeUndefined();
-    });
+    it.fails(
+      "demonstrates defect: malformed dot string '.' produces invalid cookie domain '..'",
+      () => {
+        // Due to missing DNS label validation in extractApexDomain, "." splits into ["", ""]
+        // and returns ".." which is an illegal RFC 6265 cookie domain.
+        expect(getSessionCookieDomain({ appDomain: "." })).toBeUndefined();
+      },
+    );
 
-    it.fails("demonstrates defect: double-dot string '..' produces invalid cookie domain '..'", () => {
-      expect(getSessionCookieDomain({ appDomain: ".." })).toBeUndefined();
-    });
+    it.fails(
+      "demonstrates defect: double-dot string '..' produces invalid cookie domain '..'",
+      () => {
+        expect(getSessionCookieDomain({ appDomain: ".." })).toBeUndefined();
+      },
+    );
 
-    it.fails("demonstrates defect: public suffix 'co.uk' returns '.co.uk' without apex label", () => {
-      expect(getSessionCookieDomain({ appDomain: "co.uk" })).toBeUndefined();
-    });
+    it.fails(
+      "demonstrates defect: public suffix 'co.uk' returns '.co.uk' without apex label",
+      () => {
+        expect(getSessionCookieDomain({ appDomain: "co.uk" })).toBeUndefined();
+      },
+    );
 
     it("falls back through NEXT_PUBLIC_APP_DOMAIN -> NEXTAUTH_URL", () => {
       process.env.NEXTAUTH_URL = "https://app.weletic.com";

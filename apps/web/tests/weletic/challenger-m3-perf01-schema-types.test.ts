@@ -1,9 +1,9 @@
-import { execSync, spawnSync } from "node:child_process";
+import { Prisma } from "@prisma/client";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Prisma } from "@prisma/client";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Verification", () => {
   const rootDir = path.resolve(__dirname, "../../../..");
@@ -18,7 +18,14 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
     it("empirically verifies 0 warnings and exit code 0 on production schema across stdout and stderr", () => {
       const res = spawnSync(
         "pnpm",
-        ["--filter", "web", "exec", "prisma", "validate", "--schema=./prisma/schema"],
+        [
+          "--filter",
+          "web",
+          "exec",
+          "prisma",
+          "validate",
+          "--schema=./prisma/schema",
+        ],
         {
           cwd: rootDir,
           encoding: "utf8",
@@ -34,7 +41,9 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
     });
 
     it("ORACLE NEGATIVE CONTROL: proves prisma validate produces warnings in stderr if relation index is removed", () => {
-      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "prisma-schema-oracle-"));
+      const tempDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), "prisma-schema-oracle-"),
+      );
       try {
         // Copy all schema files to tempDir
         const files = fs.readdirSync(schemaDir);
@@ -57,7 +66,14 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
         // Execute prisma validate on modified schema capturing stderr
         const res = spawnSync(
           "pnpm",
-          ["--filter", "web", "exec", "prisma", "validate", `--schema=${tempDir}`],
+          [
+            "--filter",
+            "web",
+            "exec",
+            "prisma",
+            "validate",
+            `--schema=${tempDir}`,
+          ],
           {
             cwd: rootDir,
             encoding: "utf8",
@@ -68,7 +84,9 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
         // Negative control MUST observe the relationMode warning in stderr
         expect(res.stderr).toContain("Prisma schema warning");
         expect(res.stderr).toContain('With `relationMode = "prisma"`');
-        expect(res.stderr).toContain("https://pris.ly/d/relation-mode-prisma-indexes");
+        expect(res.stderr).toContain(
+          "https://pris.ly/d/relation-mode-prisma-indexes",
+        );
       } finally {
         fs.rmSync(tempDir, { recursive: true, force: true });
       }
@@ -78,7 +96,8 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
   describe("2. Prisma Client Query Type Integrity (Zero Regressions on 5 Models)", () => {
     it("validates WeleticRewardRedemption query types and filters", () => {
       type WhereInput = Prisma.WeleticRewardRedemptionWhereInput;
-      type OrderByInput = Prisma.WeleticRewardRedemptionOrderByWithRelationInput;
+      type OrderByInput =
+        Prisma.WeleticRewardRedemptionOrderByWithRelationInput;
       type SelectInput = Prisma.WeleticRewardRedemptionSelect;
 
       // Verify rewardDefinitionId can be queried directly and by relation
@@ -108,7 +127,8 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
 
     it("validates WeleticLoyaltyEarnGrant composite query types [programId, status] and shopperId", () => {
       type WhereInput = Prisma.WeleticLoyaltyEarnGrantWhereInput;
-      type OrderByInput = Prisma.WeleticLoyaltyEarnGrantOrderByWithRelationInput;
+      type OrderByInput =
+        Prisma.WeleticLoyaltyEarnGrantOrderByWithRelationInput;
 
       // Invariant composite query: [programId, status]
       const compositeWhere: WhereInput = {
@@ -156,7 +176,8 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
 
     it("validates WeleticLoyaltyTierHistory query types [fromTierId] and [toTierId]", () => {
       type WhereInput = Prisma.WeleticLoyaltyTierHistoryWhereInput;
-      type OrderByInput = Prisma.WeleticLoyaltyTierHistoryOrderByWithRelationInput;
+      type OrderByInput =
+        Prisma.WeleticLoyaltyTierHistoryOrderByWithRelationInput;
 
       const where: WhereInput = {
         fromTierId: "tier_bronze",
@@ -197,7 +218,8 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
     });
 
     it("validates WeleticLoyaltyBackfillPreviewItem and WeleticLoyaltyProgram OCC version typing", () => {
-      type BackfillWhereInput = Prisma.WeleticLoyaltyBackfillPreviewItemWhereInput;
+      type BackfillWhereInput =
+        Prisma.WeleticLoyaltyBackfillPreviewItemWhereInput;
       const backfillWhere: BackfillWhereInput = {
         accountId: "acc_123",
         account: { id: "acc_123" },
@@ -235,8 +257,10 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
 
       expect(statements.length).toBe(10);
 
-      const indexNameRegex = /^CREATE INDEX `([a-zA-Z0-9_]+)` ON `([a-zA-Z0-9_]+)`\((.+)\)$/;
-      const alterTableRegex = /^ALTER TABLE `([a-zA-Z0-9_]+)` ADD COLUMN `([a-zA-Z0-9_]+)` (.+)$/;
+      const indexNameRegex =
+        /^CREATE INDEX `([a-zA-Z0-9_]+)` ON `([a-zA-Z0-9_]+)`\((.+)\)$/;
+      const alterTableRegex =
+        /^ALTER TABLE `([a-zA-Z0-9_]+)` ADD COLUMN `([a-zA-Z0-9_]+)` (.+)$/;
 
       const indexNames = new Set<string>();
 
@@ -252,7 +276,9 @@ describe("EMPIRICAL CHALLENGER: PERF-01 Schema Integrity, Query Types & DDL Veri
             indexNames.add(indexName);
 
             // Columns part should contain valid column names
-            const cols = columnsPart.split(",").map((c) => c.trim().replace(/`/g, ""));
+            const cols = columnsPart
+              .split(",")
+              .map((c) => c.trim().replace(/`/g, ""));
             expect(cols.length).toBeGreaterThan(0);
             for (const col of cols) {
               expect(col).toMatch(/^[a-zA-Z0-9_]+$/);

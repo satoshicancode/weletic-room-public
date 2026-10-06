@@ -58,8 +58,16 @@ export default function SettingsPage({
   );
 
   const pageTitle = appearanceOnly
-    ? (locale === "ja" ? "外観" : locale === "vi" ? "Giao diện" : "Appearance")
-    : (locale === "ja" ? "設定" : locale === "vi" ? "Cài đặt" : "Settings");
+    ? locale === "ja"
+      ? "外観"
+      : locale === "vi"
+        ? "Giao diện"
+        : "Appearance"
+    : locale === "ja"
+      ? "設定"
+      : locale === "vi"
+        ? "Cài đặt"
+        : "Settings";
 
   return (
     <main className="weletic-shoppers">

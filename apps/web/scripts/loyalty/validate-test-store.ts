@@ -13,7 +13,6 @@ import {
   ensureShopifyWebhooksRegistered,
   SHOPIFY_CANONICAL_WEBHOOK_TOPICS,
 } from "@/lib/weletic/shopify/provision-webhooks";
-import crypto from "node:crypto";
 import {
   signWeleticShopifyRequest,
   verifyWeleticShopifyRequest,
@@ -27,6 +26,7 @@ import {
   resolveShopifyStoreByDomain,
 } from "@/lib/weletic/shopify/store-resolver";
 import { verifyShopifyWebhookSignature } from "@/lib/weletic/shopify/webhook-signature";
+import crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 

@@ -1,14 +1,10 @@
-import React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
-  Banner,
   BlockStack,
   Button,
-  Card,
   InlineGrid,
   InlineStack,
   Select,
-  Text,
   TextField,
 } from "@shopify/polaris";
 import type {
@@ -18,6 +14,7 @@ import type {
   VipProgramPolicy,
   VipTierFields,
 } from "@weletic/contracts/loyalty/vip-campaign-contract";
+import React from "react";
 
 type Locale = "en" | "ja" | "vi";
 export type VipCampaignTransport = {
@@ -427,9 +424,7 @@ function TierEditor({
           max={100}
           autoComplete="off"
           value={String(draft.tierOrder)}
-          onChange={(val) =>
-            setDraft({ ...draft, tierOrder: Number(val) })
-          }
+          onChange={(val) => setDraft({ ...draft, tierOrder: Number(val) })}
         />
         <TextField
           label={copy.pointsMultiplier}
@@ -473,7 +468,8 @@ function TierEditor({
           max={3650}
           autoComplete="off"
           value={
-            draft.gracePeriodDays === null || draft.gracePeriodDays === undefined
+            draft.gracePeriodDays === null ||
+            draft.gracePeriodDays === undefined
               ? ""
               : String(draft.gracePeriodDays)
           }
@@ -507,16 +503,10 @@ function TierEditor({
         multiline={4}
         autoComplete="off"
         value={listValue(draft.perks)}
-        onChange={(val) =>
-          setDraft({ ...draft, perks: readList(val) })
-        }
+        onChange={(val) => setDraft({ ...draft, perks: readList(val) })}
       />
       <InlineStack gap="300">
-        <Button
-          variant="primary"
-          disabled={busy}
-          onClick={() => onSave(draft)}
-        >
+        <Button variant="primary" disabled={busy} onClick={() => onSave(draft)}>
           {copy.save}
         </Button>
         <Button disabled={busy} onClick={onCancel}>
@@ -565,9 +555,7 @@ function CampaignEditor({
           step={0.1}
           autoComplete="off"
           value={String(draft.multiplier)}
-          onChange={(val) =>
-            setDraft({ ...draft, multiplier: Number(val) })
-          }
+          onChange={(val) => setDraft({ ...draft, multiplier: Number(val) })}
         />
         <TextField
           label={copy.starts}
@@ -602,9 +590,7 @@ function CampaignEditor({
         multiline={3}
         autoComplete="off"
         value={draft.description ?? ""}
-        onChange={(val) =>
-          setDraft({ ...draft, description: val || null })
-        }
+        onChange={(val) => setDraft({ ...draft, description: val || null })}
       />
       <InlineGrid columns={{ xs: 1, sm: 2 }} gap="400">
         <Field label={copy.eligibleVip}>
@@ -638,9 +624,7 @@ function CampaignEditor({
             { label: copy.no, value: "no" },
           ]}
           value={draft.isActive ? "yes" : "no"}
-          onChange={(val) =>
-            setDraft({ ...draft, isActive: val === "yes" })
-          }
+          onChange={(val) => setDraft({ ...draft, isActive: val === "yes" })}
         />
       </InlineGrid>
       <TextField
@@ -649,9 +633,7 @@ function CampaignEditor({
         multiline={4}
         autoComplete="off"
         value={listValue(draft.eligibleSkus)}
-        onChange={(val) =>
-          setDraft({ ...draft, eligibleSkus: readList(val) })
-        }
+        onChange={(val) => setDraft({ ...draft, eligibleSkus: readList(val) })}
       />
       <TextField
         label={copy.eligibleCollections}
@@ -667,11 +649,7 @@ function CampaignEditor({
         }
       />
       <InlineStack gap="300">
-        <Button
-          variant="primary"
-          disabled={busy}
-          onClick={() => onSave(draft)}
-        >
+        <Button variant="primary" disabled={busy} onClick={() => onSave(draft)}>
           {copy.save}
         </Button>
         <Button disabled={busy} onClick={onCancel}>

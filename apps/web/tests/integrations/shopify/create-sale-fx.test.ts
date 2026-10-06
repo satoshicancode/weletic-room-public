@@ -73,7 +73,9 @@ vi.mock("@/lib/weletic/shopify/customer-settlement-lock", () => ({
 }));
 
 vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
-  assertShopifyStoreAcceptsOperationalWrites: vi.fn().mockResolvedValue(undefined),
+  assertShopifyStoreAcceptsOperationalWrites: vi
+    .fn()
+    .mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/weletic/shopify/privacy-cache", () => ({
@@ -504,7 +506,8 @@ describe("FIN-04: Currency Conversion in Link Stats (createShopifySale)", () => 
       });
 
       // 100,000,000,000 VND * 0.000039292731 = 3,929,273.10 USD -> 392,927,310 cents
-      const linkInc = mocks.prismaLinkUpdate.mock.calls[0][0].data.saleAmount.increment;
+      const linkInc =
+        mocks.prismaLinkUpdate.mock.calls[0][0].data.saleAmount.increment;
       expect(linkInc).toBe(392927310);
       expect(Number.isSafeInteger(linkInc)).toBe(true);
     });
@@ -768,7 +771,9 @@ describe("FIN-04: Currency Conversion in Link Stats (createShopifySale)", () => 
     });
 
     it("safely aborts and cleans lock when Redis connection fails during quote fetching", async () => {
-      mocks.redisHget.mockRejectedValue(new Error("Upstash Redis connection timeout"));
+      mocks.redisHget.mockRejectedValue(
+        new Error("Upstash Redis connection timeout"),
+      );
 
       mocks.prismaLinkFindUnique.mockResolvedValue({
         id: linkId,
@@ -802,4 +807,3 @@ describe("FIN-04: Currency Conversion in Link Stats (createShopifySale)", () => 
     });
   });
 });
-

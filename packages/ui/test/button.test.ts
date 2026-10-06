@@ -11,19 +11,34 @@ describe("buttonVariants", () => {
   });
 
   it("generates secondary, outline, and colored variants", () => {
-    expect(buttonVariants({ variant: "secondary" })).toContain("border-border-subtle");
+    expect(buttonVariants({ variant: "secondary" })).toContain(
+      "border-border-subtle",
+    );
     expect(buttonVariants({ variant: "secondary" })).toContain("bg-bg-default");
 
-    expect(buttonVariants({ variant: "outline" })).toContain("border-transparent");
-    expect(buttonVariants({ variant: "outline" })).toContain("text-content-default");
+    expect(buttonVariants({ variant: "outline" })).toContain(
+      "border-transparent",
+    );
+    expect(buttonVariants({ variant: "outline" })).toContain(
+      "text-content-default",
+    );
 
-    expect(buttonVariants({ variant: "success" })).toContain("border-blue-500 bg-blue-500 text-white");
-    expect(buttonVariants({ variant: "danger" })).toContain("border-red-500 bg-red-500 text-white");
-    expect(buttonVariants({ variant: "danger-outline" })).toContain("border-transparent bg-white text-red-500");
+    expect(buttonVariants({ variant: "success" })).toContain(
+      "border-blue-500 bg-blue-500 text-white",
+    );
+    expect(buttonVariants({ variant: "danger" })).toContain(
+      "border-red-500 bg-red-500 text-white",
+    );
+    expect(buttonVariants({ variant: "danger-outline" })).toContain(
+      "border-transparent bg-white text-red-500",
+    );
   });
 
   it("appends custom className to variant styles", () => {
-    const classes = buttonVariants({ variant: "danger", className: "w-full my-4" });
+    const classes = buttonVariants({
+      variant: "danger",
+      className: "w-full my-4",
+    });
     expect(classes).toContain("w-full my-4");
     expect(classes).toContain("border-red-500");
   });

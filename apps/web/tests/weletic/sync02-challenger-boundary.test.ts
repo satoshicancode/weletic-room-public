@@ -466,7 +466,12 @@ describe("Challenger 1 Empirical Boundary Testing for SYNC-02", () => {
           programId: "prog_challenger",
           partnerId: "partner_a",
           disabledAt: new Date("2026-08-20T11:59:59.999Z"), // 1ms before order
-          link: { id: "link_a", programId: "prog_challenger", partnerId: "partner_a", disabledAt: null },
+          link: {
+            id: "link_a",
+            programId: "prog_challenger",
+            partnerId: "partner_a",
+            disabledAt: null,
+          },
         },
         {
           id: "dcode_exp_b",
@@ -474,7 +479,12 @@ describe("Challenger 1 Empirical Boundary Testing for SYNC-02", () => {
           programId: "prog_challenger",
           partnerId: "partner_b",
           disabledAt: new Date("2026-08-20T11:59:55.000Z"), // 5s before order
-          link: { id: "link_b", programId: "prog_challenger", partnerId: "partner_b", disabledAt: null },
+          link: {
+            id: "link_b",
+            programId: "prog_challenger",
+            partnerId: "partner_b",
+            disabledAt: null,
+          },
         },
       ]);
 

@@ -1,4 +1,3 @@
-import React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Banner,
@@ -13,12 +12,13 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
-import useSWR, { SWRConfig } from "swr";
 import {
   loyaltyConfigurationUpdateSchema,
   type LoyaltyConfigurationResponse,
   type LoyaltyConfigurationUpdate,
 } from "@weletic/contracts/loyalty/configuration-contract";
+import React from "react";
+import useSWR, { SWRConfig } from "swr";
 import {
   loyaltyConfigurationCopy,
   type LoyaltyConfigurationLocale,

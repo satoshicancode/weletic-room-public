@@ -74,6 +74,3 @@ vi.mock("@axiomhq/nextjs", () => ({
 
 // Initialize Weletic RBAC plugin registrations for test environment
 import "@/lib/weletic/rbac/register";
-
-
-

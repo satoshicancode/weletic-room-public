@@ -1,6 +1,4 @@
-import React from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import useSWR, { SWRConfig } from "swr";
 import type { LoyaltyModuleToggle } from "@weletic/contracts/loyalty/module-contract";
 import {
   merchantAppearanceUpdateSchema,
@@ -12,6 +10,8 @@ import type {
   MerchantAppearanceView,
   MerchantSettingsView as MerchantSettings,
 } from "@weletic/contracts/merchant-settings/merchant-contract";
+import React from "react";
+import useSWR, { SWRConfig } from "swr";
 import { merchantSettingsCopy, type MerchantSettingsLocale } from "./copy";
 
 export type MerchantSettingsTransport = {

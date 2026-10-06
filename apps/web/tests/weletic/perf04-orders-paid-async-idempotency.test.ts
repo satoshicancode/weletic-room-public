@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
-import { createHmac } from "node:crypto";
 import { NextRequest } from "next/server";
+import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -98,14 +98,14 @@ vi.mock("@/lib/axiom/server", () => ({
   logger: { error: vi.fn(), flush: vi.fn() },
 }));
 
+import { GET as cronGET } from "../../app/(ee)/api/cron/weletic/shopify/orders-paid-recovery/route";
 import { POST } from "../../app/(ee)/api/shopify/integration/webhook/route";
 import {
-  recoverStuckOrdersPaidWebhooks,
   auditTerminalFailedOrdersPaidWebhooks,
   executeClaimedOrdersPaidEvent,
   getFailedRetryBackoffMs,
+  recoverStuckOrdersPaidWebhooks,
 } from "../../lib/weletic/shopify/orders-paid-recovery";
-import { GET as cronGET } from "../../app/(ee)/api/cron/weletic/shopify/orders-paid-recovery/route";
 import { createAllShopifyWebhookBodyDigests } from "../../lib/weletic/shopify/privacy-identity";
 
 const secret = "orders-paid-test-webhook-secret-32-chars-long";
@@ -842,9 +842,7 @@ describe("PERF-04: orders/paid Webhook Decoupled Ingress, Durability & Idempoten
       updatedAt: new Date(now - 120_000),
     };
 
-    mocks.webhookEventFindMany.mockResolvedValueOnce([
-      activeInFlightCandidate,
-    ]);
+    mocks.webhookEventFindMany.mockResolvedValueOnce([activeInFlightCandidate]);
 
     const results = await recoverStuckOrdersPaidWebhooks({
       limit: 10,
@@ -856,5 +854,3 @@ describe("PERF-04: orders/paid Webhook Decoupled Ingress, Durability & Idempoten
     expect(mocks.ordersPaid).not.toHaveBeenCalled();
   });
 });
-
-

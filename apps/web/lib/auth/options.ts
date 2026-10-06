@@ -32,9 +32,9 @@ import {
   incrementLoginAttempts,
 } from "./lock-account";
 import { validatePassword } from "./password";
+import { getSessionCookieDomain } from "./session-cookie";
 import { SSO_LOGIN_PROGRAMS } from "./sso-login-programs";
 import { trackDubLead } from "./track-dub-lead";
-import { getSessionCookieDomain } from "./session-cookie";
 
 const VERCEL_DEPLOYMENT = !!process.env.VERCEL_URL;
 

@@ -53,7 +53,9 @@ vi.mock("@/lib/prisma", () => ({
         },
         commission: { create: mocks.createCommission },
         weleticReviewRequest: { findMany: vi.fn().mockResolvedValue([]) },
-        weleticLoyaltyEarnGrant: { findUnique: vi.fn().mockResolvedValue(null) },
+        weleticLoyaltyEarnGrant: {
+          findUnique: vi.fn().mockResolvedValue(null),
+        },
         weleticLoyaltyReferral: { findFirst: vi.fn().mockResolvedValue(null) },
       }),
     ),
@@ -69,7 +71,9 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
-  assertShopifyStoreAcceptsOperationalWrites: vi.fn().mockResolvedValue(undefined),
+  assertShopifyStoreAcceptsOperationalWrites: vi
+    .fn()
+    .mockResolvedValue(undefined),
   assertShopifyStoreMatchesInstallationGeneration: vi.fn(),
 }));
 
@@ -181,9 +185,15 @@ describe("SYNC-01: Canonical Store Resolver in record-refund.ts (Invariant 1 Com
     mocks.findUniqueRefund.mockResolvedValue(null);
     mocks.findUniqueOrder.mockResolvedValue(sampleOrder);
     mocks.findUniqueStore.mockResolvedValue(sampleStore);
-    mocks.aggregateRefunds.mockResolvedValue({ _sum: { accountingAmount: BigInt(0) } });
-    mocks.aggregateRefundLines.mockResolvedValue({ _sum: { accountingAmount: BigInt(0) } });
-    mocks.aggregateCalculations.mockResolvedValue({ _sum: { earnings: BigInt(0) } });
+    mocks.aggregateRefunds.mockResolvedValue({
+      _sum: { accountingAmount: BigInt(0) },
+    });
+    mocks.aggregateRefundLines.mockResolvedValue({
+      _sum: { accountingAmount: BigInt(0) },
+    });
+    mocks.aggregateCalculations.mockResolvedValue({
+      _sum: { earnings: BigInt(0) },
+    });
     mocks.createRefund.mockResolvedValue({ id: "wref_created_001" });
     mocks.createRefundLines.mockResolvedValue({ count: 1 });
     mocks.createCalculations.mockResolvedValue({ count: 1 });
@@ -213,7 +223,9 @@ describe("SYNC-01: Canonical Store Resolver in record-refund.ts (Invariant 1 Com
     // Verify direct findFirst/findUnique bypass was NEVER called
     expect(mocks.findFirstStore).not.toHaveBeenCalled();
     // Verify lock key uses canonical workspaceId
-    expect(mocks.lastAcquiredLockKey).toBe("weletic:shopify:order:ws_yamax_canonical:11223344");
+    expect(mocks.lastAcquiredLockKey).toBe(
+      "weletic:shopify:order:ws_yamax_canonical:11223344",
+    );
     // Verify downstream store was looked up strictly by projectId: workspaceId
     expect(mocks.findUniqueStore).toHaveBeenCalledWith({
       where: { projectId: "ws_yamax_canonical" },
@@ -240,7 +252,9 @@ describe("SYNC-01: Canonical Store Resolver in record-refund.ts (Invariant 1 Com
     });
 
     expect(mocks.resolveStore).toHaveBeenCalledWith("shop.yamax.com");
-    expect(mocks.lastAcquiredLockKey).toBe("weletic:shopify:order:ws_yamax_custom_alias:11223344");
+    expect(mocks.lastAcquiredLockKey).toBe(
+      "weletic:shopify:order:ws_yamax_custom_alias:11223344",
+    );
     expect(mocks.findUniqueStore).toHaveBeenCalledWith({
       where: { projectId: "ws_yamax_custom_alias" },
     });
@@ -254,7 +268,9 @@ describe("SYNC-01: Canonical Store Resolver in record-refund.ts (Invariant 1 Com
         event: sampleRefundEvent,
         shopDomain: "unknown-store.myshopify.com",
       }),
-    ).rejects.toThrow("Shopify store unknown-store.myshopify.com could not be resolved");
+    ).rejects.toThrow(
+      "Shopify store unknown-store.myshopify.com could not be resolved",
+    );
 
     // Distributed lock must NOT be acquired for unresolvable stores
     expect(mocks.lastAcquiredLockKey).toBeNull();
@@ -273,7 +289,9 @@ describe("SYNC-01: Canonical Store Resolver in record-refund.ts (Invariant 1 Com
         event: sampleRefundEvent,
         shopDomain: "orphan.myshopify.com",
       }),
-    ).rejects.toThrow("Shopify store orphan.myshopify.com could not be resolved");
+    ).rejects.toThrow(
+      "Shopify store orphan.myshopify.com could not be resolved",
+    );
 
     // Must never acquire lock using wstore_ ID
     expect(mocks.lastAcquiredLockKey).toBeNull();
@@ -288,7 +306,9 @@ describe("SYNC-01: Canonical Store Resolver in record-refund.ts (Invariant 1 Com
 
     expect(mocks.resolveStore).not.toHaveBeenCalled();
     expect(mocks.findFirstStore).not.toHaveBeenCalled();
-    expect(mocks.lastAcquiredLockKey).toBe("weletic:shopify:order:ws_explicit_direct:11223344");
+    expect(mocks.lastAcquiredLockKey).toBe(
+      "weletic:shopify:order:ws_explicit_direct:11223344",
+    );
     expect(mocks.findUniqueStore).toHaveBeenCalledWith({
       where: { projectId: "ws_explicit_direct" },
     });
@@ -307,6 +327,8 @@ describe("SYNC-01: Canonical Store Resolver in record-refund.ts (Invariant 1 Com
         event: sampleRefundEvent,
         shopDomain: "unsynced.myshopify.com",
       }),
-    ).rejects.toThrow("Weletic Shopify store ws_unsynced_store was not synced.");
+    ).rejects.toThrow(
+      "Weletic Shopify store ws_unsynced_store was not synced.",
+    );
   });
 });

@@ -1,4 +1,3 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Banner,
@@ -24,6 +23,7 @@ import {
   type LoyaltyNudgeResponse,
   type LoyaltyNudgeSettings,
 } from "@weletic/contracts/loyalty/nudge-contract";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { nudgeCopy } from "./nudge-copy";
 
 type Locale = keyof typeof nudgeCopy;

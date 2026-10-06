@@ -389,7 +389,10 @@ export async function resolveShopifyStoreByDomain(
     });
   }
 
-  if (matchingStore?.projectId && typeof prisma?.project?.findUnique === "function") {
+  if (
+    matchingStore?.projectId &&
+    typeof prisma?.project?.findUnique === "function"
+  ) {
     matchingProject = await prisma.project.findUnique({
       where: { id: matchingStore.projectId },
       select: {
@@ -482,7 +485,11 @@ export async function resolveShopifyStoreByDomain(
   }
 
   // If project found, ensure matchingStore is fetched by projectId if not already fetched
-  if (matchingProject && !matchingStore && typeof prisma?.weleticShopifyStore?.findUnique === "function") {
+  if (
+    matchingProject &&
+    !matchingStore &&
+    typeof prisma?.weleticShopifyStore?.findUnique === "function"
+  ) {
     matchingStore = await prisma.weleticShopifyStore.findUnique({
       where: { projectId: matchingProject.id },
       select: {

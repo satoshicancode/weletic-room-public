@@ -4,13 +4,17 @@ import { hashStringSHA256, nanoid } from "../src/functions";
 describe("hashStringSHA256", () => {
   it("produces standard SHA-256 hash for empty string", async () => {
     const hash = await hashStringSHA256("");
-    expect(hash).toBe("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    expect(hash).toBe(
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    );
     expect(hash).toHaveLength(64);
   });
 
   it("produces standard SHA-256 hash for known test vectors", async () => {
     const hash = await hashStringSHA256("hello");
-    expect(hash).toBe("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+    expect(hash).toBe(
+      "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+    );
   });
 
   it("handles multi-byte UTF-8 Unicode characters deterministically", async () => {

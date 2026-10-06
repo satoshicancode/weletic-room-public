@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
-  Banner,
   BlockStack,
   Button,
   Card,
@@ -17,6 +15,7 @@ import {
   type FlowGrantListResponse,
   type FlowGrantView,
 } from "@weletic/contracts/loyalty/flow-grants-merchant-contract";
+import { useEffect, useRef, useState } from "react";
 import { flowGrantsCopy } from "./flow-grants-copy";
 
 export type FlowGrantsTransport = {
@@ -243,7 +242,8 @@ export function FlowGrantsScreen({
           remember(null);
           setConsent(false);
           const consentInput = formRef.current?.elements.namedItem("consent");
-          if (consentInput instanceof HTMLInputElement) consentInput.checked = false;
+          if (consentInput instanceof HTMLInputElement)
+            consentInput.checked = false;
           setMessage("invalid");
           shopify.toast?.show?.(copy.invalid, { isError: true });
           return;
@@ -372,10 +372,7 @@ export function FlowGrantsScreen({
               {copy.check}
             </Button>
           )}
-          <Button
-            disabled={busy || !!pending}
-            onClick={() => void load()}
-          >
+          <Button disabled={busy || !!pending} onClick={() => void load()}>
             {copy.reload}
           </Button>
         </InlineStack>
@@ -501,8 +498,8 @@ export function FlowGrantsScreen({
                 {grant.remainingAbsolutePoints}
               </Text>
               <Text as="p">
-                {copy.maximum}: {grant.maxAbsolutePointsPerAction} · {copy.budget}:{" "}
-                {grant.absolutePointsBudget}
+                {copy.maximum}: {grant.maxAbsolutePointsPerAction} ·{" "}
+                {copy.budget}: {grant.absolutePointsBudget}
               </Text>
               <Text as="p">
                 {grant.allowCredit ? copy.credit : ""}{" "}

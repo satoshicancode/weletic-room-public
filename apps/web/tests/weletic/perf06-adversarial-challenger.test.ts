@@ -5,13 +5,11 @@ import {
 } from "@/lib/weletic/loyalty/historical-import-persistence";
 import { parseHistoricalImportSource } from "@/lib/weletic/loyalty/historical-import-source";
 import {
-  LoyaltyProgramWriteBlockedError,
   OptimisticLockConflictError,
   assertLoyaltyProgramVersionMatches,
   readLoyaltyProgramSnapshot,
   updateLoyaltyProgramWithOCC,
   updateLoyaltyProgramWithOcc,
-  withLoyaltyProgramRowLock,
 } from "@/lib/weletic/loyalty/program-write-fence";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
@@ -21,13 +19,15 @@ describe("PERF-06 Adversarial Challenger: Concurrency Collision & Lock-Free Inva
   describe("1. Concurrency Collision Stress: Simultaneous Writes with Identical Version", () => {
     it("simulates 10 simultaneous writers with same expectedVersion: exactly 1 succeeds, 9 fail with OptimisticLockConflictError", async () => {
       let dbVersion = 1;
-      const updateManySpy = vi.fn().mockImplementation(({ where, data }: any) => {
-        if (where.version === dbVersion) {
-          dbVersion = data.version;
-          return Promise.resolve({ count: 1 });
-        }
-        return Promise.resolve({ count: 0 });
-      });
+      const updateManySpy = vi
+        .fn()
+        .mockImplementation(({ where, data }: any) => {
+          if (where.version === dbVersion) {
+            dbVersion = data.version;
+            return Promise.resolve({ count: 1 });
+          }
+          return Promise.resolve({ count: 0 });
+        });
 
       const mockTx = {
         weleticLoyaltyProgram: {
@@ -434,7 +434,9 @@ describe("PERF-06 Adversarial Challenger: Concurrency Collision & Lock-Free Inva
 
       // Verify that no import source or rows were created
       expect(mockTx.weleticLoyaltyImportSource.create).not.toHaveBeenCalled();
-      expect(mockTx.weleticLoyaltyImportRowSnapshot.createMany).not.toHaveBeenCalled();
+      expect(
+        mockTx.weleticLoyaltyImportRowSnapshot.createMany,
+      ).not.toHaveBeenCalled();
     });
   });
 

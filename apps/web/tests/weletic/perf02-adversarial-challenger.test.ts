@@ -24,7 +24,11 @@ vi.mock("@/lib/weletic/shopify/get-installation", () => ({
 let simulatedGraphqlDelayMs = 0;
 let simulatedGraphqlError: Error | null = null;
 
-const mockDefaultShopifyGraphqlHandler = async ({ query }: { query: string }) => {
+const mockDefaultShopifyGraphqlHandler = async ({
+  query,
+}: {
+  query: string;
+}) => {
   if (simulatedGraphqlDelayMs > 0) {
     await new Promise((r) => setTimeout(r, simulatedGraphqlDelayMs));
   }
@@ -44,15 +48,23 @@ const mockDefaultShopifyGraphqlHandler = async ({ query }: { query: string }) =>
             status: "ACTIVE",
             primary: true,
             catalogs: { nodes: [] },
-            regions: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ code: "US" }] },
-            webPresence: { rootUrls: [{ locale: "en", url: "https://test.com" }] },
+            regions: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [{ code: "US" }],
+            },
+            webPresence: {
+              rootUrls: [{ locale: "en", url: "https://test.com" }],
+            },
             currencySettings: { baseCurrency: { currencyCode: "USD" } },
           },
         ],
       },
     };
   }
-  if (query.includes("WeleticProducts") || query.includes("WeleticCatalogProducts")) {
+  if (
+    query.includes("WeleticProducts") ||
+    query.includes("WeleticCatalogProducts")
+  ) {
     return {
       products: {
         pageInfo: { hasNextPage: false, endCursor: null },
@@ -65,7 +77,10 @@ const mockDefaultShopifyGraphqlHandler = async ({ query }: { query: string }) =>
             productType: "Gear",
             vendor: "Weletic",
             tags: ["test"],
-            collections: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+            collections: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [],
+            },
             status: "ACTIVE",
             publishedAt: "2026-10-04T00:00:00Z",
             featuredMedia: null,
@@ -103,7 +118,9 @@ const mockDefaultShopifyGraphqlHandler = async ({ query }: { query: string }) =>
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
   SHOPIFY_ADMIN_API_VERSION: "2026-10",
-  shopifyAdminGraphql: vi.fn((args: any) => mockDefaultShopifyGraphqlHandler(args)),
+  shopifyAdminGraphql: vi.fn((args: any) =>
+    mockDefaultShopifyGraphqlHandler(args),
+  ),
 }));
 
 vi.mock("next/server", async (importOriginal) => {
@@ -201,13 +218,19 @@ vi.mock("@/lib/upstash", async (importOriginal) => {
       })),
     }),
     redis: {
-      set: vi.fn(async (key: string, value: string, opts?: { nx?: boolean; ex?: number }) => {
-        if (opts?.nx && activeRedisLocks.has(key)) {
-          return null;
-        }
-        activeRedisLocks.set(key, value);
-        return "OK";
-      }),
+      set: vi.fn(
+        async (
+          key: string,
+          value: string,
+          opts?: { nx?: boolean; ex?: number },
+        ) => {
+          if (opts?.nx && activeRedisLocks.has(key)) {
+            return null;
+          }
+          activeRedisLocks.set(key, value);
+          return "OK";
+        },
+      ),
       eval: vi.fn(async (script: string, keys: string[], args: string[]) => {
         const key = keys[0];
         const token = args[0];
@@ -262,7 +285,8 @@ vi.mock("@/lib/prisma", () => {
               credentials: {
                 accessToken: `shpat_live_token_${where.id}`,
                 shop: `${where.id}.myshopify.com`,
-                scope: "read_products,read_markets,read_orders,read_translations,read_customers",
+                scope:
+                  "read_products,read_markets,read_orders,read_translations,read_customers",
               },
             },
           ],
@@ -328,7 +352,12 @@ vi.mock("@/lib/prisma", () => {
           kind: data.kind ?? "full_catalog",
           status: data.status ?? "pending",
           cursor: data.cursor ?? null,
-          stats: data.stats ?? { products: 0, variants: 0, markets: 0, marketPrices: 0 },
+          stats: data.stats ?? {
+            products: 0,
+            variants: 0,
+            markets: 0,
+            marketPrices: 0,
+          },
           error: data.error ?? null,
           startedAt: data.startedAt ?? new Date(),
           completedAt: null,
@@ -382,8 +411,14 @@ vi.mock("@/lib/prisma", () => {
         for (const run of fakeSyncRuns.values()) {
           let match = true;
           if (where.id && run.id !== where.id) match = false;
-          if (where.status?.in && !where.status.in.includes(run.status)) match = false;
-          if (where.status && typeof where.status === "string" && run.status !== where.status) match = false;
+          if (where.status?.in && !where.status.in.includes(run.status))
+            match = false;
+          if (
+            where.status &&
+            typeof where.status === "string" &&
+            run.status !== where.status
+          )
+            match = false;
           if (match) {
             Object.assign(run, data, { updatedAt: new Date() });
             count++;
@@ -422,8 +457,8 @@ vi.mock("@/lib/prisma", () => {
     $queryRaw: vi.fn(async (sql: any) => {
       const param = sql?.values?.[0];
       let store = param
-        ? (fakeStores.get(param) ??
-           Array.from(fakeStores.values()).find((s) => s.projectId === param))
+        ? fakeStores.get(param) ??
+          Array.from(fakeStores.values()).find((s) => s.projectId === param)
         : null;
       if (!store) {
         store = Array.from(fakeStores.values())[0];
@@ -456,19 +491,18 @@ vi.mock("@/lib/prisma", () => {
 });
 
 import {
-  GET as getSyncRouteHandler,
-  POST as postSyncRouteHandler,
-} from "../../app/(ee)/api/shopify/integration/sync/route";
-import {
   acquireDistributedLock,
   releaseDistributedLock,
-  renewDistributedLock,
   resetInMemoryLocks,
 } from "@/lib/weletic/redis-lock";
 import {
   dispatchWeleticShopifyCatalogSync,
   runCatalogSyncWorker,
 } from "@/lib/weletic/shopify/catalog-sync";
+import {
+  GET as getSyncRouteHandler,
+  POST as postSyncRouteHandler,
+} from "../../app/(ee)/api/shopify/integration/sync/route";
 
 describe("EMPIRICAL CHALLENGER: PERF-02 Async Catalog Sync Adversarial Stress Test", () => {
   const workspaceA = "ws_challenger_alpha";
@@ -586,11 +620,13 @@ describe("EMPIRICAL CHALLENGER: PERF-02 Async Catalog Sync Adversarial Stress Te
 
   describe("Boundary 2: Concurrency Collisions & Race Conditions (HTTP 409 Conflict)", () => {
     it("burst of 10 simultaneous POST requests results in exactly 1 HTTP 202 and 9 HTTP 409s", async () => {
-      const requests = Array.from({ length: 10 }, () =>
-        new Request(
-          `http://localhost:3000/api/shopify/integration/sync?workspaceId=${workspaceA}`,
-          { method: "POST" },
-        ),
+      const requests = Array.from(
+        { length: 10 },
+        () =>
+          new Request(
+            `http://localhost:3000/api/shopify/integration/sync?workspaceId=${workspaceA}`,
+            { method: "POST" },
+          ),
       );
 
       // Fire all 10 simultaneously
@@ -838,7 +874,9 @@ describe("EMPIRICAL CHALLENGER: PERF-02 Async Catalog Sync Adversarial Stress Te
         lockToken: token,
       });
 
-      await expect(workerPromise).rejects.toThrow("FATAL_GRAPHQL_SOCKET_HANGUP");
+      await expect(workerPromise).rejects.toThrow(
+        "FATAL_GRAPHQL_SOCKET_HANGUP",
+      );
 
       // Verify distributed lock is 100% released in Redis / in-memory map
       expect(activeRedisLocks.has(lockKey)).toBe(false);
@@ -867,7 +905,10 @@ describe("EMPIRICAL CHALLENGER: PERF-02 Async Catalog Sync Adversarial Stress Te
 
     it("protects lock ownership so that an expired or mismatched token cannot release an active lock", async () => {
       const lockKey = `weletic:catalog-sync:${workspaceA}`;
-      const lock1 = await acquireDistributedLock({ key: lockKey, ttlSeconds: 120 });
+      const lock1 = await acquireDistributedLock({
+        key: lockKey,
+        ttlSeconds: 120,
+      });
       expect(lock1.acquired).toBe(true);
 
       // Dead worker attempts release with expired/wrong token
@@ -898,7 +939,9 @@ describe("EMPIRICAL CHALLENGER: PERF-02 Async Catalog Sync Adversarial Stress Te
           workspaceId: workspaceA,
           expectedInstallationGeneration: "stale_generation_xyz",
         }),
-      ).rejects.toThrow("Shopify catalog trigger belongs to a stale installation.");
+      ).rejects.toThrow(
+        "Shopify catalog trigger belongs to a stale installation.",
+      );
 
       // Verify lock was NOT leaked
       expect(activeRedisLocks.has(lockKey)).toBe(false);

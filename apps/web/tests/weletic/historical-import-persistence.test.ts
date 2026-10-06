@@ -76,7 +76,9 @@ function fixture() {
   };
 }
 beforeEach(() => {
-  mocks.lock.mockReset().mockResolvedValue({ id: "program", storeId: "store", version: 1 });
+  mocks.lock
+    .mockReset()
+    .mockResolvedValue({ id: "program", storeId: "store", version: 1 });
   mocks.snapshot.mockReset().mockResolvedValue({
     id: "program",
     storeId: "store",

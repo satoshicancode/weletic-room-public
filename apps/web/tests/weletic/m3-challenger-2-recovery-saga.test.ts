@@ -3,7 +3,6 @@ import {
   getShopifyCustomerSelectionDigest,
 } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
 import {
-  DEFAULT_STORE_CREDIT_RECONCILIATION_HORIZON_MS,
   reconcilePendingStoreCreditRedemption,
   reconcilePendingStoreCreditRedemptionsSweep,
 } from "@/lib/weletic/loyalty/store-credit-reconciliation";
@@ -145,11 +144,15 @@ vi.mock("@/lib/prisma", () => ({
         }) => {
           const row = mockState.redemptions.get(where.id);
           if (!row) return { count: 0 };
-          if (where.storeId && row.storeId !== where.storeId) return { count: 0 };
+          if (where.storeId && row.storeId !== where.storeId)
+            return { count: 0 };
 
           // Status match check
           if (where.status) {
-            if (typeof where.status === "string" && row.status !== where.status) {
+            if (
+              typeof where.status === "string" &&
+              row.status !== where.status
+            ) {
               return { count: 0 };
             }
             if (
@@ -170,13 +173,15 @@ vi.mock("@/lib/prisma", () => ({
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
         return mockState.accounts.get(where.id) ?? null;
       }),
-      findFirst: vi.fn(async ({ where }: { where: { id: string; storeId?: string } }) => {
-        const acc = mockState.accounts.get(where.id);
-        if (acc && (!where.storeId || acc.storeId === where.storeId)) {
-          return { ...acc };
-        }
-        return null;
-      }),
+      findFirst: vi.fn(
+        async ({ where }: { where: { id: string; storeId?: string } }) => {
+          const acc = mockState.accounts.get(where.id);
+          if (acc && (!where.storeId || acc.storeId === where.storeId)) {
+            return { ...acc };
+          }
+          return null;
+        },
+      ),
       update: vi.fn(
         async ({ where, data }: { where: { id: string }; data: any }) => {
           const acc = mockState.accounts.get(where.id);
@@ -197,11 +202,7 @@ vi.mock("@/lib/prisma", () => ({
 
 vi.mock("@/lib/weletic/loyalty/program-write-fence", () => ({
   withLoyaltyProgramRowLock: vi.fn(
-    async ({
-      operation,
-    }: {
-      operation: (tx: any) => Promise<any>;
-    }) => {
+    async ({ operation }: { operation: (tx: any) => Promise<any> }) => {
       const { prisma } = await import("@/lib/prisma");
       return operation(prisma);
     },
@@ -306,9 +307,10 @@ vi.mock("@/lib/weletic/loyalty/saga", () => ({
 }));
 
 vi.mock("@/lib/weletic/loyalty/shopify-discounts", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/lib/weletic/loyalty/shopify-discounts")
-  >();
+  const actual =
+    await importOriginal<
+      typeof import("@/lib/weletic/loyalty/shopify-discounts")
+    >();
   return {
     ...actual,
     resolveShopifyOfflineCredentials: vi.fn(
@@ -475,7 +477,9 @@ describe("Challenger 2: Adversarial Outbox Recovery & Saga Compensation", () => 
       expect(result).toEqual({ outcome: "deferred" });
 
       const currentRedemption = mockState.redemptions.get(redemptionId);
-      expect(currentRedemption?.status).toBe(WeleticRedemptionStatus.provisioning);
+      expect(currentRedemption?.status).toBe(
+        WeleticRedemptionStatus.provisioning,
+      );
       expect(mockState.compensations).toHaveLength(0);
       expect(mockState.ledgerEntries).toHaveLength(0);
 
@@ -507,7 +511,9 @@ describe("Challenger 2: Adversarial Outbox Recovery & Saga Compensation", () => 
 
       const currentRedemption = mockState.redemptions.get(redemptionId);
       expect(currentRedemption?.status).toBe(WeleticRedemptionStatus.failed);
-      expect(currentRedemption?.compensationReason).toContain("timed out after 300s");
+      expect(currentRedemption?.compensationReason).toContain(
+        "timed out after 300s",
+      );
 
       // Points balance must be restored: 1250 + 750 = 2000
       const account = mockState.accounts.get(accountId);
@@ -700,7 +706,9 @@ describe("Challenger 2: Adversarial Outbox Recovery & Saga Compensation", () => 
       const entry = mockState.ledgerEntries[0];
       expect(entry.storeId).toBe(storeId);
       expect(entry.accountId).toBe(accountId);
-      expect(entry.entryType).toBe(WeleticPointsLedgerEntryType.MANUAL_ADJUSTMENT);
+      expect(entry.entryType).toBe(
+        WeleticPointsLedgerEntryType.MANUAL_ADJUSTMENT,
+      );
       expect(entry.pointsDelta).toBe(pointsSpent);
       expect(entry.referenceType).toBe("REDEMPTION_REFUND");
       expect(entry.referenceId).toBe(redemptionId);
@@ -844,7 +852,10 @@ describe("Challenger 2: Adversarial Outbox Recovery & Saga Compensation", () => 
         now: new Date("2026-10-05T10:01:00.000Z"),
         customFetch,
       });
-      expect(run1).toEqual({ outcome: "confirmed", transactionId: matchingTxId });
+      expect(run1).toEqual({
+        outcome: "confirmed",
+        transactionId: matchingTxId,
+      });
 
       const initialOutboxCount = mockState.outboxJobs.length;
       const initialFlowTriggerCount = mockState.flowTriggers.length;
@@ -1096,7 +1107,9 @@ describe("Challenger 2: Adversarial Outbox Recovery & Saga Compensation", () => 
           now: expiredTime,
           customFetch: emptyShopifyFetch,
         }),
-      ).rejects.toThrow("Cannot automatically compensate quarantined redemption");
+      ).rejects.toThrow(
+        "Cannot automatically compensate quarantined redemption",
+      );
 
       expect(mockState.ledgerEntries).toHaveLength(0);
     });
@@ -1130,4 +1143,3 @@ describe("Challenger 2: Adversarial Outbox Recovery & Saga Compensation", () => 
     });
   });
 });
-

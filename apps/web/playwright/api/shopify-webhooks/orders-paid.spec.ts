@@ -11,7 +11,10 @@ test.describe.configure({
 const DEFAULT_WEBHOOK_SECRET = "weletic_test_webhook_secret_key_mock_123";
 
 function calculateShopifyHmac(body: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(body, "utf8").digest("base64");
+  return crypto
+    .createHmac("sha256", secret)
+    .update(body, "utf8")
+    .digest("base64");
 }
 
 async function ensureWebhookStore(workspaceId: string, programId: string) {
@@ -64,7 +67,8 @@ test("POST /api/shopify/integration/webhook – processes valid orders/paid webh
   program,
 }) => {
   const store = await ensureWebhookStore(workspace.id, program.id);
-  const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
+  const webhookSecret =
+    process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
   const webhookId = `wh_orders_paid_${Date.now()}_${randomName("wh")}`;
   const orderId = Date.now();
 
@@ -133,7 +137,8 @@ test("POST /api/shopify/integration/webhook – enforces deduplication idempoten
   program,
 }) => {
   const store = await ensureWebhookStore(workspace.id, program.id);
-  const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
+  const webhookSecret =
+    process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
   const duplicateWebhookId = `wh_idempotent_${Date.now()}_${randomName("dup")}`;
   const orderId = Date.now() + 1;
 
@@ -173,10 +178,13 @@ test("POST /api/shopify/integration/webhook – enforces deduplication idempoten
 
   try {
     // First delivery
-    const firstResponse = await request.post("/api/shopify/integration/webhook", {
-      data: bodyString,
-      headers,
-    });
+    const firstResponse = await request.post(
+      "/api/shopify/integration/webhook",
+      {
+        data: bodyString,
+        headers,
+      },
+    );
     expect(firstResponse.status()).toBe(200);
     const firstJson = await firstResponse.json();
     expect(firstJson).toMatchObject({
@@ -188,10 +196,13 @@ test("POST /api/shopify/integration/webhook – enforces deduplication idempoten
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     // Second delivery (exact replay)
-    const secondResponse = await request.post("/api/shopify/integration/webhook", {
-      data: bodyString,
-      headers,
-    });
+    const secondResponse = await request.post(
+      "/api/shopify/integration/webhook",
+      {
+        data: bodyString,
+        headers,
+      },
+    );
 
     expect(secondResponse.status()).toBe(200);
     const secondJson = await secondResponse.json();
@@ -214,7 +225,8 @@ test("POST /api/shopify/integration/webhook – records line-item order details 
   program,
 }) => {
   const store = await ensureWebhookStore(workspace.id, program.id);
-  const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
+  const webhookSecret =
+    process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
   const webhookId = `wh_attribution_${Date.now()}_${randomName("attr")}`;
   const orderId = Date.now() + 2;
 
@@ -282,7 +294,8 @@ test("POST /api/shopify/integration/webhook – records line-item order details 
 test("POST /api/shopify/integration/webhook – ignores unsupported topic with informative response", async ({
   request,
 }) => {
-  const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
+  const webhookSecret =
+    process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
   const body = JSON.stringify({ id: 12345 });
   const hmac = calculateShopifyHmac(body, webhookSecret);
 

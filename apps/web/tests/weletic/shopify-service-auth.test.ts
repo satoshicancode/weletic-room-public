@@ -2,7 +2,6 @@ import {
   SHOPIFY_ADMIN_API_VERSION,
   getShopifyAdminGraphqlUrl,
 } from "@/lib/integrations/shopify/admin-graphql";
-import { redis } from "@/lib/upstash/redis";
 import {
   WELETIC_SHOPIFY_MAX_BODY_BYTES,
   WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
@@ -32,15 +31,17 @@ const timestamp = String(now);
 const path = "/api/internal/shopify/catalog?shop=store.myshopify.com";
 const body = "{}";
 
-function createSignedRequest(options: {
-  requestBody?: string;
-  signedBody?: string;
-  requestTimestamp?: string;
-  requestPath?: string;
-  requestId?: string;
-  signedRequestId?: string;
-  includeRequestIdHeader?: boolean;
-} = {}) {
+function createSignedRequest(
+  options: {
+    requestBody?: string;
+    signedBody?: string;
+    requestTimestamp?: string;
+    requestPath?: string;
+    requestId?: string;
+    signedRequestId?: string;
+    includeRequestIdHeader?: boolean;
+  } = {},
+) {
   const {
     requestBody = body,
     signedBody = requestBody,
@@ -83,11 +84,7 @@ function createSignedRequest(options: {
 const redisStore = new Map<string, number>();
 
 const mockRedisSet = vi.fn(
-  async (
-    key: string,
-    value: string,
-    opts?: { nx?: boolean; ex?: number },
-  ) => {
+  async (key: string, value: string, opts?: { nx?: boolean; ex?: number }) => {
     const now = Date.now();
     const existingExpiry = redisStore.get(key);
     if (opts?.nx && existingExpiry !== undefined && existingExpiry > now) {
@@ -379,7 +376,9 @@ describe("Weletic Shopify service authentication", () => {
     // That is STILL inside the [-5min, +5min] acceptance window (Math.abs(t6 - timestamp) = 61,000 <= 300,000).
     // An attacker attempts replay with the same signed request.
     // It MUST be rejected because nonce TTL is 720s (> 600s acceptance window)!
-    expect(await verifyWeleticShopifyRequest({ ...input, now: t6 })).toBe(false);
+    expect(await verifyWeleticShopifyRequest({ ...input, now: t6 })).toBe(
+      false,
+    );
   });
 
   test("handles Redis connection failure with scoped fail-open in-memory fallback", async () => {

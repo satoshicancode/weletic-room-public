@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { CheckCircle2, AlertTriangle, Copy, Check, Info } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Copy, Info } from "lucide-react";
+import { useMemo, useState } from "react";
 
 /**
  * 1688 Supplier Variant definition for size-run integrity check.
@@ -131,7 +131,8 @@ export const DEFAULT_YAMAX_ACCORDIONS: YamaxAccordionsContent = {
     "Engineered for high-impact running, competitive pickleball, tennis drills, HIIT circuits, and athletic strength conditioning.",
   fabricComposition: "60% Premium Nylon, 40% Spandex (Yenergy™ Series)",
   fabricWeight: "190g",
-  washInstruction: "Machine wash cold with like colors on gentle cycle. Do not use fabric softeners.",
+  washInstruction:
+    "Machine wash cold with like colors on gentle cycle. Do not use fabric softeners.",
   dryInstruction: "Hang dry in shade or tumble dry low. Do not dry clean.",
   careInstruction: "Wash inside out to preserve fabric luster. Do not iron.",
   fitTip:
@@ -215,7 +216,9 @@ export function generateYamaxSizeGuideHtml(fitTip: string): string {
 /**
  * Builds Material & Care HTML using FLAT list (no nested bullets, per Shopify Metafield rules).
  */
-export function generateYamaxMaterialCareHtml(accordions: YamaxAccordionsContent): string {
+export function generateYamaxMaterialCareHtml(
+  accordions: YamaxAccordionsContent,
+): string {
   return `<p><strong>Composition:</strong> ${accordions.fabricComposition}</p>
 <p><strong>Fabric Weight:</strong> ${accordions.fabricWeight}</p>
 <ul>
@@ -236,7 +239,8 @@ export function YamaxProductDescriptionEditor({
   initialAccordions?: YamaxAccordionsContent;
 }) {
   const [hero, setHero] = useState<YamaxHeroContent>(initialHero);
-  const [accordions, setAccordions] = useState<YamaxAccordionsContent>(initialAccordions);
+  const [accordions, setAccordions] =
+    useState<YamaxAccordionsContent>(initialAccordions);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // 1688 Supplier sample test state
@@ -277,19 +281,20 @@ export function YamaxProductDescriptionEditor({
   };
 
   return (
-    <div className="space-y-8 rounded-2xl border border-neutral-200 bg-white p-6 shadow-xs">
+    <div className="shadow-xs space-y-8 rounded-2xl border border-neutral-200 bg-white p-6">
       <div>
         <h2 className="text-xl font-bold text-neutral-900">
           Yamax Activewear Product Package & Standards Editor
         </h2>
         <p className="mt-1 text-xs text-neutral-500">
-          Enforces Lululemon/Alo Yoga premium copywriting style, flat HTML metafields,
-          responsive sticky size table, and 1688 supplier size-run completeness.
+          Enforces Lululemon/Alo Yoga premium copywriting style, flat HTML
+          metafields, responsive sticky size table, and 1688 supplier size-run
+          completeness.
         </p>
       </div>
 
       {/* Section 1: 1688 Supplier Size Run Completeness Check */}
-      <div className="rounded-xl border border-neutral-200 p-5 bg-neutral-50/50 space-y-4">
+      <div className="space-y-4 rounded-xl border border-neutral-200 bg-neutral-50/50 p-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Info className="h-4 w-4 text-neutral-700" />
@@ -298,7 +303,7 @@ export function YamaxProductDescriptionEditor({
             </h3>
           </div>
           <span
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold ${
+            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold ${
               validationResult.valid
                 ? "bg-green-100 text-green-800"
                 : "bg-amber-100 text-amber-800"
@@ -310,43 +315,51 @@ export function YamaxProductDescriptionEditor({
               </>
             ) : (
               <>
-                <AlertTriangle className="h-3.5 w-3.5" /> Discontinued Runs Detected
+                <AlertTriangle className="h-3.5 w-3.5" /> Discontinued Runs
+                Detected
               </>
             )}
           </span>
         </div>
 
         <p className="text-xs text-neutral-600">
-          Rule: A color variant missing any standard size (S, M, L, XL) from the 1688 supplier listing
-          indicates end-of-production and cannot be restocked. Only complete size runs may be imported.
+          Rule: A color variant missing any standard size (S, M, L, XL) from the
+          1688 supplier listing indicates end-of-production and cannot be
+          restocked. Only complete size runs may be imported.
         </p>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          {Object.entries(validationResult.colorStatus).map(([color, status]) => (
-            <div
-              key={color}
-              className={`p-3 rounded-lg border text-xs space-y-1.5 ${
-                status.complete
-                  ? "border-green-200 bg-green-50/60"
-                  : "border-rose-200 bg-rose-50/60"
-              }`}
-            >
-              <div className="flex items-center justify-between font-bold">
-                <span>{color}</span>
-                <span className={status.complete ? "text-green-700" : "text-rose-700"}>
-                  {status.complete ? "Eligible" : "REJECTED (Discontinued)"}
-                </span>
-              </div>
-              <div className="text-neutral-500">
-                In stock: {status.availableSizes.join(", ") || "None"}
-              </div>
-              {!status.complete && (
-                <div className="font-semibold text-rose-600">
-                  Missing: {status.missingSizes.join(", ")}
+          {Object.entries(validationResult.colorStatus).map(
+            ([color, status]) => (
+              <div
+                key={color}
+                className={`space-y-1.5 rounded-lg border p-3 text-xs ${
+                  status.complete
+                    ? "border-green-200 bg-green-50/60"
+                    : "border-rose-200 bg-rose-50/60"
+                }`}
+              >
+                <div className="flex items-center justify-between font-bold">
+                  <span>{color}</span>
+                  <span
+                    className={
+                      status.complete ? "text-green-700" : "text-rose-700"
+                    }
+                  >
+                    {status.complete ? "Eligible" : "REJECTED (Discontinued)"}
+                  </span>
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="text-neutral-500">
+                  In stock: {status.availableSizes.join(", ") || "None"}
+                </div>
+                {!status.complete && (
+                  <div className="font-semibold text-rose-600">
+                    Missing: {status.missingSizes.join(", ")}
+                  </div>
+                )}
+              </div>
+            ),
+          )}
         </div>
       </div>
 
@@ -361,7 +374,11 @@ export function YamaxProductDescriptionEditor({
             onClick={() => copyToClipboard(heroHtml, "hero")}
             className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
           >
-            {copiedKey === "hero" ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+            {copiedKey === "hero" ? (
+              <Check className="h-3 w-3 text-green-600" />
+            ) : (
+              <Copy className="h-3 w-3" />
+            )}
             Copy HTML
           </button>
         </div>
@@ -370,7 +387,9 @@ export function YamaxProductDescriptionEditor({
           {/* Editor Form */}
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-semibold text-neutral-700">1-2 Sentence Tagline</label>
+              <label className="block text-xs font-semibold text-neutral-700">
+                1-2 Sentence Tagline
+              </label>
               <textarea
                 value={hero.tagline}
                 onChange={(e) => setHero({ ...hero, tagline: e.target.value })}
@@ -379,46 +398,64 @@ export function YamaxProductDescriptionEditor({
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-neutral-700">Bullet 1</label>
+              <label className="block text-xs font-semibold text-neutral-700">
+                Bullet 1
+              </label>
               <input
                 value={hero.bullet1Title}
-                onChange={(e) => setHero({ ...hero, bullet1Title: e.target.value })}
+                onChange={(e) =>
+                  setHero({ ...hero, bullet1Title: e.target.value })
+                }
                 placeholder="Title"
                 className="mt-1 w-full rounded-lg border border-neutral-200 p-2 text-xs font-medium text-neutral-900 outline-none focus:border-neutral-500"
               />
               <input
                 value={hero.bullet1Desc}
-                onChange={(e) => setHero({ ...hero, bullet1Desc: e.target.value })}
+                onChange={(e) =>
+                  setHero({ ...hero, bullet1Desc: e.target.value })
+                }
                 placeholder="Description"
                 className="mt-1 w-full rounded-lg border border-neutral-200 p-2 text-xs text-neutral-900 outline-none focus:border-neutral-500"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-neutral-700">Bullet 2</label>
+              <label className="block text-xs font-semibold text-neutral-700">
+                Bullet 2
+              </label>
               <input
                 value={hero.bullet2Title}
-                onChange={(e) => setHero({ ...hero, bullet2Title: e.target.value })}
+                onChange={(e) =>
+                  setHero({ ...hero, bullet2Title: e.target.value })
+                }
                 placeholder="Title"
                 className="mt-1 w-full rounded-lg border border-neutral-200 p-2 text-xs font-medium text-neutral-900 outline-none focus:border-neutral-500"
               />
               <input
                 value={hero.bullet2Desc}
-                onChange={(e) => setHero({ ...hero, bullet2Desc: e.target.value })}
+                onChange={(e) =>
+                  setHero({ ...hero, bullet2Desc: e.target.value })
+                }
                 placeholder="Description"
                 className="mt-1 w-full rounded-lg border border-neutral-200 p-2 text-xs text-neutral-900 outline-none focus:border-neutral-500"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-neutral-700">Bullet 3</label>
+              <label className="block text-xs font-semibold text-neutral-700">
+                Bullet 3
+              </label>
               <input
                 value={hero.bullet3Title}
-                onChange={(e) => setHero({ ...hero, bullet3Title: e.target.value })}
+                onChange={(e) =>
+                  setHero({ ...hero, bullet3Title: e.target.value })
+                }
                 placeholder="Title"
                 className="mt-1 w-full rounded-lg border border-neutral-200 p-2 text-xs font-medium text-neutral-900 outline-none focus:border-neutral-500"
               />
               <input
                 value={hero.bullet3Desc}
-                onChange={(e) => setHero({ ...hero, bullet3Desc: e.target.value })}
+                onChange={(e) =>
+                  setHero({ ...hero, bullet3Desc: e.target.value })
+                }
                 placeholder="Description"
                 className="mt-1 w-full rounded-lg border border-neutral-200 p-2 text-xs text-neutral-900 outline-none focus:border-neutral-500"
               />
@@ -426,11 +463,13 @@ export function YamaxProductDescriptionEditor({
           </div>
 
           {/* Rich Text Preview */}
-          <div className="rounded-xl border border-neutral-200 bg-neutral-50/60 p-4 space-y-3">
+          <div className="space-y-3 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
             <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
               Rich Text Preview
             </span>
-            <p className="text-xs leading-relaxed text-neutral-800">{hero.tagline}</p>
+            <p className="text-xs leading-relaxed text-neutral-800">
+              {hero.tagline}
+            </p>
             <ul className="list-disc space-y-1.5 pl-4 text-xs text-neutral-800">
               <li>
                 <strong>{hero.bullet1Title}</strong>: {hero.bullet1Desc}
@@ -448,19 +487,23 @@ export function YamaxProductDescriptionEditor({
 
       {/* Section 3: Under-Checkout Tabs */}
       <div className="space-y-4">
-        <h3 className="text-base font-bold text-neutral-900 border-b pb-2">
+        <h3 className="border-b pb-2 text-base font-bold text-neutral-900">
           2. Under-Checkout Tabs (Mandatory Copy)
         </h3>
-        <div className="grid gap-4 sm:grid-cols-2 text-xs">
-          <div className="rounded-xl border border-neutral-200 bg-neutral-50/60 p-4 space-y-2">
-            <span className="font-bold text-neutral-900">Shipping & Delivery</span>
-            <p className="text-neutral-700 leading-relaxed">
+        <div className="grid gap-4 text-xs sm:grid-cols-2">
+          <div className="space-y-2 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
+            <span className="font-bold text-neutral-900">
+              Shipping & Delivery
+            </span>
+            <p className="leading-relaxed text-neutral-700">
               {YAMAX_UNDER_CHECKOUT.shippingAndDelivery}
             </p>
           </div>
-          <div className="rounded-xl border border-neutral-200 bg-neutral-50/60 p-4 space-y-2">
-            <span className="font-bold text-neutral-900">30-Day Easy Returns</span>
-            <p className="text-neutral-700 leading-relaxed">
+          <div className="space-y-2 rounded-xl border border-neutral-200 bg-neutral-50/60 p-4">
+            <span className="font-bold text-neutral-900">
+              30-Day Easy Returns
+            </span>
+            <p className="leading-relaxed text-neutral-700">
               {YAMAX_UNDER_CHECKOUT.easyReturns}
             </p>
           </div>
@@ -469,12 +512,12 @@ export function YamaxProductDescriptionEditor({
 
       {/* Section 4: Bottom Accordions */}
       <div className="space-y-6">
-        <h3 className="text-base font-bold text-neutral-900 border-b pb-2">
+        <h3 className="border-b pb-2 text-base font-bold text-neutral-900">
           3. Bottom Accordion Tabs
         </h3>
 
         {/* Tab 1: Designed For */}
-        <div className="rounded-xl border border-neutral-200 p-4 space-y-2">
+        <div className="space-y-2 rounded-xl border border-neutral-200 p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-neutral-900">
               Accordion 1: Designed for [{accordions.targetSports}]
@@ -482,13 +525,20 @@ export function YamaxProductDescriptionEditor({
           </div>
           <input
             value={accordions.targetSports}
-            onChange={(e) => setAccordions({ ...accordions, targetSports: e.target.value })}
+            onChange={(e) =>
+              setAccordions({ ...accordions, targetSports: e.target.value })
+            }
             placeholder="Target Sports (e.g. Running & Pickleball)"
             className="w-full rounded-lg border border-neutral-200 p-2 text-xs text-neutral-900 outline-none focus:border-neutral-500"
           />
           <textarea
             value={accordions.activitiesDescription}
-            onChange={(e) => setAccordions({ ...accordions, activitiesDescription: e.target.value })}
+            onChange={(e) =>
+              setAccordions({
+                ...accordions,
+                activitiesDescription: e.target.value,
+              })
+            }
             placeholder="SEO keywords and related activities"
             rows={2}
             className="w-full rounded-lg border border-neutral-200 p-2 text-xs text-neutral-900 outline-none focus:border-neutral-500"
@@ -496,7 +546,7 @@ export function YamaxProductDescriptionEditor({
         </div>
 
         {/* Tab 2: Size & Fit (Responsive sticky first column table) */}
-        <div className="rounded-xl border border-neutral-200 p-4 space-y-3">
+        <div className="space-y-3 rounded-xl border border-neutral-200 p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-neutral-900">
               Accordion 2: Size & Fit (Shopify Page Metafield)
@@ -506,18 +556,22 @@ export function YamaxProductDescriptionEditor({
               onClick={() => copyToClipboard(sizeGuideHtml, "sizeGuide")}
               className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
             >
-              {copiedKey === "sizeGuide" ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+              {copiedKey === "sizeGuide" ? (
+                <Check className="h-3 w-3 text-green-600" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
               Copy Table HTML
             </button>
           </div>
           <div
-            className="rounded-lg border border-neutral-200 p-3 bg-white"
+            className="rounded-lg border border-neutral-200 bg-white p-3"
             dangerouslySetInnerHTML={{ __html: sizeGuideHtml }}
           />
         </div>
 
         {/* Tab 3: Material & Care (Flat list, no nested bullets) */}
-        <div className="rounded-xl border border-neutral-200 p-4 space-y-3">
+        <div className="space-y-3 rounded-xl border border-neutral-200 p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-neutral-900">
               Accordion 3: Material & Care (Flat List Standard)
@@ -527,12 +581,16 @@ export function YamaxProductDescriptionEditor({
               onClick={() => copyToClipboard(materialCareHtml, "materialCare")}
               className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
             >
-              {copiedKey === "materialCare" ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+              {copiedKey === "materialCare" ? (
+                <Check className="h-3 w-3 text-green-600" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
               Copy Material HTML
             </button>
           </div>
           <div
-            className="rounded-lg border border-neutral-200 p-3 bg-neutral-50/50 text-xs"
+            className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3 text-xs"
             dangerouslySetInnerHTML={{ __html: materialCareHtml }}
           />
         </div>

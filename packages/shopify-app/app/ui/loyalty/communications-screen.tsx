@@ -1,4 +1,3 @@
-import React, { useRef, useState } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   Banner,
@@ -21,6 +20,7 @@ import {
   type LoyaltyCommunicationsRequest,
   type LoyaltyCommunicationsResponse,
 } from "@weletic/contracts/loyalty/communications-contract";
+import React, { useRef, useState } from "react";
 import { communicationsCopy } from "./communications-copy";
 import { createDefaultLoyaltyCommunicationPolicy } from "./communications-defaults";
 

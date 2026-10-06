@@ -562,9 +562,9 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         },
       });
 
-      expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
-        false,
-      );
+      expect(
+        await verifyWeleticShopifyRequest({ request: req, body, now }),
+      ).toBe(false);
     });
 
     it("HMAC-2: rejects single-bit flipped signature (tampered signature)", async () => {
@@ -594,9 +594,9 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         },
       });
 
-      expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
-        false,
-      );
+      expect(
+        await verifyWeleticShopifyRequest({ request: req, body, now }),
+      ).toBe(false);
     });
 
     it("HMAC-3: rejects malformed signature formats (non-hex, truncated, spaces, null bytes)", async () => {
@@ -626,9 +626,9 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
           },
         });
 
-        expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
-          false,
-        );
+        expect(
+          await verifyWeleticShopifyRequest({ request: req, body, now }),
+        ).toBe(false);
       }
     });
 
@@ -688,9 +688,9 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         },
       });
 
-      expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
-        false,
-      );
+      expect(
+        await verifyWeleticShopifyRequest({ request: req, body, now }),
+      ).toBe(false);
     });
 
     it("TIME-2: rejects timestamps further than 5 minutes in future (300,001 ms ahead)", async () => {
@@ -718,9 +718,9 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         },
       });
 
-      expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
-        false,
-      );
+      expect(
+        await verifyWeleticShopifyRequest({ request: req, body, now }),
+      ).toBe(false);
     });
 
     it("TIME-3: accepts timestamps exactly on the 300,000 ms boundary", async () => {
@@ -749,9 +749,9 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
         },
       });
 
-      expect(await verifyWeleticShopifyRequest({ request: reqPast, body, now })).toBe(
-        true,
-      );
+      expect(
+        await verifyWeleticShopifyRequest({ request: reqPast, body, now }),
+      ).toBe(true);
     });
 
     it("TIME-4: rejects non-numeric or unsafe integer timestamp strings (NaN, Infinity, floats, strings)", async () => {
@@ -788,9 +788,9 @@ describe("Milestone 1 (M1): Adversarial Security & Anti-Abuse Stress Suite", () 
           },
         });
 
-        expect(await verifyWeleticShopifyRequest({ request: req, body, now })).toBe(
-          false,
-        );
+        expect(
+          await verifyWeleticShopifyRequest({ request: req, body, now }),
+        ).toBe(false);
       }
     });
   });

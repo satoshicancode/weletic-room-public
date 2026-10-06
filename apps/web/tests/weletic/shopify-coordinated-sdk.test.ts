@@ -902,28 +902,42 @@ describe("coordinated Shopify SDK operations", () => {
         [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
       },
     });
-    expect(await verifyWeleticShopifyRequest({ request: validReq, body: "" })).toBe(true);
+    expect(
+      await verifyWeleticShopifyRequest({ request: validReq, body: "" }),
+    ).toBe(true);
 
     // 2. Negative assertion: corrupted/tampered signature is rejected (false)
     const tamperedSig = "f".repeat(64);
-    const tamperedReq = new Request(`https://session-gateway.invalid${testPath}`, {
-      headers: {
-        [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
-        [WELETIC_SHOPIFY_SIGNATURE_HEADER]: tamperedSig,
-        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: crypto.randomUUID(),
+    const tamperedReq = new Request(
+      `https://session-gateway.invalid${testPath}`,
+      {
+        headers: {
+          [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
+          [WELETIC_SHOPIFY_SIGNATURE_HEADER]: tamperedSig,
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: crypto.randomUUID(),
+        },
       },
-    });
-    expect(await verifyWeleticShopifyRequest({ request: tamperedReq, body: "" })).toBe(false);
+    );
+    expect(
+      await verifyWeleticShopifyRequest({ request: tamperedReq, body: "" }),
+    ).toBe(false);
 
     // 3. Negative assertion: tampered body with valid original signature is rejected (false)
-    const tamperedBodyReq = new Request(`https://session-gateway.invalid${testPath}`, {
-      headers: {
-        [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
-        [WELETIC_SHOPIFY_SIGNATURE_HEADER]: validSig,
-        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: crypto.randomUUID(),
+    const tamperedBodyReq = new Request(
+      `https://session-gateway.invalid${testPath}`,
+      {
+        headers: {
+          [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
+          [WELETIC_SHOPIFY_SIGNATURE_HEADER]: validSig,
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: crypto.randomUUID(),
+        },
       },
-    });
-    expect(await verifyWeleticShopifyRequest({ request: tamperedBodyReq, body: "tampered-payload" })).toBe(false);
+    );
+    expect(
+      await verifyWeleticShopifyRequest({
+        request: tamperedBodyReq,
+        body: "tampered-payload",
+      }),
+    ).toBe(false);
   });
 });
-

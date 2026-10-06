@@ -19,7 +19,7 @@ describe("PERF-01: Prisma Relation Mode Composite Indexes & Validation Suite", (
 
     expect(output).toContain("The schemas at prisma/schema are valid");
     expect(output).not.toContain("Prisma schema warnings:");
-    expect(output).not.toContain("With `relationMode = \"prisma\"`");
+    expect(output).not.toContain('With `relationMode = "prisma"`');
   });
 
   it("2. declares all required composite indexes in prisma schema files", () => {

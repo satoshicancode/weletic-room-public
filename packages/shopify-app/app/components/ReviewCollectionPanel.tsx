@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
 import { reviewCollectionPolicySchema } from "@weletic/contracts/reviews/collection-contract";
+import { useEffect, useId, useRef, useState } from "react";
 import { useCoreLaunch } from "../core-launch-context";
 import type { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
 import { reviewCollectionCopy } from "../review-collection-copy";

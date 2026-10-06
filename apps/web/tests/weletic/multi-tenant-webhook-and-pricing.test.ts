@@ -47,7 +47,9 @@ describe("Multi-Tenant Shopify Webhook Provisioning & Strikethrough Pricing Test
     });
 
     it("provisions all 16 canonical webhooks with success confirmation and audit verification", async () => {
-      const mockAdminGraphql = vi.mocked(adminGraphqlModule.shopifyAdminGraphql);
+      const mockAdminGraphql = vi.mocked(
+        adminGraphqlModule.shopifyAdminGraphql,
+      );
 
       mockAdminGraphql.mockImplementation(async ({ query, variables }: any) => {
         if (query.includes("WeleticCreateWebhook")) {
@@ -80,7 +82,8 @@ describe("Multi-Tenant Shopify Webhook Provisioning & Strikethrough Pricing Test
       const result = await ensureShopifyWebhooksRegistered({
         shopDomain: "test-workspace-store.myshopify.com",
         accessToken: "shpat_test_mock_token_123",
-        callbackUrl: "https://dev-webhook.weletic.com/api/shopify/integration/webhook",
+        callbackUrl:
+          "https://dev-webhook.weletic.com/api/shopify/integration/webhook",
       });
 
       expect(result.success).toBe(true);
@@ -93,7 +96,9 @@ describe("Multi-Tenant Shopify Webhook Provisioning & Strikethrough Pricing Test
     });
 
     it("handles idempotency and already-taken subscriptions gracefully", async () => {
-      const mockAdminGraphql = vi.mocked(adminGraphqlModule.shopifyAdminGraphql);
+      const mockAdminGraphql = vi.mocked(
+        adminGraphqlModule.shopifyAdminGraphql,
+      );
 
       mockAdminGraphql.mockImplementation(async ({ query, variables }: any) => {
         if (query.includes("WeleticCreateWebhook")) {
@@ -123,16 +128,15 @@ describe("Multi-Tenant Shopify Webhook Provisioning & Strikethrough Pricing Test
       const result = await ensureShopifyWebhooksRegistered({
         shopDomain: "test-workspace-store.myshopify.com",
         accessToken: "shpat_test_mock_token_123",
-        callbackUrl: "https://dev-webhook.weletic.com/api/shopify/integration/webhook",
+        callbackUrl:
+          "https://dev-webhook.weletic.com/api/shopify/integration/webhook",
       });
 
       expect(result.success).toBe(true);
       expect(result.skipped).toHaveLength(16);
       expect(result.registered).toHaveLength(0);
       expect(result.failed).toHaveLength(0);
-      expect(result.callbackUrl).toContain(
-        "/api/shopify/integration/webhook",
-      );
+      expect(result.callbackUrl).toContain("/api/shopify/integration/webhook");
     });
   });
 

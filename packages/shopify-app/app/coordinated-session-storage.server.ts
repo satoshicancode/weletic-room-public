@@ -1,6 +1,4 @@
 import { Session } from "@shopify/shopify-api";
-import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash, randomBytes } from "node:crypto";
 import type {
   ShopifySessionLeaseProof,
   ShopifySessionMutationFence,
@@ -16,6 +14,8 @@ import {
   isFreshShopifyMerchantActor,
   shopifyMerchantActorEnvelopeSchema,
 } from "@weletic/contracts/shopify/staff-contract";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash, randomBytes } from "node:crypto";
 import {
   deserializeShopifySession,
   serializeShopifySession,

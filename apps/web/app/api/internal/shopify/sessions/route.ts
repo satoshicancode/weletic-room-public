@@ -189,7 +189,7 @@ function serializeSession(payload: string) {
 }
 
 export async function GET(request: Request) {
-  if (!await verifyWeleticShopifyRequest({ request, body: "" })) {
+  if (!(await verifyWeleticShopifyRequest({ request, body: "" }))) {
     return unauthorized();
   }
 
@@ -231,7 +231,7 @@ export async function POST(request: Request) {
   if (rawBody === null) {
     return sessionJson({ error: "Request body is too large" }, { status: 413 });
   }
-  if (!await verifyWeleticShopifyRequest({ request, body: rawBody })) {
+  if (!(await verifyWeleticShopifyRequest({ request, body: rawBody }))) {
     return unauthorized();
   }
 
@@ -799,7 +799,7 @@ export async function DELETE(request: Request) {
   if (rawBody === null) {
     return sessionJson({ error: "Request body is too large" }, { status: 413 });
   }
-  if (!await verifyWeleticShopifyRequest({ request, body: rawBody })) {
+  if (!(await verifyWeleticShopifyRequest({ request, body: rawBody }))) {
     return unauthorized();
   }
 

@@ -2,11 +2,11 @@ import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { useId, useMemo } from "react";
 import { FlowGrantsSession } from "~/ui/loyalty/flow-grants-screen";
 import { LoyaltyNavigation } from "../loyalty-navigation";
-import { useMerchantLocale } from "../merchant-locale";
 import {
   createMerchantFlowGrantsClient,
   newFlowGrantAttemptId,
 } from "../merchant-flow-grants-client";
+import { useMerchantLocale } from "../merchant-locale";
 
 export { action, ErrorBoundary, headers, links, loader } from "./settings";
 export default function FlowGrantsPage() {

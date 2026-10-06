@@ -111,13 +111,12 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-import { DubApiError } from "@/lib/api/errors";
-import { DiscountProviderError } from "@/lib/discounts/discount-error";
 import { getProgramEnrollmentOrThrow } from "@/lib/api/programs/get-program-enrollment-or-throw";
-import { POST as createDiscountCodeCron } from "../../app/(ee)/api/cron/discount-codes/create/route";
+import { DiscountProviderError } from "@/lib/discounts/discount-error";
 import { POST as queueBatchesCron } from "../../app/(ee)/api/cron/discount-codes/create/queue-batches/route";
-import { GET as getPartnerProducts } from "../../app/(ee)/api/partner-profile/programs/[programId]/products/route";
+import { POST as createDiscountCodeCron } from "../../app/(ee)/api/cron/discount-codes/create/route";
 import { GET as getPartnerProductById } from "../../app/(ee)/api/partner-profile/programs/[programId]/products/[productId]/route";
+import { GET as getPartnerProducts } from "../../app/(ee)/api/partner-profile/programs/[programId]/products/route";
 
 describe("SYNC-03: Soft-Delete Coherence (Invariant 2 Compliance)", () => {
   beforeEach(() => {
@@ -155,7 +154,9 @@ describe("SYNC-03: Soft-Delete Coherence (Invariant 2 Compliance)", () => {
 
       expect(response.status).toBe(200);
       const data = await response.json();
-      expect(data.message).toBe("Discount code created for link link_with_disabled_code.");
+      expect(data.message).toBe(
+        "Discount code created for link link_with_disabled_code.",
+      );
       expect(mocks.createDiscountCode).toHaveBeenCalledTimes(1);
       expect(mocks.createDiscountCode).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -191,7 +192,9 @@ describe("SYNC-03: Soft-Delete Coherence (Invariant 2 Compliance)", () => {
 
       expect(response.status).toBe(200);
       const data = await response.json();
-      expect(data.message).toContain("already has an active discount code. Skipping...");
+      expect(data.message).toContain(
+        "already has an active discount code. Skipping...",
+      );
       expect(mocks.createDiscountCode).not.toHaveBeenCalled();
     });
 
@@ -306,20 +309,20 @@ describe("SYNC-03: Soft-Delete Coherence (Invariant 2 Compliance)", () => {
           id: "enr_1",
           partnerId: "part_1",
           discountId: "disc_1",
-          links: [
-            { id: "link_null_code" },
-            { id: "link_soft_deleted_code" },
-          ],
+          links: [{ id: "link_null_code" }, { id: "link_soft_deleted_code" }],
         },
       ]);
 
       const response = await queueBatchesCron(
-        new NextRequest("http://localhost/api/cron/discount-codes/create/queue-batches", {
-          method: "POST",
-          body: JSON.stringify({
-            discountId: "disc_1",
-          }),
-        }),
+        new NextRequest(
+          "http://localhost/api/cron/discount-codes/create/queue-batches",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              discountId: "disc_1",
+            }),
+          },
+        ),
         { params: Promise.resolve({}) },
       );
 
@@ -397,7 +400,9 @@ describe("SYNC-03: Soft-Delete Coherence (Invariant 2 Compliance)", () => {
       mocks.findManyRules.mockResolvedValueOnce([]);
 
       const response = await getPartnerProducts(
-        new NextRequest("http://localhost/api/partner-profile/programs/prog_1/products"),
+        new NextRequest(
+          "http://localhost/api/partner-profile/programs/prog_1/products",
+        ),
         { params: Promise.resolve({ programId: "prog_1" }) },
       );
 
@@ -434,7 +439,9 @@ describe("SYNC-03: Soft-Delete Coherence (Invariant 2 Compliance)", () => {
       mocks.findManyRules.mockResolvedValueOnce([]);
 
       const response = await getPartnerProducts(
-        new NextRequest("http://localhost/api/partner-profile/programs/prog_1/products"),
+        new NextRequest(
+          "http://localhost/api/partner-profile/programs/prog_1/products",
+        ),
         { params: Promise.resolve({ programId: "prog_1" }) },
       );
 
@@ -477,7 +484,9 @@ describe("SYNC-03: Soft-Delete Coherence (Invariant 2 Compliance)", () => {
       mocks.findManyRules.mockResolvedValueOnce([]);
 
       const response = await getPartnerProducts(
-        new NextRequest("http://localhost/api/partner-profile/programs/prog_1/products"),
+        new NextRequest(
+          "http://localhost/api/partner-profile/programs/prog_1/products",
+        ),
         { params: Promise.resolve({ programId: "prog_1" }) },
       );
 
@@ -540,8 +549,12 @@ describe("SYNC-03: Soft-Delete Coherence (Invariant 2 Compliance)", () => {
       mocks.findManyRules.mockResolvedValueOnce([]);
 
       const response = await getPartnerProductById(
-        new NextRequest("http://localhost/api/partner-profile/programs/prog_1/products/prod_1"),
-        { params: Promise.resolve({ programId: "prog_1", productId: "prod_1" }) },
+        new NextRequest(
+          "http://localhost/api/partner-profile/programs/prog_1/products/prod_1",
+        ),
+        {
+          params: Promise.resolve({ programId: "prog_1", productId: "prod_1" }),
+        },
       );
 
       expect(response.status).toBe(200);
@@ -573,13 +586,19 @@ describe("SYNC-03: Soft-Delete Coherence (Invariant 2 Compliance)", () => {
       mocks.findManyRules.mockResolvedValueOnce([]);
 
       const response = await getPartnerProductById(
-        new NextRequest("http://localhost/api/partner-profile/programs/prog_1/products/prod_1"),
-        { params: Promise.resolve({ programId: "prog_1", productId: "prod_1" }) },
+        new NextRequest(
+          "http://localhost/api/partner-profile/programs/prog_1/products/prod_1",
+        ),
+        {
+          params: Promise.resolve({ programId: "prog_1", productId: "prod_1" }),
+        },
       );
 
       expect(response.status).toBe(200);
       const data = await response.json();
-      expect(data.product.customerDiscount.couponCode).toBe("ACTIVE_ON_PRODUCT");
+      expect(data.product.customerDiscount.couponCode).toBe(
+        "ACTIVE_ON_PRODUCT",
+      );
     });
   });
 

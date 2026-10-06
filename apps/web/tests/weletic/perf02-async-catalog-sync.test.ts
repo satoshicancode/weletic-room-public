@@ -21,7 +21,11 @@ vi.mock("@/lib/weletic/shopify/get-installation", () => ({
   })),
 }));
 
-const mockDefaultShopifyGraphqlHandler = async ({ query }: { query: string }) => {
+const mockDefaultShopifyGraphqlHandler = async ({
+  query,
+}: {
+  query: string;
+}) => {
   if (query.includes("WeleticShopAndMarkets")) {
     return {
       shop: { currencyCode: "USD" },
@@ -35,15 +39,23 @@ const mockDefaultShopifyGraphqlHandler = async ({ query }: { query: string }) =>
             status: "ACTIVE",
             primary: true,
             catalogs: { nodes: [] },
-            regions: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ code: "US" }] },
-            webPresence: { rootUrls: [{ locale: "en", url: "https://alpha.com" }] },
+            regions: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [{ code: "US" }],
+            },
+            webPresence: {
+              rootUrls: [{ locale: "en", url: "https://alpha.com" }],
+            },
             currencySettings: { baseCurrency: { currencyCode: "USD" } },
           },
         ],
       },
     };
   }
-  if (query.includes("WeleticProducts") || query.includes("WeleticCatalogProducts")) {
+  if (
+    query.includes("WeleticProducts") ||
+    query.includes("WeleticCatalogProducts")
+  ) {
     return {
       products: {
         pageInfo: { hasNextPage: false, endCursor: null },
@@ -56,7 +68,10 @@ const mockDefaultShopifyGraphqlHandler = async ({ query }: { query: string }) =>
             productType: "Gear",
             vendor: "Weletic",
             tags: ["tag1"],
-            collections: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+            collections: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [],
+            },
             status: "ACTIVE",
             publishedAt: "2026-10-04T00:00:00Z",
             featuredMedia: null,
@@ -94,7 +109,9 @@ const mockDefaultShopifyGraphqlHandler = async ({ query }: { query: string }) =>
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
   SHOPIFY_ADMIN_API_VERSION: "2026-10",
-  shopifyAdminGraphql: vi.fn((args: any) => mockDefaultShopifyGraphqlHandler(args)),
+  shopifyAdminGraphql: vi.fn((args: any) =>
+    mockDefaultShopifyGraphqlHandler(args),
+  ),
 }));
 
 vi.mock("next/server", async (importOriginal) => {
@@ -192,13 +209,19 @@ vi.mock("@/lib/upstash", async (importOriginal) => {
       })),
     }),
     redis: {
-      set: vi.fn(async (key: string, value: string, opts?: { nx?: boolean; ex?: number }) => {
-        if (opts?.nx && activeRedisLocks.has(key)) {
-          return null;
-        }
-        activeRedisLocks.set(key, value);
-        return "OK";
-      }),
+      set: vi.fn(
+        async (
+          key: string,
+          value: string,
+          opts?: { nx?: boolean; ex?: number },
+        ) => {
+          if (opts?.nx && activeRedisLocks.has(key)) {
+            return null;
+          }
+          activeRedisLocks.set(key, value);
+          return "OK";
+        },
+      ),
       eval: vi.fn(async (script: string, keys: string[], args: string[]) => {
         const key = keys[0];
         const token = args[0];
@@ -253,7 +276,8 @@ vi.mock("@/lib/prisma", () => {
               credentials: {
                 accessToken: "shpat_live_test_token_12345",
                 shop: "perf-shop.myshopify.com",
-                scope: "read_products,read_markets,read_orders,read_translations,read_customers",
+                scope:
+                  "read_products,read_markets,read_orders,read_translations,read_customers",
               },
             },
           ],
@@ -319,7 +343,12 @@ vi.mock("@/lib/prisma", () => {
           kind: data.kind ?? "full_catalog",
           status: data.status ?? "pending",
           cursor: data.cursor ?? null,
-          stats: data.stats ?? { products: 0, variants: 0, markets: 0, marketPrices: 0 },
+          stats: data.stats ?? {
+            products: 0,
+            variants: 0,
+            markets: 0,
+            marketPrices: 0,
+          },
           error: data.error ?? null,
           startedAt: data.startedAt ?? new Date(),
           completedAt: null,
@@ -373,8 +402,14 @@ vi.mock("@/lib/prisma", () => {
         for (const run of fakeSyncRuns.values()) {
           let match = true;
           if (where.id && run.id !== where.id) match = false;
-          if (where.status?.in && !where.status.in.includes(run.status)) match = false;
-          if (where.status && typeof where.status === "string" && run.status !== where.status) match = false;
+          if (where.status?.in && !where.status.in.includes(run.status))
+            match = false;
+          if (
+            where.status &&
+            typeof where.status === "string" &&
+            run.status !== where.status
+          )
+            match = false;
           if (match) {
             Object.assign(run, data, { updatedAt: new Date() });
             count++;
@@ -412,8 +447,7 @@ vi.mock("@/lib/prisma", () => {
     },
     $queryRaw: vi.fn(async () => {
       const store =
-        fakeStores.get("wstore_alpha") ||
-        Array.from(fakeStores.values())[0];
+        fakeStores.get("wstore_alpha") || Array.from(fakeStores.values())[0];
       if (store) {
         return [
           {
@@ -441,23 +475,18 @@ vi.mock("@/lib/prisma", () => {
   return { prisma: fakePrismaClient };
 });
 
+import { shopifyAdminGraphql } from "@/lib/integrations/shopify/admin-graphql";
+import { redis } from "@/lib/upstash";
+import {
+  acquireDistributedLock,
+  releaseDistributedLock,
+  resetInMemoryLocks,
+} from "@/lib/weletic/redis-lock";
+import { runCatalogSyncWorker } from "@/lib/weletic/shopify/catalog-sync";
 import {
   GET as getSyncRouteHandler,
   POST as postSyncRouteHandler,
 } from "../../app/(ee)/api/shopify/integration/sync/route";
-import {
-  acquireDistributedLock,
-  releaseDistributedLock,
-  renewDistributedLock,
-  resetInMemoryLocks,
-} from "@/lib/weletic/redis-lock";
-import {
-  dispatchWeleticShopifyCatalogSync,
-  runCatalogSyncWorker,
-  syncWeleticShopifyCatalog,
-} from "@/lib/weletic/shopify/catalog-sync";
-import { redis } from "@/lib/upstash";
-import { shopifyAdminGraphql } from "@/lib/integrations/shopify/admin-graphql";
 
 describe("PERF-02: Asynchronous Catalog Sync with Polling & Job Dispatch", () => {
   const workspaceA = "ws_tenant_alpha";
@@ -575,7 +604,10 @@ describe("PERF-02: Asynchronous Catalog Sync with Polling & Job Dispatch", () =>
       fakeSyncRuns.set(run.id, run);
 
       const lockKey = `weletic:catalog-sync:${workspaceA}`;
-      const { token } = await acquireDistributedLock({ key: lockKey, ttlSeconds: 120 });
+      const { token } = await acquireDistributedLock({
+        key: lockKey,
+        ttlSeconds: 120,
+      });
 
       // Run worker and await completion
       await runCatalogSyncWorker({
@@ -619,7 +651,10 @@ describe("PERF-02: Asynchronous Catalog Sync with Polling & Job Dispatch", () =>
       fakeSyncRuns.set(run.id, run);
 
       const lockKey = `weletic:catalog-sync:${workspaceA}`;
-      const { token } = await acquireDistributedLock({ key: lockKey, ttlSeconds: 120 });
+      const { token } = await acquireDistributedLock({
+        key: lockKey,
+        ttlSeconds: 120,
+      });
 
       vi.mocked(shopifyAdminGraphql).mockImplementation(async () => {
         throw new Error("Shopify GraphQL network partition");
@@ -631,7 +666,9 @@ describe("PERF-02: Asynchronous Catalog Sync with Polling & Job Dispatch", () =>
         lockToken: token,
       });
 
-      await expect(workerPromise).rejects.toThrow("Shopify GraphQL network partition");
+      await expect(workerPromise).rejects.toThrow(
+        "Shopify GraphQL network partition",
+      );
 
       // Verify that failure transitioned the run status to failed and recorded completedAt
       const updatedRun = fakeSyncRuns.get(runId);
@@ -678,7 +715,12 @@ describe("PERF-02: Asynchronous Catalog Sync with Polling & Job Dispatch", () =>
 
       // 2. Poll when in_progress (running)
       initialRun.status = "running";
-      initialRun.stats = { products: 25, variants: 75, markets: 2, marketPrices: 150 };
+      initialRun.stats = {
+        products: 25,
+        variants: 75,
+        markets: 2,
+        marketPrices: 150,
+      };
       const reqRunning = new Request(
         `http://localhost:3000/api/shopify/integration/sync?workspaceId=${workspaceA}&runId=${runId}`,
       );
@@ -692,7 +734,12 @@ describe("PERF-02: Asynchronous Catalog Sync with Polling & Job Dispatch", () =>
 
       // 3. Poll when completed (succeeded)
       initialRun.status = "succeeded";
-      initialRun.stats = { products: 50, variants: 150, markets: 3, marketPrices: 450 };
+      initialRun.stats = {
+        products: 50,
+        variants: 150,
+        markets: 3,
+        marketPrices: 450,
+      };
       initialRun.completedAt = new Date("2026-10-04T12:02:30Z");
       const reqCompleted = new Request(
         `http://localhost:3000/api/shopify/integration/sync?workspaceId=${workspaceA}&runId=${runId}`,
@@ -733,7 +780,9 @@ describe("PERF-02: Asynchronous Catalog Sync with Polling & Job Dispatch", () =>
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.status).toBe("failed");
-      expect(body.errors).toEqual(["Shopify Admin GraphQL rate limit exceeded (429)"]);
+      expect(body.errors).toEqual([
+        "Shopify Admin GraphQL rate limit exceeded (429)",
+      ]);
       expect(body.processedProducts).toBe(12);
       expect(body.completedAt).toBe("2026-10-04T14:01:00.000Z");
     });

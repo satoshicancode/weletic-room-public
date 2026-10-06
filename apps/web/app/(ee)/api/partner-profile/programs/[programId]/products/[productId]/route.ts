@@ -6,8 +6,8 @@ import {
   selectCommissionRule,
   serializeGroupRewardCommission,
 } from "@/lib/weletic/commissions/rules";
-import { WeleticLocale } from "@/lib/weletic/localization";
 import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
+import { WeleticLocale } from "@/lib/weletic/localization";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";

@@ -1,10 +1,10 @@
 import { BlockStack, Button, Select, Text, TextField } from "@shopify/polaris";
-import { useState } from "react";
 import {
   auditedReviewModerationInputSchema,
   reviewModerationReasonSchema,
   type AuditedReviewModerationInput,
 } from "@weletic/contracts/reviews/moderation-contract";
+import { useState } from "react";
 import { reviewModerationCopy } from "../review-moderation-copy";
 
 export function ReviewModerationForm({

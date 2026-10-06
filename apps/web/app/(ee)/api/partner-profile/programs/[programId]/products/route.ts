@@ -6,8 +6,8 @@ import {
   selectCommissionRule,
   serializeGroupRewardCommission,
 } from "@/lib/weletic/commissions/rules";
-import { weleticCatalogQuerySchema } from "@/lib/zod/schemas/weletic-commerce";
 import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
+import { weleticCatalogQuerySchema } from "@/lib/zod/schemas/weletic-commerce";
 import { NextResponse } from "next/server";
 
 export const GET = withPartnerProfile(

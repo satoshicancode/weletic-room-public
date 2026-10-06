@@ -79,11 +79,15 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
 
       for (const modelName of dubCoreModels) {
         const model = models.find((m) => m.name === modelName);
-        expect(model, `Expected model ${modelName} to exist in DMMF`).toBeDefined();
+        expect(
+          model,
+          `Expected model ${modelName} to exist in DMMF`,
+        ).toBeDefined();
 
-        const weleticFields = model!.fields.filter((f) =>
-          f.name.toLowerCase().includes("weletic") ||
-          f.type.toLowerCase().includes("weletic"),
+        const weleticFields = model!.fields.filter(
+          (f) =>
+            f.name.toLowerCase().includes("weletic") ||
+            f.type.toLowerCase().includes("weletic"),
         );
         expect(
           weleticFields,
@@ -108,7 +112,11 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
       const weleticModels = models.filter((m) => m.name.startsWith("Weletic"));
       expect(weleticModels.length).toBeGreaterThan(10);
 
-      const crossRelations: Array<{ model: string; field: string; type: string }> = [];
+      const crossRelations: Array<{
+        model: string;
+        field: string;
+        type: string;
+      }> = [];
       for (const m of weleticModels) {
         for (const f of m.fields) {
           if (dubModelTypes.has(f.type)) {
@@ -133,7 +141,9 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
       expect(storeFieldNames).toContain("programId");
 
       // WeleticProductLink should have scalar programId, partnerId, linkId
-      const prodLinkModel = models.find((m) => m.name === "WeleticProductLink")!;
+      const prodLinkModel = models.find(
+        (m) => m.name === "WeleticProductLink",
+      )!;
       const prodLinkFieldNames = prodLinkModel.fields.map((f) => f.name);
       expect(prodLinkFieldNames).toContain("programId");
       expect(prodLinkFieldNames).toContain("partnerId");
@@ -155,7 +165,9 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
       vi.mocked(prisma.project.findUniqueOrThrow).mockRejectedValueOnce(
         new Error("Record to update not found."),
       );
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+        null,
+      );
 
       await expect(getWeleticShopifyInstallation(workspaceId)).rejects.toThrow(
         "Record to update not found.",
@@ -169,7 +181,9 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
         defaultProgramId: "prog_123",
         installedIntegrations: [],
       } as any);
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+        null,
+      );
 
       await expect(getWeleticShopifyInstallation(workspaceId)).rejects.toThrow(
         new DubApiError({
@@ -189,12 +203,15 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
             credentials: {
               shop: "mystore.myshopify.com",
               accessToken: "",
-              scope: "read_products,read_markets,read_orders,read_translations,read_customers",
+              scope:
+                "read_products,read_markets,read_orders,read_translations,read_customers",
             },
           },
         ],
       } as any);
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+        null,
+      );
 
       await expect(getWeleticShopifyInstallation(workspaceId)).rejects.toThrow(
         new DubApiError({
@@ -214,17 +231,21 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
             credentials: {
               shop: "",
               accessToken: "shpat_dummy_token",
-              scope: "read_products,read_markets,read_orders,read_translations,read_customers",
+              scope:
+                "read_products,read_markets,read_orders,read_translations,read_customers",
             },
           },
         ],
       } as any);
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+        null,
+      );
 
       await expect(getWeleticShopifyInstallation(workspaceId)).rejects.toThrow(
         new DubApiError({
           code: "bad_request",
-          message: "Connect Shopify and create a default partner program first.",
+          message:
+            "Connect Shopify and create a default partner program first.",
         }),
       );
     });
@@ -239,17 +260,21 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
             credentials: {
               shop: "store.myshopify.com",
               accessToken: "shpat_dummy_token",
-              scope: "read_products,read_markets,read_orders,read_translations,read_customers",
+              scope:
+                "read_products,read_markets,read_orders,read_translations,read_customers",
             },
           },
         ],
       } as any);
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+        null,
+      );
 
       await expect(getWeleticShopifyInstallation(workspaceId)).rejects.toThrow(
         new DubApiError({
           code: "bad_request",
-          message: "Connect Shopify and create a default partner program first.",
+          message:
+            "Connect Shopify and create a default partner program first.",
         }),
       );
     });
@@ -269,7 +294,9 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
           },
         ],
       } as any);
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+        null,
+      );
 
       await expect(getWeleticShopifyInstallation(workspaceId)).rejects.toThrow(
         /Reinstall the Shopify app with scopes:/,
@@ -286,12 +313,15 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
             credentials: {
               shop: "store.myshopify.com",
               accessToken: "shpat_test_pass",
-              scope: "write_products,write_markets,write_orders,write_translations,write_customers",
+              scope:
+                "write_products,write_markets,write_orders,write_translations,write_customers",
             },
           },
         ],
       } as any);
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+        null,
+      );
 
       const installation = await getWeleticShopifyInstallation(workspaceId);
       expect(installation).toEqual({
@@ -344,7 +374,8 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
       vi.mocked(readShopifyCredentialSource).mockResolvedValueOnce({
         source: "native",
         accessToken: "shpat_native_active_token",
-        scope: "read_products,read_markets,read_orders,read_translations,read_customers",
+        scope:
+          "read_products,read_markets,read_orders,read_translations,read_customers",
         installationGeneration: "gen_42",
       } as any);
 
@@ -371,13 +402,15 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
     });
 
     it("normalizes protocol, casing, and trailing slashes correctly", async () => {
-      expect(normalizeShopDomain("https://My-Store.myshopify.com/admin/settings")).toBe(
-        "my-store.myshopify.com",
-      );
-      expect(canonicalizeShopifyDomain("HTTP://TEST-STORE.myshopify.com/")).toBe(
-        "test-store.myshopify.com",
-      );
-      expect(canonicalizeShopifyDomain("not-a-myshopify-domain.com")).toBeNull();
+      expect(
+        normalizeShopDomain("https://My-Store.myshopify.com/admin/settings"),
+      ).toBe("my-store.myshopify.com");
+      expect(
+        canonicalizeShopifyDomain("HTTP://TEST-STORE.myshopify.com/"),
+      ).toBe("test-store.myshopify.com");
+      expect(
+        canonicalizeShopifyDomain("not-a-myshopify-domain.com"),
+      ).toBeNull();
     });
 
     it("returns null gracefully when store record exists but project record is missing (orphaned store)", async () => {
@@ -413,7 +446,9 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
     });
 
     it("blocks impersonation: returns null when queried domain does not match native store shopDomain", async () => {
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+        null,
+      );
       // Project found by shopifyStoreId
       vi.mocked(prisma.project.findUnique).mockResolvedValueOnce({
         id: "ws_spoof",
@@ -473,7 +508,9 @@ describe("Milestone 4 Adversarial Schema Decoupling & Query Boundaries", () => {
 
     it("returns null when exact integration credentials cannot be bound or verified", async () => {
       const domain = "unverified.myshopify.com";
-      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(null);
+      vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValueOnce(
+        null,
+      );
       vi.mocked(prisma.project.findUnique).mockResolvedValueOnce({
         id: "ws_unverified",
         shopifyStoreId: domain,
