@@ -997,7 +997,7 @@ model WeleticLoyaltyOutboxJob {
   store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, idempotencyKey])
-  @@index([status, scheduledFor, nextRetryAt])
+  @@index([status, scheduledFor, priority, nextRetryAt])
   @@index([storeId, jobType, status])
   @@index([lockedAt])
   @@index([createdAt])

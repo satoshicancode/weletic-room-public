@@ -975,6 +975,9 @@ importers:
       typescript:
         specifier: ^5.1.6
         version: 5.1.6
+      vitest:
+        specifier: ^4.0.8
+        version: 4.0.8(@types/node@22.18.3)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.0.0)(terser@5.27.0)(tsx@4.19.2)
 
   packages/utils:
     dependencies:
@@ -1030,6 +1033,9 @@ importers:
       typescript:
         specifier: ^5.1.6
         version: 5.1.6
+      vitest:
+        specifier: ^4.0.8
+        version: 4.0.8(@types/node@18.11.9)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.0.0)(terser@5.27.0)(tsx@4.19.2)
 
 packages:
 

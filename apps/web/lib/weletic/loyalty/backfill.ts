@@ -702,6 +702,15 @@ type BackfillOrderSnapshotToPublish =
     projectedPoints: bigint;
   };
 
+function chunkArray<T>(items: T[], size = 1000): T[][] {
+  if (items.length <= size) return [items];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
 async function lockAndFilterPublishableBackfillOrderSnapshots({
   tx,
   storeId,
@@ -716,29 +725,31 @@ async function lockAndFilterPublishableBackfillOrderSnapshots({
   );
   if (accountIds.length === 0) return [];
 
-  const lockedAccounts = await tx.$queryRaw<
-    Array<{
-      id: string;
-      status: string;
-      metadata: Prisma.JsonValue | null;
-    }>
-  >(Prisma.sql`
-    SELECT id, status, metadata
-    FROM WeleticLoyaltyAccount
-    WHERE storeId = ${storeId}
-      AND id IN (${Prisma.join(accountIds)})
-    ORDER BY id
-    FOR UPDATE
-  `);
-  const publishableAccountIds = new Set(
-    lockedAccounts
-      .filter(
-        (account) =>
-          account.status === "active" &&
-          !hasShopifyCustomerRedactionTombstone(account.metadata),
-      )
-      .map(({ id }) => id),
-  );
+  const publishableAccountIds = new Set<string>();
+  for (const chunk of chunkArray(accountIds, 1000)) {
+    const lockedAccounts = await tx.$queryRaw<
+      Array<{
+        id: string;
+        status: string;
+        metadata: Prisma.JsonValue | null;
+      }>
+    >(Prisma.sql`
+      SELECT id, status, metadata
+      FROM WeleticLoyaltyAccount
+      WHERE storeId = ${storeId}
+        AND id IN (${Prisma.join(chunk)})
+      ORDER BY id
+      FOR UPDATE
+    `);
+    for (const account of lockedAccounts) {
+      if (
+        account.status === "active" &&
+        !hasShopifyCustomerRedactionTombstone(account.metadata)
+      ) {
+        publishableAccountIds.add(account.id);
+      }
+    }
+  }
 
   return items.filter(({ accountId }) => publishableAccountIds.has(accountId));
 }
@@ -993,68 +1004,95 @@ export async function generateBackfillPreview(
       orderWhere.occurredAt = { gte: job.lookbackStartDate };
     }
 
-    // Fetch qualifying historical orders
-    const historicalOrders = await prisma.weleticCommerceOrder.findMany({
-      where: orderWhere,
-      orderBy: { occurredAt: "asc" },
-      select: {
-        id: true,
-        status: true,
-        shopperId: true,
-        shopCurrency: true,
-        shopNet: true,
-        shopSubtotal: true,
-        shopTotal: true,
-        presentmentCurrency: true,
-        presentmentNet: true,
-        presentmentTotal: true,
-        occurredAt: true,
-        updatedAt: true,
-        refunds: {
-          orderBy: { id: "asc" },
-          select: {
-            id: true,
-            shopAmount: true,
-            presentmentAmount: true,
-            updatedAt: true,
-            lines: {
-              orderBy: { id: "asc" },
-              select: {
-                id: true,
-                orderLineId: true,
-                shopAmount: true,
-                quantity: true,
-              },
+    const orderSelect = {
+      id: true,
+      status: true,
+      shopperId: true,
+      shopCurrency: true,
+      shopNet: true,
+      shopSubtotal: true,
+      shopTotal: true,
+      presentmentCurrency: true,
+      presentmentNet: true,
+      presentmentTotal: true,
+      occurredAt: true,
+      updatedAt: true,
+      refunds: {
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          shopAmount: true,
+          presentmentAmount: true,
+          updatedAt: true,
+          lines: {
+            orderBy: { id: "asc" },
+            select: {
+              id: true,
+              orderLineId: true,
+              shopAmount: true,
+              quantity: true,
             },
           },
         },
-        lines: {
-          orderBy: { id: "asc" },
-          select: {
-            id: true,
-            externalId: true,
-            productId: true,
-            variantId: true,
-            title: true,
-            shopNet: true,
-            shopGross: true,
-            quantity: true,
-            updatedAt: true,
-          },
+      },
+      lines: {
+        orderBy: { id: "asc" },
+        select: {
+          id: true,
+          externalId: true,
+          productId: true,
+          variantId: true,
+          title: true,
+          shopNet: true,
+          shopGross: true,
+          quantity: true,
+          updatedAt: true,
         },
       },
-    });
+    } satisfies Prisma.WeleticCommerceOrderSelect;
+
+    type HistoricalOrderSelected = Prisma.WeleticCommerceOrderGetPayload<{
+      select: typeof orderSelect;
+    }>;
+
+    // Fetch qualifying historical orders using cursor-based pagination (500 orders per chunk)
+    const ORDER_BATCH_SIZE = 500;
+    let orderCursorId: string | null = null;
+    const historicalOrders: HistoricalOrderSelected[] = [];
+
+    while (true) {
+      const batch = await prisma.weleticCommerceOrder.findMany({
+        where: orderWhere,
+        take: ORDER_BATCH_SIZE,
+        ...(orderCursorId ? { skip: 1, cursor: { id: orderCursorId } } : {}),
+        orderBy: { id: "asc" },
+        select: orderSelect,
+      });
+
+      if (!batch || batch.length === 0) break;
+      historicalOrders.push(...batch);
+      orderCursorId = batch[batch.length - 1].id;
+      if (batch.length < ORDER_BATCH_SIZE) break;
+    }
 
     const orderIds = historicalOrders.map((o) => o.id);
 
-    // Compound Idempotency: Check if orders already granted or backfilled
-    const existingGrants = await prisma.weleticLoyaltyEarnGrant.findMany({
-      where: {
-        storeId: job.storeId,
-        orderId: { in: orderIds },
-      },
-      select: { orderId: true, metadata: true },
-    });
+    // Compound Idempotency: Check if orders already granted or backfilled (chunked to max 1,000)
+    const existingGrants: Array<{
+      orderId: string;
+      metadata: Prisma.JsonValue | null;
+    }> = [];
+    for (const chunk of chunkArray(orderIds, 1000)) {
+      const grants = await prisma.weleticLoyaltyEarnGrant.findMany({
+        where: {
+          storeId: job.storeId,
+          orderId: { in: chunk },
+        },
+        select: { orderId: true, metadata: true },
+      });
+      existingGrants.push(...grants);
+    }
+
     const repairSourceJobId = readBackfillRepairSourceJobId(job.metadata);
     const grantedOrderIds = new Set(
       existingGrants
@@ -1075,22 +1113,30 @@ export async function generateBackfillPreview(
       `backfill:order:${id}`,
       `earn_order:${id}`,
     ]);
-    const existingEntries = await prisma.weleticPointsLedgerEntry.findMany({
-      where: {
-        storeId: job.storeId,
-        idempotencyKey: { in: compoundKeys },
-      },
-      select: { idempotencyKey: true },
-    });
+    const existingEntries: Array<{ idempotencyKey: string }> = [];
+    for (const chunk of chunkArray(compoundKeys, 1000)) {
+      const entries = await prisma.weleticPointsLedgerEntry.findMany({
+        where: {
+          storeId: job.storeId,
+          idempotencyKey: { in: chunk },
+        },
+        select: { idempotencyKey: true },
+      });
+      existingEntries.push(...entries);
+    }
     const creditedOrderKeys = new Set(
       existingEntries.map((entry) => entry.idempotencyKey),
     );
 
-    const existingOrderCredits =
-      await prisma.weleticLoyaltyBackfillOrderCredit.findMany({
-        where: { storeId: job.storeId, orderId: { in: orderIds } },
-        select: { orderId: true },
-      });
+    const existingOrderCredits: Array<{ orderId: string }> = [];
+    for (const chunk of chunkArray(orderIds, 1000)) {
+      const credits =
+        await prisma.weleticLoyaltyBackfillOrderCredit.findMany({
+          where: { storeId: job.storeId, orderId: { in: chunk } },
+          select: { orderId: true },
+        });
+      existingOrderCredits.push(...credits);
+    }
     const creditedOrderIds = new Set(
       existingOrderCredits.map(({ orderId }) => orderId),
     );
@@ -1149,15 +1195,35 @@ export async function generateBackfillPreview(
     // Lookup or ensure loyalty accounts for shoppers
     const shopperIds = Array.from(shopperOrdersMap.keys());
     const repairAccountIds = readBackfillRepairAccountIds(job.metadata);
-    const accounts = await prisma.weleticLoyaltyAccount.findMany({
-      where: {
-        storeId: job.storeId,
-        ...(repairAccountIds.length > 0
-          ? { id: { in: repairAccountIds } }
-          : { shopperId: { in: shopperIds } }),
-        status: "active",
-      },
-    });
+    const accounts: Array<{
+      id: string;
+      shopperId: string;
+      status: string;
+    }> = [];
+
+    if (repairAccountIds.length > 0) {
+      for (const chunk of chunkArray(repairAccountIds, 1000)) {
+        const batchAccounts = await prisma.weleticLoyaltyAccount.findMany({
+          where: {
+            storeId: job.storeId,
+            id: { in: chunk },
+            status: "active",
+          },
+        });
+        accounts.push(...batchAccounts);
+      }
+    } else {
+      for (const chunk of chunkArray(shopperIds, 1000)) {
+        const batchAccounts = await prisma.weleticLoyaltyAccount.findMany({
+          where: {
+            storeId: job.storeId,
+            shopperId: { in: chunk },
+            status: "active",
+          },
+        });
+        accounts.push(...batchAccounts);
+      }
+    }
 
     const shopperAccountMap = new Map<string, string>();
     for (const acc of accounts) {
@@ -1252,9 +1318,11 @@ export async function generateBackfillPreview(
         ].reduce((total, points) => total + points, BigInt(0));
 
         if (publishableOrderSnapshots.length > 0) {
-          await tx.weleticLoyaltyBackfillOrderSnapshot.createMany({
-            data: publishableOrderSnapshots,
-          });
+          for (const chunk of chunkArray(publishableOrderSnapshots, 500)) {
+            await tx.weleticLoyaltyBackfillOrderSnapshot.createMany({
+              data: chunk,
+            });
+          }
         }
         return tx.weleticLoyaltyBackfillJob.update({
           where: { id: jobId },
