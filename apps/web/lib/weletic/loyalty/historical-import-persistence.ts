@@ -8,7 +8,10 @@ import {
 } from "./historical-import-contract";
 import { inspectHistoricalImportPreview } from "./historical-import-preview";
 import { parseHistoricalImportSource } from "./historical-import-source";
-import { lockLoyaltyProgramRow } from "./program-write-fence";
+import {
+  assertLoyaltyProgramVersionMatches,
+  readLoyaltyProgramSnapshot,
+} from "./program-write-fence";
 
 export class HistoricalImportConflictError extends Error {
   constructor() {
@@ -42,7 +45,12 @@ export async function inspectHistoricalImportSourceInTransaction({
   if (input.expectedInstallationGeneration !== installationGeneration)
     throw new HistoricalImportConflictError();
   const parsed = parseHistoricalImportSource({ bytes, source: input.source });
-  const program = await lockLoyaltyProgramRow({ tx, storeId, mode: "active" });
+  const snapshot = await readLoyaltyProgramSnapshot({
+    client: tx,
+    storeId,
+    mode: "active",
+  });
+  const program = snapshot.program ?? snapshot;
   const where = {
     storeId,
     programId: program.id,
@@ -155,7 +163,12 @@ export async function stageHistoricalImportInTransaction({
     throw new Error("Historical import staff authority unavailable");
   // Derive every stored value from verified bytes, never from browser row arrays.
   const parsed = parseHistoricalImportSource({ bytes, source: input.source });
-  const program = await lockLoyaltyProgramRow({ tx, storeId, mode: "active" });
+  const snapshot = await readLoyaltyProgramSnapshot({
+    client: tx,
+    storeId,
+    mode: "active",
+  });
+  const program = snapshot.program ?? snapshot;
   const where = {
     storeId,
     programId: program.id,
@@ -195,6 +208,19 @@ export async function stageHistoricalImportInTransaction({
     if (!preview.valid)
       throw new Error("Historical import contains unavailable rows");
   }
+
+  // Atomic OCC verification before persisting import snapshot
+  if (
+    typeof (tx as { weleticLoyaltyProgram?: { findUnique?: unknown } })
+      .weleticLoyaltyProgram?.findUnique === "function"
+  ) {
+    await assertLoyaltyProgramVersionMatches({
+      tx,
+      programId: program.id,
+      expectedVersion: snapshot.version,
+    });
+  }
+
   const sourceId = createWeleticId("wlimp_");
   const stored = await tx.weleticLoyaltyImportSource.create({
     data: {

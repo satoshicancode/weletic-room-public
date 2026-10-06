@@ -130,8 +130,8 @@ export async function getCommissionsCount(filters: CommissionsCountFilters) {
     (acc, p) => {
       acc[p.status] = {
         count: p._count,
-        amount: p._sum.amount ?? 0,
-        earnings: p._sum.earnings ?? 0,
+        amount: Number(p._sum.amount ?? 0),
+        earnings: Number(p._sum.earnings ?? 0),
       };
       return acc;
     },
@@ -159,8 +159,8 @@ export async function getCommissionsCount(filters: CommissionsCountFilters) {
   counts.all = commissionsCount.reduce(
     (acc, p) => ({
       count: acc.count + p._count,
-      amount: acc.amount + (p._sum.amount ?? 0),
-      earnings: acc.earnings + (p._sum.earnings ?? 0),
+      amount: acc.amount + Number(p._sum.amount ?? 0),
+      earnings: acc.earnings + Number(p._sum.earnings ?? 0),
     }),
     { count: 0, amount: 0, earnings: 0 },
   );

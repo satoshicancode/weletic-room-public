@@ -8,13 +8,14 @@
     "dev:tunnel": "dotenv-flow -e .env -- tsx ./scripts/dev/run-cloudflare-tunnel.ts",
     "dev:all": "tsx ./scripts/dev/ensure-db.ts && pnpm prisma:generate && concurrently --kill-others -n web,tunnel,shopify,sync -c blue,yellow,green,magenta \"NEXT_DIST_DIR=.next-dev next dev --turbopack --port 8888\" \"dotenv-flow -e .env -- tsx ./scripts/dev/run-cloudflare-tunnel.ts\" \"shopify app dev --path ../../packages/shopify-app --skip-dependencies-installation --tunnel-url https://shopify.weletic.com:3000\" \"dotenv-flow -e .env -- tsx --conditions=react-server --import=./scripts/runtime/async-local-storage.cjs ./scripts/dev/dev-sync-poller.ts\"",
     "dev:sync": "dotenv-flow -e .env -- tsx --conditions=react-server --import=./scripts/runtime/async-local-storage.cjs ./scripts/dev/dev-sync-poller.ts",
-    "build": "pnpm prisma:generate && NODE_OPTIONS=\"--max-old-space-size=8192\" next build",
+    "build": "pnpm prisma:generate && WELETIC_LOCAL_CONTAINER_BUILD=1 NODE_OPTIONS=\"--max-old-space-size=8192\" next build",
+    "typecheck": "NODE_OPTIONS=\"--max-old-space-size=8192\" tsc --noEmit",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0",
     "start": "next start",
     "script": "tsx ./scripts/run.ts",
     "test": "pnpm test:unit",
     "test:unit": "pnpm prisma:generate && vitest run --config vitest.config.ts --no-file-parallelism --bail=1",
-    "test:integration": "tsx ./scripts/test/require-integration-env.ts && pnpm prisma:generate && vitest run --config vitest.integration.config.ts --no-file-parallelism --bail=1",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:loyalty-db": "vitest run --config vitest.loyalty-db.config.ts --no-file-parallelism --bail=1",
     "test:performance": "pnpm prisma:generate && vitest run --config vitest.performance.config.ts --no-file-parallelism --bail=1",
     "test:e2e": "playwright test",
@@ -67,6 +68,7 @@
     "@dub/tailwind-config": "workspace:*",
     "@dub/ui": "workspace:*",
     "@dub/utils": "workspace:*",
+    "@weletic/contracts": "workspace:*",
     "@floating-ui/react": "^0.26.20",
     "@mendable/firecrawl-js": "^1.29.1",
     "@next-auth/prisma-adapter": "^1.0.7",
@@ -207,11 +209,5 @@
   },
   "browser": {
     "crypto": false
-  },
-  "pnpm": {
-    "overrides": {
-      "@types/react": "19.1.14",
-      "@types/react-dom": "19.1.9"
-    }
   }
 }

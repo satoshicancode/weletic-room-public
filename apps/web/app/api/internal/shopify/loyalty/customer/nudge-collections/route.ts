@@ -15,7 +15,7 @@ const headers = {
 };
 
 export async function GET(request: Request) {
-  if (!verifyWeleticShopifyRequest({ request, body: "" }))
+  if (!(await verifyWeleticShopifyRequest({ request, body: "" })))
     return loyaltyErrorResponse(
       "unauthorized",
       "Unauthorized service request",
@@ -62,9 +62,19 @@ export async function GET(request: Request) {
   try {
     // Do not use the credential-bearing resolver: it can verify/rebind tokens.
     // Ambiguous persisted aliases must fail closed, never select the first store.
+    const matchingProject =
+      typeof prisma.project?.findFirst === "function"
+        ? await prisma.project.findFirst({
+            where: { shopifyStoreId: shop },
+            select: { id: true },
+          })
+        : null;
     const stores = await prisma.weleticShopifyStore.findMany({
       where: {
-        OR: [{ shopDomain: shop }, { project: { shopifyStoreId: shop } }],
+        OR: [
+          { shopDomain: shop },
+          ...(matchingProject ? [{ projectId: matchingProject.id }] : []),
+        ],
       },
       select: { id: true },
       take: 2,

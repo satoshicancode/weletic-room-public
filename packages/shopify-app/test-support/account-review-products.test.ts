@@ -20,7 +20,7 @@ it("queries only public product fields with bounded cursor pagination", async ()
   expect(query.mock.calls[0][0]).toContain("first: 20");
   expect(query.mock.calls[0][1]).toEqual({
     variables: { after: null },
-    version: "2026-07",
+    version: "2026-10",
   });
 });
 it.each([

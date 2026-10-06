@@ -47,23 +47,27 @@ const input = () => ({
   expectedInstallationGeneration: "g1",
 });
 const value = () => ({ actor: actor(), operation: "create", input: input() });
+let requestCounter = 0;
 function request(
   body: string,
   signedBody = body,
   signedPath = path,
   timestamp = String(Date.now()),
 ) {
+  const requestId = `req_flow_${Date.now()}_${++requestCounter}`;
   return new Request(`https://example.invalid${path}`, {
     method: "POST",
     body,
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "POST",
         path: signedPath,
         body: signedBody,
         secret,
+        requestId,
       }),
     },
   });

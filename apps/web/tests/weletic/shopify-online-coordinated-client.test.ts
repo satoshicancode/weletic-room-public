@@ -11,6 +11,12 @@ import type {
   ShopifySessionProperty,
 } from "../../lib/weletic/shopify/session-contract";
 
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: vi.fn().mockResolvedValue("OK"),
+  },
+}));
+
 const shop = "online-fixture.myshopify.com";
 const id = `${shop}_123`;
 function properties(): ShopifySessionProperty[] {
@@ -72,7 +78,7 @@ function gateway(persist = false) {
     const url = new URL(request.url);
     const body = init?.body ? String(init.body) : "";
     expect(url.origin).toBe("https://session-gateway.invalid");
-    expect(verifyWeleticShopifyRequest({ request, body })).toBe(true);
+    expect(await verifyWeleticShopifyRequest({ request, body })).toBe(true);
     if (request.method === "GET") {
       if (url.pathname.endsWith("coordination")) {
         state.snapshots++;

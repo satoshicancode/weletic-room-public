@@ -147,9 +147,13 @@ describe("Weletic Room Catalog & Multi-Market Price Matrix Contracts", () => {
   });
 
   it("verifies every product variant has market prices for all markets", async () => {
+    const program = await prisma.program.findFirst({
+      where: { slug: "we" },
+      select: { id: true },
+    });
     const products = await prisma.weleticShopifyProduct.findMany({
       where: {
-        program: { slug: "we" },
+        ...(program ? { programId: program.id } : {}),
         status: "active",
       },
       include: {

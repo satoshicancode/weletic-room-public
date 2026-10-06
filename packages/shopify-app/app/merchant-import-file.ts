@@ -1,4 +1,4 @@
-import { HISTORICAL_IMPORT_MAX_SOURCE_BYTES } from "../../../apps/web/lib/weletic/loyalty/historical-import-contract";
+import { HISTORICAL_IMPORT_MAX_SOURCE_BYTES } from "@weletic/contracts/loyalty/historical-import-contract";
 
 /** Read the selected file once. Do not retain its filename or parse shopper rows
  * in the browser; the server derives the preview from these exact bytes.

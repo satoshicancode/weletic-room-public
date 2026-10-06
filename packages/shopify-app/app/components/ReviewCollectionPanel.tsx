@@ -1,6 +1,6 @@
+import { reviewCollectionPolicySchema } from "@weletic/contracts/reviews/collection-contract";
 import { useEffect, useId, useRef, useState } from "react";
-import { reviewCollectionPolicySchema } from "../../../../apps/web/lib/weletic/reviews/collection-contract";
-import { useCoreLaunch } from "../../../../apps/web/ui/weletic/core-launch-context";
+import { useCoreLaunch } from "../core-launch-context";
 import type { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
 import { reviewCollectionCopy } from "../review-collection-copy";
 import { StaffAccessClientError } from "../staff-access-client";

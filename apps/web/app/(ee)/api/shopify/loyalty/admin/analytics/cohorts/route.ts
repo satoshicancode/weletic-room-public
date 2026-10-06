@@ -32,7 +32,8 @@ export const GET = withWorkspace(
       where: { projectId: workspace.id },
       select: {
         id: true,
-        program: { select: { accountingCurrency: true } },
+        programId: true,
+        shopCurrency: true,
       },
     });
     if (!store) {
@@ -41,6 +42,15 @@ export const GET = withWorkspace(
         message: "Shopify store not connected to this workspace.",
       });
     }
+
+    const program =
+      (store as any).program ??
+      (store.programId && typeof prisma?.program?.findUnique === "function"
+        ? await prisma.program.findUnique({
+            where: { id: store.programId },
+            select: { accountingCurrency: true },
+          })
+        : null);
 
     const startDate = parseOptionalDate(searchParams.startDate, "startDate");
     const endDate = parseOptionalDate(searchParams.endDate, "endDate");
@@ -54,7 +64,7 @@ export const GET = withWorkspace(
       (tx) =>
         calculateMemberCohortAttribution({
           storeId: store.id,
-          currency: store.program.accountingCurrency,
+          currency: program?.accountingCurrency || store.shopCurrency,
           dateRange:
             startDate || endDate
               ? {

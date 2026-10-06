@@ -151,7 +151,7 @@ describe("Shopify staff authorization with actual MySQL transactions", () => {
         programId: `staff_program_${suffix}`,
         shopDomain: fixture.shop,
         shopCurrency: "JPY",
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
         installationGeneration: "generation-1",
       },
     });

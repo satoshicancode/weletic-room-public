@@ -1,4 +1,5 @@
 import { WorkspaceRole } from "@prisma/client";
+import { permissionRegistry } from "./plugin-registry";
 
 export const PERMISSION_ACTIONS = [
   "workspaces.read",
@@ -26,11 +27,11 @@ export const PERMISSION_ACTIONS = [
   "messages.write",
   "payouts.write",
   "billing.write",
-  "loyalty.read",
-  "loyalty.write",
 ] as const;
 
-export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
+export type PermissionAction =
+  | (typeof PERMISSION_ACTIONS)[number]
+  | (string & {});
 
 export const ROLE_PERMISSIONS: {
   action: PermissionAction;
@@ -162,21 +163,15 @@ export const ROLE_PERMISSIONS: {
     description: "manage messages",
     roles: ["owner", "member"],
   },
-  {
-    action: "loyalty.read",
-    description: "access loyalty program",
-    roles: ["owner", "member", "viewer", "billing"],
-  },
-  {
-    action: "loyalty.write",
-    description: "manage loyalty program",
-    roles: ["owner", "member"],
-  },
 ];
 
-// Get permissions for a role
-export const getPermissionsByRole = (role: WorkspaceRole) => {
-  return ROLE_PERMISSIONS.filter(({ roles }) => roles.includes(role)).map(
-    ({ action }) => action,
-  );
+// Get permissions for a role (combining upstream core + dynamic plugin permissions)
+export const getPermissionsByRole = (role: WorkspaceRole): string[] => {
+  const corePermissions = ROLE_PERMISSIONS.filter(({ roles }) =>
+    roles.includes(role),
+  ).map(({ action }) => action as string);
+
+  const pluginPermissions = permissionRegistry.getPermissionsByRole(role);
+
+  return [...new Set([...corePermissions, ...pluginPermissions])];
 };

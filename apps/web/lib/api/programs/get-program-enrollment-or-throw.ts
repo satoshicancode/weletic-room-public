@@ -38,19 +38,50 @@ export async function getProgramEnrollmentOrThrow<
           }
         : false;
 
+  const linksInclude =
+    typeof include.links === "object"
+      ? "select" in include.links && include.links.select
+        ? include.links
+        : {
+            ...include.links,
+            orderBy: include.links.orderBy ?? {
+              createdAt: "asc",
+            },
+            include: {
+              ...include.links.include,
+              discountCode:
+                typeof include.links.include?.discountCode === "object"
+                  ? {
+                      ...include.links.include.discountCode,
+                      where: {
+                        ...include.links.include.discountCode.where,
+                        ...discountCodesWhere,
+                      },
+                    }
+                  : include.links.include?.discountCode !== false
+                    ? {
+                        where: discountCodesWhere,
+                      }
+                    : false,
+            },
+          }
+      : include.links
+        ? {
+            orderBy: {
+              createdAt: "asc",
+            },
+            include: {
+              discountCode: {
+                where: discountCodesWhere,
+              },
+            },
+          }
+        : false;
+
   const finalInclude = {
     ...include,
     discountCodes: discountCodesInclude,
-    links: include.links
-      ? {
-          orderBy: {
-            createdAt: "asc",
-          },
-          include: {
-            discountCode: true,
-          },
-        }
-      : false,
+    links: linksInclude,
   };
 
   const programEnrollment = programId.startsWith("prog_")

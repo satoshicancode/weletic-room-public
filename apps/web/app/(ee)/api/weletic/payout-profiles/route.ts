@@ -8,15 +8,23 @@ export const GET = withWorkspace(
     const programId = getDefaultProgramIdOrThrow(workspace);
     const profiles = await prisma.weleticPayoutProfile.findMany({
       where: { programId },
-      include: {
-        partner: { select: { id: true, name: true, email: true } },
-      },
       orderBy: [{ status: "desc" }, { updatedAt: "desc" }],
       take: 250,
     });
+    const partnerIds = Array.from(new Set(profiles.map((p) => p.partnerId)));
+    const partners =
+      partnerIds.length && typeof prisma?.partner?.findMany === "function"
+        ? await prisma.partner.findMany({
+            where: { id: { in: partnerIds } },
+            select: { id: true, name: true, email: true },
+          })
+        : [];
+    const partnerMap = new Map(partners.map((p) => [p.id, p]));
+
     return NextResponse.json(
       profiles.map(({ providerAccountRef, ...profile }) => ({
         ...profile,
+        partner: partnerMap.get(profile.partnerId) || null,
         providerAccountConfigured: Boolean(providerAccountRef),
       })),
     );

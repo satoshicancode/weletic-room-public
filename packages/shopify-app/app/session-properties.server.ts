@@ -1,10 +1,10 @@
 import { Session } from "@shopify/shopify-api";
-import type { ShopifySessionProperty } from "../../../apps/web/lib/weletic/shopify/session-contract";
+import type { ShopifySessionProperty } from "@weletic/contracts/shopify/session-contract";
 import {
   ONLINE_USER_SCOPE_PROPERTY,
   readOnlineSessionEvidence,
   validShopifySessionIdentityProperties,
-} from "../../../apps/web/lib/weletic/shopify/session-online-evidence";
+} from "@weletic/contracts/shopify/session-online-evidence";
 
 export function serializeShopifySession(
   session: Session,

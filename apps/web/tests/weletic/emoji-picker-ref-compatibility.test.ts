@@ -67,15 +67,6 @@ describe("emoji picker React ref boundary", () => {
       dirname(libraryRequire.resolve("@types/react/package.json")),
       "index.d.ts",
     );
-    // PNPM can resolve frimousse's undeclared type peer through either copy.
-    // Force the divergent case; a normal local tsc can miss the CI failure.
-    expect(appTypes).not.toBe(libraryTypes);
-    const fixture = join(web, "__emoji-ref-type-regression__.tsx");
-    const source = `
-      import type { EmojiPickerListRowProps } from "frimousse";
-      export const UnadaptedRow = ({children, ...props}: EmojiPickerListRowProps) =>
-        <div {...props}>{children}</div>;
-    `;
     const options: ts.CompilerOptions = {
       noEmit: true,
       strict: true,
@@ -87,6 +78,28 @@ describe("emoji picker React ref boundary", () => {
       jsx: ts.JsxEmit.ReactJSX,
       esModuleInterop: true,
     };
+    if (appTypes === libraryTypes) {
+      // With root pnpm.overrides hoisting React 19 types uniformly across the monorepo (PKG-03),
+      // apps/web and packages/utils resolve to the exact same deduplicated type package.
+      // Confirm the unified types still typecheck emoji-picker-components cleanly.
+      const program = ts.createProgram(
+        [join(web, "ui/shared/emoji-picker-components.tsx")],
+        options,
+      );
+      const errors = ts
+        .getPreEmitDiagnostics(program)
+        .filter(
+          (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+        );
+      expect(errors).toEqual([]);
+      return;
+    }
+    const fixture = join(web, "__emoji-ref-type-regression__.tsx");
+    const source = `
+      import type { EmojiPickerListRowProps } from "frimousse";
+      export const UnadaptedRow = ({children, ...props}: EmojiPickerListRowProps) =>
+        <div {...props}>{children}</div>;
+    `;
     const host = ts.createCompilerHost(options);
     const getSourceFile = host.getSourceFile.bind(host);
     host.getSourceFile = (

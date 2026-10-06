@@ -1,0 +1,89 @@
+{
+  "name": "@weletic/contracts",
+  "version": "1.0.0",
+  "description": "Shared interface contracts, DTO schemas, and service authentication for Weletic Room",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./loyalty": {
+      "types": "./src/loyalty/index.ts",
+      "import": "./src/loyalty/index.ts",
+      "default": "./src/loyalty/index.ts"
+    },
+    "./loyalty/*": {
+      "types": "./src/loyalty/*.ts",
+      "import": "./src/loyalty/*.ts",
+      "default": "./src/loyalty/*.ts"
+    },
+    "./reviews": {
+      "types": "./src/reviews/index.ts",
+      "import": "./src/reviews/index.ts",
+      "default": "./src/reviews/index.ts"
+    },
+    "./reviews/*": {
+      "types": "./src/reviews/*.ts",
+      "import": "./src/reviews/*.ts",
+      "default": "./src/reviews/*.ts"
+    },
+    "./shoppers": {
+      "types": "./src/shoppers/index.ts",
+      "import": "./src/shoppers/index.ts",
+      "default": "./src/shoppers/index.ts"
+    },
+    "./shoppers/*": {
+      "types": "./src/shoppers/*.ts",
+      "import": "./src/shoppers/*.ts",
+      "default": "./src/shoppers/*.ts"
+    },
+    "./merchant-settings": {
+      "types": "./src/merchant-settings/index.ts",
+      "import": "./src/merchant-settings/index.ts",
+      "default": "./src/merchant-settings/index.ts"
+    },
+    "./merchant-settings/*": {
+      "types": "./src/merchant-settings/*.ts",
+      "import": "./src/merchant-settings/*.ts",
+      "default": "./src/merchant-settings/*.ts"
+    },
+    "./shopify": {
+      "types": "./src/shopify/index.ts",
+      "import": "./src/shopify/index.ts",
+      "default": "./src/shopify/index.ts"
+    },
+    "./shopify/*": {
+      "types": "./src/shopify/*.ts",
+      "import": "./src/shopify/*.ts",
+      "default": "./src/shopify/*.ts"
+    },
+    "./core-launch-policy": {
+      "types": "./src/core-launch-policy.ts",
+      "import": "./src/core-launch-policy.ts",
+      "default": "./src/core-launch-policy.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "import": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsconfig": "workspace:*",
+    "typescript": "^5.7.2"
+  }
+}

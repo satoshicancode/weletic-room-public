@@ -23,7 +23,11 @@ export const POST = withCron(async ({ rawBody }) => {
     },
     select: {
       id: true,
-      discountCode: true,
+      discountCode: {
+        where: {
+          disabledAt: null,
+        },
+      },
       partnerGroupDefaultLinkId: true,
       programEnrollment: {
         select: {
@@ -55,9 +59,9 @@ export const POST = withCron(async ({ rawBody }) => {
     return logAndRespond(`Link ${linkId} not found. Skipping...`);
   }
 
-  if (link.discountCode) {
+  if (link.discountCode && !link.discountCode.disabledAt) {
     return logAndRespond(
-      `Link ${linkId} already has a discount code. Skipping...`,
+      `Link ${linkId} already has an active discount code. Skipping...`,
     );
   }
 

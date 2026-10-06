@@ -67,7 +67,7 @@ export async function getEligiblePayouts({
     payouts = payouts
       .map((payout) => {
         const newPayoutAmount = payout.commissions.reduce((acc, commission) => {
-          return acc + commission.earnings;
+          return acc + Number(commission.earnings);
         }, 0);
 
         return {

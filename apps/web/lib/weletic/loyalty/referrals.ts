@@ -519,18 +519,7 @@ async function ensureAccountReferralLinkUnlocked(params: {
     where: { id: params.accountId },
     include: {
       shopper: true,
-      store: {
-        include: {
-          project: {
-            include: {
-              domains: {
-                where: { primary: true, verified: true, archived: false },
-                take: 1,
-              },
-            },
-          },
-        },
-      },
+      store: true,
       program: true,
     },
   });
@@ -553,8 +542,22 @@ async function ensureAccountReferralLinkUnlocked(params: {
       params.loyaltyMaintenancePermit,
     ));
 
+  const project =
+    (account.store as any).project ??
+    (account.store.projectId && typeof prisma.project?.findUnique === "function"
+      ? await prisma.project.findUnique({
+          where: { id: account.store.projectId },
+          include: {
+            domains: {
+              where: { primary: true, verified: true, archived: false },
+              take: 1,
+            },
+          },
+        })
+      : null);
+
   const destinationUrl = `https://${account.store.shopDomain}?ref=${encodeURIComponent(referralCode)}`;
-  const primaryDomain = account.store.project?.domains?.[0]?.slug;
+  const primaryDomain = project?.domains?.[0]?.slug;
 
   if (!primaryDomain) {
     return {

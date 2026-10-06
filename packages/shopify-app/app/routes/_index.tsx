@@ -4,7 +4,7 @@ import {
   type LoaderFunctionArgs,
 } from "@remix-run/node";
 import { Link, useLocation, useRouteError } from "@remix-run/react";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import {
   AppProvider,
   Banner,
@@ -16,12 +16,12 @@ import {
   Text,
 } from "@shopify/polaris";
 import { boundary } from "@shopify/shopify-app-remix/server";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   installationAdmissionStatusSchema,
   type InstallationAdmissionStatus,
-} from "../../../../apps/web/lib/weletic/shopify/installation-admission-contract";
-import type { ShopifyMerchantOverview } from "../../../../apps/web/lib/weletic/shopify/staff-contract";
+} from "@weletic/contracts/shopify/installation-admission-contract";
+import type { ShopifyMerchantOverview } from "@weletic/contracts/shopify/staff-contract";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { installationBootstrapError } from "../installation-bootstrap-error";
 import { createInstallationStatusClient } from "../installation-status-client";
 import { installationStatusCopy } from "../installation-status-copy";
@@ -175,6 +175,7 @@ export default function IndexPage() {
   const content = (
     <div lang={locale}>
       <Page title={copy.title}>
+        <TitleBar title={copy.title} />
         <BlockStack gap="400">
           <Select
             label={copy.language}

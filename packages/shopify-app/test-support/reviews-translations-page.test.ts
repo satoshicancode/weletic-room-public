@@ -2,7 +2,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CoreLaunchContext } from "../../../apps/web/ui/weletic/core-launch-context";
+import { CoreLaunchContext } from "../app/core-launch-context";
 import { merchantReviewsCopy } from "../app/merchant-reviews-copy";
 import { openReviewPolicyCopy } from "../app/open-review-policy-copy";
 import { reviewTranslationCopy } from "../app/review-translation-copy";
@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
     dispatchEvent: () => true,
   });
   return {
-    bridge: { idToken: async () => "synthetic" },
+    bridge: { idToken: async () => "synthetic", toast: { show: vi.fn() } },
     list: vi.fn(),
     read: vi.fn(),
     save: vi.fn(),
@@ -31,6 +31,10 @@ const mocks = vi.hoisted(() => {
 });
 vi.mock("@shopify/app-bridge-react", () => ({
   useAppBridge: () => mocks.bridge,
+  TitleBar: ({ title, children }: any) =>
+    React.createElement("div", { "data-titlebar": title }, children),
+  NavMenu: ({ children }: any) =>
+    React.createElement("nav", { "data-navmenu": true }, children),
 }));
 vi.mock("@remix-run/react", () => ({
   Link: ({

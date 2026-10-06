@@ -184,7 +184,7 @@ describe("Shopify-hosted core pricing authority", () => {
         .status,
     ).toBe("paid");
     expect(customFetch).toHaveBeenCalledWith(
-      "https://partners.shopify.com/123/api/2026-07/graphql.json",
+      "https://partners.shopify.com/123/api/2026-10/graphql.json",
       expect.objectContaining({ redirect: "error", cache: "no-store" }),
     );
     customFetch.mockRejectedValue(new Error("private provider detail"));

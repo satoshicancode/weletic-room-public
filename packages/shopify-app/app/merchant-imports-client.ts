@@ -11,7 +11,7 @@ import {
   verifyHistoricalImportPreparationResponse,
   verifyHistoricalImportReconciliationResponse,
   verifyHistoricalImportStatusResponse,
-} from "../../../apps/web/lib/weletic/loyalty/historical-import-contract";
+} from "@weletic/contracts/loyalty/historical-import-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

@@ -1,3 +1,4 @@
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { prisma } from "@/lib/prisma";
 import {
   Prisma,
@@ -140,7 +141,7 @@ export async function refreshAppPricingForShop(
   try {
     const signal = AbortSignal.timeout(10_000);
     const response = await customFetch(
-      `https://${first.scope.shop}/admin/api/2026-07/graphql.json`,
+      `https://${first.scope.shop}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/graphql.json`,
       {
         method: "POST",
         redirect: "error",

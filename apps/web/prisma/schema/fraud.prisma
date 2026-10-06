@@ -109,4 +109,6 @@ model FraudAlert {
   @@index(partnerId)
   @@index(status)
   @@index(createdAt)
+  @@index([programId, partnerId])
+  @@index([reviewedById])
 }

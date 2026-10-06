@@ -23,7 +23,7 @@ export function onlineTokenExchangeFixture({
   const sdk = shopifyApi({
     apiKey,
     apiSecretKey,
-    apiVersion: ApiVersion.July26,
+    apiVersion: ((ApiVersion as any).October26 ?? "2026-10") as ApiVersion,
     hostName: "sdk-fixture.invalid",
     isEmbeddedApp: true,
     scopes: ["read_products", "write_discounts"],

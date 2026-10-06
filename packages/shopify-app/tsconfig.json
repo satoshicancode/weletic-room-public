@@ -16,7 +16,9 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "~/*": ["./app/*"]
+      "~/*": ["./app/*"],
+      "@weletic/contracts": ["../contracts/src/index.ts"],
+      "@weletic/contracts/*": ["../contracts/src/*"]
     },
     "noEmit": true
   }

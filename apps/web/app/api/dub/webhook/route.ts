@@ -5,23 +5,46 @@ import { saleCreated } from "./sale-created";
 
 // POST /api/dub/webhook - receive webhooks for Dub
 export const POST = async (req: Request) => {
-  const body = await req.json();
-  const { event, data } = webhookPayloadSchema.parse(body);
-
   const webhookSignature = req.headers.get("Dub-Signature");
 
-  if (!webhookSignature) {
-    return new Response("No signature provided", { status: 401 });
-  }
-
-  const computedSignature = crypto
-    .createHmac("sha256", `${process.env.DUB_WEBHOOK_SECRET}`)
-    .update(JSON.stringify(body))
-    .digest("hex");
-
-  if (webhookSignature !== computedSignature) {
+  if (!webhookSignature || !process.env.DUB_WEBHOOK_SECRET) {
     return new Response("Invalid signature", { status: 400 });
   }
+
+  const rawBody = await req.text();
+
+  const computedSignature = crypto
+    .createHmac("sha256", process.env.DUB_WEBHOOK_SECRET || "")
+    .update(rawBody)
+    .digest("hex");
+
+  if (webhookSignature.length !== computedSignature.length) {
+    return new Response("Invalid signature", { status: 400 });
+  }
+
+  const sigBuffer = Buffer.from(webhookSignature, "hex");
+  const compBuffer = Buffer.from(computedSignature, "hex");
+
+  if (
+    sigBuffer.length !== compBuffer.length ||
+    !crypto.timingSafeEqual(sigBuffer, compBuffer)
+  ) {
+    return new Response("Invalid signature", { status: 400 });
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(rawBody);
+  } catch {
+    return new Response("Invalid JSON", { status: 400 });
+  }
+
+  const parsed = webhookPayloadSchema.safeParse(body);
+  if (!parsed.success) {
+    return new Response("Invalid payload", { status: 400 });
+  }
+
+  const { event, data } = parsed.data;
 
   let response = "OK";
 

@@ -17,6 +17,7 @@ import {
   signWeleticShopifyRequest,
   verifyWeleticShopifyRequest,
   WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
 } from "@/lib/weletic/shopify/service-auth";
@@ -307,6 +308,7 @@ export async function validateLocalServiceHmacChecks(
   const signStart = Date.now();
   try {
     const timestamp = String(Date.now());
+    const requestId = crypto.randomUUID();
     const method = "GET";
     const pathUrl = `/api/internal/shopify/loyalty/customer?shop=${encodeURIComponent(targetDomain)}&customerId=cust_12345`;
     const body = "";
@@ -316,6 +318,7 @@ export async function validateLocalServiceHmacChecks(
       method,
       path: pathUrl,
       body,
+      requestId,
       secret,
     });
 
@@ -324,10 +327,11 @@ export async function validateLocalServiceHmacChecks(
       headers: {
         [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
         [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
       },
     });
 
-    const isValid = verifyWeleticShopifyRequest({
+    const isValid = await verifyWeleticShopifyRequest({
       request: mockRequest,
       body,
       now: Number(timestamp),
@@ -355,12 +359,14 @@ export async function validateLocalServiceHmacChecks(
     const expiredTimestamp = String(
       Date.now() - (WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 60000),
     );
+    const requestId = crypto.randomUUID();
     const pathUrl = `/api/internal/shopify/loyalty/program?shop=${encodeURIComponent(targetDomain)}`;
     const signature = signWeleticShopifyRequest({
       timestamp: expiredTimestamp,
       method: "GET",
       path: pathUrl,
       body: "",
+      requestId,
       secret,
     });
 
@@ -369,15 +375,16 @@ export async function validateLocalServiceHmacChecks(
       headers: {
         [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: expiredTimestamp,
         [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
       },
     });
 
-    const isRejected = !verifyWeleticShopifyRequest({
+    const isRejected = !(await verifyWeleticShopifyRequest({
       request: expiredReq,
       body: "",
       now: Date.now(),
       secret,
-    });
+    }));
 
     checks.push({
       name: "Local Service-HMAC Clock-Skew Rejection (> 5 min)",
@@ -397,6 +404,7 @@ export async function validateLocalServiceHmacChecks(
   const tamperStart = Date.now();
   try {
     const timestamp = String(Date.now());
+    const requestId = crypto.randomUUID();
     const pathUrl = `/api/internal/shopify/loyalty/customer/redeem?shop=${encodeURIComponent(targetDomain)}`;
     const originalBody = JSON.stringify({
       rewardId: "rew_123",
@@ -407,6 +415,7 @@ export async function validateLocalServiceHmacChecks(
       method: "POST",
       path: pathUrl,
       body: originalBody,
+      requestId,
       secret,
     });
 
@@ -419,16 +428,17 @@ export async function validateLocalServiceHmacChecks(
       headers: {
         [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
         [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
       },
       body: tamperedBody,
     });
 
-    const isTamperRejected = !verifyWeleticShopifyRequest({
+    const isTamperRejected = !(await verifyWeleticShopifyRequest({
       request: req,
       body: tamperedBody,
       now: Number(timestamp),
       secret,
-    });
+    }));
 
     checks.push({
       name: "Local Service-HMAC Payload-Tamper Rejection",

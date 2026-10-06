@@ -4,6 +4,7 @@ import { Redis } from "@upstash/redis";
 export const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL || "",
   token: process.env.UPSTASH_REDIS_REST_TOKEN || "",
+  ...(process.env.NODE_ENV === "test" ? { retry: { retries: 0 } } : {}),
 });
 
 // This is a separate global Redis instance that we use

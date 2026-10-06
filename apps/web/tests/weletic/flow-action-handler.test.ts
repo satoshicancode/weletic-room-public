@@ -147,7 +147,7 @@ describe("Flow handler (mocked SQL, Redis and Shopify)", () => {
     expect(await result.text()).toBe("");
     expect(result.headers.get("cache-control")).toBe("private, no-store");
     expect(mocks.fetch).toHaveBeenCalledWith(
-      "https://fixture.myshopify.com/admin/api/2026-07/graphql.json",
+      "https://fixture.myshopify.com/admin/api/2026-10/graphql.json",
       expect.objectContaining({
         redirect: "error",
         signal: expect.any(AbortSignal),

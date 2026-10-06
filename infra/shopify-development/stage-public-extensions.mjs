@@ -23,11 +23,11 @@ const manifestHashes = {
   "weletic-adjust-points":
     "7f9f7d2b9e91805f7943b859c7cc34433c0f0497a5cbf6b414fcea52bbd5da84",
   "weletic-customer-account":
-    "52fb9f173524f76a98a41557ce718d3c5953995eefd5dc788b22a68377c639fb",
+    "a6af05ac6d9c12c4b000e894c361d948af72b6fa7f32469d20f73d91887295b1",
   "weletic-customer-account-blocks":
-    "564e99c7f2fb098c2c858f09a7e93172dfb400de2e3b620e21434ea069498848",
+    "1f6d51052516afa846be336ba04e66f98123fae1ead41f6ee9a05c5f548d2b8b",
   "loyalty-checkout-slider":
-    "d1c04ace4e7cd89a48edb7f44b1ee044511af5f7a48f5daa97b462df859fe7a0",
+    "6468b90a25bb4f0a70ff3541f1cb67090475670e95ec743b3affb66b8919cbe7",
   "weletic-analytics":
     "84bd353a6b2bffed03c6ff225e522b5711c70211ac62315bf2bd6ab42902ebec",
   "weletic-points-earned":

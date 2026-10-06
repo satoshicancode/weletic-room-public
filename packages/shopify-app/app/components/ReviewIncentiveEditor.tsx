@@ -1,9 +1,9 @@
-import { useEffect, useId, useRef, useState } from "react";
 import {
   merchantReviewIncentiveDraftInputSchema,
   type MerchantReviewIncentiveDraftInput,
-} from "../../../../apps/web/lib/weletic/reviews/incentive-merchant-contract";
-import { useCoreLaunch } from "../../../../apps/web/ui/weletic/core-launch-context";
+} from "@weletic/contracts/reviews/incentive-merchant-contract";
+import { useEffect, useId, useRef, useState } from "react";
+import { useCoreLaunch } from "../core-launch-context";
 import { isCoreReviewIncentiveDraft } from "../core-review-policy";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { reviewIncentiveActivationCopy } from "../review-incentive-activation-copy";

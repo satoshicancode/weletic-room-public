@@ -115,10 +115,6 @@ model Partner {
   platforms                  PartnerPlatform[]
   referredApplications       ProgramApplicationEvent[]
   submittedLeads             SubmittedLead[]
-  weleticProductLinks        WeleticProductLink[]
-  weleticOrders              WeleticCommerceOrder[]
-  weleticPayoutProfiles      WeleticPayoutProfile[]
-  weleticCommissionRules     WeleticCommissionRule[]
 
   @@index(country)
   @@index(networkStatus)

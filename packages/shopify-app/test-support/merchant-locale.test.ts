@@ -18,6 +18,10 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@shopify/app-bridge-react", () => ({
   useAppBridge: () => mocks.bridge,
+  TitleBar: ({ title, children }: any) =>
+    React.createElement("div", { "data-titlebar": title }, children),
+  NavMenu: ({ children }: any) =>
+    React.createElement("nav", { "data-navmenu": true }, children),
 }));
 vi.mock("@remix-run/react", () => ({ useLocation: () => mocks.location }));
 vi.mock("../app/staff-access-client", async (importOriginal) => ({

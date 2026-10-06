@@ -1,9 +1,9 @@
-import { verifyRewardCatalogAcknowledgement } from "../../../apps/web/lib/weletic/loyalty/reward-catalog-acknowledgement";
+import { verifyRewardCatalogAcknowledgement } from "@weletic/contracts/loyalty/reward-catalog-acknowledgement";
 import {
   rewardCatalogRequestSchema,
   type RewardCatalogContain,
   type RewardCatalogWrite,
-} from "../../../apps/web/lib/weletic/loyalty/reward-catalog-contract";
+} from "@weletic/contracts/loyalty/reward-catalog-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

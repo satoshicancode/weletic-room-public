@@ -7,24 +7,25 @@ import { ShopifyCredentialUnavailableError } from "./credential-errors";
 import { readShopifyCredentialSource } from "./credential-source";
 
 export async function getWeleticShopifyInstallation(workspaceId: string) {
-  const workspace = await prisma.project.findUniqueOrThrow({
-    where: { id: workspaceId },
-    select: {
-      id: true,
-      shopifyStoreId: true,
-      defaultProgramId: true,
-      weleticShopifyStore: {
-        select: { id: true, shopDomain: true, installationGeneration: true },
+  const [workspace, store] = await Promise.all([
+    prisma.project.findUniqueOrThrow({
+      where: { id: workspaceId },
+      select: {
+        id: true,
+        shopifyStoreId: true,
+        defaultProgramId: true,
+        installedIntegrations: {
+          where: { integrationId: SHOPIFY_INTEGRATION_ID },
+          take: 1,
+          select: { credentials: true },
+        },
       },
-      installedIntegrations: {
-        where: { integrationId: SHOPIFY_INTEGRATION_ID },
-        take: 1,
-        select: { credentials: true },
-      },
-    },
-  });
-
-  const store = workspace.weleticShopifyStore;
+    }),
+    prisma.weleticShopifyStore.findUnique({
+      where: { projectId: workspaceId },
+      select: { id: true, shopDomain: true, installationGeneration: true },
+    }),
+  ]);
   const source = store
     ? await readShopifyCredentialSource({
         storeId: store.id,

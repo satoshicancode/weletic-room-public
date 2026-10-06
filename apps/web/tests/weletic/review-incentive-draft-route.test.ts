@@ -46,7 +46,7 @@ const run = (body: unknown = { actor, input }) =>
   );
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(verifyWeleticShopifyRequest).mockReturnValue(true);
+  vi.mocked(verifyWeleticShopifyRequest).mockResolvedValue(true);
   vi.mocked(draftShopifyMerchantReviewIncentive).mockResolvedValue({
     policyId: "policy",
     revision: 1,
@@ -69,7 +69,7 @@ it("verifies the complete body before dispatch and returns a private draft-only 
   expect(await response.json()).toMatchObject({ activated: false });
 });
 it("rejects invalid signatures before invoking the writer", async () => {
-  vi.mocked(verifyWeleticShopifyRequest).mockReturnValue(false);
+  vi.mocked(verifyWeleticShopifyRequest).mockResolvedValue(false);
   expect((await run()).status).toBe(401);
   expect(draftShopifyMerchantReviewIncentive).not.toHaveBeenCalled();
 });

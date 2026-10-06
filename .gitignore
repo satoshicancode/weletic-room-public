@@ -40,7 +40,7 @@ next-env.d.ts
 # miscellaneous
 .agents/*
 !.agents/rules/
-packages/stripe-app/.build/*
+archive/packages/stripe-app/.build/*
 .react-email
 .contentlayer
 .vscode

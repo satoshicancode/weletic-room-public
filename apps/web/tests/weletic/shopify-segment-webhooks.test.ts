@@ -5,6 +5,7 @@ const { shopifyAdminGraphql } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
+  SHOPIFY_ADMIN_API_VERSION: "2026-10",
   shopifyAdminGraphql,
 }));
 
@@ -63,7 +64,7 @@ describe("Shopify segment webhook provisioning", () => {
         .map(([request]) => request.variables.topic),
     ).toEqual(["CUSTOMER_JOINED_SEGMENT", "CUSTOMER_LEFT_SEGMENT"]);
     for (const [request] of shopifyAdminGraphql.mock.calls.slice(0, 2)) {
-      expect(request.apiVersion).toBe("2026-07");
+      expect(request.apiVersion).toBe("2026-10");
       expect(request.variables.webhookSubscription).toMatchObject({
         uri: callbackUrl,
         format: "JSON",

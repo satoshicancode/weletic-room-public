@@ -37,7 +37,7 @@ async function main() {
     const payoutIdToActualAmount = aggregatedPayouts.reduce(
       (acc, payout) => {
         if (payout.payoutId) {
-          acc[payout.payoutId] = payout._sum.earnings ?? 0;
+          acc[payout.payoutId] = Number(payout._sum.earnings ?? 0);
         }
         return acc;
       },

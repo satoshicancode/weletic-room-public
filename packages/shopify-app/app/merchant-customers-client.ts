@@ -3,11 +3,11 @@ import {
   merchantShopperProfileInputSchema,
   type MerchantShopperListInput,
   type MerchantShopperProfileInput,
-} from "../../../apps/web/lib/weletic/shoppers/merchant-contract";
+} from "@weletic/contracts/shoppers/merchant-contract";
 import {
   merchantShopperDirectoryResponseSchema,
   merchantShopperProfileResponseSchema,
-} from "../../../apps/web/lib/weletic/shoppers/merchant-response";
+} from "@weletic/contracts/shoppers/merchant-response";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

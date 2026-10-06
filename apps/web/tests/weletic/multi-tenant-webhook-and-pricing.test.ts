@@ -1,10 +1,16 @@
+import * as adminGraphqlModule from "@/lib/integrations/shopify/admin-graphql";
 import { formatMoney, normalizeCurrency } from "@/lib/weletic/money";
 import {
   SHOPIFY_CANONICAL_WEBHOOK_TOPICS,
   ensureShopifyWebhooksRegistered,
   resolveShopifyWebhookCallbackUrl,
 } from "@/lib/weletic/shopify/provision-webhooks";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
+  SHOPIFY_ADMIN_API_VERSION: "2026-10",
+  shopifyAdminGraphql: vi.fn(),
+}));
 
 describe("Multi-Tenant Shopify Webhook Provisioning & Strikethrough Pricing Test Suite", () => {
   describe("R1: Multi-Tenant Automated Webhook Provisioning", () => {
@@ -40,17 +46,97 @@ describe("Multi-Tenant Shopify Webhook Provisioning & Strikethrough Pricing Test
       expect(devUrl).toContain("/api/shopify/integration/webhook");
     });
 
-    it("handles idempotency and already-taken subscriptions gracefully", async () => {
-      const mockResult = await ensureShopifyWebhooksRegistered({
-        shopDomain: "test-workspace-store.myshopify.com",
-        accessToken: "shpat_test_mock_token_123",
+    it("provisions all 16 canonical webhooks with success confirmation and audit verification", async () => {
+      const mockAdminGraphql = vi.mocked(
+        adminGraphqlModule.shopifyAdminGraphql,
+      );
+
+      mockAdminGraphql.mockImplementation(async ({ query, variables }: any) => {
+        if (query.includes("WeleticCreateWebhook")) {
+          return {
+            webhookSubscriptionCreate: {
+              userErrors: [],
+              webhookSubscription: {
+                id: `gid://shopify/WebhookSubscription/wh_${variables.topic}`,
+                topic: variables.topic,
+              },
+            },
+          } as any;
+        }
+        if (query.includes("WeleticAuditWebhookSubscriptions")) {
+          return {
+            webhookSubscriptions: {
+              nodes: (variables.topics || []).map((t: string) => ({
+                id: `gid://shopify/WebhookSubscription/wh_${t}`,
+                topic: t,
+                format: "JSON",
+                uri: "https://dev-webhook.weletic.com/api/shopify/integration/webhook",
+                filter: null,
+              })),
+            },
+          } as any;
+        }
+        return {} as any;
       });
 
-      // Should complete without throwing unhandled exceptions
-      expect(mockResult).toBeDefined();
-      expect(mockResult.callbackUrl).toContain(
-        "/api/shopify/integration/webhook",
+      const result = await ensureShopifyWebhooksRegistered({
+        shopDomain: "test-workspace-store.myshopify.com",
+        accessToken: "shpat_test_mock_token_123",
+        callbackUrl:
+          "https://dev-webhook.weletic.com/api/shopify/integration/webhook",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.registered).toHaveLength(16);
+      expect(result.failed).toHaveLength(0);
+      expect(result.skipped).toHaveLength(0);
+      expect(result.registered).toEqual(
+        expect.arrayContaining([...SHOPIFY_CANONICAL_WEBHOOK_TOPICS]),
       );
+    });
+
+    it("handles idempotency and already-taken subscriptions gracefully", async () => {
+      const mockAdminGraphql = vi.mocked(
+        adminGraphqlModule.shopifyAdminGraphql,
+      );
+
+      mockAdminGraphql.mockImplementation(async ({ query, variables }: any) => {
+        if (query.includes("WeleticCreateWebhook")) {
+          return {
+            webhookSubscriptionCreate: {
+              userErrors: [{ message: "Address has already been taken" }],
+              webhookSubscription: null,
+            },
+          } as any;
+        }
+        if (query.includes("WeleticAuditWebhookSubscriptions")) {
+          return {
+            webhookSubscriptions: {
+              nodes: (variables.topics || []).map((t: string) => ({
+                id: `gid://shopify/WebhookSubscription/wh_${t}`,
+                topic: t,
+                format: "JSON",
+                uri: "https://dev-webhook.weletic.com/api/shopify/integration/webhook",
+                filter: null,
+              })),
+            },
+          } as any;
+        }
+        return {} as any;
+      });
+
+      const result = await ensureShopifyWebhooksRegistered({
+        shopDomain: "test-workspace-store.myshopify.com",
+        accessToken: "shpat_test_mock_token_123",
+        callbackUrl:
+          "https://dev-webhook.weletic.com/api/shopify/integration/webhook",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.skipped).toHaveLength(16);
+      expect(result.registered).toHaveLength(0);
+      expect(result.failed).toHaveLength(0);
+      expect(result.callbackUrl).toContain("/api/shopify/integration/webhook");
     });
   });
 

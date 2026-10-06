@@ -29,9 +29,9 @@ model Commission {
   eventId            String?          @unique // only for leads and sales
   description        String?
   type               CommissionType
-  amount             Int // only for sales (amount of the sale event)
+  amount             BigInt // only for sales (amount of the sale event)
   quantity           Int // only for clicks/leads (quantity of the event)
-  earnings           Int              @default(0) // amount earned by the partner
+  earnings           BigInt           @default(0) // amount earned by the partner
   currency           String           @default("usd")
   status             CommissionStatus @default(pending)
   userId             String? // user who created the manual commission
@@ -49,7 +49,6 @@ model Commission {
   reward              Reward?                        @relation(fields: [rewardId], references: [id])
   bountySubmission    BountySubmission?
   user                User?                          @relation(fields: [userId], references: [id])
-  weleticCalculations WeleticCommissionCalculation[]
 
   @@unique([invoiceId, programId])
   @@index([earnings, programId, partnerId, status]) // old index

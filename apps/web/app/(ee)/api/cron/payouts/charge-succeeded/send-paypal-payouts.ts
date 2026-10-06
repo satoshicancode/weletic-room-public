@@ -25,6 +25,7 @@ export async function sendPaypalPayouts({
       status: "processing",
       mode: "internal",
       method: "paypal",
+      amount: { gt: 0 },
       partner: {
         payoutsEnabledAt: {
           not: null,
@@ -50,13 +51,15 @@ export async function sendPaypalPayouts({
     },
   });
 
-  if (payouts.length === 0) {
+  const eligiblePayouts = payouts.filter((p) => p.amount > 0);
+
+  if (eligiblePayouts.length === 0) {
     console.log("No payouts for sending via PayPal, skipping...");
     return;
   }
 
   const batchResult = await createPayPalBatchPayout({
-    payouts,
+    payouts: eligiblePayouts,
     invoiceId: invoice.id,
   });
 
@@ -64,7 +67,7 @@ export async function sendPaypalPayouts({
 
   // Update only successfully accepted payouts to "sent" status
   if (batchResult.successfulPayoutIds.length > 0) {
-    const successfulPayouts = payouts.filter((p) =>
+    const successfulPayouts = eligiblePayouts.filter((p) =>
       batchResult.successfulPayoutIds.includes(p.id),
     );
 

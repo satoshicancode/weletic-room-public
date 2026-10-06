@@ -11,12 +11,18 @@ import {
   decimalToMinorUnits,
   normalizeCurrency,
 } from "@/lib/weletic/money";
-import { withDistributedLock } from "@/lib/weletic/redis-lock";
+import {
+  acquireDistributedLock,
+  releaseDistributedLock,
+  renewDistributedLock,
+  withDistributedLock,
+} from "@/lib/weletic/redis-lock";
 import {
   Prisma,
   WeleticProductStatus,
   WeleticSyncStatus,
 } from "@prisma/client";
+import { waitUntil } from "@vercel/functions";
 import { getWeleticShopifyInstallation } from "./get-installation";
 import { ensureShopifyWebhooksRegistered } from "./provision-webhooks";
 import { assertShopifyStoreAcceptsOperationalWrites } from "./store-compliance-state";
@@ -362,9 +368,11 @@ async function withCatalogWriteFence<T>({
 async function performWeleticShopifyCatalogSync({
   workspaceId,
   expectedInstallationGeneration,
+  existingRunId,
 }: {
   workspaceId: string;
   expectedInstallationGeneration?: string | null;
+  existingRunId?: string;
 }) {
   const installation = await getWeleticShopifyInstallation(workspaceId);
   const credentialInstallationGeneration =
@@ -383,6 +391,27 @@ async function performWeleticShopifyCatalogSync({
       expectedInstallationGeneration: credentialInstallationGeneration,
       tx,
     });
+    if (existingRunId) {
+      const existing = await tx.weleticShopifySyncRun.findUnique({
+        where: { id: existingRunId },
+        include: { store: true },
+      });
+      if (existing) {
+        await tx.weleticShopifyStore.update({
+          where: { id: existing.storeId },
+          data: { syncStatus: WeleticSyncStatus.running },
+        });
+        const updated = await tx.weleticShopifySyncRun.update({
+          where: { id: existingRunId },
+          data: {
+            status: WeleticSyncStatus.running,
+            startedAt: new Date(),
+          },
+          include: { store: true },
+        });
+        return updated;
+      }
+    }
     const createdRun = await tx.weleticShopifySyncRun.create({
       data: {
         id: createWeleticId("wsync_"),
@@ -642,6 +671,54 @@ async function performWeleticShopifyCatalogSync({
       stats.markets += 1;
     }
 
+    const fxSessionCache = new Map<
+      string,
+      Promise<Awaited<ReturnType<typeof getAccountingFxQuote>>>
+    >();
+
+    const getCachedAccountingFxQuote = async (
+      base: string,
+      quote: string,
+    ): Promise<Awaited<ReturnType<typeof getAccountingFxQuote>>> => {
+      const normBase = normalizeCurrency(base);
+      const normQuote = normalizeCurrency(quote);
+      if (normBase === normQuote) {
+        return {
+          base: normBase,
+          quote: normQuote,
+          rate: "1",
+          provider: "identity",
+          capturedAt: new Date(),
+        };
+      }
+      const cacheKey = `${normBase}:${normQuote}`;
+      let cachedPromise = fxSessionCache.get(cacheKey);
+      if (!cachedPromise) {
+        cachedPromise = getAccountingFxQuote({
+          base: normBase,
+          quote: normQuote,
+        }).catch((err) => {
+          fxSessionCache.delete(cacheKey);
+          throw err;
+        });
+        fxSessionCache.set(cacheKey, cachedPromise);
+      }
+      return cachedPromise;
+    };
+
+    // Prefetch FX quotes for active market currencies against shopCurrency
+    for (const currency of marketCurrencies.values()) {
+      const normCurrency = normalizeCurrency(currency);
+      if (normCurrency !== shopCurrency) {
+        void getCachedAccountingFxQuote(shopCurrency, normCurrency).catch(
+          () => {},
+        );
+        void getCachedAccountingFxQuote(normCurrency, shopCurrency).catch(
+          () => {},
+        );
+      }
+    }
+
     let cursor: string | null = null;
     let hasNextPage = true;
     const seenProductIds: string[] = [];
@@ -769,59 +846,75 @@ async function performWeleticShopifyCatalogSync({
             }),
         });
 
-        for (let offset = 0; offset < variantsList.length; offset += 20) {
-          const variants = variantsList.slice(offset, offset + 20);
+        const VARIANT_BATCH_SIZE = 20;
+        for (
+          let offset = 0;
+          offset < variantsList.length;
+          offset += VARIANT_BATCH_SIZE
+        ) {
+          const variants = variantsList.slice(
+            offset,
+            offset + VARIANT_BATCH_SIZE,
+          );
           await withCurrentCatalogWriteFence({
             action: "catalog_sync_variants",
             operation: async (tx) => {
-              for (const variant of variants) {
-                await tx.weleticShopifyVariant.upsert({
-                  where: {
-                    productId_externalId: {
+              await Promise.all(
+                variants.map((variant) =>
+                  tx.weleticShopifyVariant.upsert({
+                    where: {
+                      productId_externalId: {
+                        productId: savedProduct.id,
+                        externalId: variant.id,
+                      },
+                    },
+                    create: {
+                      id: createWeleticId("wvar_"),
                       productId: savedProduct.id,
                       externalId: variant.id,
+                      title: variant.title,
+                      sku: variant.sku,
+                      barcode: variant.barcode,
+                      options: variant.selectedOptions,
+                      imageUrl: variant.image?.url,
+                      availableForSale: variant.availableForSale,
+                      inventoryQuantity: variant.inventoryQuantity,
+                      shopPrice: decimalToMinorUnits(
+                        variant.price,
+                        shopCurrency,
+                      ),
+                      shopCompareAtPrice: variant.compareAtPrice
+                        ? decimalToMinorUnits(
+                            variant.compareAtPrice,
+                            shopCurrency,
+                          )
+                        : null,
+                      shopCurrency,
                     },
-                  },
-                  create: {
-                    id: createWeleticId("wvar_"),
-                    productId: savedProduct.id,
-                    externalId: variant.id,
-                    title: variant.title,
-                    sku: variant.sku,
-                    barcode: variant.barcode,
-                    options: variant.selectedOptions,
-                    imageUrl: variant.image?.url,
-                    availableForSale: variant.availableForSale,
-                    inventoryQuantity: variant.inventoryQuantity,
-                    shopPrice: decimalToMinorUnits(variant.price, shopCurrency),
-                    shopCompareAtPrice: variant.compareAtPrice
-                      ? decimalToMinorUnits(
-                          variant.compareAtPrice,
-                          shopCurrency,
-                        )
-                      : null,
-                    shopCurrency,
-                  },
-                  update: {
-                    productId: savedProduct.id,
-                    title: variant.title,
-                    sku: variant.sku,
-                    barcode: variant.barcode,
-                    options: variant.selectedOptions,
-                    imageUrl: variant.image?.url,
-                    availableForSale: variant.availableForSale,
-                    inventoryQuantity: variant.inventoryQuantity,
-                    shopPrice: decimalToMinorUnits(variant.price, shopCurrency),
-                    shopCompareAtPrice: variant.compareAtPrice
-                      ? decimalToMinorUnits(
-                          variant.compareAtPrice,
-                          shopCurrency,
-                        )
-                      : null,
-                    shopCurrency,
-                  },
-                });
-              }
+                    update: {
+                      productId: savedProduct.id,
+                      title: variant.title,
+                      sku: variant.sku,
+                      barcode: variant.barcode,
+                      options: variant.selectedOptions,
+                      imageUrl: variant.image?.url,
+                      availableForSale: variant.availableForSale,
+                      inventoryQuantity: variant.inventoryQuantity,
+                      shopPrice: decimalToMinorUnits(
+                        variant.price,
+                        shopCurrency,
+                      ),
+                      shopCompareAtPrice: variant.compareAtPrice
+                        ? decimalToMinorUnits(
+                            variant.compareAtPrice,
+                            shopCurrency,
+                          )
+                        : null,
+                      shopCurrency,
+                    },
+                  }),
+                ),
+              );
             },
           });
         }
@@ -930,10 +1023,10 @@ async function performWeleticShopifyCatalogSync({
             targetMarketCurrency !== shopCurrency
           ) {
             try {
-              const fx = await getAccountingFxQuote({
-                base: returnedCurrency,
-                quote: targetMarketCurrency,
-              });
+              const fx = await getCachedAccountingFxQuote(
+                returnedCurrency,
+                targetMarketCurrency,
+              );
               const convertedPrice = convertMoney(
                 { amount: finalAmount, currency: returnedCurrency as any },
                 fx,
@@ -965,42 +1058,48 @@ async function performWeleticShopifyCatalogSync({
         }
 
         if (marketPriceWrites.length > 0) {
+          const MARKET_PRICE_BATCH_SIZE = 100;
           for (
             let offset = 0;
             offset < marketPriceWrites.length;
-            offset += 20
+            offset += MARKET_PRICE_BATCH_SIZE
           ) {
-            const prices = marketPriceWrites.slice(offset, offset + 20);
+            const prices = marketPriceWrites.slice(
+              offset,
+              offset + MARKET_PRICE_BATCH_SIZE,
+            );
             await withCurrentCatalogWriteFence({
               action: "catalog_sync_market_prices",
               operation: async (tx) => {
-                for (const price of prices) {
-                  await tx.weleticShopifyMarketPrice.upsert({
-                    where: {
-                      variantId_marketId_countryCode: {
+                await Promise.all(
+                  prices.map((price) =>
+                    tx.weleticShopifyMarketPrice.upsert({
+                      where: {
+                        variantId_marketId_countryCode: {
+                          variantId: price.variantId,
+                          marketId: market.id,
+                          countryCode: market.countryCode,
+                        },
+                      },
+                      create: {
+                        id: createWeleticId("wprice_"),
                         variantId: price.variantId,
                         marketId: market.id,
                         countryCode: market.countryCode,
+                        amount: price.amount,
+                        compareAtAmount: price.compareAtAmount,
+                        currency: price.currency,
+                        available: true,
                       },
-                    },
-                    create: {
-                      id: createWeleticId("wprice_"),
-                      variantId: price.variantId,
-                      marketId: market.id,
-                      countryCode: market.countryCode,
-                      amount: price.amount,
-                      compareAtAmount: price.compareAtAmount,
-                      currency: price.currency,
-                      available: true,
-                    },
-                    update: {
-                      amount: price.amount,
-                      compareAtAmount: price.compareAtAmount,
-                      currency: price.currency,
-                      available: true,
-                    },
-                  });
-                }
+                      update: {
+                        amount: price.amount,
+                        compareAtAmount: price.compareAtAmount,
+                        currency: price.currency,
+                        available: true,
+                      },
+                    }),
+                  ),
+                );
               },
             });
           }
@@ -1168,6 +1267,153 @@ async function performWeleticShopifyCatalogSync({
   }
 }
 
+export async function runCatalogSyncWorker({
+  workspaceId,
+  runId,
+  lockToken,
+  expectedInstallationGeneration,
+}: {
+  workspaceId: string;
+  runId: string;
+  lockToken?: string;
+  expectedInstallationGeneration?: string | null;
+}) {
+  const lockKey = `weletic:catalog-sync:${workspaceId}`;
+  const ttlSeconds = 120;
+  let renewalInFlight = false;
+  const renewalTimer = lockToken
+    ? setInterval(() => {
+        if (renewalInFlight) return;
+        renewalInFlight = true;
+        void renewDistributedLock({
+          key: lockKey,
+          token: lockToken,
+          ttlSeconds,
+        }).finally(() => {
+          renewalInFlight = false;
+        });
+      }, 40_000)
+    : null;
+  renewalTimer?.unref?.();
+
+  try {
+    return await performWeleticShopifyCatalogSync({
+      workspaceId,
+      expectedInstallationGeneration,
+      existingRunId: runId,
+    });
+  } finally {
+    if (renewalTimer) clearInterval(renewalTimer);
+    if (lockToken) {
+      await releaseDistributedLock({ key: lockKey, token: lockToken });
+    }
+  }
+}
+
+export async function dispatchWeleticShopifyCatalogSync({
+  workspaceId,
+  expectedInstallationGeneration,
+}: {
+  workspaceId: string;
+  expectedInstallationGeneration?: string | null;
+}): Promise<{ runId: string; status: "pending" }> {
+  await assertShopifyStoreAcceptsOperationalWrites({
+    workspaceId,
+    action: "catalog_sync_start",
+    allowMissing: true,
+  });
+
+  const lockKey = `weletic:catalog-sync:${workspaceId}`;
+  const { acquired, token } = await acquireDistributedLock({
+    key: lockKey,
+    ttlSeconds: 120,
+  });
+  if (!acquired) {
+    throw new Error("A Shopify catalog sync is already running.");
+  }
+
+  const activeRun = await prisma.weleticShopifySyncRun.findFirst({
+    where: {
+      store: { projectId: workspaceId },
+      status: { in: [WeleticSyncStatus.pending, WeleticSyncStatus.running] },
+      updatedAt: { gte: new Date(Date.now() - 120_000) },
+    },
+  });
+  if (activeRun) {
+    await releaseDistributedLock({ key: lockKey, token });
+    throw new Error("A Shopify catalog sync is already running.");
+  }
+
+  const installation = await getWeleticShopifyInstallation(workspaceId);
+  const credentialInstallationGeneration =
+    installation.installationGeneration ?? null;
+  if (
+    expectedInstallationGeneration !== undefined &&
+    expectedInstallationGeneration !== credentialInstallationGeneration
+  ) {
+    await releaseDistributedLock({ key: lockKey, token });
+    throw new Error("Shopify catalog trigger belongs to a stale installation.");
+  }
+
+  const runId = createWeleticId("wsync_");
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await assertShopifyStoreAcceptsOperationalWrites({
+        workspaceId,
+        action: "catalog_sync_start",
+        allowMissing: true,
+        expectedInstallationGeneration: credentialInstallationGeneration,
+        tx,
+      });
+
+      const store = await tx.weleticShopifyStore.upsert({
+        where: { projectId: workspaceId },
+        create: {
+          id: createWeleticId("wstore_"),
+          projectId: workspaceId,
+          programId: installation.programId,
+          shopDomain: installation.shopDomain,
+          shopCurrency: "USD",
+          installationGeneration: credentialInstallationGeneration,
+          apiVersion: SHOPIFY_ADMIN_API_VERSION,
+          syncStatus: WeleticSyncStatus.pending,
+        },
+        update: {
+          syncStatus: WeleticSyncStatus.pending,
+        },
+      });
+
+      await tx.weleticShopifySyncRun.create({
+        data: {
+          id: runId,
+          storeId: store.id,
+          kind: "full_catalog",
+          status: WeleticSyncStatus.pending,
+          stats: { products: 0, variants: 0, markets: 0, marketPrices: 0 },
+          startedAt: new Date(),
+        },
+      });
+    });
+
+    waitUntil(
+      runCatalogSyncWorker({
+        workspaceId,
+        runId,
+        lockToken: token,
+        expectedInstallationGeneration: credentialInstallationGeneration,
+      }).catch((err) => {
+        console.error(`[CatalogSync] Background sync ${runId} failed:`, err);
+      }),
+    );
+
+    return { runId, status: "pending" };
+  } catch (err) {
+    await releaseDistributedLock({ key: lockKey, token });
+    throw err;
+  }
+}
+
 export async function syncWeleticShopifyCatalog({
   workspaceId,
   expectedInstallationGeneration,
@@ -1178,7 +1424,7 @@ export async function syncWeleticShopifyCatalog({
   const lockKey = `weletic:catalog-sync:${workspaceId}`;
   return await withDistributedLock({
     key: lockKey,
-    ttlSeconds: 30 * 60,
+    ttlSeconds: 120,
     onLocked: () => {
       throw new Error("A Shopify catalog sync is already running.");
     },

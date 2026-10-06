@@ -2,7 +2,7 @@ import {
   merchantAnalyticsRequestSchema,
   verifyMerchantAnalyticsResponse,
   type MerchantAnalyticsRequest,
-} from "../../../apps/web/lib/weletic/loyalty/merchant-analytics-contract";
+} from "@weletic/contracts/loyalty/merchant-analytics-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,
