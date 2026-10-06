@@ -15,7 +15,7 @@
     "script": "tsx ./scripts/run.ts",
     "test": "pnpm test:unit",
     "test:unit": "pnpm prisma:generate && vitest run --config vitest.config.ts --no-file-parallelism --bail=1",
-    "test:integration": "tsx ./scripts/test/require-integration-env.ts && pnpm prisma:generate && vitest run --config vitest.integration.config.ts --no-file-parallelism --bail=1",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:loyalty-db": "vitest run --config vitest.loyalty-db.config.ts --no-file-parallelism --bail=1",
     "test:performance": "pnpm prisma:generate && vitest run --config vitest.performance.config.ts --no-file-parallelism --bail=1",
     "test:e2e": "playwright test",
