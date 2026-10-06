@@ -30,6 +30,7 @@ vi.mock("@/lib/prisma", () => ({
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
   shopifyAdminGraphql: vi.fn(),
+  SHOPIFY_ADMIN_API_VERSION: "2026-10",
 }));
 
 vi.mock("@/lib/weletic/shopify/get-installation", () => ({
