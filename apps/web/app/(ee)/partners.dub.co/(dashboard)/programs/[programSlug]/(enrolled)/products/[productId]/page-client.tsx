@@ -35,6 +35,95 @@ const localeLabels: Record<WeleticLocale, string> = {
   ja: "日本語",
 };
 
+const detailI18n: Record<
+  WeleticLocale,
+  {
+    soldCount: string;
+    commissionLabel: string;
+    discountLabel: string;
+    variantLabel: string;
+    getLinkLabel: string;
+    customSubIdLabel: string;
+    offerDetailsTitle: string;
+    commissionActiveBadge: string;
+    channelType: string;
+    storeCommission: string;
+    bonusCommission: string;
+    estCommissionAmount: string;
+    livestreamChannel: string;
+    mostUsedBadge: string;
+    socialChannel: string;
+    videoChannel: string;
+    marketLabel: string;
+    countryLabel: string;
+    languageLabel: string;
+  }
+> = {
+  en: {
+    soldCount: "100+ Sold",
+    commissionLabel: "Commission",
+    discountLabel: "Customer discount",
+    variantLabel: "Options / Variants",
+    getLinkLabel: "Get Link",
+    customSubIdLabel: "Create custom Sub_ID link",
+    offerDetailsTitle: "Offer Details",
+    commissionActiveBadge: "Commission Active",
+    channelType: "Channel Type",
+    storeCommission: "Store Commission",
+    bonusCommission: "Bonus Commission",
+    estCommissionAmount: "Est. Commission Amount",
+    livestreamChannel: "Livestream / Store Live",
+    mostUsedBadge: "Most Used Channel",
+    socialChannel: "Social Medias (TikTok, Facebook, Instagram, YouTube)",
+    videoChannel: "Short Videos & Creator Bio Links",
+    marketLabel: "Market",
+    countryLabel: "Country",
+    languageLabel: "Language",
+  },
+  vi: {
+    soldCount: "Đã bán 100+",
+    commissionLabel: "Hoa hồng",
+    discountLabel: "Mã giảm cho khách",
+    variantLabel: "Phân loại / Biến thể",
+    getLinkLabel: "Lấy Link",
+    customSubIdLabel: "Tạo link tùy biến Sub_ID",
+    offerDetailsTitle: "Chi tiết hoa hồng & ưu đãi",
+    commissionActiveBadge: "Đang áp dụng hoa hồng",
+    channelType: "Kênh tiếp thị",
+    storeCommission: "Hoa hồng cơ bản",
+    bonusCommission: "Thưởng thêm kênh",
+    estCommissionAmount: "Tổng thu nhập ước tính",
+    livestreamChannel: "Livestream / Bán hàng trực tiếp",
+    mostUsedBadge: "Kênh phổ biến nhất",
+    socialChannel: "Mạng xã hội (TikTok, Facebook, Instagram, YouTube)",
+    videoChannel: "Video ngắn & Link Bio cá nhân",
+    marketLabel: "Thị trường",
+    countryLabel: "Quốc gia",
+    languageLabel: "Ngôn ngữ",
+  },
+  ja: {
+    soldCount: "100+ 点販売済み",
+    commissionLabel: "コミッション",
+    discountLabel: "顧客割引コード",
+    variantLabel: "バリエーション / 種類",
+    getLinkLabel: "リンク取得",
+    customSubIdLabel: "カスタムSub_IDリンク作成",
+    offerDetailsTitle: "オファー詳細",
+    commissionActiveBadge: "コミッション適用中",
+    channelType: "販売チャネル",
+    storeCommission: "基本コミッション",
+    bonusCommission: "チャネルボーナス",
+    estCommissionAmount: "推定合計報酬",
+    livestreamChannel: "ライブコマース / 店舗ライブ",
+    mostUsedBadge: "最も利用されているチャネル",
+    socialChannel: "ソーシャルメディア (TikTok, Facebook, Instagram, YouTube)",
+    videoChannel: "ショート動画 & プロフィールリンク",
+    marketLabel: "マーケット",
+    countryLabel: "国",
+    languageLabel: "言語",
+  },
+};
+
 export function WeleticProductDetailPageClient() {
   const { programSlug, productId } = useParams() as {
     programSlug: string;
@@ -209,6 +298,16 @@ export function WeleticProductDetailPageClient() {
       )
     : "";
 
+  const formattedZeroBonus = currentVariant
+    ? formatMoney(
+        {
+          amount: BigInt(0),
+          currency: normalizeCurrency(currentVariant.currency),
+        },
+        locale,
+      )
+    : "0";
+
   const commissionSource =
     (product?.commission as any)?.source === "product"
       ? "Cấu hình hoa hồng riêng cho sản phẩm (Custom Product Rule)"
@@ -270,7 +369,7 @@ export function WeleticProductDetailPageClient() {
           {markets && markets.length > 0 && (
             <div className="relative inline-flex items-center">
               <select
-                aria-label="Thị trường"
+                aria-label={detailI18n[locale].marketLabel}
                 value={marketId ?? ""}
                 onChange={(e) => handleMarketChange(e.target.value)}
                 className="shadow-xs h-8 cursor-pointer appearance-none rounded-lg border border-neutral-200 bg-white pl-3 pr-8 text-xs font-medium text-neutral-700 outline-none hover:bg-neutral-50 focus:border-neutral-400"
@@ -288,7 +387,7 @@ export function WeleticProductDetailPageClient() {
           {selectedMarket && (
             <div className="relative inline-flex items-center">
               <select
-                aria-label="Quốc gia"
+                aria-label={detailI18n[locale].countryLabel}
                 value={countryCode ?? ""}
                 onChange={(e) =>
                   handleCountryCodeChange(e.target.value || undefined)
@@ -307,7 +406,7 @@ export function WeleticProductDetailPageClient() {
 
           <div className="relative inline-flex items-center">
             <select
-              aria-label="Ngôn ngữ"
+              aria-label={detailI18n[locale].languageLabel}
               value={locale}
               onChange={(e) =>
                 handleLocaleChange(e.target.value as WeleticLocale)
@@ -377,17 +476,19 @@ export function WeleticProductDetailPageClient() {
                   <span>5.0</span>
                 </div>
                 <span className="text-neutral-300">|</span>
-                <span className="font-medium text-neutral-500">100+ Sold</span>
+                <span className="font-medium text-neutral-500">
+                  {detailI18n[locale].soldCount}
+                </span>
                 <span className="text-neutral-300">|</span>
                 <span className="inline-flex items-center gap-1 rounded-md border border-green-200/60 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                  Hoa hồng:{" "}
+                  {detailI18n[locale].commissionLabel}:{" "}
                   <strong className="font-bold">{commRatePercent}%</strong>
                 </span>
                 {product.customerDiscount && (
                   <>
                     <span className="text-neutral-300">|</span>
                     <span className="inline-flex items-center gap-1 rounded-md border border-indigo-200/60 bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                      Mã giảm cho khách:{" "}
+                      {detailI18n[locale].discountLabel}:{" "}
                       <strong className="font-bold">
                         {product.customerDiscount.formatted}
                       </strong>
@@ -417,7 +518,7 @@ export function WeleticProductDetailPageClient() {
               {product.variants.length > 1 && (
                 <div className="space-y-2 pt-1">
                   <label className="block text-xs font-medium text-neutral-600">
-                    Phân loại / Biến thể:
+                    {detailI18n[locale].variantLabel}:
                   </label>
                   <div className="flex flex-wrap gap-2">
                     {product.variants.map((v) => (
@@ -442,13 +543,13 @@ export function WeleticProductDetailPageClient() {
             {/* Action Get Link */}
             <div className="flex flex-wrap items-center gap-3 pt-4">
               <Button
-                text="Get Link"
+                text={detailI18n[locale].getLinkLabel}
                 variant="primary"
                 onClick={() => setShowLinkModal(true)}
                 className="h-10 px-8 text-sm font-semibold"
               />
               <Button
-                text="Tạo link tùy biến Sub_ID"
+                text={detailI18n[locale].customSubIdLabel}
                 variant="secondary"
                 onClick={() => setShowLinkModal(true)}
                 className="h-10 text-sm"
@@ -464,11 +565,11 @@ export function WeleticProductDetailPageClient() {
           <div className="flex items-center gap-2">
             <Tag className="h-4 w-4 text-neutral-700" />
             <h3 className="text-base font-bold text-neutral-900">
-              Offer Details
+              {detailI18n[locale].offerDetailsTitle}
             </h3>
           </div>
           <span className="rounded-md border border-green-200/50 bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
-            Commission Active
+            {detailI18n[locale].commissionActiveBadge}
           </span>
         </div>
 
@@ -477,10 +578,10 @@ export function WeleticProductDetailPageClient() {
           <table className="w-full text-left text-xs sm:text-sm">
             <thead className="border-b border-neutral-200 bg-neutral-50 font-semibold text-neutral-500">
               <tr>
-                <th className="px-4 py-3">Channel Type</th>
-                <th className="px-4 py-3">Store Commission</th>
-                <th className="px-4 py-3">Bonus Commission</th>
-                <th className="px-4 py-3 text-right">Est. Commission Amount</th>
+                <th className="px-4 py-3">{detailI18n[locale].channelType}</th>
+                <th className="px-4 py-3">{detailI18n[locale].storeCommission}</th>
+                <th className="px-4 py-3">{detailI18n[locale].bonusCommission}</th>
+                <th className="px-4 py-3 text-right">{detailI18n[locale].estCommissionAmount}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 font-medium text-neutral-800">
@@ -488,9 +589,9 @@ export function WeleticProductDetailPageClient() {
               <tr className="transition hover:bg-neutral-50/50">
                 <td className="px-4 py-3.5">
                   <div className="flex items-center gap-2 font-semibold text-neutral-900">
-                    <span>Livestream / Store Live</span>
+                    <span>{detailI18n[locale].livestreamChannel}</span>
                     <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
-                      Most Used Channel
+                      {detailI18n[locale].mostUsedBadge}
                     </span>
                   </div>
                 </td>
@@ -500,7 +601,7 @@ export function WeleticProductDetailPageClient() {
                   </span>
                 </td>
                 <td className="px-4 py-3.5 text-neutral-400">
-                  <span>0% (₫0)</span>
+                  <span>0% ({formattedZeroBonus})</span>
                 </td>
                 <td className="px-4 py-3.5 text-right font-bold text-green-700">
                   {formattedBaseCommission}
@@ -511,7 +612,7 @@ export function WeleticProductDetailPageClient() {
               <tr className="transition hover:bg-neutral-50/50">
                 <td className="px-4 py-3.5">
                   <div className="font-semibold text-neutral-900">
-                    Social Medias (TikTok, Facebook, Instagram, YouTube)
+                    {detailI18n[locale].socialChannel}
                   </div>
                 </td>
                 <td className="px-4 py-3.5">
@@ -531,7 +632,7 @@ export function WeleticProductDetailPageClient() {
               <tr className="transition hover:bg-neutral-50/50">
                 <td className="px-4 py-3.5">
                   <div className="font-semibold text-neutral-900">
-                    Short Videos & Creator Bio Links
+                    {detailI18n[locale].videoChannel}
                   </div>
                 </td>
                 <td className="px-4 py-3.5">
@@ -540,7 +641,7 @@ export function WeleticProductDetailPageClient() {
                   </span>
                 </td>
                 <td className="px-4 py-3.5 text-neutral-400">
-                  <span>0% (₫0)</span>
+                  <span>0% ({formattedZeroBonus})</span>
                 </td>
                 <td className="px-4 py-3.5 text-right font-bold text-green-700">
                   {formattedBaseCommission}

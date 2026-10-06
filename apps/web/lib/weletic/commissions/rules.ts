@@ -177,7 +177,10 @@ export interface CommissionRuleContext {
   occurredAt: Date;
 }
 
-const specificity: Record<WeleticCommissionScope, number> = {
+/**
+ * Macro specificity hierarchy across main commission tiers (ADR 0004).
+ */
+const macroTier: Record<WeleticCommissionScope, number> = {
   program: 0,
   partner: 1,
   collection: 2,
@@ -185,6 +188,20 @@ const specificity: Record<WeleticCommissionScope, number> = {
   product: 3,
   variant: 4,
   promotion: 5,
+};
+
+/**
+ * Distinct scope specificity order to eliminate non-deterministic tie-breaks on createdAt (FIN-05).
+ * Distinct rank order: program: 0, partner: 1, tag: 2, collection: 3, product: 4, variant: 5, promotion: 6.
+ */
+export const specificity: Record<WeleticCommissionScope, number> = {
+  program: 0,
+  partner: 1,
+  tag: 2,
+  collection: 3,
+  product: 4,
+  variant: 5,
+  promotion: 6,
 };
 
 function matchesRule(
@@ -272,9 +289,10 @@ export function selectCommissionRule(
     .filter((rule) => matchesRule(rule, context))
     .sort(
       (left, right) =>
-        specificity[right.scope] - specificity[left.scope] ||
+        macroTier[right.scope] - macroTier[left.scope] ||
         right.priority - left.priority ||
         right.version - left.version ||
+        specificity[right.scope] - specificity[left.scope] ||
         right.createdAt.getTime() - left.createdAt.getTime(),
     )[0];
 }
