@@ -462,6 +462,7 @@ const legacySql = legacyCredentialSqlFixture({
 });
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
+  SHOPIFY_ADMIN_API_VERSION: "2026-10",
   shopifyAdminGraphql: vi.fn(async () => ({
     discountRedeemCodeBulkAdd: {
       bulkCreation: { id: "gid://shopify/Bulk/1" },

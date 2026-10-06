@@ -19,6 +19,7 @@ vi.mock("../../lib/prisma", () => ({
   prisma: { weleticShopifyStore: { findMany: mocks.resolve } },
 }));
 const secret = "synthetic-membership-service-secret-only";
+let requestCounter = 0;
 function request(
   query = "shop=fixture.myshopify.com&customerId=123&productIds=1,2",
   signed = true,
@@ -27,16 +28,19 @@ function request(
     `https://backend.example/api/internal/shopify/loyalty/customer/nudge-collections?${query}`,
   );
   const timestamp = String(Date.now());
+  const requestId = `req_nudge_col_${Date.now()}_${++requestCounter}`;
   return new Request(url, {
     headers: signed
       ? {
           "x-weletic-timestamp": timestamp,
+          "x-weletic-request-id": requestId,
           "x-weletic-signature": signWeleticShopifyRequest({
             timestamp,
             method: "GET",
             path: url.pathname + url.search,
             body: "",
             secret,
+            requestId,
           }),
         }
       : {},
