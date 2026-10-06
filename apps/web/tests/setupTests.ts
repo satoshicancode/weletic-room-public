@@ -72,5 +72,13 @@ vi.mock("@axiomhq/nextjs", () => ({
   transformMiddlewareRequest: vi.fn(() => []),
 }));
 
+// Mock rateLimitRequest to prevent hitting real or blocked Upstash pipeline during route handler tests
+vi.mock("@/lib/auth/rate-limit-request", () => ({
+  rateLimitRequest: vi.fn(async () => ({
+    success: true,
+    headers: {},
+  })),
+}));
+
 // Initialize Weletic RBAC plugin registrations for test environment
 import "@/lib/weletic/rbac/register";

@@ -38,6 +38,13 @@ vi.mock("@/lib/auth/utils", () => ({
   })),
 }));
 
+vi.mock("@/lib/auth/rate-limit-request", () => ({
+  rateLimitRequest: vi.fn(async () => ({
+    success: true,
+    headers: {},
+  })),
+}));
+
 vi.mock("@/lib/auth/workspace-cache", () => ({
   workspaceAuthCache: {
     get: vi.fn(({ identifier }) => {
