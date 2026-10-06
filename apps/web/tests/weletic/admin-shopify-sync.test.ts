@@ -52,6 +52,14 @@ vi.mock("@/lib/axiom/server", () => ({
 }));
 
 vi.mock("@/lib/upstash", () => ({
+  ratelimit: () => ({
+    limit: vi.fn(async () => ({
+      success: true,
+      limit: 100,
+      remaining: 100,
+      reset: 0,
+    })),
+  }),
   redis: {
     set: vi.fn(),
     eval: vi.fn(),
@@ -64,6 +72,7 @@ vi.mock("@/lib/upstash", () => ({
   },
 }));
 
+import { NextRequest } from "next/server";
 import { syncShopifyCatalogAction } from "@/lib/actions/partners/sync-shopify-catalog";
 import { redis } from "@/lib/upstash";
 import * as redisLockModule from "@/lib/weletic/redis-lock";
@@ -81,59 +90,77 @@ describe("Requirement R2: Admin 1-Click Shopify Catalog Sync & UI Control", () =
       expect(typeof syncRouteHandler).toBe("function");
     });
 
-    it("returns 200 with sync stats and runId on successful catalog reconciliation", async () => {
+    it("returns 202 with runId on successful catalog reconciliation dispatch", async () => {
       vi.spyOn(
         catalogSyncModule,
-        "syncWeleticShopifyCatalog",
+        "dispatchWeleticShopifyCatalogSync",
       ).mockResolvedValue({
         runId: "wsync_test_12345678",
-        stats: {
-          products: 42,
-          variants: 120,
-          markets: 3,
-          marketPrices: 360,
-        },
+        status: "pending",
       } as any);
 
-      const mockResult = await catalogSyncModule.syncWeleticShopifyCatalog({
-        workspaceId: "ws_valid_123",
-      });
+      const req = new NextRequest(
+        "http://localhost:3000/api/shopify/integration/sync?workspaceId=ws_valid_123",
+        { method: "POST" },
+      );
 
-      expect(mockResult.runId).toBe("wsync_test_12345678");
-      expect(mockResult.stats.products).toBe(42);
-      expect(mockResult.stats.variants).toBe(120);
-      expect(mockResult.stats.markets).toBe(3);
-      expect(mockResult.stats.marketPrices).toBe(360);
+      const res = await syncRouteHandler(req, {
+        params: Promise.resolve({}),
+      });
+      const data = await res.json();
+
+      expect(res.status).toBe(202);
+      expect(data).toMatchObject({
+        success: true,
+        status: "pending",
+        runId: "wsync_test_12345678",
+      });
     });
 
     it("handles distributed lock conflict gracefully with 409 rejection", async () => {
       vi.spyOn(
         catalogSyncModule,
-        "syncWeleticShopifyCatalog",
+        "dispatchWeleticShopifyCatalogSync",
       ).mockRejectedValue(
         new Error("A Shopify catalog sync is already running."),
       );
 
-      await expect(
-        catalogSyncModule.syncWeleticShopifyCatalog({
-          workspaceId: "ws_locked_123",
-        }),
-      ).rejects.toThrow("A Shopify catalog sync is already running.");
+      const req = new NextRequest(
+        "http://localhost:3000/api/shopify/integration/sync?workspaceId=ws_locked_123",
+        { method: "POST" },
+      );
+
+      const res = await syncRouteHandler(req, {
+        params: Promise.resolve({}),
+      });
+      const data = await res.json();
+
+      expect(res.status).toBe(409);
+      expect(data.error.message).toContain("already running");
     });
 
-    it("propagates general errors with descriptive messages", async () => {
+    it("propagates general errors with 500 status code", async () => {
       vi.spyOn(
         catalogSyncModule,
-        "syncWeleticShopifyCatalog",
+        "dispatchWeleticShopifyCatalogSync",
       ).mockRejectedValue(
         new Error("Shopify credentials expired or invalid scope"),
       );
 
-      await expect(
-        catalogSyncModule.syncWeleticShopifyCatalog({
-          workspaceId: "ws_invalid_creds",
-        }),
-      ).rejects.toThrow("Shopify credentials expired or invalid scope");
+      const req = new NextRequest(
+        "http://localhost:3000/api/shopify/integration/sync?workspaceId=ws_invalid_creds",
+        { method: "POST" },
+      );
+
+      const res = await syncRouteHandler(req, {
+        params: Promise.resolve({}),
+      });
+      const data = await res.json();
+
+      expect(res.status).toBe(500);
+      expect(data.error.message).toContain(
+        "Shopify credentials expired or invalid scope",
+      );
     });
   });
 

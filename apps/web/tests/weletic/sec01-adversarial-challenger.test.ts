@@ -53,6 +53,20 @@ vi.mock("@/lib/prisma", () => ({
         },
       }),
     },
+    weleticShopifyStore: {
+      findUnique: vi.fn().mockResolvedValue({
+        syncStatus: "synced",
+        lastFullSyncAt: new Date(),
+        markets: [{ id: "mkt_1" }],
+        _count: { products: 10 },
+      }),
+      findFirst: vi.fn().mockResolvedValue({
+        syncStatus: "synced",
+        lastFullSyncAt: new Date(),
+        markets: [{ id: "mkt_1" }],
+        _count: { products: 10 },
+      }),
+    },
   },
 }));
 
