@@ -76,7 +76,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts"
+    "lint": "eslint src --ext .ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "zod": "^4.3.5"
@@ -84,6 +85,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "tsconfig": "workspace:*",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.0.8"
   }
 }
