@@ -117,7 +117,9 @@ describe("Yamax Shopify Product Description Standards & Size Run Integrity", () 
 
     it("generates Material & Care without nested lists (flat structure)", () => {
       const html = generateYamaxMaterialCareHtml(DEFAULT_YAMAX_ACCORDIONS);
-      expect(html).toContain("60% Premium Nylon, 40% Spandex (Yenergy™ Series)");
+      expect(html).toContain(
+        "60% Premium Nylon, 40% Spandex (Yenergy™ Series)",
+      );
       expect(html).toContain("190g");
       expect(html).toContain("<li><strong>Wash:</strong>");
       expect(html).toContain("<li><strong>Dry:</strong>");
