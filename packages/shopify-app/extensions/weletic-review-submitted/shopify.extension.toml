@@ -4,6 +4,7 @@
 name = "Weletic review submitted"
 type = "flow_trigger"
 handle = "weletic-review-submitted"
+uid = "a7d5924f-240d-e0e6-f3a9-5dbeae7464f095e38406"
 description = "Starts a workflow when a verified invitation product review is submitted. Delivery may repeat; use Event id for idempotent actions."
 
 [settings]

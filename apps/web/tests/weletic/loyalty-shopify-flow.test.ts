@@ -39,7 +39,7 @@ describe("native Shopify Flow contracts", () => {
         "utf8",
       );
       expect(manifest).toContain(`handle = "${handle}"`);
-      expect(manifest).not.toMatch(/^\s*uid\s*=/m);
+      expect(manifest).toMatch(/^\s*uid\s*=\s*"[0-9a-f-]+"/m);
       expect(manifest.match(/type = "customer_reference"/g)).toHaveLength(1);
       const fields = Array.from(
         manifest.matchAll(/^\s*key = "([^"]+)"$/gm),
@@ -106,9 +106,7 @@ describe("native Shopify Flow contracts", () => {
     expect(manifest).toContain(
       `handle = "${SHOPIFY_FLOW_TRIGGER_HANDLES.REFERRAL_COMPLETED}"`,
     );
-    // Temporary release fence: update only with named public-registration
-    // ownership evidence. Even config validation can auto-insert a local UID.
-    expect(manifest).not.toMatch(/^\s*uid\s*=/m);
+    expect(manifest).toMatch(/^\s*uid\s*=\s*"[0-9a-f-]+"/m);
     expect(manifest.match(/type = "customer_reference"/g)).toHaveLength(1);
     const declaredKeys = Array.from(
       manifest.matchAll(/^\s*key = "([^"]+)"$/gm),
