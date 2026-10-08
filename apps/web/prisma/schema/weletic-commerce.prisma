@@ -159,6 +159,7 @@ model WeleticShopifyStore {
   accessChanges                WeleticShopifyStoreAccessChange[]
   pendingInstallation          WeleticShopifyPendingInstallation?
   installationCredentials      WeleticShopifyInstallationCredential[]
+  appProxyRoutes               WeleticShopifyAppProxyRoute[]
 
   @@index(syncStatus)
   @@index(complianceState)
@@ -800,4 +801,15 @@ model WeleticReconciliationIssue {
 
   @@unique([storeId, kind, externalKey])
   @@index([storeId, status, severity])
+}
+
+// Observed only through authenticated Shopify proxy requests; never inferred from TOML.
+model WeleticShopifyAppProxyRoute {
+  storeId String @db.VarChar(191)
+  appId String @db.VarChar(191)
+  installationGeneration String? @db.VarChar(64)
+  pathPrefix String @db.VarChar(128)
+  observedAt DateTime @db.DateTime(3)
+  store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  @@id([storeId, appId])
 }

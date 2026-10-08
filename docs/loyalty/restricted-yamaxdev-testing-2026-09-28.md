@@ -147,3 +147,42 @@ actual Flow workflows, duplicate/crash recovery under the installed candidate,
 and persistent operations. Billing registration and production remain deferred.
 Private evidence is kept outside Git; no invitation tokens, credentials or
 customer contact details are included here.
+
+## Installed review progress and proxy-path defect — September 28
+
+Hiro saved Email access; the real Admin API returned the expected synthetic
+customer email after normal embedded session refresh. A genuine customers/update
+webhook populated the isolated shopper record. The prior fulfilled payload had
+already been cleared after processing, so the same test order #1048 was unfulfilled
+and fulfilled again with customer notifications off. No new order or payment was
+created. Its signed event created one request with the original immutable
+100-point policy. A temporary zero-day diagnostic was restored to seven days;
+thirty-day validity, manual publication, photos and no reminders remain.
+
+The exact invitation job completed through local SMTP/MailHog. An initial private
+CLI runner incorrectly selected React server conditions, which prevented template
+rendering before dispatch; removing that runner flag allowed the same job to
+complete. No external inbox delivery or seven-day elapsed timing is claimed.
+
+The delivered link used `/apps/weletic`, but the Shopify installed-app settings
+show `/apps/weletic-1`. The legacy app is preserved. Manually correcting the path
+allowed real Shopify proxy authentication and a one-star text/photo submission.
+It was verified-purchase, pending moderation, and awarded exactly 100 points.
+The image was stored as WebP. Reopening the consumed invitation was rejected.
+Merchant publication with a reply succeeded; hiding the synthetic review retained
+the same single award and independently reconciled balance of 1,100 points.
+
+The unmodified invitation journey is still defective. The implementation now
+persists the strictly validated proxy path learned from any fresh signed Shopify
+app-proxy GET, bound to app/store/installation generation. New delivery snapshots
+require the current route, while existing encrypted snapshots remain immutable.
+The additive record has a local-only migration; no shared DDL was applied.
+Focused contract tests cover freshness, reinstall fencing, tenant identity and
+retry preservation. The local slice passed 81 focused web tests, 8 Shopify
+gateway tests, both type checks, lint, Prisma validation and the Shopify build.
+Its updated nullable-generation DDL has not been applied: the available database
+target was not confirmed as the isolated test database. The observer is bounded,
+deduplicated and fire-and-forget so a backend outage cannot stall storefront
+traffic. Installed preview re-test remains required before accepting the journey.
+Published storefront display and installed photo deletion have not passed; no
+claim is made from a blocked JSON navigation.
