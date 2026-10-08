@@ -259,7 +259,12 @@ export const withWorkspace = (
           }
 
           // Find workspaceId if it's a restricted token
-          if (isRestrictedToken && token?.projectId) {
+          if (
+            isRestrictedToken &&
+            token?.projectId &&
+            !workspaceId &&
+            !workspaceSlug
+          ) {
             workspaceId = token.projectId;
           }
 
@@ -438,6 +443,18 @@ export const withWorkspace = (
               users: workspace.users.map(({ workspacePreferences, ...u }) => u),
             };
           }
+        }
+
+        if (
+          isRestrictedToken &&
+          token?.projectId &&
+          workspace?.id &&
+          workspace.id !== token.projectId
+        ) {
+          throw new DubApiError({
+            code: "not_found",
+            message: "Workspace not found.",
+          });
         }
 
         // Machine users have owner role by default

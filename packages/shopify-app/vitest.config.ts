@@ -12,6 +12,7 @@ export default defineConfig({
   test: {
     include: ["test-support/**/*.test.ts"],
     environment: "node",
+    pool: "threads",
     testTimeout: 10_000,
   },
 });

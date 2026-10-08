@@ -2,8 +2,9 @@ import { prisma } from "@/lib/prisma";
 import {
   canonicalizeShopifyDomain,
   normalizeShopDomain,
-  resolveShopifyStoreByDomain,
+  shopifyCredentialVerificationHash,
 } from "@/lib/weletic/shopify/store-resolver";
+import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { expect } from "@playwright/test";
 import crypto from "crypto";
 import { randomName } from "../../utils";
@@ -130,10 +131,13 @@ test("POST /api/shopify/integration/webhook – rejects empty shop domain safely
 });
 
 test("Invariant 1: Multi-domain resolution across primary domain, myshopifyDomain, and custom domain aliases", async ({
+  request,
   workspace,
   program,
 }) => {
-  const uniquePrefix = randomName("multi");
+  const uniquePrefix = randomName("multi")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
   const myshopifyDomain = `${uniquePrefix}-store.myshopify.com`;
   const customPrimaryDomain = `shop.${uniquePrefix}.com`;
 
@@ -170,22 +174,25 @@ test("Invariant 1: Multi-domain resolution across primary domain, myshopifyDomai
     // Also link InstalledIntegration credentials with accessToken
     const user = await prisma.user.findFirst({ select: { id: true } });
     if (user) {
+      const testAccessToken = "shpat_resolver_test_token_valid";
+      const tokenHash = shopifyCredentialVerificationHash(testAccessToken);
       await prisma.installedIntegration.upsert({
         where: {
           userId_integrationId_projectId: {
             userId: user.id,
-            integrationId: "shopify",
+            integrationId: SHOPIFY_INTEGRATION_ID,
             projectId: workspace.id,
           },
         },
         create: {
           id: `inst_resolver_${Date.now()}`,
           userId: user.id,
-          integrationId: "shopify",
+          integrationId: SHOPIFY_INTEGRATION_ID,
           projectId: workspace.id,
           credentials: {
             shop: myshopifyDomain,
-            accessToken: "shpat_resolver_test_token_valid",
+            accessToken: testAccessToken,
+            shopVerificationTokenHash: tokenHash,
             installationGeneration: `gen_${uniquePrefix}`,
             scope: "read_products,read_orders,read_customers",
           },
@@ -193,7 +200,8 @@ test("Invariant 1: Multi-domain resolution across primary domain, myshopifyDomai
         update: {
           credentials: {
             shop: myshopifyDomain,
-            accessToken: "shpat_resolver_test_token_valid",
+            accessToken: testAccessToken,
+            shopVerificationTokenHash: tokenHash,
             installationGeneration: `gen_${uniquePrefix}`,
             scope: "read_products,read_orders,read_customers",
           },
@@ -201,28 +209,58 @@ test("Invariant 1: Multi-domain resolution across primary domain, myshopifyDomai
       });
     }
 
-    // 3. Test resolution by myshopifyDomain
-    const resolvedByMyshopify =
-      await resolveShopifyStoreByDomain(myshopifyDomain);
-    if (resolvedByMyshopify) {
-      expect(resolvedByMyshopify.workspaceId).toBe(workspace.id);
-      expect(resolvedByMyshopify.programId).toBe(program.id);
-      expect(resolvedByMyshopify.myshopifyDomain).toBe(myshopifyDomain);
-    }
+    const webhookSecret =
+      process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
+    const body = JSON.stringify({ id: 123456 });
+    const hmac = calculateHmac(body, webhookSecret);
 
-    // 4. Test resolution by custom domain alias (project.shopifyStoreId)
-    const resolvedByCustomAlias =
-      await resolveShopifyStoreByDomain(customPrimaryDomain);
-    if (resolvedByCustomAlias) {
-      expect(resolvedByCustomAlias.workspaceId).toBe(workspace.id);
-      expect(resolvedByCustomAlias.programId).toBe(program.id);
-    }
-
-    // 5. Resolution returns null for unknown domain
-    const nonExistent = await resolveShopifyStoreByDomain(
-      "completely-unknown-domain.com",
+    // 3. Test resolution by myshopifyDomain via HTTP webhook endpoint
+    const resMyshopify = await request.post(
+      "/api/shopify/integration/webhook",
+      {
+        data: body,
+        headers: {
+          "Content-Type": "application/json",
+          "x-shopify-topic": "orders/fulfilled",
+          "x-shopify-hmac-sha256": hmac,
+          "x-shopify-shop-domain": myshopifyDomain,
+          "x-shopify-webhook-id": `wh_res_${Date.now()}_1`,
+        },
+      },
     );
-    expect(nonExistent).toBeNull();
+    expect(resMyshopify.status()).toBe(200);
+    const textMyshopify = await resMyshopify.text();
+    expect(textMyshopify).not.toContain("Workspace not found for signed shop");
+
+    // 4. Test resolution with uppercase and formatting variation
+    const resVariant = await request.post("/api/shopify/integration/webhook", {
+      data: body,
+      headers: {
+        "Content-Type": "application/json",
+        "x-shopify-topic": "orders/fulfilled",
+        "x-shopify-hmac-sha256": hmac,
+        "x-shopify-shop-domain": myshopifyDomain.toUpperCase(),
+        "x-shopify-webhook-id": `wh_res_${Date.now()}_2`,
+      },
+    });
+    expect(resVariant.status()).toBe(200);
+    const textVariant = await resVariant.text();
+    expect(textVariant).not.toContain("Workspace not found for signed shop");
+
+    // 5. Resolution returns 'Workspace not found' for unknown domain
+    const resUnknown = await request.post("/api/shopify/integration/webhook", {
+      data: body,
+      headers: {
+        "Content-Type": "application/json",
+        "x-shopify-topic": "orders/fulfilled",
+        "x-shopify-hmac-sha256": hmac,
+        "x-shopify-shop-domain": "completely-unknown-shop.myshopify.com",
+        "x-shopify-webhook-id": `wh_res_${Date.now()}_3`,
+      },
+    });
+    expect(resUnknown.status()).toBe(200);
+    const textUnknown = await resUnknown.text();
+    expect(textUnknown).toContain("Workspace not found for signed shop");
   } finally {
     // Revert workspace shopifyStoreId
     await prisma.project
