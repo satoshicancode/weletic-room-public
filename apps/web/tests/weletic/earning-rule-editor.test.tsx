@@ -57,6 +57,36 @@ async function send() {
 }
 describe("rendered shared earning-rule form", () => {
   it.each(["en", "ja", "vi"] as const)(
+    "shows unavailable cadence and blocks an active first-payment rule in %s",
+    async (locale) => {
+      await render(
+        {
+          ...newEarningRuleForm(),
+          name: "Purchase earning",
+          purchaseType: "subscription",
+          subscriptionCadence: "first_payment",
+          isActive: true,
+        },
+        locale,
+      );
+      expect(container.textContent).toContain(
+        earningRuleCopy[locale].cadenceUnavailable,
+      );
+      expect(
+        container.querySelector<HTMLOptionElement>(
+          '[name="subscriptionCadence"] option[value="first_payment"]',
+        )?.disabled,
+      ).toBe(true);
+      await send();
+      expect(submit).not.toHaveBeenCalled();
+      expect(
+        container
+          .querySelector('[name="subscriptionCadence"]')
+          ?.getAttribute("aria-invalid"),
+      ).toBe("true");
+    },
+  );
+  it.each(["en", "ja", "vi"] as const)(
     "clears hidden subscription terms when selecting one-time purchases in %s",
     async (locale) => {
       await render(

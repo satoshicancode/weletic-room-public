@@ -35,6 +35,22 @@ export function planImportOutboxEnum(columnType: string) {
     [...importValues],
     ["LOYALTY_COMMUNICATION", ...importValues],
     [...importValues, "LOYALTY_COMMUNICATION"],
+    // These labels were appended after the complete import/communication
+    // lineage. Never accept them ahead of missing import labels.
+    ["LOYALTY_COMMUNICATION", ...importValues, "REVIEW_POINTS_RECOVERY"],
+    [
+      "LOYALTY_COMMUNICATION",
+      ...importValues,
+      "REVIEW_POINTS_RECOVERY",
+      "ANONYMOUS_REFERRAL_EMAIL",
+    ],
+    [...importValues, "LOYALTY_COMMUNICATION", "REVIEW_POINTS_RECOVERY"],
+    [
+      ...importValues,
+      "LOYALTY_COMMUNICATION",
+      "REVIEW_POINTS_RECOVERY",
+      "ANONYMOUS_REFERRAL_EMAIL",
+    ],
   ];
   const known = [[], ["REVIEW_POINTS_FULFILL"]].flatMap((local) =>
     suffixes.map((suffix) => [

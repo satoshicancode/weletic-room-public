@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { requiresUnverifiedSubscriptionCycle } from "../../../lib/weletic/loyalty/purchase-policy";
 import {
   referralConfigurationFieldsSchema,
   type ReferralConfigurationFields,
@@ -55,6 +56,8 @@ const copy = {
     firstPayment: "First payment",
     firstNPayments: "First N payments",
     everyPayment: "Every renewal",
+    cadenceUnavailable:
+      "First-payment and first-N referral qualification are unavailable until subscription billing cycles can be verified. Subscription-only orders under existing rules are held for reconciliation; choose every renewal or pause referrals.",
     note: "A referral can qualify only once, using eligible line subtotal and the rule current at qualification. Selecting a catalog coupon does not issue it. Weletic interprets Shopify subscription orders but does not sell or manage subscriptions. Issued rewards and recorded history remain unchanged.",
     status: "Status",
     enabled: "Active",
@@ -95,6 +98,8 @@ const copy = {
     firstPayment: "初回支払い",
     firstNPayments: "最初のN回",
     everyPayment: "すべての更新",
+    cadenceUnavailable:
+      "定期購入の請求回を確認できるまで、初回および最初のN回の紹介達成は利用できません。既存の該当ルールによる定期購入のみの注文は照合待ちになります。すべての更新を選ぶか、紹介を停止してください。",
     note: "紹介は、達成時点のルールと対象明細の小計に基づき一度だけ達成できます。特典の選択だけではクーポンを発行しません。WeleticはShopifyの定期購入注文を判定しますが、定期購入の販売・契約管理は行いません。発行済み特典と履歴は変更しません。",
     status: "状態",
     enabled: "有効",
@@ -136,6 +141,8 @@ const copy = {
     firstPayment: "Lần đầu",
     firstNPayments: "N lần đầu",
     everyPayment: "Mọi lần gia hạn",
+    cadenceUnavailable:
+      "Chưa thể xét giới thiệu theo lần đầu hoặc N lần đầu đến khi xác minh được kỳ thanh toán đăng ký. Đơn chỉ có sản phẩm đăng ký theo quy tắc hiện có sẽ được giữ để đối soát. Hãy chọn mọi lần gia hạn hoặc tạm dừng giới thiệu.",
     note: "Mỗi lượt giới thiệu chỉ đạt điều kiện một lần, theo tổng phụ của các dòng hợp lệ và quy tắc tại thời điểm đó. Chọn coupon không phát hành coupon. Weletic chỉ diễn giải đơn đăng ký từ Shopify, không bán hay quản lý hợp đồng đăng ký. Phần thưởng đã phát hành và lịch sử không thay đổi.",
     status: "Trạng thái",
     enabled: "Đang bật",
@@ -181,6 +188,13 @@ function ConfigurationForm({
     });
     if (!parsed.success) {
       setErrors(parsed.error.issues.map((issue) => String(issue.path[0])));
+      return;
+    }
+    if (
+      parsed.data.isActive &&
+      requiresUnverifiedSubscriptionCycle(parsed.data)
+    ) {
+      setErrors(["subscriptionCadence"]);
       return;
     }
     const fraction =
@@ -342,11 +356,18 @@ function ConfigurationForm({
                 }));
               }}
             >
-              <option value="first_payment">{text.firstPayment}</option>
-              <option value="first_n_payments">{text.firstNPayments}</option>
+              <option value="first_payment" disabled>
+                {text.firstPayment}
+              </option>
+              <option value="first_n_payments" disabled>
+                {text.firstNPayments}
+              </option>
               <option value="every_payment">{text.everyPayment}</option>
             </select>
           </label>
+        )}
+        {fields.purchaseType !== "one_time" && (
+          <p className="text-sm text-amber-800">{text.cadenceUnavailable}</p>
         )}
         {fields.purchaseType !== "one_time" &&
           fields.subscriptionCadence === "first_n_payments" && (

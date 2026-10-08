@@ -2,6 +2,18 @@ import { z } from "zod";
 
 const integer = z.string().regex(/^-?(?:0|[1-9]\d*)$/);
 const count = z.string().regex(/^(?:0|[1-9]\d*)$/);
+const redemptionSourceTotalsFields = {
+  eventCount: count,
+  pointsSpent: count,
+};
+const redemptionSourceTotals = z
+  .object(redemptionSourceTotalsFields)
+  .strict()
+  .refine(
+    ({ eventCount, pointsSpent }) =>
+      (BigInt(eventCount) === BigInt(0)) ===
+      (BigInt(pointsSpent) === BigInt(0)),
+  );
 const instant = z.string().datetime({ offset: true });
 export const merchantAnalyticsFilterSchema = z
   .object({ startAt: instant.nullable(), endAt: instant.nullable() })
@@ -96,6 +108,374 @@ export const merchantAnalyticsSnapshotSchema = z
       .refine(
         ({ status, rows }) => status === "available" || rows.length === 0,
       ),
+    ledgerNetSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_day"),
+        coverage: z.literal("recorded_ledger_net_only"),
+        openingNetPoints: integer.nullable(),
+        rows: z
+          .array(
+            z
+              .object({
+                date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                netChangePoints: integer,
+                cumulativeNetPoints: integer,
+              })
+              .strict(),
+          )
+          .max(366),
+      })
+      .strict()
+      .refine(({ status, openingNetPoints, rows }) => {
+        if (status !== "available")
+          return openingNetPoints === null && rows.length === 0;
+        if (openingNetPoints === null || rows.length === 0) return false;
+        let running = BigInt(openingNetPoints);
+        let previous = "";
+        for (const row of rows) {
+          if (row.date <= previous) return false;
+          running += BigInt(row.netChangePoints);
+          if (row.cumulativeNetPoints !== running.toString()) return false;
+          previous = row.date;
+        }
+        return true;
+      }),
+    redemptionRateSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("recorded_ledger_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                earnedPoints: count,
+                redeemedPoints: count,
+                redemptionRateBasisPoints: count.nullable(),
+              })
+              .strict()
+              .refine(
+                ({
+                  earnedPoints,
+                  redeemedPoints,
+                  redemptionRateBasisPoints,
+                }) => {
+                  const earned = BigInt(earnedPoints);
+                  const redeemed = BigInt(redeemedPoints);
+                  return earned === BigInt(0)
+                    ? redemptionRateBasisPoints === null
+                    : redemptionRateBasisPoints ===
+                        (
+                          (redeemed * BigInt(10_000) + earned / BigInt(2)) /
+                          earned
+                        ).toString();
+                },
+              ),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
+    orderEarningSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_day"),
+        coverage: z.literal("recorded_orders_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                recordedOrders: count,
+                earningOrders: count,
+                rateBasisPoints: count.nullable(),
+              })
+              .strict()
+              .refine(({ recordedOrders, earningOrders, rateBasisPoints }) => {
+                const recorded = BigInt(recordedOrders);
+                const earning = BigInt(earningOrders);
+                return (
+                  earning <= recorded &&
+                  (recorded === BigInt(0)
+                    ? rateBasisPoints === null
+                    : rateBasisPoints ===
+                      (
+                        (earning * BigInt(10_000) + recorded / BigInt(2)) /
+                        recorded
+                      ).toString())
+                );
+              }),
+          )
+          .max(366),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
+    firstRecordedEarnersSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("retained_qualifying_ledger_accounts_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                activeAccounts: count,
+                firstRecordedAccounts: count,
+                returningAccounts: count,
+              })
+              .strict()
+              .refine(
+                ({
+                  activeAccounts,
+                  firstRecordedAccounts,
+                  returningAccounts,
+                }) =>
+                  BigInt(activeAccounts) ===
+                  BigInt(firstRecordedAccounts) + BigInt(returningAccounts),
+              ),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
+    firstRecordedRedemptionDebitsSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("retained_reward_debit_accounts_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                debitAccounts: count,
+                firstRecordedDebitAccounts: count,
+                returningDebitAccounts: count,
+              })
+              .strict()
+              .refine(
+                ({
+                  debitAccounts,
+                  firstRecordedDebitAccounts,
+                  returningDebitAccounts,
+                }) =>
+                  BigInt(debitAccounts) ===
+                  BigInt(firstRecordedDebitAccounts) +
+                    BigInt(returningDebitAccounts),
+              ),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
+    firstRecordedConfirmedIssuancesSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("retained_confirmed_point_issuance_accounts_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                confirmedAccounts: count,
+                firstRecordedConfirmedAccounts: count,
+                returningConfirmedAccounts: count,
+              })
+              .strict()
+              .refine(
+                ({
+                  confirmedAccounts,
+                  firstRecordedConfirmedAccounts,
+                  returningConfirmedAccounts,
+                }) =>
+                  BigInt(confirmedAccounts) ===
+                  BigInt(firstRecordedConfirmedAccounts) +
+                    BigInt(returningConfirmedAccounts),
+              ),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
+    retainedEnrollmentSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("retained_account_enrollments_only"),
+        openingRetainedAccounts: count.nullable(),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                newRetainedAccounts: count,
+                cumulativeRetainedAccounts: count,
+              })
+              .strict(),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(({ status, openingRetainedAccounts, rows }) => {
+        if (status !== "available")
+          return openingRetainedAccounts === null && rows.length === 0;
+        if (openingRetainedAccounts === null) return false;
+        let running = BigInt(openingRetainedAccounts);
+        return rows.every((row) => {
+          running += BigInt(row.newRetainedAccounts);
+          return row.cumulativeRetainedAccounts === running.toString();
+        });
+      }),
+    recordedTierChangesSeries: z
+      .object({
+        status: z.enum(["available", "range_required", "range_too_wide"]),
+        bucket: z.literal("utc_month"),
+        coverage: z.literal("retained_tier_change_reasons_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/),
+                totalChanges: count,
+                thresholdReached: count,
+                bonusPromotion: count,
+                annualDowngrade: count,
+                gracePeriodExpired: count,
+                programActivation: count,
+                manualOverride: count,
+                otherReasons: count,
+              })
+              .strict()
+              .refine(
+                (row) =>
+                  BigInt(row.totalChanges) ===
+                  BigInt(row.thresholdReached) +
+                    BigInt(row.bonusPromotion) +
+                    BigInt(row.annualDowngrade) +
+                    BigInt(row.gracePeriodExpired) +
+                    BigInt(row.programActivation) +
+                    BigInt(row.manualOverride) +
+                    BigInt(row.otherReasons),
+              ),
+          )
+          .max(14),
+      })
+      .strict()
+      .refine(
+        ({ status, rows }) => status === "available" || rows.length === 0,
+      ),
+    earningSources: z
+      .object({
+        coverage: z.literal("retained_positive_earning_ledger_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                entryType: z.enum([
+                  "EARN_ORDER",
+                  "EARN_REFERRAL",
+                  "EARN_BONUS",
+                  "TIER_BONUS",
+                ]),
+                eventCount: count,
+                pointsEarned: count,
+              })
+              .strict()
+              .refine(
+                ({ eventCount, pointsEarned }) =>
+                  BigInt(eventCount) > BigInt(0) &&
+                  BigInt(pointsEarned) > BigInt(0),
+              ),
+          )
+          .max(4),
+      })
+      .strict()
+      .refine(
+        ({ rows }) =>
+          new Set(rows.map((row) => row.entryType)).size === rows.length &&
+          rows.every(
+            (row, index) =>
+              index === 0 ||
+              BigInt(rows[index - 1].pointsEarned) > BigInt(row.pointsEarned) ||
+              (rows[index - 1].pointsEarned === row.pointsEarned &&
+                rows[index - 1].entryType < row.entryType),
+          ),
+      ),
+    redemptionSources: z
+      .object({
+        coverage: z.literal("retained_redemption_debits_only"),
+        rows: z
+          .array(
+            z
+              .object({
+                ...redemptionSourceTotalsFields,
+                rewardDefinitionId: z.string().min(1).max(191),
+                capturedName: z.string().min(1).max(255),
+                rewardType: z.enum([
+                  "amount_off",
+                  "percentage_off",
+                  "free_shipping",
+                  "free_product",
+                  "gift_card",
+                  "store_credit",
+                ]),
+              })
+              .strict()
+              .refine(
+                ({ eventCount, pointsSpent }) =>
+                  BigInt(eventCount) > BigInt(0) &&
+                  BigInt(pointsSpent) > BigInt(0),
+              ),
+          )
+          .max(10),
+        other: redemptionSourceTotals,
+        unknown: redemptionSourceTotals,
+        total: redemptionSourceTotals,
+      })
+      .strict()
+      .refine(({ rows, other, unknown, total }) => {
+        const keys = rows.map((row) =>
+          JSON.stringify([
+            row.rewardDefinitionId,
+            row.capturedName,
+            row.rewardType,
+          ]),
+        );
+        if (new Set(keys).size !== keys.length) return false;
+        if (
+          rows.some(
+            (row, index) =>
+              index > 0 &&
+              BigInt(rows[index - 1].pointsSpent) < BigInt(row.pointsSpent),
+          ) ||
+          (BigInt(other.eventCount) > BigInt(0) && rows.length !== 10)
+        )
+          return false;
+        return (
+          rows.reduce(
+            (sum, row) => sum + BigInt(row.eventCount),
+            BigInt(other.eventCount) + BigInt(unknown.eventCount),
+          ) === BigInt(total.eventCount) &&
+          rows.reduce(
+            (sum, row) => sum + BigInt(row.pointsSpent),
+            BigInt(other.pointsSpent) + BigInt(unknown.pointsSpent),
+          ) === BigInt(total.pointsSpent)
+        );
+      }),
     referralEconomics: z
       .object({
         total: count,
@@ -148,7 +528,74 @@ export const merchantAnalyticsSnapshotSchema = z
         .strict(),
     ),
   })
-  .strict();
+  .strict()
+  .refine(({ filter, ledgerNetSeries }) => {
+    if (!filter.startAt || !filter.endAt)
+      return ledgerNetSeries.status === "range_required";
+    const startDay = Date.parse(
+      `${new Date(filter.startAt).toISOString().slice(0, 10)}T00:00:00Z`,
+    );
+    const endDay = Date.parse(
+      `${new Date(filter.endAt).toISOString().slice(0, 10)}T00:00:00Z`,
+    );
+    const days = Math.floor((endDay - startDay) / 86_400_000) + 1;
+    if (days < 1 || days > 366)
+      return ledgerNetSeries.status === "range_too_wide";
+    if (
+      ledgerNetSeries.status !== "available" ||
+      ledgerNetSeries.rows.length !== days
+    )
+      return false;
+    return ledgerNetSeries.rows.every(
+      (row, index) =>
+        row.date ===
+        new Date(startDay + index * 86_400_000).toISOString().slice(0, 10),
+    );
+  })
+  .refine(
+    ({
+      filter,
+      ledgerNetSeries,
+      firstRecordedEarnersSeries,
+      firstRecordedRedemptionDebitsSeries,
+      firstRecordedConfirmedIssuancesSeries,
+      retainedEnrollmentSeries,
+      recordedTierChangesSeries,
+    }) => {
+      if (
+        firstRecordedEarnersSeries.status !== ledgerNetSeries.status ||
+        firstRecordedRedemptionDebitsSeries.status !== ledgerNetSeries.status ||
+        firstRecordedConfirmedIssuancesSeries.status !==
+          ledgerNetSeries.status ||
+        retainedEnrollmentSeries.status !== ledgerNetSeries.status ||
+        recordedTierChangesSeries.status !== ledgerNetSeries.status
+      )
+        return false;
+      if (firstRecordedEarnersSeries.status !== "available") return true;
+      const cursor = new Date(filter.startAt!);
+      cursor.setUTCDate(1);
+      cursor.setUTCHours(0, 0, 0, 0);
+      const last = new Date(filter.endAt!);
+      last.setUTCDate(1);
+      last.setUTCHours(0, 0, 0, 0);
+      const months: string[] = [];
+      while (cursor <= last) {
+        months.push(cursor.toISOString().slice(0, 7));
+        cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+      }
+      return [
+        firstRecordedEarnersSeries.rows,
+        firstRecordedRedemptionDebitsSeries.rows,
+        firstRecordedConfirmedIssuancesSeries.rows,
+        retainedEnrollmentSeries.rows,
+        recordedTierChangesSeries.rows,
+      ].every(
+        (rows) =>
+          rows.length === months.length &&
+          rows.every((row, index) => row.month === months[index]),
+      );
+    },
+  );
 
 export const merchantAnalyticsResponseSchema = z
   .object({

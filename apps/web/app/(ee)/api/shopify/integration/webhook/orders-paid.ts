@@ -11,6 +11,7 @@ import { recordWeleticOrder } from "@/lib/weletic/commerce/record-order";
 import { selectShopifyCouponAllocationEvidence } from "@/lib/weletic/loyalty/coupon-use-amount";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { settleRewardRedemptionsUsedByOrder } from "@/lib/weletic/loyalty/redemption-settlement";
+import { getShopifyOrderUseTime } from "@/lib/weletic/loyalty/redemption-use-time";
 import {
   type ShopifySettlementLockContext,
   withShopifySettlementLocks,
@@ -162,7 +163,6 @@ async function ordersPaidUnlocked({
   const orderDiscountCodes = extractOrderDiscountCodes(event);
 
   if (orderDiscountCodes.length > 0) {
-    const parsedCreatedAt = Date.parse(String(event.created_at || ""));
     await settleRewardRedemptionsUsedByOrder({
       storeId: operationalStore.id,
       discountCodes: orderDiscountCodes,
@@ -171,9 +171,7 @@ async function ordersPaidUnlocked({
         event.customer?.id === null || event.customer?.id === undefined
           ? null
           : String(event.customer.id),
-      usedAt: Number.isNaN(parsedCreatedAt)
-        ? new Date()
-        : new Date(parsedCreatedAt),
+      ...getShopifyOrderUseTime(event.created_at, new Date()),
       orderId: String(
         event.id || event.admin_graphql_api_id || event.name || "unknown",
       ),
@@ -357,7 +355,6 @@ async function settlePrivacyMinimizedOrder({
   if (discountCodes.length === 0) {
     return "[Shopify] Frozen-store order acknowledged without operational writes or loyalty settlement.";
   }
-  const parsedCreatedAt = Date.parse(String(event.created_at || ""));
   await settleRewardRedemptionsUsedByOrder({
     storeId,
     discountCodes,
@@ -366,9 +363,7 @@ async function settlePrivacyMinimizedOrder({
       event.customer?.id === null || event.customer?.id === undefined
         ? null
         : String(event.customer.id),
-    usedAt: Number.isNaN(parsedCreatedAt)
-      ? new Date()
-      : new Date(parsedCreatedAt),
+    ...getShopifyOrderUseTime(event.created_at, new Date()),
     orderId: String(
       event.id || event.admin_graphql_api_id || event.name || "unknown",
     ),

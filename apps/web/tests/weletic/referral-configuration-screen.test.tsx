@@ -23,6 +23,8 @@ const view: ReferralConfigurationResponse = {
   fields: {
     ...DEFAULT_REFERRAL_RULE_CONFIG,
     advocatePointsReward: "9007199254740993",
+    purchaseType: "both",
+    subscriptionCadence: "every_payment",
   },
   active: true,
   legacyConfiguration: false,
@@ -84,6 +86,27 @@ it("saves exact point strings with revision and installation fences", async () =
     fields: view.fields,
   });
   expect(container.textContent).toContain("Configuration saved.");
+});
+it("shows the unavailable cadence and blocks an active legacy first-payment promise", async () => {
+  vi.mocked(transport.read).mockResolvedValue({
+    ...view,
+    fields: {
+      ...view.fields!,
+      purchaseType: "both",
+      subscriptionCadence: "first_payment",
+    },
+  });
+  await render();
+  expect(container.textContent).toContain(
+    "First-payment and first-N referral qualification are unavailable",
+  );
+  expect(
+    container.querySelector<HTMLOptionElement>('option[value="first_payment"]')
+      ?.disabled,
+  ).toBe(true);
+  await submit();
+  expect(transport.save).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
 });
 it("blocks writes for read-only staff", async () => {
   vi.mocked(transport.read).mockResolvedValue({
@@ -207,9 +230,17 @@ it("ignores old reads after switching stores", async () => {
   expect(container.textContent).not.toContain("JPY");
 });
 it.each([
-  ["ja", "紹介プログラム設定"],
-  ["vi", "Cấu hình giới thiệu"],
-])("renders %s without saving", async (locale, title) => {
+  ["ja", "紹介プログラム設定", "請求回を確認できるまで"],
+  ["vi", "Cấu hình giới thiệu", "xác minh được kỳ thanh toán"],
+])("renders %s without saving", async (locale, title, unavailable) => {
+  vi.mocked(transport.read).mockResolvedValue({
+    ...view,
+    fields: {
+      ...view.fields!,
+      purchaseType: "both",
+      subscriptionCadence: "first_payment",
+    },
+  });
   await render();
   const select = container.querySelector("select")!;
   await act(async () => {
@@ -217,5 +248,6 @@ it.each([
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   expect(container.textContent).toContain(title);
+  expect(container.textContent).toContain(unavailable);
   expect(transport.save).not.toHaveBeenCalled();
 });

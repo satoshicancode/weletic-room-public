@@ -21,6 +21,7 @@ import {
   WeleticRedemptionStatus,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
+import type { ShopifyOrderUseTimeBasis } from "./redemption-use-time";
 import { assertAccountBackedReward } from "./reward-ownership";
 import { settleShopperCouponUse } from "./shopper-coupon-settlement";
 
@@ -282,6 +283,7 @@ export async function settleRewardRedemptionsUsedByOrder(params: {
   orderId: string;
   shopifyCustomerId: string | null;
   usedAt: Date;
+  usedAtBasis?: ShopifyOrderUseTimeBasis;
   orderMetadata?: Record<string, unknown>;
   orderDiscountEvidence?: unknown;
   expectedInstallationGeneration?: string | null;
@@ -416,6 +418,7 @@ export async function settleRewardRedemptionsUsedByOrder(params: {
           orderId: params.orderId,
           shopifyCustomerId: params.shopifyCustomerId,
           usedAt: params.usedAt,
+          usedAtBasis: params.usedAtBasis,
           orderDiscountEvidence: params.orderDiscountEvidence,
         });
         if (result.issue)
@@ -552,6 +555,7 @@ export async function settleRewardRedemptionsUsedByOrder(params: {
         data: {
           status: WeleticRedemptionStatus.used,
           usedAt: params.usedAt,
+          usedAtBasis: params.usedAtBasis ?? null,
           orderId: params.orderId,
           metadata: mergeRedemptionMetadata(
             redemption.metadata,

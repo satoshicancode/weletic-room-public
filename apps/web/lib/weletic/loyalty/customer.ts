@@ -772,6 +772,7 @@ export async function getCustomerLoyaltySummary({
     ledgerEntryId: true,
     metadata: true,
     createdAt: true,
+    issuanceConfirmedAt: true,
     updatedAt: true,
   } as const;
 
@@ -1139,7 +1140,7 @@ export async function getCustomerLoyaltySummary({
           ? redemption.shopifyDiscountCode
           : null,
       status,
-      issuedAt: redemption.createdAt,
+      issuedAt: redemption.issuanceConfirmedAt,
       statusDate,
       expiresAt: redemption.expiresAt,
       usedAt: redemption.usedAt,

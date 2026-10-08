@@ -3,12 +3,22 @@ import { readMerchantPointActivitySeries } from "../loyalty/activity-series";
 import { getLoyaltyDashboardOverview } from "../loyalty/analytics";
 import { resolveLoyaltyFinancialConfiguration } from "../loyalty/analytics-financial";
 import { escapeCsvUntrustedTextCell } from "../loyalty/csv";
+import { readMerchantEarningSources } from "../loyalty/earning-sources";
+import { readMerchantFirstRecordedConfirmedIssuancesSeries } from "../loyalty/first-recorded-confirmed-issuances-series";
+import { readMerchantFirstRecordedEarnersSeries } from "../loyalty/first-recorded-earners-series";
+import { readMerchantFirstRecordedRedemptionDebitsSeries } from "../loyalty/first-recorded-redemption-debits-series";
+import { readMerchantLedgerNetSeries } from "../loyalty/ledger-net-series";
 import {
   merchantAnalyticsRequestSchema,
   merchantAnalyticsResponseSchema,
   merchantAnalyticsSnapshotSchema,
   type MerchantAnalyticsSnapshot,
 } from "../loyalty/merchant-analytics-contract";
+import { readMerchantOrderEarningSeries } from "../loyalty/order-earning-series";
+import { readMerchantRecordedTierChangeSeries } from "../loyalty/recorded-tier-change-series";
+import { deriveMerchantRedemptionRateSeries } from "../loyalty/redemption-rate-series";
+import { readMerchantRedemptionSources } from "../loyalty/redemption-sources";
+import { readMerchantRetainedEnrollmentSeries } from "../loyalty/retained-enrollment-series";
 import {
   authorizeShopifyMerchantInTransaction,
   ShopifyStaffAuthorizationError,
@@ -98,7 +108,20 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     dateRange,
     now,
   });
-  const [rewards, referrals, activitySeries] = await Promise.all([
+  const [
+    rewards,
+    referrals,
+    activitySeries,
+    ledgerNetSeries,
+    orderEarningSeries,
+    firstRecordedEarnersSeries,
+    firstRecordedRedemptionDebitsSeries,
+    firstRecordedConfirmedIssuancesSeries,
+    retainedEnrollmentSeries,
+    recordedTierChangesSeries,
+    earningSources,
+    redemptionSources,
+  ] = await Promise.all([
     tx.weleticRewardRedemption.groupBy({
       by: ["status", "artifactKind"],
       where,
@@ -113,6 +136,60 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       orderBy: { status: "asc" },
     }),
     readMerchantPointActivitySeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantLedgerNetSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantOrderEarningSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantFirstRecordedEarnersSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantFirstRecordedRedemptionDebitsSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantFirstRecordedConfirmedIssuancesSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantRetainedEnrollmentSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantRecordedTierChangeSeries({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantEarningSources({
+      tx,
+      storeId: actor.storeId,
+      startAt: dateRange.startDate ?? null,
+      endAt: dateRange.endDate ?? null,
+    }),
+    readMerchantRedemptionSources({
       tx,
       storeId: actor.storeId,
       startAt: dateRange.startDate ?? null,
@@ -163,6 +240,16 @@ export async function readShopifyMerchantAnalyticsInTransaction({
       manualDebits: String(health.totalManualAdjustmentDebits),
     },
     activitySeries,
+    ledgerNetSeries,
+    redemptionRateSeries: deriveMerchantRedemptionRateSeries(activitySeries),
+    orderEarningSeries,
+    firstRecordedEarnersSeries,
+    firstRecordedRedemptionDebitsSeries,
+    firstRecordedConfirmedIssuancesSeries,
+    retainedEnrollmentSeries,
+    recordedTierChangesSeries,
+    earningSources,
+    redemptionSources,
     referralEconomics: {
       total: String(health.referralMetrics.totalReferrals),
       successful: String(health.referralMetrics.successfulReferrals),

@@ -30,6 +30,7 @@ import {
 } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { REMOTE_CLEANUP_USE_TIME_BASIS } from "./redemption-use-time";
 import {
   assertAccountBackedReward,
   DIRECT_REVIEW_REWARD_SOURCE,
@@ -1169,6 +1170,7 @@ async function finalizeLocalUsedPreservation({
       data: {
         status: WeleticRedemptionStatus.used,
         usedAt: observedAt,
+        usedAtBasis: REMOTE_CLEANUP_USE_TIME_BASIS,
         metadata: usedRedemptionMetadata({
           cleanupId: cleanup.id,
           source: cleanup.source,
@@ -1225,6 +1227,7 @@ async function finalizeLocalUsedPreservation({
     data: {
       status: WeleticRedemptionStatus.used,
       usedAt: observedAt,
+      usedAtBasis: REMOTE_CLEANUP_USE_TIME_BASIS,
       metadata: usedRedemptionMetadata({
         cleanupId: cleanup.id,
         source: cleanup.source,

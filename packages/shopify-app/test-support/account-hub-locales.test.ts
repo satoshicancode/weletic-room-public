@@ -1785,7 +1785,7 @@ describe("account hub redemption validation localization", () => {
         id: "wallet-fixture",
         rewardName: "Merchant name",
         pointsSpent: "100",
-        issuedAt: "",
+        issuedAt: null,
         status: "available" as const,
       };
       for (const [status, key] of [

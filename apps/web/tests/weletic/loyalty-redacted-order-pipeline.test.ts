@@ -190,6 +190,7 @@ describe("redacted customer order pipeline", () => {
         discountCodes: ["PRIVATE-COUPON"],
         shopifyCustomerId: "887761",
         usedAt: new Date("2026-08-29T00:00:00.000Z"),
+        usedAtBasis: "shopify_order_created_at",
         orderId: "99887761",
         orderDiscountEvidence: null,
         expectedInstallationGeneration: undefined,

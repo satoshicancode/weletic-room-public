@@ -1,22 +1,75 @@
 "use client";
 
 import React, { useRef, useState } from "react";
+import { merchantAccountRowCsv } from "../../../lib/weletic/loyalty/account-row-csv";
+import {
+  merchantAccountRowExportRequestSchema,
+  type MerchantAccountRowExportRequest,
+  type MerchantAccountRowExportResponse,
+} from "../../../lib/weletic/loyalty/account-row-export-contract";
+import { merchantLedgerRowCsv } from "../../../lib/weletic/loyalty/ledger-row-csv";
+import {
+  merchantLedgerRowExportRequestSchema,
+  type MerchantLedgerRowExportRequest,
+  type MerchantLedgerRowExportResponse,
+} from "../../../lib/weletic/loyalty/ledger-row-export-contract";
 import {
   merchantAnalyticsFilterSchema,
   type MerchantAnalyticsRequest,
   type MerchantAnalyticsResponse,
   type MerchantAnalyticsSnapshot,
 } from "../../../lib/weletic/loyalty/merchant-analytics-contract";
+import { merchantRedemptionRowCsv } from "../../../lib/weletic/loyalty/redemption-row-csv";
+import {
+  merchantRedemptionRowExportRequestSchema,
+  type MerchantRedemptionRowExportRequest,
+  type MerchantRedemptionRowExportResponse,
+} from "../../../lib/weletic/loyalty/redemption-row-export-contract";
+import { merchantTierHistoryCsv } from "../../../lib/weletic/loyalty/tier-history-csv";
+import type {
+  MerchantTierHistoryExportRequest,
+  MerchantTierHistoryExportResponse,
+} from "../../../lib/weletic/loyalty/tier-history-export-contract";
+import { merchantTierHistoryExportRequestSchema } from "../../../lib/weletic/loyalty/tier-history-export-contract";
 import { merchantAnalyticsCopy } from "./merchant-analytics-copy";
 
 export type MerchantAnalyticsTransport = (
   request: MerchantAnalyticsRequest,
 ) => Promise<MerchantAnalyticsResponse>;
+export type MerchantTierHistoryTransport = (
+  request: MerchantTierHistoryExportRequest,
+) => Promise<MerchantTierHistoryExportResponse>;
+export type MerchantLedgerRowTransport = (
+  request: MerchantLedgerRowExportRequest,
+) => Promise<MerchantLedgerRowExportResponse>;
+export type MerchantRedemptionRowTransport = (
+  request: MerchantRedemptionRowExportRequest,
+) => Promise<MerchantRedemptionRowExportResponse>;
+export type MerchantAccountRowTransport = (
+  request: MerchantAccountRowExportRequest,
+) => Promise<MerchantAccountRowExportResponse>;
+
+function download(content: string, contentType: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: contentType }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 export function MerchantAnalyticsScreen({
   request,
+  requestTierHistory,
+  requestLedgerRows,
+  requestRedemptionRows,
+  requestAccountRows,
 }: {
   request: MerchantAnalyticsTransport;
+  requestTierHistory?: MerchantTierHistoryTransport;
+  requestLedgerRows?: MerchantLedgerRowTransport;
+  requestRedemptionRows?: MerchantRedemptionRowTransport;
+  requestAccountRows?: MerchantAccountRowTransport;
 }) {
   const [locale, setLocale] =
     useState<keyof typeof merchantAnalyticsCopy>("en");
@@ -27,7 +80,9 @@ export function MerchantAnalyticsScreen({
     null,
   );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<"invalid" | "error" | null>(null);
+  const [error, setError] = useState<"invalid" | "error" | "tooMany" | null>(
+    null,
+  );
   const epoch = useRef(0);
   React.useEffect(() => {
     const fence = epoch;
@@ -82,16 +137,11 @@ export function MerchantAnalyticsScreen({
       if (version !== epoch.current) return;
       setSnapshot(result.snapshot);
       if (result.download) {
-        const url = URL.createObjectURL(
-          new Blob([result.download.content], {
-            type: result.download.contentType,
-          }),
+        download(
+          result.download.content,
+          result.download.contentType,
+          result.download.filename,
         );
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = result.download.filename;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
     } catch {
       if (version === epoch.current) setError("error");
@@ -99,7 +149,176 @@ export function MerchantAnalyticsScreen({
       if (version === epoch.current) setBusy(false);
     }
   }
+  async function exportTierHistory() {
+    if (!snapshot?.canExport || !requestTierHistory || !start || !end) {
+      setError("invalid");
+      return;
+    }
+    const parsed = merchantTierHistoryExportRequestSchema.safeParse({
+      filter: {
+        startAt: `${start}T00:00:00.000Z`,
+        endAt: `${end}T23:59:59.999Z`,
+      },
+      expectedInstallationGeneration: snapshot.installationGeneration,
+    });
+    if (!parsed.success) {
+      setError("invalid");
+      return;
+    }
+    const version = ++epoch.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await requestTierHistory(parsed.data);
+      if (version !== epoch.current) return;
+      if (result.status === "too_large") {
+        setError("tooMany");
+        return;
+      }
+      download(
+        merchantTierHistoryCsv(result.rows),
+        "text/csv;charset=utf-8",
+        `weletic-tier-history-${start}-${end}.csv`,
+      );
+    } catch {
+      if (version === epoch.current) setError("error");
+    } finally {
+      if (version === epoch.current) setBusy(false);
+    }
+  }
+  async function exportLedgerRows() {
+    if (!snapshot?.canExport || !requestLedgerRows || !start || !end) {
+      setError("invalid");
+      return;
+    }
+    const parsed = merchantLedgerRowExportRequestSchema.safeParse({
+      filter: {
+        startAt: `${start}T00:00:00.000Z`,
+        endAt: `${end}T23:59:59.999Z`,
+      },
+      expectedInstallationGeneration: snapshot.installationGeneration,
+    });
+    if (!parsed.success) {
+      setError("invalid");
+      return;
+    }
+    const version = ++epoch.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await requestLedgerRows(parsed.data);
+      if (version !== epoch.current) return;
+      if (result.status === "too_large") {
+        setError("tooMany");
+        return;
+      }
+      download(
+        merchantLedgerRowCsv(result.rows),
+        "text/csv;charset=utf-8",
+        `weletic-points-transactions-${start}-${end}.csv`,
+      );
+    } catch {
+      if (version === epoch.current) setError("error");
+    } finally {
+      if (version === epoch.current) setBusy(false);
+    }
+  }
+  async function exportRedemptionRows() {
+    if (!snapshot?.canExport || !requestRedemptionRows || !start || !end) {
+      setError("invalid");
+      return;
+    }
+    const parsed = merchantRedemptionRowExportRequestSchema.safeParse({
+      filter: {
+        startAt: `${start}T00:00:00.000Z`,
+        endAt: `${end}T23:59:59.999Z`,
+      },
+      expectedInstallationGeneration: snapshot.installationGeneration,
+    });
+    if (!parsed.success) {
+      setError("invalid");
+      return;
+    }
+    const version = ++epoch.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await requestRedemptionRows(parsed.data);
+      if (version !== epoch.current) return;
+      if (result.status === "too_large") {
+        setError("tooMany");
+        return;
+      }
+      download(
+        merchantRedemptionRowCsv(result.rows),
+        "text/csv;charset=utf-8",
+        `weletic-recorded-redemptions-${start}-${end}.csv`,
+      );
+    } catch {
+      if (version === epoch.current) setError("error");
+    } finally {
+      if (version === epoch.current) setBusy(false);
+    }
+  }
+  async function exportAccountRows() {
+    if (!snapshot?.canExport || !requestAccountRows || !start || !end) {
+      setError("invalid");
+      return;
+    }
+    const parsed = merchantAccountRowExportRequestSchema.safeParse({
+      filter: {
+        startAt: `${start}T00:00:00.000Z`,
+        endAt: `${end}T23:59:59.999Z`,
+      },
+      expectedInstallationGeneration: snapshot.installationGeneration,
+    });
+    if (!parsed.success) {
+      setError("invalid");
+      return;
+    }
+    const version = ++epoch.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await requestAccountRows(parsed.data);
+      if (version !== epoch.current) return;
+      if (result.status === "too_large") {
+        setError("tooMany");
+        return;
+      }
+      download(
+        merchantAccountRowCsv(result.rows),
+        "text/csv;charset=utf-8",
+        `weletic-current-accounts-${start}-${end}.csv`,
+      );
+    } catch {
+      if (version === epoch.current) setError("error");
+    } finally {
+      if (version === epoch.current) setBusy(false);
+    }
+  }
   const label = (key: string) => copy[key as keyof typeof copy] ?? key;
+  const rate = new Intl.NumberFormat(locale, {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const wholeRate = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  function formatBasisPoints(value: string) {
+    const basisPoints = BigInt(value);
+    const whole = wholeRate.format(basisPoints / BigInt(100));
+    const fraction = (basisPoints % BigInt(100)).toString().padStart(2, "0");
+    return rate
+      .formatToParts(1)
+      .map((part) =>
+        part.type === "integer"
+          ? whole
+          : part.type === "fraction"
+            ? fraction
+            : part.value,
+      )
+      .join("");
+  }
   function table(title: string, rows: Record<string, string | null>[]) {
     const keys = rows[0] ? Object.keys(rows[0]) : [];
     return (
@@ -129,11 +348,17 @@ export function MerchantAnalyticsScreen({
                       <td key={key}>
                         {row[key] === null
                           ? copy.unavailable
-                          : key === "status" || key === "artifact"
-                            ? row[key] === "expired"
-                              ? copy.expiredStatus
-                              : label(row[key]!)
-                            : row[key]}
+                          : key === "rateBasisPoints" ||
+                              key === "redemptionRateBasisPoints"
+                            ? formatBasisPoints(row[key]!)
+                            : key === "status" ||
+                                key === "artifact" ||
+                                key === "entryType" ||
+                                key === "rewardType"
+                              ? row[key] === "expired"
+                                ? copy.expiredStatus
+                                : label(row[key]!)
+                              : row[key]}
                       </td>
                     ))}
                   </tr>
@@ -246,6 +471,58 @@ export function MerchantAnalyticsScreen({
             {copy.json}
           </button>
           {!snapshot.canExport && <p>{copy.exportNote}</p>}
+          {requestAccountRows && (
+            <section>
+              <h2>{copy.accountRowsTitle}</h2>
+              <p>{copy.accountRowsSemantics}</p>
+              <button
+                type="button"
+                disabled={busy || !snapshot.canExport || !start || !end}
+                onClick={() => void exportAccountRows()}
+              >
+                {copy.accountRowsCsv}
+              </button>
+            </section>
+          )}
+          {requestTierHistory && (
+            <section>
+              <h2>{copy.tierHistoryTitle}</h2>
+              <p>{copy.tierHistorySemantics}</p>
+              <button
+                type="button"
+                disabled={busy || !snapshot.canExport || !start || !end}
+                onClick={() => void exportTierHistory()}
+              >
+                {copy.tierHistoryCsv}
+              </button>
+            </section>
+          )}
+          {requestLedgerRows && (
+            <section>
+              <h2>{copy.ledgerRowsTitle}</h2>
+              <p>{copy.ledgerRowsSemantics}</p>
+              <button
+                type="button"
+                disabled={busy || !snapshot.canExport || !start || !end}
+                onClick={() => void exportLedgerRows()}
+              >
+                {copy.ledgerRowsCsv}
+              </button>
+            </section>
+          )}
+          {requestRedemptionRows && (
+            <section>
+              <h2>{copy.redemptionRowsTitle}</h2>
+              <p>{copy.redemptionRowsSemantics}</p>
+              <button
+                type="button"
+                disabled={busy || !snapshot.canExport || !start || !end}
+                onClick={() => void exportRedemptionRows()}
+              >
+                {copy.redemptionRowsCsv}
+              </button>
+            </section>
+          )}
           {metrics(copy.liability, snapshot.liability)}
           {metrics(copy.activity, snapshot.activity)}
           {snapshot.activitySeries.status === "available" ? (
@@ -254,6 +531,165 @@ export function MerchantAnalyticsScreen({
             <section>
               <h2>{copy.activitySeries}</h2>
               <p role="status">{copy[snapshot.activitySeries.status]}</p>
+            </section>
+          )}
+          <p>{copy.ledgerNetSemantics}</p>
+          {snapshot.ledgerNetSeries.status === "available" ? (
+            <>
+              {metrics(copy.ledgerNetOpening, {
+                openingNetPoints: snapshot.ledgerNetSeries.openingNetPoints,
+              })}
+              {table(copy.ledgerNetSeries, snapshot.ledgerNetSeries.rows)}
+            </>
+          ) : (
+            <section>
+              <h2>{copy.ledgerNetSeries}</h2>
+              <p role="status">{copy[snapshot.ledgerNetSeries.status]}</p>
+            </section>
+          )}
+          <p>{copy.firstRecordedEarnersSemantics}</p>
+          {snapshot.firstRecordedEarnersSeries.status === "available" ? (
+            table(
+              copy.firstRecordedEarnersSeries,
+              snapshot.firstRecordedEarnersSeries.rows,
+            )
+          ) : (
+            <section>
+              <h2>{copy.firstRecordedEarnersSeries}</h2>
+              <p role="status">
+                {copy[snapshot.firstRecordedEarnersSeries.status]}
+              </p>
+            </section>
+          )}
+          <p>{copy.firstRecordedRedemptionDebitsSemantics}</p>
+          {snapshot.firstRecordedRedemptionDebitsSeries.status ===
+          "available" ? (
+            table(
+              copy.firstRecordedRedemptionDebitsSeries,
+              snapshot.firstRecordedRedemptionDebitsSeries.rows,
+            )
+          ) : (
+            <section>
+              <h2>{copy.firstRecordedRedemptionDebitsSeries}</h2>
+              <p role="status">
+                {copy[snapshot.firstRecordedRedemptionDebitsSeries.status]}
+              </p>
+            </section>
+          )}
+          <p>{copy.firstRecordedConfirmedIssuancesSemantics}</p>
+          {snapshot.firstRecordedConfirmedIssuancesSeries.status ===
+          "available" ? (
+            table(
+              copy.firstRecordedConfirmedIssuancesSeries,
+              snapshot.firstRecordedConfirmedIssuancesSeries.rows,
+            )
+          ) : (
+            <section>
+              <h2>{copy.firstRecordedConfirmedIssuancesSeries}</h2>
+              <p role="status">
+                {copy[snapshot.firstRecordedConfirmedIssuancesSeries.status]}
+              </p>
+            </section>
+          )}
+          <p>{copy.retainedEnrollmentSemantics}</p>
+          {snapshot.retainedEnrollmentSeries.status === "available" ? (
+            <>
+              {metrics(copy.retainedEnrollmentOpening, {
+                openingRetainedAccounts:
+                  snapshot.retainedEnrollmentSeries.openingRetainedAccounts,
+              })}
+              {table(
+                copy.retainedEnrollmentSeries,
+                snapshot.retainedEnrollmentSeries.rows,
+              )}
+            </>
+          ) : (
+            <section>
+              <h2>{copy.retainedEnrollmentSeries}</h2>
+              <p role="status">
+                {copy[snapshot.retainedEnrollmentSeries.status]}
+              </p>
+            </section>
+          )}
+          <p>{copy.recordedTierChangesSemantics}</p>
+          {snapshot.recordedTierChangesSeries.status === "available" ? (
+            table(
+              copy.recordedTierChangesSeries,
+              snapshot.recordedTierChangesSeries.rows,
+            )
+          ) : (
+            <section>
+              <h2>{copy.recordedTierChangesSeries}</h2>
+              <p role="status">
+                {copy[snapshot.recordedTierChangesSeries.status]}
+              </p>
+            </section>
+          )}
+          <p>{copy.earningSourcesSemantics}</p>
+          {table(copy.earningSources, snapshot.earningSources.rows)}
+          <p>{copy.redemptionSourcesSemantics}</p>
+          {table(copy.redemptionSources, [
+            ...snapshot.redemptionSources.rows.map((row) => ({
+              group: copy.recordedReward,
+              rewardDefinitionId: row.rewardDefinitionId,
+              capturedName: row.capturedName,
+              rewardType: row.rewardType,
+              redemptionEvents: row.eventCount,
+              grossRedemptionPoints: row.pointsSpent,
+            })),
+            ...(snapshot.redemptionSources.other.eventCount !== "0"
+              ? [
+                  {
+                    group: copy.otherRewards,
+                    rewardDefinitionId: null,
+                    capturedName: null,
+                    rewardType: null,
+                    redemptionEvents:
+                      snapshot.redemptionSources.other.eventCount,
+                    grossRedemptionPoints:
+                      snapshot.redemptionSources.other.pointsSpent,
+                  },
+                ]
+              : []),
+            ...(snapshot.redemptionSources.unknown.eventCount !== "0"
+              ? [
+                  {
+                    group: copy.unknownReward,
+                    rewardDefinitionId: null,
+                    capturedName: null,
+                    rewardType: null,
+                    redemptionEvents:
+                      snapshot.redemptionSources.unknown.eventCount,
+                    grossRedemptionPoints:
+                      snapshot.redemptionSources.unknown.pointsSpent,
+                  },
+                ]
+              : []),
+          ])}
+          {metrics(copy.redemptionSourcesTotal, {
+            redemptionEvents: snapshot.redemptionSources.total.eventCount,
+            grossRedemptionPoints: snapshot.redemptionSources.total.pointsSpent,
+          })}
+          <p>{copy.redemptionRateSemantics}</p>
+          {snapshot.redemptionRateSeries.status === "available" ? (
+            table(copy.redemptionRateSeries, snapshot.redemptionRateSeries.rows)
+          ) : (
+            <section>
+              <h2>{copy.redemptionRateSeries}</h2>
+              <p role="status">{copy[snapshot.redemptionRateSeries.status]}</p>
+            </section>
+          )}
+          <section>
+            <h2>{copy.rewardUsageRateTitle}</h2>
+            <p role="status">{copy.rewardUsageRateUnavailable}</p>
+          </section>
+          <p>{copy.orderEarningSemantics}</p>
+          {snapshot.orderEarningSeries.status === "available" ? (
+            table(copy.orderEarningSeries, snapshot.orderEarningSeries.rows)
+          ) : (
+            <section>
+              <h2>{copy.orderEarningSeries}</h2>
+              <p role="status">{copy[snapshot.orderEarningSeries.status]}</p>
             </section>
           )}
           {metrics(copy.referralEconomics, snapshot.referralEconomics)}

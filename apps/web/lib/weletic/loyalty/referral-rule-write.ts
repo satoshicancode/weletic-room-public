@@ -1,6 +1,12 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import type { Prisma } from "@prisma/client";
 import { publishLoyaltyEarnPolicyRevision } from "./earn-policy-revision";
+import {
+  DEFAULT_REFERRAL_PURCHASE_POLICY,
+  NEW_REFERRAL_PURCHASE_POLICY,
+  readLoyaltyPurchasePolicy,
+  requiresUnverifiedSubscriptionCycle,
+} from "./purchase-policy";
 import { isReferralCouponProvisionable } from "./rewards";
 
 export class ReferralRuleWriteError extends Error {
@@ -122,16 +128,45 @@ export async function writeReferralRuleInTransaction({
         message: `Referral rule '${ruleId}' not found for this store.`,
       });
     }
+    const effectivePolicy = readLoyaltyPurchasePolicy(
+      ruleData.purchasePolicy ?? existing.purchasePolicy,
+      DEFAULT_REFERRAL_PURCHASE_POLICY,
+    );
+    if (
+      ruleData.isActive &&
+      requiresUnverifiedSubscriptionCycle(effectivePolicy)
+    ) {
+      throw new ReferralRuleWriteError({
+        code: "bad_request",
+        message:
+          "First-payment and first-N referral qualification require verified subscription cycles.",
+      });
+    }
     savedRule = await tx.weleticLoyaltyReferralRule.update({
       where: { id: ruleId },
       data: ruleData,
     });
   } else {
+    const effectivePolicy = readLoyaltyPurchasePolicy(
+      ruleData.purchasePolicy,
+      NEW_REFERRAL_PURCHASE_POLICY,
+    );
+    if (
+      ruleData.isActive &&
+      requiresUnverifiedSubscriptionCycle(effectivePolicy)
+    ) {
+      throw new ReferralRuleWriteError({
+        code: "bad_request",
+        message:
+          "First-payment and first-N referral qualification require verified subscription cycles.",
+      });
+    }
     savedRule = await tx.weleticLoyaltyReferralRule.create({
       data: {
         id: createWeleticId("wreferral_"),
         programId: program.id,
         ...ruleData,
+        purchasePolicy: effectivePolicy,
       },
     });
   }

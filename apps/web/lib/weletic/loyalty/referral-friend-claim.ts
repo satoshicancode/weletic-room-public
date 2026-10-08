@@ -64,6 +64,10 @@ import {
 } from "./purchase-policy";
 import { enqueueReferralBenefitCommunication } from "./referral-benefit-communication-producer";
 import { createReferralCommunicationOrigin } from "./referral-communication-origin";
+import {
+  heldReferralSubscriptionOrderId,
+  holdUnverifiedReferralSubscriptionOrder,
+} from "./referral-subscription-cadence-hold";
 
 const CLAIM_METADATA_KEY = "friendRewardSnapshot";
 const LEGACY_FRIEND_REWARD_CLEANUP_PENDING_REASON =
@@ -1148,6 +1152,13 @@ export async function evaluateReferralFriendClaimQualification({
           "Referral advocate does not belong to the active loyalty program.",
         );
       }
+      if (heldReferralSubscriptionOrderId(referral.metadata)) {
+        return {
+          qualified: false as const,
+          reason:
+            "Referral awaits verified subscription billing cycle for its first order",
+        };
+      }
       const persistedShopper = refereeShopperId
         ? await tx.weleticShopper.findFirst({
             where: { id: refereeShopperId, storeId },
@@ -1157,6 +1168,44 @@ export async function evaluateReferralFriendClaimQualification({
       const observedOrderSequence =
         customerOrderSequence ?? persistedShopper?.ordersCount ?? null;
       if (observedOrderSequence != null && observedOrderSequence > 1) {
+        const cadenceRule = await tx.weleticLoyaltyReferralRule.findFirst({
+          where: {
+            programId: referral.advocateAccount.programId,
+            isActive: true,
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        });
+        if (cadenceRule) {
+          let cadencePolicy: ReturnType<
+            typeof readLoyaltyPurchasePolicy
+          > | null = null;
+          try {
+            cadencePolicy = readLoyaltyPurchasePolicy(
+              cadenceRule.purchasePolicy,
+              DEFAULT_REFERRAL_PURCHASE_POLICY,
+            );
+          } catch {
+            // Malformed historical terms cannot authorize a qualification.
+          }
+          if (
+            cadencePolicy &&
+            (await holdUnverifiedReferralSubscriptionOrder({
+              tx,
+              storeId,
+              referralId: referral.id,
+              orderId,
+              ruleId: cadenceRule.id,
+              policy: cadencePolicy,
+              metadata: referral.metadata,
+            }))
+          ) {
+            return {
+              qualified: false as const,
+              reason:
+                "Referral awaits first-order and subscription-cycle reconciliation",
+            };
+          }
+        }
         await tx.weleticLoyaltyReferral.updateMany({
           where: {
             id: referral.id,
@@ -1198,7 +1247,23 @@ export async function evaluateReferralFriendClaimQualification({
         policy: qualificationPurchasePolicy,
         testFallbackSubtotal: orderSubtotal,
       });
+      const holdUnverifiedCycle = () =>
+        holdUnverifiedReferralSubscriptionOrder({
+          tx,
+          storeId,
+          referralId: referral.id,
+          orderId,
+          ruleId: rule.id,
+          policy: qualificationPurchasePolicy,
+          metadata: referral.metadata,
+        });
       if (eligibleSubtotal <= BigInt(0)) {
+        if (await holdUnverifiedCycle()) {
+          return {
+            qualified: false as const,
+            reason: "Referral awaits verified subscription billing cycle",
+          };
+        }
         return { qualified: false as const, reason: "Ineligible purchase" };
       }
       if (rule.minQualifyingOrderSubtotal) {
@@ -1207,6 +1272,12 @@ export async function evaluateReferralFriendClaimQualification({
           currency,
         );
         if (eligibleSubtotal < minimum) {
+          if (await holdUnverifiedCycle()) {
+            return {
+              qualified: false as const,
+              reason: "Referral awaits verified subscription billing cycle",
+            };
+          }
           return { qualified: false as const, reason: "Below minimum" };
         }
       }

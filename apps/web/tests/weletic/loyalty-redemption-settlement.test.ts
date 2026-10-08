@@ -103,9 +103,17 @@ describe("loyalty redemption order settlement", () => {
       orderId: "order_migrated_code",
       shopifyCustomerId: "customer_1",
       usedAt: new Date("2026-08-30T00:00:00.000Z"),
+      usedAtBasis: "shopify_order_created_at",
     });
 
     expect(result.markedUsed).toBe(1);
+    expect(prisma.weleticRewardRedemption.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          usedAtBasis: "shopify_order_created_at",
+        }),
+      }),
+    );
     expect(prisma.weleticRewardRedemption.findFirst).toHaveBeenCalledWith({
       where: {
         storeId: "store_1",

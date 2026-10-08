@@ -18,6 +18,7 @@ import {
 import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
 import * as referralOperations from "@/lib/weletic/loyalty/referrals";
 import { validateIncrementalRewardConfig } from "@/lib/weletic/loyalty/rewards";
+import { serializeLoyaltyData } from "@/lib/weletic/loyalty/serialization";
 import {
   WeleticRedemptionStatus,
   WeleticRewardExchangeType,
@@ -463,6 +464,64 @@ describe("Customer Loyalty APIs & Surfaces", () => {
       rewards: [],
       rewardWallet: [],
     });
+  });
+
+  it("reports confirmed issuance time and keeps legacy reservation time unknown", async () => {
+    const confirmedAt = new Date("2026-01-16T12:00:00.000Z");
+    mockFullSummaryLifecycle({
+      programStatus: "active",
+      killSwitchActive: false,
+      referralRule: { isActive: false },
+      wallet: [
+        {
+          id: "confirmed",
+          code: "WL-CONFIRMED",
+          issuanceConfirmedAt: confirmedAt,
+        },
+        { id: "legacy", code: "WL-LEGACY", issuanceConfirmedAt: null },
+      ].map(({ id, code, issuanceConfirmedAt }) => ({
+        id,
+        rewardDefinitionId: "reward_1",
+        pointsSpent: BigInt(100),
+        shopifyDiscountCode: code,
+        artifactKind: null,
+        status: WeleticRedemptionStatus.issued,
+        orderId: null,
+        expiresAt: null,
+        usedAt: null,
+        ledgerEntryId: null,
+        metadata: null,
+        createdAt: new Date("2026-01-15T00:00:00.000Z"),
+        issuanceConfirmedAt,
+        updatedAt: new Date("2026-01-16T12:00:00.000Z"),
+      })),
+    });
+    vi.mocked(prisma.weleticRewardDefinition.findMany).mockResolvedValue([]);
+
+    const summary = await getCustomerLoyaltySummary({
+      storeId: "store_123",
+      shopifyCustomerId: "customer_lifecycle",
+    });
+    expect(summary.isEnrolled).toBe(true);
+    if (!summary.isEnrolled) throw new Error("Expected enrolled summary.");
+    expect(summary.rewardWallet).toEqual([
+      expect.objectContaining({ id: "confirmed", issuedAt: confirmedAt }),
+      expect.objectContaining({ id: "legacy", issuedAt: null }),
+    ]);
+    expect(
+      serializeLoyaltyData(summary.rewardWallet).map((reward: any) => ({
+        id: reward.id,
+        issuedAt: reward.issuedAt,
+      })),
+    ).toEqual([
+      { id: "confirmed", issuedAt: confirmedAt.toISOString() },
+      { id: "legacy", issuedAt: null },
+    ]);
+    expect(prisma.weleticRewardRedemption.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ issuanceConfirmedAt: true }),
+      }),
+    );
   });
 
   it("does not provision referral identity for internal read-only summaries", async () => {

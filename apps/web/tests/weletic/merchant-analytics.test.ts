@@ -13,6 +13,15 @@ const mocks = vi.hoisted(() => ({
   rewards: vi.fn(),
   referrals: vi.fn(),
   series: vi.fn(),
+  ledgerNetSeries: vi.fn(),
+  firstEarnersSeries: vi.fn(),
+  firstRedemptionDebitsSeries: vi.fn(),
+  firstConfirmedIssuancesSeries: vi.fn(),
+  retainedEnrollmentSeries: vi.fn(),
+  tierChangesSeries: vi.fn(),
+  earningSources: vi.fn(),
+  redemptionSources: vi.fn(),
+  orderSeries: vi.fn(),
 }));
 vi.mock("../../lib/weletic/shopify/staff-authorization", () => ({
   authorizeShopifyMerchantInTransaction: mocks.authorize,
@@ -27,6 +36,41 @@ vi.mock("../../lib/weletic/loyalty/analytics", () => ({
 }));
 vi.mock("../../lib/weletic/loyalty/activity-series", () => ({
   readMerchantPointActivitySeries: mocks.series,
+}));
+vi.mock("../../lib/weletic/loyalty/ledger-net-series", () => ({
+  readMerchantLedgerNetSeries: mocks.ledgerNetSeries,
+}));
+vi.mock("../../lib/weletic/loyalty/first-recorded-earners-series", () => ({
+  readMerchantFirstRecordedEarnersSeries: mocks.firstEarnersSeries,
+}));
+vi.mock(
+  "../../lib/weletic/loyalty/first-recorded-redemption-debits-series",
+  () => ({
+    readMerchantFirstRecordedRedemptionDebitsSeries:
+      mocks.firstRedemptionDebitsSeries,
+  }),
+);
+vi.mock(
+  "../../lib/weletic/loyalty/first-recorded-confirmed-issuances-series",
+  () => ({
+    readMerchantFirstRecordedConfirmedIssuancesSeries:
+      mocks.firstConfirmedIssuancesSeries,
+  }),
+);
+vi.mock("../../lib/weletic/loyalty/retained-enrollment-series", () => ({
+  readMerchantRetainedEnrollmentSeries: mocks.retainedEnrollmentSeries,
+}));
+vi.mock("../../lib/weletic/loyalty/recorded-tier-change-series", () => ({
+  readMerchantRecordedTierChangeSeries: mocks.tierChangesSeries,
+}));
+vi.mock("../../lib/weletic/loyalty/earning-sources", () => ({
+  readMerchantEarningSources: mocks.earningSources,
+}));
+vi.mock("../../lib/weletic/loyalty/redemption-sources", () => ({
+  readMerchantRedemptionSources: mocks.redemptionSources,
+}));
+vi.mock("../../lib/weletic/loyalty/order-earning-series", () => ({
+  readMerchantOrderEarningSeries: mocks.orderSeries,
 }));
 const tx = {
   weleticShopifyStore: { findUnique: mocks.store },
@@ -131,6 +175,125 @@ beforeEach(() => {
       },
     ],
   });
+  mocks.ledgerNetSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_day",
+    coverage: "recorded_ledger_net_only",
+    openingNetPoints: "-7",
+    rows: Array.from({ length: 30 }, (_, index) => ({
+      date: `2026-09-${String(index + 1).padStart(2, "0")}`,
+      netChangePoints: index === 8 ? huge.toString() : "0",
+      cumulativeNetPoints: index < 8 ? "-7" : (huge - BigInt(7)).toString(),
+    })),
+  });
+  mocks.firstEarnersSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_qualifying_ledger_accounts_only",
+    rows: [
+      {
+        month: "2026-09",
+        activeAccounts: "2",
+        firstRecordedAccounts: "1",
+        returningAccounts: "1",
+      },
+    ],
+  });
+  mocks.firstRedemptionDebitsSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_reward_debit_accounts_only",
+    rows: [
+      {
+        month: "2026-09",
+        debitAccounts: "2",
+        firstRecordedDebitAccounts: "1",
+        returningDebitAccounts: "1",
+      },
+    ],
+  });
+  mocks.firstConfirmedIssuancesSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_confirmed_point_issuance_accounts_only",
+    rows: [
+      {
+        month: "2026-09",
+        confirmedAccounts: "2",
+        firstRecordedConfirmedAccounts: "1",
+        returningConfirmedAccounts: "1",
+      },
+    ],
+  });
+  mocks.retainedEnrollmentSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_account_enrollments_only",
+    openingRetainedAccounts: "1",
+    rows: [
+      {
+        month: "2026-09",
+        newRetainedAccounts: "1",
+        cumulativeRetainedAccounts: "2",
+      },
+    ],
+  });
+  mocks.tierChangesSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_tier_change_reasons_only",
+    rows: [
+      {
+        month: "2026-09",
+        totalChanges: "2",
+        thresholdReached: "1",
+        bonusPromotion: "0",
+        annualDowngrade: "0",
+        gracePeriodExpired: "0",
+        programActivation: "0",
+        manualOverride: "1",
+        otherReasons: "0",
+      },
+    ],
+  });
+  mocks.earningSources.mockResolvedValue({
+    coverage: "retained_positive_earning_ledger_only",
+    rows: [
+      {
+        entryType: "EARN_ORDER",
+        eventCount: "2",
+        pointsEarned: huge.toString(),
+      },
+    ],
+  });
+  mocks.redemptionSources.mockResolvedValue({
+    coverage: "retained_redemption_debits_only",
+    rows: [
+      {
+        rewardDefinitionId: "reward-one",
+        capturedName: "=Voucher",
+        rewardType: "amount_off",
+        eventCount: "1",
+        pointsSpent: "200",
+      },
+    ],
+    other: { eventCount: "0", pointsSpent: "0" },
+    unknown: { eventCount: "1", pointsSpent: "50" },
+    total: { eventCount: "2", pointsSpent: "250" },
+  });
+  mocks.orderSeries.mockResolvedValue({
+    status: "available",
+    bucket: "utc_day",
+    coverage: "recorded_orders_only",
+    rows: [
+      {
+        date: "2026-09-09",
+        recordedOrders: "3",
+        earningOrders: "2",
+        rateBasisPoints: "6667",
+      },
+    ],
+  });
 });
 describe("merchant analytics", () => {
   it("uses one authorized store and transaction and retains exact values", async () => {
@@ -171,8 +334,275 @@ describe("merchant analytics", () => {
       startAt: new Date(filter.startAt),
       endAt: new Date(filter.endAt),
     });
+    expect(mocks.ledgerNetSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(mocks.firstEarnersSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(mocks.retainedEnrollmentSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(mocks.firstRedemptionDebitsSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(
+      result.snapshot.firstRecordedRedemptionDebitsSeries.rows[0],
+    ).toMatchObject({
+      firstRecordedDebitAccounts: "1",
+      returningDebitAccounts: "1",
+    });
+    expect(mocks.firstConfirmedIssuancesSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(
+      result.snapshot.firstRecordedConfirmedIssuancesSeries.rows[0],
+    ).toMatchObject({
+      firstRecordedConfirmedAccounts: "1",
+      returningConfirmedAccounts: "1",
+    });
+    expect(result.snapshot.retainedEnrollmentSeries.rows[0]).toMatchObject({
+      newRetainedAccounts: "1",
+      cumulativeRetainedAccounts: "2",
+    });
+    expect(mocks.tierChangesSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(mocks.earningSources).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(mocks.redemptionSources).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(result.snapshot.redemptionSources).toMatchObject({
+      unknown: { eventCount: "1", pointsSpent: "50" },
+      total: { eventCount: "2", pointsSpent: "250" },
+    });
+    expect(result.snapshot.earningSources.rows[0]).toMatchObject({
+      eventCount: "2",
+      pointsEarned: huge.toString(),
+    });
+    expect(result.snapshot.firstRecordedEarnersSeries.rows[0]).toMatchObject({
+      firstRecordedAccounts: "1",
+      returningAccounts: "1",
+    });
+    expect(result.snapshot.recordedTierChangesSeries.rows[0]).toMatchObject({
+      totalChanges: "2",
+      manualOverride: "1",
+      otherReasons: "0",
+    });
+    expect(result.snapshot.ledgerNetSeries.openingNetPoints).toBe("-7");
+    expect(mocks.orderSeries).toHaveBeenCalledWith({
+      tx,
+      storeId: "store-a",
+      startAt: new Date(filter.startAt),
+      endAt: new Date(filter.endAt),
+    });
+    expect(result.snapshot.orderEarningSeries.rows[0].rateBasisPoints).toBe(
+      "6667",
+    );
+    expect(result.snapshot.redemptionRateSeries).toEqual({
+      status: "available",
+      bucket: "utc_month",
+      coverage: "recorded_ledger_only",
+      rows: [
+        {
+          month: "2026-09",
+          earnedPoints: huge.toString(),
+          redeemedPoints: "0",
+          redemptionRateBasisPoints: "0",
+        },
+      ],
+    });
     expect(result.download).toBeNull();
     expect(verifyMerchantAnalyticsResponse(read, result)).toEqual(result);
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          ledgerNetSeries: {
+            ...result.snapshot.ledgerNetSeries,
+            rows: result.snapshot.ledgerNetSeries.rows.slice(1),
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          recordedTierChangesSeries: {
+            ...result.snapshot.recordedTierChangesSeries,
+            rows: [
+              {
+                ...result.snapshot.recordedTierChangesSeries.rows[0],
+                manualOverride: "2",
+                otherReasons: "0",
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          earningSources: {
+            ...result.snapshot.earningSources,
+            rows: [
+              result.snapshot.earningSources.rows[0],
+              result.snapshot.earningSources.rows[0],
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          retainedEnrollmentSeries: {
+            ...result.snapshot.retainedEnrollmentSeries,
+            rows: [
+              {
+                month: "2026-09",
+                newRetainedAccounts: "1",
+                cumulativeRetainedAccounts: "3",
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          redemptionSources: {
+            ...result.snapshot.redemptionSources,
+            total: { eventCount: "2", pointsSpent: "249" },
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          redemptionSources: {
+            ...result.snapshot.redemptionSources,
+            rows: [
+              result.snapshot.redemptionSources.rows[0],
+              result.snapshot.redemptionSources.rows[0],
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          ledgerNetSeries: {
+            ...result.snapshot.ledgerNetSeries,
+            rows: result.snapshot.ledgerNetSeries.rows.map((row, index) =>
+              index === 8
+                ? { ...row, cumulativeNetPoints: huge.toString() }
+                : row,
+            ),
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          firstRecordedEarnersSeries: {
+            ...result.snapshot.firstRecordedEarnersSeries,
+            rows: [
+              {
+                month: "2026-09",
+                activeAccounts: "2",
+                firstRecordedAccounts: "2",
+                returningAccounts: "1",
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          firstRecordedRedemptionDebitsSeries: {
+            ...result.snapshot.firstRecordedRedemptionDebitsSeries,
+            rows: [
+              {
+                month: "2026-09",
+                debitAccounts: "2",
+                firstRecordedDebitAccounts: "2",
+                returningDebitAccounts: "1",
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          redemptionRateSeries: {
+            ...result.snapshot.redemptionRateSeries,
+            rows: [
+              {
+                month: "2026-09",
+                earnedPoints: "3",
+                redeemedPoints: "2",
+                redemptionRateBasisPoints: "10000",
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow();
     expect(JSON.stringify(result)).not.toMatch(/shopperId|email|discountCode/);
   });
   it("fails closed on cross-workspace identity before analytics reads", async () => {
@@ -237,6 +667,30 @@ describe("merchant analytics", () => {
       else {
         expect(result.download!.content).toContain("\"'=HYPERLINK");
         expect(result.download!.content).toContain(huge.toString());
+        expect(result.download!.content).toContain(
+          "firstRecordedEarnersSeries.rows.0.firstRecordedAccounts,1",
+        );
+        expect(result.download!.content).toContain(
+          "firstRecordedRedemptionDebitsSeries.rows.0.firstRecordedDebitAccounts,1",
+        );
+        expect(result.download!.content).toContain(
+          "firstRecordedConfirmedIssuancesSeries.rows.0.firstRecordedConfirmedAccounts,1",
+        );
+        expect(result.download!.content).toContain(
+          "retainedEnrollmentSeries.rows.0.cumulativeRetainedAccounts,2",
+        );
+        expect(result.download!.content).toContain(
+          "recordedTierChangesSeries.rows.0.totalChanges,2",
+        );
+        expect(result.download!.content).toContain(
+          `earningSources.rows.0.pointsEarned,${huge.toString()}`,
+        );
+        expect(result.download!.content).toContain(
+          "redemptionSources.rows.0.capturedName,'=Voucher",
+        );
+        expect(result.download!.content).toContain(
+          "redemptionSources.unknown.pointsSpent,50",
+        );
       }
     },
   );
@@ -281,6 +735,26 @@ describe("merchant analytics", () => {
       verifyMerchantAnalyticsResponse(read, {
         ...result,
         shopperEmail: "private@example.com",
+      }),
+    ).toThrow();
+    expect(() =>
+      verifyMerchantAnalyticsResponse(read, {
+        ...result,
+        snapshot: {
+          ...result.snapshot,
+          firstRecordedConfirmedIssuancesSeries: {
+            ...result.snapshot.firstRecordedConfirmedIssuancesSeries,
+            rows: [
+              {
+                ...result.snapshot.firstRecordedConfirmedIssuancesSeries
+                  .rows[0],
+                confirmedAccounts: "2",
+                firstRecordedConfirmedAccounts: "2",
+                returningConfirmedAccounts: "1",
+              },
+            ],
+          },
+        },
       }),
     ).toThrow();
   });

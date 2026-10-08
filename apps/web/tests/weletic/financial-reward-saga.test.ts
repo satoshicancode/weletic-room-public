@@ -401,6 +401,7 @@ describe("financial reward saga dispatch safety", () => {
         data: expect.objectContaining({
           shopifyStoreCreditTransactionId:
             "gid://shopify/StoreCreditAccountTransaction/501",
+          issuanceConfirmedAt: expect.any(Date),
         }),
       }),
     );
@@ -455,6 +456,7 @@ describe("financial reward saga dispatch safety", () => {
       status: "issued",
       shopifyStoreCreditTransactionId:
         "gid://shopify/StoreCreditAccountTransaction/504",
+      issuanceConfirmedAt: expect.any(Date),
     });
     expect(mocks.enqueue).not.toHaveBeenCalled();
     expect(mocks.findUnique).not.toHaveBeenCalled();

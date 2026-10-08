@@ -1,6 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { readMerchantPointActivitySeries } from "@/lib/weletic/loyalty/activity-series";
-import { WeleticPointsLedgerEntryType as Entry, Prisma } from "@prisma/client";
+import { readMerchantEarningSources } from "@/lib/weletic/loyalty/earning-sources";
+import { readMerchantFirstRecordedEarnersSeries } from "@/lib/weletic/loyalty/first-recorded-earners-series";
+import { readMerchantLedgerNetSeries } from "@/lib/weletic/loyalty/ledger-net-series";
+import { readMerchantRecordedTierChangeSeries } from "@/lib/weletic/loyalty/recorded-tier-change-series";
+import { deriveMerchantRedemptionRateSeries } from "@/lib/weletic/loyalty/redemption-rate-series";
+import {
+  WeleticPointsLedgerEntryType as Entry,
+  Prisma,
+  WeleticLoyaltyTierChangeReason as TierReason,
+} from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
@@ -12,14 +21,32 @@ let initialized = false;
 
 beforeAll(async () => {
   const url = new URL(process.env.DATABASE_URL || "invalid:");
+  const target = /^\/weletic_loyalty_it_activity_([a-f0-9]{12})$/.exec(
+    url.pathname,
+  );
   if (
     process.env.LOYALTY_DATABASE_INTEGRATION !== "1" ||
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
-    url.port !== "3307" ||
-    !/^\/weletic_loyalty_it_activity_[a-z0-9]+$/.test(url.pathname)
+    !["3307", "3312"].includes(url.port) ||
+    !target ||
+    url.username !== `wac_${target[1]}` ||
+    !url.password ||
+    url.hash ||
+    [...url.searchParams].some(
+      ([key, value]) =>
+        key !== "connection_limit" || !/^(?:[1-9]|1[0-9]|20)$/.test(value),
+    )
   )
     throw new Error("Refusing non-isolated activity database");
+  expect(
+    await prisma.$queryRaw`SELECT DATABASE() AS databaseName, CURRENT_USER() AS principal`,
+  ).toEqual([
+    {
+      databaseName: url.pathname.slice(1),
+      principal: `${url.username}@%`,
+    },
+  ]);
   expect(await prisma.weleticPointsLedgerEntry.count()).toBe(0);
   initialized = true;
   for (const [index, storeId] of storeIds.entries()) {
@@ -74,11 +101,26 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (initialized) {
+    await prisma.weleticLoyaltyTierHistory.deleteMany({
+      where: {
+        accountId: {
+          in: [
+            `account_0_${id}`,
+            `account_1_${id}`,
+            `earn_account_1_${id}`,
+            `earn_account_2_${id}`,
+          ],
+        },
+      },
+    });
     await prisma.weleticPointsLedgerEntry.deleteMany({
       where: { storeId: { in: storeIds } },
     });
     await prisma.weleticLoyaltyAccount.deleteMany({
       where: { storeId: { in: storeIds } },
+    });
+    await prisma.weleticLoyaltyTier.deleteMany({
+      where: { programId: { in: [`loyalty_0_${id}`, `loyalty_1_${id}`] } },
     });
     await prisma.weleticShopper.deleteMany({
       where: { storeId: { in: storeIds } },
@@ -105,6 +147,12 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
       day: "2026-09-01T00:00:00.000Z",
       type: Entry.BACKFILL,
       delta: huge,
+    },
+    {
+      store: 0,
+      day: "2026-09-01T23:59:59.999Z",
+      type: Entry.EARN_ORDER,
+      delta: BigInt(10),
     },
     {
       store: 0,
@@ -179,7 +227,7 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
   ).toEqual([
     {
       date: "2026-09-01",
-      earned: huge.toString(),
+      earned: (huge + BigInt(10)).toString(),
       redeemed: "0",
       refundReversed: "0",
       manualDebits: "3",
@@ -217,4 +265,466 @@ it("reconciles exact UTC daily movements and excludes another store", async () =
     BigInt(0),
   );
   expect(net.toString()).toBe(independent[0].net.toFixed(0));
+  const netStart = new Date("2026-09-01T12:00:00.000Z");
+  const openingPlan = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    EXPLAIN SELECT SUM(CAST(pointsDelta AS DECIMAL(65, 0)))
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt < ${netStart}
+  `;
+  expect(Object.values(openingPlan[0]).map(String).join(" ")).toContain(
+    "WeleticPointsLedgerEntry_storeId_createdAt_idx",
+  );
+  const ledgerNet = await prisma.$transaction((tx) =>
+    readMerchantLedgerNetSeries({
+      tx,
+      storeId: storeIds[0],
+      startAt: netStart,
+      endAt,
+    }),
+  );
+  expect(ledgerNet).toEqual({
+    status: "available",
+    bucket: "utc_day",
+    coverage: "recorded_ledger_net_only",
+    openingNetPoints: huge.toString(),
+    rows: [
+      {
+        date: "2026-09-01",
+        netChangePoints: "7",
+        cumulativeNetPoints: (huge + BigInt(7)).toString(),
+      },
+      {
+        date: "2026-09-02",
+        netChangePoints: "-12",
+        cumulativeNetPoints: (huge - BigInt(5)).toString(),
+      },
+      {
+        date: "2026-09-03",
+        netChangePoints: "0",
+        cumulativeNetPoints: (huge - BigInt(5)).toString(),
+      },
+    ],
+  });
+  const independentOpening = await prisma.$queryRaw<
+    Array<{ net: Prisma.Decimal }>
+  >`
+    SELECT SUM(CAST(pointsDelta AS DECIMAL(65, 0))) AS net
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt < ${netStart}
+  `;
+  expect(ledgerNet.openingNetPoints).toBe(independentOpening[0].net.toFixed(0));
+  const independentWindow = await prisma.$queryRaw<
+    Array<{ net: Prisma.Decimal }>
+  >`
+    SELECT SUM(CAST(pointsDelta AS DECIMAL(65, 0))) AS net
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt >= ${netStart} AND createdAt <= ${endAt}
+  `;
+  expect(ledgerNet.rows.at(-1)?.cumulativeNetPoints).toBe(
+    (
+      BigInt(independentOpening[0].net.toFixed(0)) +
+      BigInt(independentWindow[0].net.toFixed(0))
+    ).toString(),
+  );
+  const redemption = deriveMerchantRedemptionRateSeries(result);
+  expect(redemption.rows).toEqual([
+    {
+      month: "2026-09",
+      earnedPoints: "10",
+      redeemedPoints: "5",
+      redemptionRateBasisPoints: "5000",
+    },
+  ]);
+  const independentRate = await prisma.$queryRaw<
+    Array<{ earned: Prisma.Decimal; redeemed: Prisma.Decimal }>
+  >`
+    SELECT SUM(CASE WHEN entryType IN ('EARN_ORDER', 'EARN_REFERRAL', 'EARN_BONUS', 'TIER_BONUS')
+                      AND pointsDelta > 0 THEN CAST(pointsDelta AS DECIMAL(65, 0)) ELSE 0 END) AS earned,
+           SUM(CASE WHEN entryType = 'REDEEM_REWARD' AND pointsDelta < 0
+                    THEN -CAST(pointsDelta AS DECIMAL(65, 0)) ELSE 0 END) AS redeemed
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt >= ${startAt} AND createdAt <= ${endAt}
+  `;
+  expect(redemption.rows[0].earnedPoints).toBe(
+    independentRate[0].earned.toFixed(0),
+  );
+  expect(redemption.rows[0].redeemedPoints).toBe(
+    independentRate[0].redeemed.toFixed(0),
+  );
+  for (const suffix of [1, 2]) {
+    await prisma.weleticShopper.create({
+      data: {
+        id: `earn_shopper_${suffix}_${id}`,
+        storeId: storeIds[0],
+        shopifyCustomerId: `earn_customer_${suffix}_${id}`,
+      },
+    });
+    await prisma.weleticLoyaltyAccount.create({
+      data: {
+        id: `earn_account_${suffix}_${id}`,
+        storeId: storeIds[0],
+        programId: `loyalty_0_${id}`,
+        shopperId: `earn_shopper_${suffix}_${id}`,
+      },
+    });
+  }
+  const cohortEntries = [
+    {
+      store: 0,
+      accountId: `account_0_${id}`,
+      sequenceNumber: 6,
+      at: "2026-09-02T13:00:00Z",
+    },
+    {
+      store: 0,
+      accountId: `earn_account_1_${id}`,
+      sequenceNumber: 1,
+      at: "2026-09-02T14:00:00Z",
+    },
+    {
+      store: 0,
+      accountId: `earn_account_1_${id}`,
+      sequenceNumber: 2,
+      at: "2026-10-01T10:00:00Z",
+    },
+    {
+      store: 0,
+      accountId: `earn_account_2_${id}`,
+      sequenceNumber: 1,
+      at: "2026-09-02T11:00:00Z",
+    },
+    {
+      store: 0,
+      accountId: `earn_account_2_${id}`,
+      sequenceNumber: 2,
+      at: "2026-09-02T15:00:00Z",
+    },
+    {
+      store: 1,
+      accountId: `account_1_${id}`,
+      sequenceNumber: 7,
+      at: "2026-09-02T13:00:00Z",
+    },
+  ];
+  await prisma.weleticPointsLedgerEntry.createMany({
+    data: cohortEntries.map((entry, index) => ({
+      id: `cohort_entry_${index}_${id}`,
+      storeId: storeIds[entry.store],
+      accountId: entry.accountId,
+      sequenceNumber: entry.sequenceNumber,
+      entryType: Entry.EARN_ORDER,
+      pointsDelta: BigInt(1),
+      balanceAfter: BigInt(1),
+      idempotencyKey: `cohort_${index}_${id}`,
+      createdAt: new Date(entry.at),
+    })),
+  });
+  const cohortStart = new Date("2026-09-02T12:00:00Z");
+  const cohortEnd = new Date("2026-10-02T23:59:59.999Z");
+  const cohorts = await prisma.$transaction((tx) =>
+    readMerchantFirstRecordedEarnersSeries({
+      tx,
+      storeId: storeIds[0],
+      startAt: cohortStart,
+      endAt: cohortEnd,
+    }),
+  );
+  expect(cohorts).toEqual({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_qualifying_ledger_accounts_only",
+    rows: [
+      {
+        month: "2026-09",
+        activeAccounts: "3",
+        firstRecordedAccounts: "1",
+        returningAccounts: "2",
+      },
+      {
+        month: "2026-10",
+        activeAccounts: "1",
+        firstRecordedAccounts: "0",
+        returningAccounts: "1",
+      },
+    ],
+  });
+  const independentCohort = await prisma.$queryRaw<
+    Array<{ accountId: string; firstAt: Date }>
+  >`
+    SELECT accountId, MIN(createdAt) AS firstAt
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]}
+      AND entryType IN ('EARN_ORDER', 'EARN_REFERRAL', 'EARN_BONUS', 'TIER_BONUS')
+      AND pointsDelta > 0
+    GROUP BY accountId ORDER BY accountId
+  `;
+  expect(
+    independentCohort.map(({ accountId, firstAt }) => [
+      accountId,
+      firstAt.toISOString(),
+    ]),
+  ).toEqual([
+    [`account_0_${id}`, "2026-09-01T23:59:59.999Z"],
+    [`earn_account_1_${id}`, "2026-09-02T14:00:00.000Z"],
+    [`earn_account_2_${id}`, "2026-09-02T11:00:00.000Z"],
+  ]);
+
+  const tierIds = [
+    `tier_bronze_${id}`,
+    `tier_silver_${id}`,
+    `tier_other_${id}`,
+  ];
+  await prisma.weleticLoyaltyTier.createMany({
+    data: [
+      {
+        id: tierIds[0],
+        programId: `loyalty_0_${id}`,
+        name: "Bronze",
+        slug: "bronze",
+        tierOrder: 1,
+      },
+      {
+        id: tierIds[1],
+        programId: `loyalty_0_${id}`,
+        name: "Silver",
+        slug: "silver",
+        tierOrder: 2,
+      },
+      {
+        id: tierIds[2],
+        programId: `loyalty_1_${id}`,
+        name: "Other Bronze",
+        slug: "bronze",
+        tierOrder: 1,
+      },
+    ],
+  });
+  const events = [
+    {
+      accountId: `account_0_${id}`,
+      sequenceNumber: 1,
+      fromTierId: tierIds[1],
+      toTierId: tierIds[0],
+      reason: TierReason.grace_period_expired,
+      at: "2026-09-02T11:00:00Z",
+    },
+    {
+      accountId: `account_0_${id}`,
+      sequenceNumber: 2,
+      fromTierId: tierIds[0],
+      toTierId: tierIds[1],
+      reason: TierReason.threshold_reached,
+      at: "2026-09-02T14:00:00Z",
+    },
+    {
+      accountId: `account_0_${id}`,
+      sequenceNumber: 3,
+      fromTierId: tierIds[1],
+      toTierId: tierIds[1],
+      reason: TierReason.manual_override,
+      at: "2026-09-03T10:00:00Z",
+    },
+    {
+      accountId: `account_0_${id}`,
+      sequenceNumber: 4,
+      fromTierId: tierIds[1],
+      toTierId: tierIds[0],
+      reason: TierReason.annual_downgrade,
+      at: "2026-10-01T10:00:00Z",
+    },
+    {
+      accountId: `earn_account_1_${id}`,
+      sequenceNumber: 1,
+      fromTierId: null,
+      toTierId: tierIds[0],
+      reason: TierReason.program_activation,
+      at: "2026-09-02T13:00:00Z",
+    },
+    {
+      accountId: `earn_account_1_${id}`,
+      sequenceNumber: 2,
+      fromTierId: tierIds[0],
+      toTierId: tierIds[1],
+      reason: TierReason.bonus_promotion,
+      at: "2026-10-01T11:00:00Z",
+    },
+    {
+      accountId: `account_1_${id}`,
+      sequenceNumber: 1,
+      fromTierId: tierIds[2],
+      toTierId: tierIds[2],
+      reason: TierReason.threshold_reached,
+      at: "2026-09-02T15:00:00Z",
+    },
+  ];
+  await prisma.weleticLoyaltyTierHistory.createMany({
+    data: events.map((event, index) => ({
+      id: `tier_event_${index}_${id}`,
+      accountId: event.accountId,
+      sequenceNumber: event.sequenceNumber,
+      fromTierId: event.fromTierId,
+      toTierId: event.toTierId,
+      changeReason: event.reason,
+      effectiveAt: new Date(event.at),
+    })),
+  });
+  const tierChanges = await prisma.$transaction((tx) =>
+    readMerchantRecordedTierChangeSeries({
+      tx,
+      storeId: storeIds[0],
+      startAt: cohortStart,
+      endAt: cohortEnd,
+    }),
+  );
+  expect(tierChanges).toEqual({
+    status: "available",
+    bucket: "utc_month",
+    coverage: "retained_tier_change_reasons_only",
+    rows: [
+      {
+        month: "2026-09",
+        totalChanges: "3",
+        thresholdReached: "1",
+        bonusPromotion: "0",
+        annualDowngrade: "0",
+        gracePeriodExpired: "0",
+        programActivation: "1",
+        manualOverride: "1",
+        otherReasons: "0",
+      },
+      {
+        month: "2026-10",
+        totalChanges: "2",
+        thresholdReached: "0",
+        bonusPromotion: "1",
+        annualDowngrade: "1",
+        gracePeriodExpired: "0",
+        programActivation: "0",
+        manualOverride: "0",
+        otherReasons: "0",
+      },
+    ],
+  });
+  const independentTierEvents = await prisma.$queryRaw<
+    Array<{ id: string; changeReason: string }>
+  >`
+    SELECT h.id, h.changeReason
+    FROM WeleticLoyaltyTierHistory h
+    JOIN WeleticLoyaltyAccount a ON a.id = h.accountId
+    WHERE a.storeId = ${storeIds[0]}
+      AND h.effectiveAt >= ${cohortStart} AND h.effectiveAt <= ${cohortEnd}
+    ORDER BY h.id
+  `;
+  expect(independentTierEvents).toEqual(
+    [1, 2, 3, 4, 5].map((index) => ({
+      id: `tier_event_${index}_${id}`,
+      changeReason: events[index].reason,
+    })),
+  );
+  const sourceEntries = [
+    { store: 0, type: Entry.EARN_REFERRAL, delta: BigInt(20), at: cohortStart },
+    { store: 0, type: Entry.EARN_BONUS, delta: BigInt(7), at: cohortEnd },
+    {
+      store: 0,
+      type: Entry.TIER_BONUS,
+      delta: BigInt(100),
+      at: new Date("2026-09-02T11:59:59.999Z"),
+    },
+    {
+      store: 0,
+      type: Entry.MANUAL_ADJUSTMENT,
+      delta: BigInt(1000),
+      at: cohortStart,
+    },
+    { store: 0, type: Entry.BACKFILL, delta: huge, at: cohortStart },
+    { store: 0, type: Entry.EARN_ORDER, delta: BigInt(-5), at: cohortStart },
+    { store: 1, type: Entry.EARN_REFERRAL, delta: huge, at: cohortStart },
+  ];
+  await prisma.weleticPointsLedgerEntry.createMany({
+    data: sourceEntries.map((entry, index) => ({
+      id: `source_entry_${index}_${id}`,
+      storeId: storeIds[entry.store],
+      accountId: `account_${entry.store}_${id}`,
+      sequenceNumber: 50 + index,
+      entryType: entry.type,
+      pointsDelta: entry.delta,
+      balanceAfter: entry.delta,
+      idempotencyKey: `source_${index}_${id}`,
+      createdAt: entry.at,
+    })),
+  });
+  const sourcePlan = await prisma.$queryRaw<Array<Record<string, unknown>>>`
+    EXPLAIN SELECT entryType, COUNT(*)
+    FROM WeleticPointsLedgerEntry
+    WHERE storeId = ${storeIds[0]} AND createdAt >= ${cohortStart}
+      AND createdAt <= ${cohortEnd} AND pointsDelta > 0
+    GROUP BY entryType
+  `;
+  expect(Object.values(sourcePlan[0]).map(String).join(" ")).toContain(
+    "WeleticPointsLedgerEntry_storeId_createdAt_idx",
+  );
+  const sources = await prisma.$transaction((tx) =>
+    readMerchantEarningSources({
+      tx,
+      storeId: storeIds[0],
+      startAt: cohortStart,
+      endAt: cohortEnd,
+    }),
+  );
+  expect(sources).toEqual({
+    coverage: "retained_positive_earning_ledger_only",
+    rows: [
+      { entryType: Entry.EARN_REFERRAL, eventCount: "1", pointsEarned: "20" },
+      { entryType: Entry.EARN_BONUS, eventCount: "1", pointsEarned: "7" },
+      { entryType: Entry.EARN_ORDER, eventCount: "4", pointsEarned: "4" },
+    ],
+  });
+  const independentEntries = await prisma.weleticPointsLedgerEntry.findMany({
+    where: {
+      storeId: storeIds[0],
+      createdAt: { gte: cohortStart, lte: cohortEnd },
+    },
+    select: { entryType: true, pointsDelta: true },
+  });
+  const expected = new Map<Entry, { count: bigint; points: bigint }>();
+  for (const entry of independentEntries) {
+    if (
+      entry.pointsDelta <= BigInt(0) ||
+      !(
+        [
+          Entry.EARN_ORDER,
+          Entry.EARN_REFERRAL,
+          Entry.EARN_BONUS,
+          Entry.TIER_BONUS,
+        ] as Entry[]
+      ).includes(entry.entryType)
+    )
+      continue;
+    const current = expected.get(entry.entryType) ?? {
+      count: BigInt(0),
+      points: BigInt(0),
+    };
+    current.count += BigInt(1);
+    current.points += entry.pointsDelta;
+    expected.set(entry.entryType, current);
+  }
+  expect(
+    sources.rows.map((row) => [
+      row.entryType,
+      row.eventCount,
+      row.pointsEarned,
+    ]),
+  ).toEqual(
+    Array.from(expected, ([type, values]) => [
+      type,
+      values.count.toString(),
+      values.points.toString(),
+    ]).sort((a, b) =>
+      BigInt(b[2]) > BigInt(a[2])
+        ? 1
+        : BigInt(b[2]) < BigInt(a[2])
+          ? -1
+          : a[0].localeCompare(b[0]),
+    ),
+  );
 });

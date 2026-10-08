@@ -457,6 +457,7 @@ model WeleticLoyaltyAccount {
 
   @@unique([storeId, id])
   @@index([storeId, status])
+  @@index([storeId, enrolledAt])
   @@index([programId, status])
   @@index([storeId, referralCode])
   @@index([referredById])
@@ -635,7 +636,13 @@ model WeleticRewardRedemption {
   compensationReason              String?
   orderId                         String?
   expiresAt                       DateTime?
+  // Local durable confirmation of remote issuance or adoption. Earlier rows
+  // remain unknown; createdAt is only reservation time, not issuance evidence.
+  issuanceConfirmedAt             DateTime?
   usedAt                          DateTime?
+  // Source of usedAt. Legacy rows remain unknown; observation time is not
+  // evidence of the Shopify order's event time.
+  usedAtBasis                     String?                   @db.VarChar(32)
   ledgerEntryId                   String?
   metadata                        Json?                     @db.Json
   createdAt                       DateTime                  @default(now())
@@ -658,6 +665,7 @@ model WeleticRewardRedemption {
   @@index([storeId, shopifyDiscountCode])
   @@index([storeId, status])
   @@index([storeId, createdAt])
+  @@index([storeId, issuanceConfirmedAt])
 }
 
 // Append-only, provider-reported use of a shopper-owned coupon. The redemption
@@ -672,6 +680,7 @@ model WeleticRewardCouponUse {
   installationGeneration  String   @db.VarChar(64)
   source                  String   @db.VarChar(32)
   usedAt                  DateTime
+  usedAtBasis             String?  @db.VarChar(32)
   discountAmountMinor     BigInt?
   currency                String?  @db.VarChar(3)
   amountUnavailableReason String?  @db.VarChar(64)

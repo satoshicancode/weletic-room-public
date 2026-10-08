@@ -13,11 +13,16 @@ import { lockLoyaltyProgramRow } from "@/lib/weletic/loyalty/program-write-fence
 import {
   DEFAULT_REFERRAL_PURCHASE_POLICY,
   getEligibleLoyaltyOrderSubtotal,
+  NEW_REFERRAL_PURCHASE_POLICY,
   readLoyaltyPurchasePolicy,
 } from "@/lib/weletic/loyalty/purchase-policy";
 import { getReferralCouponIdempotencyKey } from "@/lib/weletic/loyalty/referral-coupon";
 import { createReferralCouponRewardSnapshot } from "@/lib/weletic/loyalty/referral-coupon-snapshot";
 import { DEFAULT_REFERRAL_RULE_CONFIG } from "@/lib/weletic/loyalty/referral-rule-config";
+import {
+  heldReferralSubscriptionOrderId,
+  holdUnverifiedReferralSubscriptionOrder,
+} from "@/lib/weletic/loyalty/referral-subscription-cadence-hold";
 import { isReferralCouponProvisionable } from "@/lib/weletic/loyalty/rewards";
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
 import { scheduleTierReviewAfterQualifyingActivity } from "@/lib/weletic/loyalty/tier-review-scheduling";
@@ -173,7 +178,7 @@ function createDefaultReferralRule(
       maxReferralsPerAdvocate:
         DEFAULT_REFERRAL_RULE_CONFIG.maxReferralsPerAdvocate,
       fraudCheckSameIp: DEFAULT_REFERRAL_RULE_CONFIG.fraudCheckSameIp,
-      purchasePolicy: DEFAULT_REFERRAL_PURCHASE_POLICY,
+      purchasePolicy: NEW_REFERRAL_PURCHASE_POLICY,
       isActive: DEFAULT_REFERRAL_RULE_CONFIG.isActive,
     },
   });
@@ -1184,10 +1189,60 @@ export async function evaluateReferralQualification(
         };
       }
 
+      if (heldReferralSubscriptionOrderId(referralMetadata)) {
+        return {
+          qualified: false as const,
+          reason:
+            "Referral awaits verified subscription billing cycle for its first order",
+          advocatePointsAwarded: BigInt(0),
+          refereePointsAwarded: BigInt(0),
+        };
+      }
+
       // Shopify increments orders_count before this paid-order lifecycle is
       // finalized. A value of 1 is the friend's first real order; anything
       // higher is ineligible for a Smile-compatible new-customer referral.
       if (Number(refereeAccount.shopper?.ordersCount || 0) > 1) {
+        const cadenceRule = await tx.weleticLoyaltyReferralRule.findFirst({
+          where: {
+            programId: referral.advocateAccount.programId,
+            isActive: true,
+          },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        });
+        if (cadenceRule) {
+          let cadencePolicy: ReturnType<
+            typeof readLoyaltyPurchasePolicy
+          > | null = null;
+          try {
+            cadencePolicy = readLoyaltyPurchasePolicy(
+              cadenceRule.purchasePolicy,
+              DEFAULT_REFERRAL_PURCHASE_POLICY,
+            );
+          } catch {
+            // Malformed historical terms cannot authorize a qualification.
+          }
+          if (
+            cadencePolicy &&
+            (await holdUnverifiedReferralSubscriptionOrder({
+              tx,
+              storeId: input.storeId,
+              referralId: referral.id,
+              orderId: input.orderId,
+              ruleId: cadenceRule.id,
+              policy: cadencePolicy,
+              metadata: referral.metadata,
+            }))
+          ) {
+            return {
+              qualified: false as const,
+              reason:
+                "Referral awaits first-order and subscription-cycle reconciliation",
+              advocatePointsAwarded: BigInt(0),
+              refereePointsAwarded: BigInt(0),
+            };
+          }
+        }
         const blocked = await tx.weleticLoyaltyReferral.updateMany({
           where: {
             id: referral.id,
@@ -1289,7 +1344,25 @@ export async function evaluateReferralQualification(
         policy: qualificationPurchasePolicy,
         testFallbackSubtotal: input.orderSubtotal,
       });
+      const holdUnverifiedCycle = () =>
+        holdUnverifiedReferralSubscriptionOrder({
+          tx,
+          storeId: input.storeId,
+          referralId: referral.id,
+          orderId: input.orderId,
+          ruleId: rule.id,
+          policy: qualificationPurchasePolicy,
+          metadata: referral.metadata,
+        });
       if (eligibleSubtotal <= BigInt(0)) {
+        if (await holdUnverifiedCycle()) {
+          return {
+            qualified: false as const,
+            reason: "Referral awaits verified subscription billing cycle",
+            advocatePointsAwarded: BigInt(0),
+            refereePointsAwarded: BigInt(0),
+          };
+        }
         return {
           qualified: false as const,
           reason: "Order has no purchase lines eligible for referrals",
@@ -1305,6 +1378,14 @@ export async function evaluateReferralQualification(
         });
 
         if (eligibleSubtotal < minimumSubtotal) {
+          if (await holdUnverifiedCycle()) {
+            return {
+              qualified: false as const,
+              reason: "Referral awaits verified subscription billing cycle",
+              advocatePointsAwarded: BigInt(0),
+              refereePointsAwarded: BigInt(0),
+            };
+          }
           return {
             qualified: false as const,
             reason: `Eligible order subtotal ${eligibleSubtotal} ${input.currency} minor units is below minimum qualifying amount ${minimumSubtotal}`,

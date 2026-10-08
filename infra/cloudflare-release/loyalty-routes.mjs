@@ -22,6 +22,10 @@ export const loyaltyRoutes = Object.freeze([
     "loyalty/checkout/reserve",
     "loyalty/checkout/release",
     "merchant/analytics",
+    "merchant/analytics/account-rows",
+    "merchant/analytics/ledger-rows",
+    "merchant/analytics/redemption-rows",
+    "merchant/analytics/tier-history",
     "merchant/communications",
     "merchant/customers/list",
     "merchant/customers/profile",
@@ -74,6 +78,9 @@ export const reviewRoutes = Object.freeze([
     "open-submit",
     "open-prepare",
     "open-upload",
+    "store-list",
+    "store-submit",
+    "store-invitations",
   ].map((action) => internal + "reviews/" + action),
   ...[
     "list",
@@ -86,11 +93,19 @@ export const reviewRoutes = Object.freeze([
     "translations/write",
     "open-policy/read",
     "open-policy/write",
+    "collection/read",
+    "collection/write",
+    "store/list",
+    "store/moderate",
+    "store/settings/read",
+    "store/settings/write",
   ].map((action) => internal + "merchant/reviews/" + action),
 ]);
 const reviewPaths = new Set(reviewRoutes);
 const reviewReadPaths = new Set(
-  ["list", "photo", "health"].map((action) => internal + "reviews/" + action),
+  ["list", "store-list", "store-invitations", "photo", "health"].map(
+    (action) => internal + "reviews/" + action,
+  ),
 );
 const host = new URL(PUBLIC_LOYALTY_API_ORIGIN).host;
 

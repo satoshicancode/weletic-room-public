@@ -1285,6 +1285,15 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
     });
 
     it("retries a concurrent serializable admin save after P2034", async () => {
+      vi.mocked(prisma.weleticLoyaltyReferralRule.findFirst).mockResolvedValue(
+        savedRule({
+          purchasePolicy: {
+            purchaseType: "one_time",
+            subscriptionCadence: "first_payment",
+            subscriptionPaymentLimit: null,
+          },
+        }),
+      );
       vi.mocked(prisma.weleticLoyaltyReferralRule.update).mockResolvedValue(
         savedRule(),
       );
@@ -1309,6 +1318,16 @@ describe("Merchant Admin Loyalty Engine APIs", () => {
       expect(res.status).toBe(200);
       expect(prisma.$transaction).toHaveBeenCalledTimes(2);
       expect(prisma.weleticLoyaltyProgram.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects legacy activation when existing subscription-cycle terms have no verified source", async () => {
+      const res = await postReferrals(
+        referralRuleRequest({ ruleId: "wreferral_rule_1", isActive: true }),
+        { params: Promise.resolve({}) },
+      );
+
+      expect(res.status).toBe(400);
+      expect(prisma.weleticLoyaltyReferralRule.update).not.toHaveBeenCalled();
     });
 
     it("rejects an active fixed coupon that Shopify cannot provision", async () => {

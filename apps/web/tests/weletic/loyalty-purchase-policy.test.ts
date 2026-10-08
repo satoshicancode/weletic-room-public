@@ -6,12 +6,13 @@ import {
   getShopifyDiscountPurchaseFields,
   isLoyaltyPurchaseLineEligible,
   loyaltyPurchasePolicySchema,
+  requiresUnverifiedSubscriptionCycle,
 } from "../../lib/weletic/loyalty/purchase-policy";
 
 const oneTimeLine = {};
 const subscriptionLine = (sequence: number) => ({
   sellingPlanId: "gid://shopify/SellingPlan/1",
-  subscriptionSeriesKey: "series-a",
+  subscriptionSeriesKey: "selling-plan:1:item:1",
   subscriptionSequence: sequence,
 });
 
@@ -22,7 +23,6 @@ describe("loyalty purchase policy", () => {
     });
     expect(classifyLoyaltyPurchaseLine(subscriptionLine(2))).toEqual({
       kind: "subscription",
-      sequence: 2,
     });
     expect(
       classifyLoyaltyPurchaseLine({
@@ -31,13 +31,13 @@ describe("loyalty purchase policy", () => {
     ).toEqual({ kind: "unknown" });
     expect(
       classifyLoyaltyPurchaseLine({
-        subscriptionSeriesKey: "series-a",
+        subscriptionSeriesKey: "selling-plan:1:item:1",
         subscriptionSequence: 1,
       }),
     ).toEqual({ kind: "unknown" });
   });
 
-  it("supports one-time, first, first-N, and every subscription payment", () => {
+  it("fails closed for cadence-specific points while retaining one-time and every-payment eligibility", () => {
     const firstThree = loyaltyPurchasePolicySchema.parse({
       purchaseType: "both",
       subscriptionCadence: "first_n_payments",
@@ -49,15 +49,34 @@ describe("loyalty purchase policy", () => {
     expect(
       isLoyaltyPurchaseLineEligible({
         policy: firstThree,
+        line: subscriptionLine(1),
+      }),
+    ).toBe(false);
+    expect(
+      isLoyaltyPurchaseLineEligible({
+        policy: firstThree,
         line: subscriptionLine(3),
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isLoyaltyPurchaseLineEligible({
         policy: firstThree,
         line: subscriptionLine(4),
       }),
     ).toBe(false);
+    expect(requiresUnverifiedSubscriptionCycle(firstThree)).toBe(true);
+    const every = {
+      ...firstThree,
+      subscriptionCadence: "every_payment" as const,
+      subscriptionPaymentLimit: null,
+    };
+    expect(requiresUnverifiedSubscriptionCycle(every)).toBe(false);
+    expect(
+      isLoyaltyPurchaseLineEligible({
+        policy: every,
+        line: subscriptionLine(4),
+      }),
+    ).toBe(true);
   });
 
   it("maps exact native Shopify discount semantics", () => {
@@ -108,6 +127,6 @@ describe("loyalty purchase policy", () => {
       },
       testFallbackSubtotal: BigInt(0),
     });
-    expect(subtotal).toBe(BigInt(1_200));
+    expect(subtotal).toBe(BigInt(500));
   });
 });

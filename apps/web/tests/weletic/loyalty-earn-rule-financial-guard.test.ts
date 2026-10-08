@@ -459,6 +459,63 @@ describe("loyalty earn-rule financial guard", () => {
     expect(domainMocks.appendPointsLedgerEntry).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])(
+    "holds an existing first-payment subscription promise with complete identity %s without consuming its grant key on replay",
+    async (completeIdentity) => {
+      (prisma.weleticCommerceOrder.findUnique as any).mockResolvedValue(
+        commerceOrder({
+          lines: [
+            {
+              ...commerceOrder().lines[0],
+              sellingPlanId: "plan_existing",
+              subscriptionSeriesKey: completeIdentity
+                ? "selling-plan:plan_existing:item:product"
+                : null,
+              subscriptionSequence: 1,
+            },
+          ],
+        }),
+      );
+      (prisma.weleticLoyaltyProgram.findUnique as any).mockResolvedValue(
+        loyaltyProgram({
+          earningRules: [
+            orderPaidRule({
+              purchasePolicy: {
+                purchaseType: "both",
+                subscriptionCadence: "first_payment",
+                subscriptionPaymentLimit: null,
+              },
+            }),
+          ],
+        }),
+      );
+
+      for (let attempt = 0; attempt < 2; attempt++) {
+        expect(
+          await processOrderPointsEarn({
+            storeId: STORE_ID,
+            orderId: ORDER_ID,
+          }),
+        ).toBeNull();
+      }
+      expect(prisma.weleticReconciliationIssue.upsert).toHaveBeenCalledTimes(2);
+      expect(prisma.weleticReconciliationIssue.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            kind: "loyalty_subscription_cycle_unverified",
+            severity: "critical",
+            details: expect.objectContaining({
+              orderId: ORDER_ID,
+              ruleIds: ["rule_order_paid"],
+            }),
+          }),
+        }),
+      );
+      expect(prisma.weleticLoyaltyEarnGrant.create).not.toHaveBeenCalled();
+      expect(domainMocks.appendPointsLedgerEntry).not.toHaveBeenCalled();
+    },
+  );
+
   it("quarantines conditioned order earning until captured lines are evaluated against the condition", async () => {
     (prisma.weleticLoyaltyProgram.findUnique as any).mockResolvedValueOnce(
       loyaltyProgram({

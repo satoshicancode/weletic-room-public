@@ -30,6 +30,13 @@ COPY infra/cloudflare-release infra/cloudflare-release
 RUN --network=none pnpm turbo build --filter=web^...
 RUN --network=none pnpm --filter web exec prisma generate --schema=./prisma/schema
 
+FROM source AS runtime-dependencies
+# Keep the web workspace graph, including tsx used by the outbox entrypoint,
+# without copying unrelated root workspace dependencies into either image.
+RUN --mount=type=cache,id=weletic-cloudflare-release-pnpm,target=/pnpm/store \
+    pnpm --frozen-lockfile --store-dir /pnpm/store --filter web deploy /opt/web-runtime
+RUN --network=none cd /opt/web-runtime && pnpm exec prisma generate --schema=./prisma/schema
+
 FROM source AS web-build
 RUN --network=none mkdir -p /opt/weletic-release-build && node infra/cloudflare-release/web-build.mjs
 
@@ -38,9 +45,8 @@ FROM node:22-bookworm-slim@sha256:83f487e0a63425e5b4d146fb5e5be574bcbe1b7b843d3e
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && apt-get clean
 WORKDIR /workspace
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1
-COPY --from=source /workspace/node_modules ./node_modules
-COPY --from=source /workspace/apps/web/node_modules ./apps/web/node_modules
-COPY --from=source /workspace/apps/web/package.json ./apps/web/package.json
+COPY --from=runtime-dependencies /opt/web-runtime/node_modules ./apps/web/node_modules
+COPY --from=runtime-dependencies /opt/web-runtime/package.json ./apps/web/package.json
 COPY --from=source /workspace/packages ./packages
 COPY infra/cloudflare-release/start.mjs infra/cloudflare-release/runtime-policy.mjs ./infra/cloudflare-release/
 USER node

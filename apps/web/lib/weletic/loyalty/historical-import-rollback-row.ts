@@ -20,7 +20,7 @@ const options = {
   timeout: 30_000,
 };
 
-export const HISTORICAL_IMPORT_ROLLBACK_TRANSACTION_ROWS = 10;
+export const HISTORICAL_IMPORT_ROLLBACK_TRANSACTION_ROWS = 50;
 
 /** Private atomic rollback row. Never delete the opening entry or enrollment.
  * Field preparation, financial correction, job cancellation, tier history and

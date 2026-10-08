@@ -24,7 +24,7 @@ vi.mock("@/lib/weletic/loyalty/historical-import-row-execution", () => ({
   executeHistoricalImportRow: mocks.row,
 }));
 vi.mock("@/lib/weletic/loyalty/historical-import-rollback-row", () => ({
-  HISTORICAL_IMPORT_ROLLBACK_TRANSACTION_ROWS: 10,
+  HISTORICAL_IMPORT_ROLLBACK_TRANSACTION_ROWS: 50,
   rollbackHistoricalImportRows: mocks.row,
 }));
 const modes = [
@@ -159,27 +159,27 @@ it("rollback containment wins over the elapsed-time continuation", async () => {
   }
 });
 
-it("rollback groups at most ten rows and respects a smaller remaining delivery cap", async () => {
-  const rows = Array.from({ length: 13 }, (_, index) => ({
+it("rollback groups at most fifty rows and respects a smaller remaining delivery cap", async () => {
+  const rows = Array.from({ length: 53 }, (_, index) => ({
     id: `row${index + 1}`,
     rowNumber: index + 1,
   }));
   mocks.raw
     .mockReset()
-    .mockResolvedValueOnce(rows.slice(0, 10))
-    .mockResolvedValueOnce(rows.slice(10));
+    .mockResolvedValueOnce(rows.slice(0, 50))
+    .mockResolvedValueOnce(rows.slice(50));
   mocks.row.mockResolvedValue({ contained: false });
   const result = await processHistoricalImportRollbackBatch({
     lease: { ...scope, phase: "rolling_back" },
-    maxRows: 13,
+    maxRows: 53,
   });
-  expect(result.processed).toBe(13);
+  expect(result.processed).toBe(53);
   expect(result.completed).toBe(false);
   expect(mocks.row.mock.calls.map(([args]) => args.snapshotIds.length)).toEqual(
-    [10, 3],
+    [50, 3],
   );
   expect(mocks.raw.mock.calls.map(([query]) => query.values.at(-1))).toEqual([
-    10, 3,
+    50, 3,
   ]);
 });
 
@@ -192,7 +192,7 @@ it.each([
     { id: "row2", rowNumber: 2 },
     { id: "row1", rowNumber: 1 },
   ],
-  Array.from({ length: 11 }, (_, index) => ({
+  Array.from({ length: 51 }, (_, index) => ({
     id: `row${index}`,
     rowNumber: index + 1,
   })),

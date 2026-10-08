@@ -1,6 +1,9 @@
 # Persistent acceptance resource packet — draft inventory
 
 Status: incomplete proposal, **not provisioning or spending approval**.
+The [separate acceptance and production budget models](release-budget-model-2026-09-24.md)
+reconcile newer public rates and expose the remaining unpriced lines; neither
+model is an approval-ready quote.
 Scope: S04/S06 under the approved company-store Loyalty and Reviews plan.
 Source baseline: public main `a6965d65079cd57fc15f558d977bace14790f4c0`.
 
@@ -21,6 +24,46 @@ September 20, 2026 JST:
 - No login, credential creation, provider mutation, image upload, DNS change,
   schema application, subscription upgrade or external communication occurred.
 
+September 24 read-only recheck: the expired PlanetScale CLI login was refreshed
+through the existing account. The accessible organization still listed zero
+databases. This does not prove that another organization or account has none,
+and it supplies no acceptance SQL target or quote. Cloudflare and Upstash
+console navigation reached sign-in pages; no provider inventory was accessible
+there, and no resource or account setting was changed. Their ownership, plans,
+regions, R2/Redis/QStash resources and billing remain unverified. No database,
+bucket, queue or other paid resource was created.
+
+September 25 read-only console inventory supersedes the Cloudflare/Upstash
+"unverified" account statements above, but does not authorize reuse or spending:
+
+- The accessible Cloudflare account has **Workers Free** and **R2 Paid** active.
+  Its Containers page requires a Workers Paid purchase before any container can
+  run. Workers & Pages shows no existing projects in this account. The account
+  has an existing `weletic-private` R2 bucket in APAC with zero
+  objects, no public development URL or custom domain, and no CORS policy;
+  `weletic-public` has three objects. The private bucket's existing purpose,
+  credentials, retention and isolation are not yet certified for this release.
+- The accessible Upstash personal workspace has one `weletic_partners` Redis
+  database on Free Tier in AWS Tokyo. That database belongs to a different
+  workload and is **not** the proposed isolated Room Redis. Its QStash instance
+  is Free in AWS US East, with a 1,000-message daily limit shown in the console.
+  A Room queue, separate credentials, chosen security pack, retention and
+  acceptable processing region remain unverified.
+- No Workers plan was upgraded, resource created, bucket changed, credential
+  copied or provider workload executed. The acceptance and production models
+  remain incomplete; an active R2 subscription is not a complete cost quote.
+
+September 24 local image check: the unchanged Shopify image at public `main`
+`037e80fe` unpacked to 4.47 GB, above the proposed `basic` 4 GB disk. The
+merged [production-dependency recipe](https://github.com/satoshicancode/weletic-room-public/pull/119)
+unpacked to 980 MB and passed a no-network guarded startup smoke. This resolves
+only the local Shopify image-size question. The actual Cloudflare account,
+upload/admission, memory and installed runtime remain unverified. The
+[merged scoped web/outbox image fix](https://github.com/satoshicancode/weletic-room-public/pull/120)
+measured 3.15 GB and 2.84 GB unpacked and passed no-network startup smokes.
+Those measurements establish local disk headroom only; exact release-SHA builds
+and Cloudflare admission remain open.
+
 ## Proposed acceptance footprint
 
 Retain ADR 0034: Node containers and private R2, MySQL-compatible SQL with the
@@ -31,7 +74,7 @@ separate gate and must not silently inherit test databases or credentials.
 | Component               | Candidate                                              | Required proof before purchase/deployment                                                                                |
 | ----------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | Web/API                 | One container, trial sizing 1 vCPU / 3 GiB / 4 GB disk | Exact image fits disk, load/cold-start/heap evidence, route admission and private logging                                |
-| Shopify app             | One `basic` container                                  | Fresh image fits disk, real embedded authentication and paired gateway                                                   |
+| Shopify app             | One `basic` container                                  | Candidate local image fits disk; prove Cloudflare admission, memory, real embedded authentication and paired gateway     |
 | Outbox                  | One independently supervised `basic` container         | Drain/restart, lease recovery, scheduling and no accidental idle shutdown                                                |
 | Reviews video processor | Separate bounded worker, sizing not selected           | Codec/quota implementation, measured peak resources, unsafe-file isolation; never hide this cost in outbox capacity      |
 | SQL                     | Isolated PlanetScale Vitess candidate                  | Region/plan quote, native and HTTP connections to the same database, real transaction/lock/concurrency suite and restore |
@@ -54,8 +97,9 @@ These are public rate inputs, not account-specific quotes or total estimates:
   200 GB-hours monthly. Memory/disk bill provisioned resources while active;
   CPU bills active usage. [Provider pricing](https://developers.cloudflare.com/containers/platform/pricing/)
 - `basic` is 1/4 vCPU, 1 GiB memory and 4 GB disk. Custom instances require at
-  least 1 vCPU and 3 GiB per vCPU. Image size must fit instance disk, so the
-  candidate footprint is not accepted until image sizes are checked.
+  least 1 vCPU and 3 GiB per vCPU. Image size must fit instance disk. The
+  Shopify and PR #120 web/outbox images have local disk headroom; deployed
+  instance fit remains open.
   [Provider limits](https://developers.cloudflare.com/containers/platform/limits/)
 - Redis pay-as-you-go advertises $0.20 per 100K commands. A configured budget
   cap can rate-limit the database, so reaching it must fail closed and alert,

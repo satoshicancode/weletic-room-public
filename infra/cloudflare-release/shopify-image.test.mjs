@@ -49,13 +49,22 @@ test("Vite selects the adapter from the shared build policy", () => {
   );
 });
 
-test("candidate image builds from the locked source with networking disabled after install", () => {
+test("candidate image resolves dependencies before source and builds offline", () => {
   const docker = read("./Shopify.Dockerfile");
   assert.match(docker, /pnpm install --frozen-lockfile/);
   assert.match(
     docker,
     /RUN --network=none WELETIC_SHOPIFY_BUILD_TARGET=node pnpm --filter @weletic\/shopify-app build/,
   );
+  const dependencyStage = docker
+    .split("FROM dependencies AS runtime-dependencies\n")[1]
+    ?.split("FROM dependencies AS build\n")[0];
+  assert.ok(dependencyStage);
+  assert.match(
+    dependencyStage,
+    /pnpm --frozen-lockfile[\s\S]*deploy --prod \/opt\/shopify-runtime/,
+  );
+  assert.doesNotMatch(dependencyStage, /^COPY |^ARG /m);
   assert.doesNotMatch(
     docker,
     /WELETIC_LOCAL_CONTAINER_BUILD|cloudflare-local|probe\.mjs|\bARG\b|--mount=type=secret/,
@@ -88,12 +97,17 @@ test("fresh runtime wires the guarded entrypoint and contains no build environme
   );
   assert.match(
     runtime,
-    /COPY packages\/shopify-app\/app\/public-runtime-policy.mjs/,
+    /COPY packages\/shopify-app\/app\/public-runtime-policy.mjs packages\/shopify-app\/app\/preview-origins.mjs/,
   );
   assert.match(
     runtime,
     /COPY --from=build \/workspace\/packages\/shopify-app\/build/,
   );
+  assert.match(
+    runtime,
+    /COPY --from=runtime-dependencies \/opt\/shopify-runtime\/node_modules \.\/packages\/shopify-app\/node_modules/,
+  );
+  assert.doesNotMatch(runtime, /COPY --from=build \/workspace\/node_modules/);
   assert.doesNotMatch(
     runtime,
     /WELETIC_SHOPIFY_BUILD_TARGET|SHOPIFY_API_SECRET|WELETIC_SHOPIFY_SERVICE_SECRET|COPY \. |COPY apps\/web|COPY packages packages/,

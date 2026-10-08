@@ -4,6 +4,7 @@ import { verifyReferralConfigurationAcknowledgement } from "../../lib/weletic/lo
 import {
   referralConfigurationFieldsSchema,
   referralConfigurationRequestSchema,
+  type ReferralConfigurationFields,
 } from "../../lib/weletic/loyalty/referral-configuration-contract";
 import { DEFAULT_REFERRAL_RULE_CONFIG } from "../../lib/weletic/loyalty/referral-rule-config";
 import { createWorkspaceReferralConfigurationClient } from "../../lib/weletic/loyalty/workspace-referral-configuration-client";
@@ -11,6 +12,7 @@ import { createWorkspaceReferralConfigurationClient } from "../../lib/weletic/lo
 const fields = {
   ...DEFAULT_REFERRAL_RULE_CONFIG,
   advocatePointsReward: "9007199254740993",
+  purchaseType: "both" as const,
   isActive: false,
 };
 const input = {
@@ -35,6 +37,25 @@ const view = {
   acknowledgedOperation: "save",
 };
 describe("strict referral configuration", () => {
+  it("defaults new referral promises to one-time purchases", () => {
+    expect(DEFAULT_REFERRAL_RULE_CONFIG.purchaseType).toBe("one_time");
+  });
+  it("allows retaining inactive cadence terms but rejects activation without billing-cycle evidence", () => {
+    const save = (patch: Partial<ReferralConfigurationFields>) =>
+      referralConfigurationRequestSchema.safeParse({
+        operation: "save",
+        input: { ...input, fields: { ...fields, ...patch } },
+      }).success;
+    expect(save({ isActive: false })).toBe(true);
+    expect(save({ isActive: true })).toBe(false);
+    expect(
+      save({
+        isActive: true,
+        subscriptionCadence: "every_payment",
+      }),
+    ).toBe(true);
+    expect(save({ isActive: true, purchaseType: "one_time" })).toBe(true);
+  });
   it("preserves signed-64-bit point strings", () =>
     expect(
       referralConfigurationFieldsSchema.parse(fields).advocatePointsReward,

@@ -9,6 +9,7 @@ import {
   divideRationalUp,
   resolveLoyaltyFinancialConfiguration,
 } from "@/lib/weletic/loyalty/analytics-financial";
+import { readStoreWalletReconciliation } from "@/lib/weletic/loyalty/wallet-reconciliation";
 import { Prisma } from "@prisma/client";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -319,6 +320,10 @@ export async function validateLoyaltyAnalytics(
           AND commerceOrder.status <> 'voided'
         GROUP BY isMember, customerKey
       `);
+      const walletReconciliation = await readStoreWalletReconciliation({
+        tx,
+        storeId: store.id,
+      });
       return {
         liability,
         health,
@@ -327,12 +332,25 @@ export async function validateLoyaltyAnalytics(
         ledgerSql,
         referralSql,
         cohortSql,
+        walletReconciliation,
       };
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      maxWait: 30_000,
+      timeout: 120_000,
+    },
   );
 
   checks.push(
+    check("Retained wallets, grants and pending events reconcile", () => {
+      const result = evidence.walletReconciliation;
+      if (result.status !== "clean")
+        throw new Error(
+          `Financial reconciliation ${result.status}: ${JSON.stringify(result)}`,
+        );
+      return result;
+    }),
     check("Liability service reconciles to independent SQL totals", () => {
       const circulating = toBigInt(evidence.accountSql?.circulatingPoints);
       const pending = toBigInt(evidence.accountSql?.pendingPoints);

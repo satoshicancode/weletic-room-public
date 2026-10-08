@@ -82,10 +82,20 @@ preflight evidence, not approval for a shared target.
 The local-only `scripts/dev/apply-loyalty-import-execution-schema.ts` now uses
 the shared pure enum planner. It recognizes the historical public prefix,
 optionally followed by the known local-only `REVIEW_POINTS_FULFILL`, and the
-known communication/import suffixes. Missing labels are appended, never inserted
+known communication/import suffixes and the subsequent review recovery and
+anonymous-email labels. Missing labels are appended, never inserted
 ahead of existing values. Unknown values, reordering, and partial import pairs
 are rejected for manual investigation. This preserves existing MySQL enum
 ordinals even when the public and isolated-local lineages differ.
+
+September 24 disposable-schema check: a fresh 176-table `prisma db push`
+produced the complete import/communication enum followed by
+`REVIEW_POINTS_RECOVERY` and `ANONYMOUS_REFERRAL_EMAIL`. The earlier audit
+rejected that known append-only lineage as `outbox:unknown_lineage`. With the
+exact lineage recognized, the import schema and separate provenance-index
+preflights both returned `ready: true` after the candidate index DDL was applied
+to this isolated fixture. The test principal had DML-only access at audit time;
+no shared migration or worker startup occurred.
 
 The script still accepts only `127.0.0.1:3307/weletic_loyalty_dev` with its existing
 identity checks and defaults to printing a proposal. It is **not** a general

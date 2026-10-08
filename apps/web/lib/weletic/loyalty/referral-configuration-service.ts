@@ -5,6 +5,7 @@ import { projectEarningRuleCurrency } from "./earning-rule-projection";
 import {
   DEFAULT_REFERRAL_PURCHASE_POLICY,
   loyaltyPurchasePolicySchema,
+  NEW_REFERRAL_PURCHASE_POLICY,
 } from "./purchase-policy";
 import {
   canonicalReferralFields,
@@ -164,7 +165,7 @@ export async function manageReferralConfigurationInTransaction({
             minQualifyingOrderSubtotal: new Prisma.Decimal(
               DEFAULT_REFERRAL_RULE_CONFIG.minQualifyingOrderSubtotal,
             ),
-            purchasePolicy: DEFAULT_REFERRAL_PURCHASE_POLICY,
+            purchasePolicy: NEW_REFERRAL_PURCHASE_POLICY,
             isActive: false,
           },
         });
