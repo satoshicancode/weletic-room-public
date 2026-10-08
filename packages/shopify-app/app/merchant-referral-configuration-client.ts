@@ -1,9 +1,9 @@
-import { verifyReferralConfigurationAcknowledgement } from "../../../apps/web/lib/weletic/loyalty/referral-configuration-acknowledgement";
+import { verifyReferralConfigurationAcknowledgement } from "@weletic/contracts/loyalty/referral-configuration-acknowledgement";
 import {
   referralConfigurationRequestSchema,
   type ReferralConfigurationPause,
   type ReferralConfigurationWrite,
-} from "../../../apps/web/lib/weletic/loyalty/referral-configuration-contract";
+} from "@weletic/contracts/loyalty/referral-configuration-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

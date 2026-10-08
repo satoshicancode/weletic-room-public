@@ -1,4 +1,4 @@
-import type { MerchantReviewIncentiveDraftInput } from "../../../apps/web/lib/weletic/reviews/incentive-merchant-contract";
+import type { MerchantReviewIncentiveDraftInput } from "@weletic/contracts/reviews/incentive-merchant-contract";
 
 /** Presentation guard only; server policy remains authoritative. */
 export function isCoreReviewIncentiveDraft(

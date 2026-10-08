@@ -133,7 +133,8 @@ export async function validateLoyaltyAnalytics(
     select: {
       id: true,
       shopDomain: true,
-      program: { select: { accountingCurrency: true } },
+      programId: true,
+      shopCurrency: true,
       loyaltyProgram: {
         select: {
           liabilityValuationCurrency: true,
@@ -145,8 +146,15 @@ export async function validateLoyaltyAnalytics(
   });
   if (!store) throw new Error("The requested Shopify store was not found.");
 
+  const program = store.programId
+    ? await prisma.program.findUnique({
+        where: { id: store.programId },
+        select: { accountingCurrency: true },
+      })
+    : null;
+
   const configuration = resolveLoyaltyFinancialConfiguration({
-    accountingCurrency: store.program.accountingCurrency,
+    accountingCurrency: program?.accountingCurrency || store.shopCurrency,
     liabilityValuationCurrency:
       store.loyaltyProgram?.liabilityValuationCurrency,
     liabilityMinorUnitsNumerator:

@@ -33,6 +33,7 @@ const input = {
 function signed(
   inputBody: unknown = input,
   query = "shop=verified.myshopify.com&customerId=123&source=customer_account",
+  requestId = "req_" + Math.random().toString(36).slice(2),
 ) {
   const path = `/api/internal/shopify/reviews/store-submit?${query}`;
   const body = JSON.stringify(inputBody);
@@ -42,11 +43,13 @@ function signed(
     body,
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "POST",
         path,
         body,
+        requestId,
         secret,
       }),
     },

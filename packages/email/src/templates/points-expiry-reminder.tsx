@@ -80,7 +80,7 @@ export function getPointsExpiryCopy({
 }
 
 export default function PointsExpiryReminder({
-  brandName = "Yamax",
+  brandName = "Rewards Club",
   logoUrl,
   accentColor,
   customerFirstName,

@@ -26,6 +26,7 @@ vi.mock(
 const secret = "store-invitations-route-synthetic-secret-00000";
 function signed(
   query = "shop=verified.myshopify.com&customerId=123&source=customer_account&limit=10",
+  requestId = "req_" + Math.random().toString(36).slice(2),
 ) {
   const path = `/api/internal/shopify/reviews/store-invitations?${query}`;
   const timestamp = String(Date.now());
@@ -33,11 +34,13 @@ function signed(
     method: "GET",
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "GET",
         path,
         body: "",
+        requestId,
         secret,
       }),
     },

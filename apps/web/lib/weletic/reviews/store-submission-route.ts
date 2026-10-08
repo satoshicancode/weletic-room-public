@@ -34,7 +34,7 @@ export async function storeReviewSubmissionRoute(request: Request) {
     if (bytes === null)
       return reviewJson({ error: { code: "bad_request" } }, 413);
     const body = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    if (!verifyWeleticShopifyRequest({ request, body }))
+    if (!(await verifyWeleticShopifyRequest({ request, body })))
       return reviewJson({ error: { code: "unauthorized" } }, 401);
     const url = new URL(request.url);
     if (

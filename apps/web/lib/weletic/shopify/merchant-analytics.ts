@@ -73,7 +73,8 @@ export async function readShopifyMerchantAnalyticsInTransaction({
     where: { id: actor.storeId },
     select: {
       projectId: true,
-      program: { select: { accountingCurrency: true } },
+      programId: true,
+      shopCurrency: true,
       loyaltyProgram: {
         select: {
           liabilityValuationCurrency: true,
@@ -85,8 +86,16 @@ export async function readShopifyMerchantAnalyticsInTransaction({
   });
   if (!store || store.projectId !== actor.projectId)
     throw new ShopifyStaffAuthorizationError("invalid_actor");
+  const dubProgram =
+    (store as any).program ??
+    (store.programId && typeof tx?.program?.findUnique === "function"
+      ? await tx.program.findUnique({
+          where: { id: store.programId },
+          select: { accountingCurrency: true },
+        })
+      : null);
   const financial = resolveLoyaltyFinancialConfiguration({
-    accountingCurrency: store.program.accountingCurrency,
+    accountingCurrency: dubProgram?.accountingCurrency || store.shopCurrency,
     ...store.loyaltyProgram,
   });
   const dateRange = {

@@ -1,9 +1,9 @@
-import { verifyEarningRuleAcknowledgement } from "../../../apps/web/lib/weletic/loyalty/earning-rule-acknowledgement";
+import { verifyEarningRuleAcknowledgement } from "@weletic/contracts/loyalty/earning-rule-acknowledgement";
 import {
   shopifyEarningRulesInputSchema,
   type EarningRuleRetire,
   type EarningRuleWrite,
-} from "../../../apps/web/lib/weletic/loyalty/earning-rule-contract";
+} from "@weletic/contracts/loyalty/earning-rule-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

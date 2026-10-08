@@ -4,7 +4,7 @@ import {
   type LoaderFunctionArgs,
 } from "@remix-run/node";
 import { Link, useRouteError } from "@remix-run/react";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import {
   AppProvider,
   Banner,
@@ -19,15 +19,15 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import jaTranslations from "@shopify/polaris/locales/ja.json";
 import viTranslations from "@shopify/polaris/locales/vi.json";
 import { boundary } from "@shopify/shopify-app-remix/server";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   merchantReviewRequestStatusSchema,
   merchantReviewStatusSchema,
   type MerchantReviewListInput,
   type MerchantReviewListPage,
-} from "../../../../apps/web/lib/weletic/reviews/merchant-contract";
-import type { AuditedReviewModerationInput } from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
-import { useCoreLaunch } from "../../../../apps/web/ui/weletic/core-launch-context";
+} from "@weletic/contracts/reviews/merchant-contract";
+import type { AuditedReviewModerationInput } from "@weletic/contracts/reviews/moderation-contract";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCoreLaunch } from "~/core-launch-context";
 import { OpenReviewPolicyPanel } from "../components/OpenReviewPolicyPanel";
 import { ReviewCollectionPanel } from "../components/ReviewCollectionPanel";
 import { ReviewDeliveryHistory } from "../components/ReviewDeliveryHistory";
@@ -207,14 +207,19 @@ export default function ReviewsPage() {
     setModerationResult(null);
     try {
       await write(input);
-      if (mounted.current) setModerationResult("saved");
+      if (mounted.current) {
+        setModerationResult("saved");
+        shopify.toast?.show?.(moderationCopy.saved);
+      }
     } catch (failure) {
-      if (mounted.current)
-        setModerationResult(
-          failure instanceof StaffAccessClientError
-            ? failure.code
-            : "unavailable",
-        );
+      const code =
+        failure instanceof StaffAccessClientError
+          ? failure.code
+          : "unavailable";
+      if (mounted.current) {
+        setModerationResult(code);
+        shopify.toast?.show?.(moderationCopy[code], { isError: true });
+      }
     } finally {
       inFlight.current = false;
       if (mounted.current) {
@@ -250,6 +255,7 @@ export default function ReviewsPage() {
     <AppProvider i18n={polarisTranslations[locale]}>
       <div lang={locale}>
         <Page title={copy.title}>
+          <TitleBar title={copy.title} />
           <BlockStack gap="400">
             <Link
               to="/"

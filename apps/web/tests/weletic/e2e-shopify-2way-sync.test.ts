@@ -70,6 +70,7 @@ vi.mock("@/lib/api/links/cache", () => ({
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", async () => {
   return {
+    SHOPIFY_ADMIN_API_VERSION: "2026-10",
     shopifyAdminGraphql: vi.fn(),
     ShopifyAdminGraphqlError: class extends Error {
       code: string;

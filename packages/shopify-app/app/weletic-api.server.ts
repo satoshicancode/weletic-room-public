@@ -155,12 +155,14 @@ function signRequest({
   method,
   path,
   body,
+  requestId,
   secret = requireEnv("WELETIC_SHOPIFY_SERVICE_SECRET"),
 }: {
   timestamp: string;
   method: string;
   path: string;
   body: string;
+  requestId?: string;
   secret?: string;
 }) {
   if (secret.length < 32) {
@@ -169,10 +171,12 @@ function signRequest({
     );
   }
 
-  return crypto
-    .createHmac("sha256", secret)
-    .update(`${timestamp}\n${method.toUpperCase()}\n${path}\n${body}`)
-    .digest("hex");
+  const canonical =
+    requestId !== undefined && requestId !== ""
+      ? `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}\n${requestId}`
+      : `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}`;
+
+  return crypto.createHmac("sha256", secret).update(canonical).digest("hex");
 }
 
 export function verifyWeleticInternalRequest({
@@ -194,6 +198,7 @@ export function verifyWeleticInternalRequest({
 
   const timestamp = request.headers.get(WELETIC_INTERNAL_TIMESTAMP_HEADER);
   const signature = request.headers.get(WELETIC_INTERNAL_SIGNATURE_HEADER);
+  const requestId = request.headers.get(WELETIC_REQUEST_ID_HEADER);
   if (!timestamp || !signature || !/^[a-f0-9]{64}$/.test(signature)) {
     return false;
   }
@@ -212,6 +217,7 @@ export function verifyWeleticInternalRequest({
     method: request.method,
     path: `${url.pathname}${url.search}`,
     body,
+    requestId: requestId || undefined,
     secret,
   });
 
@@ -238,8 +244,21 @@ export async function weleticApiRequest(
   const method = (init.method || "GET").toUpperCase();
   const body = init.body || "";
   const timestamp = String(Date.now());
+  const customRequestId =
+    init.headers instanceof Headers
+      ? init.headers.get(WELETIC_REQUEST_ID_HEADER)
+      : (init.headers as Record<string, string> | undefined)?.[
+          WELETIC_REQUEST_ID_HEADER
+        ];
+  const requestId = customRequestId || crypto.randomUUID();
   const signedPath = `${url.pathname}${url.search}`;
-  const signature = signRequest({ timestamp, method, path: signedPath, body });
+  const signature = signRequest({
+    timestamp,
+    method,
+    path: signedPath,
+    body,
+    requestId,
+  });
   const controller = new AbortController();
   let didTimeout = false;
   const abortFromCaller = () => controller.abort(init.signal?.reason);
@@ -270,6 +289,7 @@ export async function weleticApiRequest(
         ...init.headers,
         [WELETIC_INTERNAL_TIMESTAMP_HEADER]: timestamp,
         [WELETIC_INTERNAL_SIGNATURE_HEADER]: signature,
+        [WELETIC_REQUEST_ID_HEADER]: requestId,
       },
     });
     // Keep the read deadline active until the full response arrives. A server

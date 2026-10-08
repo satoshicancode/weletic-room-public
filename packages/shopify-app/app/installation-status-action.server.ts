@@ -3,9 +3,9 @@ import {
   hostedPricingUrl,
   subscriptionPageSchema,
   subscriptionStatusSchema,
-} from "../../../apps/web/lib/weletic/shopify/app-pricing-contract";
-import { installationAdmissionStatusSchema } from "../../../apps/web/lib/weletic/shopify/installation-admission-contract";
-import { readWeleticShopifyRequestBodyBytes } from "../../../apps/web/lib/weletic/shopify/service-auth";
+} from "@weletic/contracts/shopify/app-pricing-contract";
+import { installationAdmissionStatusSchema } from "@weletic/contracts/shopify/installation-admission-contract";
+import { readWeleticShopifyRequestBodyBytes } from "@weletic/contracts/shopify/service-auth";
 import type { verifyShopifyMerchantIdentity } from "./merchant-identity.server";
 import {
   requireEnv,

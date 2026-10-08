@@ -71,9 +71,9 @@ export function formatCommissionsForExport(
       }
 
       const cents = commission[col as "amount" | "earnings"];
-      if (typeof cents === "number") {
+      if (typeof cents === "number" || typeof cents === "bigint") {
         row[col] = formatMoneyCentsForExport(
-          cents,
+          Number(cents),
           commission.currency,
           `commission ${commission.id}`,
         );

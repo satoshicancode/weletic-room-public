@@ -427,7 +427,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
         shopDomain: `${run}.myshopify.com`,
         shopCurrency: "USD",
         currencyVerifiedAt: new Date(),
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
         installationGeneration: "g1",
       },
     });
@@ -5166,7 +5166,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
         programId: other,
         shopDomain: `${other}.myshopify.com`,
         shopCurrency: "USD",
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
         installationGeneration: "g1",
         storeAccessState: "active",
       },

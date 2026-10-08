@@ -128,8 +128,8 @@ export async function notifyPartnerCommission({
     },
     commission: {
       type: commission.type,
-      amount: commission.amount,
-      earnings: commission.earnings,
+      amount: Number(commission.amount),
+      earnings: Number(commission.earnings),
       status: commission.status,
     },
     shortLink: partnerLink?.shortLink ?? null,

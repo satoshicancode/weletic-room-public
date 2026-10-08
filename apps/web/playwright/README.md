@@ -11,7 +11,7 @@
 2. Start MailHog (used for email verification during signup):
 
    ```sh
-   docker-compose -f apps/web/docker-compose.yml up -d mailhog
+   docker run -d --name mailhog -p 1025:1025 -p 8025:8025 mailhog/mailhog:latest
    ```
 
 3. Set environment variables in `apps/web/.env`:

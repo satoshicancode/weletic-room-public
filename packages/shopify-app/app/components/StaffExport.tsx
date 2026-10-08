@@ -8,8 +8,8 @@ import {
   Select,
   Text,
 } from "@shopify/polaris";
+import type { ShopifyStaffExportPage } from "@weletic/contracts/shopify/staff-export-contract";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ShopifyStaffExportPage } from "../../../../apps/web/lib/weletic/shopify/staff-export-contract";
 import { StaffAccessClientError } from "../staff-access-client";
 import { createStaffExportClient } from "../staff-export-client";
 

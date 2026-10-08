@@ -1,10 +1,13 @@
 import "dotenv-flow/config";
 
 async function main() {
-  const { prisma } = await import("@/lib/prisma");
-  const storeDomain = process.argv[2] || "yamaxdev.myshopify.com";
+  const storeDomain =
+    process.argv[2] ||
+    process.env.SHOPIFY_STORE_DOMAIN ||
+    "example.myshopify.com";
   console.log(`Linking store "${storeDomain}" to workspaces...`);
 
+  const { prisma } = await import("@/lib/prisma");
   await prisma.project.update({
     where: {
       slug: "we",

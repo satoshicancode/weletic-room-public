@@ -3,7 +3,7 @@ import {
   type Session,
   type Shopify,
 } from "@shopify/shopify-api";
-import type { ShopifyMerchantActorEnvelope } from "../../../apps/web/lib/weletic/shopify/staff-contract";
+import type { ShopifyMerchantActorEnvelope } from "@weletic/contracts/shopify/staff-contract";
 import type { CoordinatedWeleticSessionStorage } from "./coordinated-session-storage.server";
 import { assertCoreLaunchMerchantRoute } from "./core-launch-routes.server";
 import { verifyShopifyMerchantIdentity } from "./merchant-identity.server";

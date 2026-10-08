@@ -1,5 +1,6 @@
 import { createId } from "@/lib/api/create-id";
 import { syncTotalCommissions } from "@/lib/api/partners/sync-total-commissions";
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { orderSchema } from "@/lib/integrations/shopify/schema";
 import { prisma } from "@/lib/prisma";
 import { calculateRefundReversal } from "@/lib/weletic/commerce/record-refund";
@@ -62,16 +63,15 @@ import { readOrderLineDiscount } from "./order-line-discount";
 const shopifyGid = (type: "Product" | "ProductVariant", id?: number | null) =>
   id ? `gid://shopify/${type}/${id}` : undefined;
 
-function toSafeInt(value: bigint, field: string) {
-  const number = Number(value);
-  if (
-    !Number.isSafeInteger(number) ||
-    number > 2_147_483_647 ||
-    number < -2_147_483_648
-  ) {
-    throw new Error(`${field} exceeds the Dub integer money range.`);
+const MAX_SAFE_BIGINT = BigInt("9223372036854775807");
+const MIN_SAFE_BIGINT = BigInt("-9223372036854775808");
+
+export function toSafeBigInt(value: bigint | number, field: string): bigint {
+  const bigValue = typeof value === "bigint" ? value : BigInt(value);
+  if (bigValue > MAX_SAFE_BIGINT || bigValue < MIN_SAFE_BIGINT) {
+    throw new Error(`${field} exceeds the 64-bit integer money range.`);
   }
-  return number;
+  return bigValue;
 }
 
 function orderStatus(status?: string | null): WeleticOrderStatus {
@@ -640,7 +640,7 @@ async function recordWeleticOrderUnlocked({
       programId: effectiveProgramId,
       shopDomain: workspace.shopifyStoreId,
       shopCurrency,
-      apiVersion: "2026-07",
+      apiVersion: SHOPIFY_ADMIN_API_VERSION,
     },
     // Existing store identity is owned by install/catalog and compliance
     // lifecycles. A stale order may have read the raw project domain just
@@ -1484,12 +1484,12 @@ async function recordWeleticOrderUnlocked({
             invoiceId: `shopify:${externalId}`,
             description: `Shopify order ${order.name ?? order.confirmation_number}`,
             type: "sale",
-            amount: toSafeInt(accountingNet, "Order amount"),
+            amount: toSafeBigInt(accountingNet, "Order amount"),
             quantity: rawLines.reduce(
               (total, line) => total + line.quantity,
               0,
             ),
-            earnings: toSafeInt(totalEarnings, "Commission earnings"),
+            earnings: toSafeBigInt(totalEarnings, "Commission earnings"),
             currency: accountingCurrency,
             status: "pending",
             createdAt: occurredAt,
@@ -1623,12 +1623,12 @@ async function recordWeleticOrderUnlocked({
               eventId: `weletic:shopify:refund:${store.id}:${refundExternalId}`,
               description: `Refund for Shopify order ${order.name ?? externalId}`,
               type: "custom",
-              amount: 0,
+              amount: BigInt(0),
               quantity: priorRefund.lines.reduce(
                 (total, line) => total + line.quantity,
                 0,
               ),
-              earnings: toSafeInt(reversalEarnings, "Refund reversal"),
+              earnings: toSafeBigInt(reversalEarnings, "Refund reversal"),
               currency: accountingCurrency,
               status: "pending",
               sourceCommissionId: commissionId,

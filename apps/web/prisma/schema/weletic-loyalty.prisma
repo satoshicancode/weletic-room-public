@@ -221,6 +221,7 @@ model WeleticLoyaltyProgram {
   pointsExpiryPolicyAnchorAt    DateTime? // Enablement/reactivation/reduction anchor
   pointsExpiryPolicyVersion     Int                  @default(0)
   earnPolicyVersion             Int                  @default(0) // Monotonic append-only earn-policy revision counter
+  version                       Int                  @default(1) // Optimistic concurrency control version counter
   killSwitchActive              Boolean              @default(false)
   activatedAt                   DateTime?
   disabledAt                    DateTime?
@@ -410,6 +411,7 @@ model WeleticLoyaltyTierHistory {
   @@unique([accountId, sequenceNumber])
   @@index([accountId, effectiveAt, sequenceNumber])
   @@index([toTierId])
+  @@index([fromTierId])
 }
 
 model WeleticLoyaltyAccount {
@@ -514,6 +516,8 @@ model WeleticLoyaltyEarnGrant {
   @@index([policyRevisionId])
   @@index([storeId, programId, policyRevisionId])
   @@index([createdAt])
+  @@index([shopperId])
+  @@index([programId, status])
 }
 
 model WeleticLoyaltyOrderLineEarn {
@@ -666,6 +670,7 @@ model WeleticRewardRedemption {
   @@index([storeId, status])
   @@index([storeId, createdAt])
   @@index([storeId, issuanceConfirmedAt])
+  @@index([rewardDefinitionId])
 }
 
 // Append-only, provider-reported use of a shopper-owned coupon. The redemption
@@ -870,6 +875,7 @@ model WeleticLoyaltyBackfillPreviewItem {
 
   @@unique([jobId, accountId])
   @@index([jobId, shopperId])
+  @@index([accountId])
 }
 
 enum WeleticLoyaltyImportStatus {
@@ -991,7 +997,8 @@ model WeleticLoyaltyOutboxJob {
   store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@unique([storeId, idempotencyKey])
-  @@index([status, scheduledFor, nextRetryAt])
+  @@index([status, priority, scheduledFor, nextRetryAt])
+  @@index([status, scheduledFor, priority, nextRetryAt])
   @@index([storeId, jobType, status])
   @@index([lockedAt])
   @@index([createdAt])
@@ -1022,8 +1029,6 @@ model WeleticShopifyInstallIntent {
   expiresAt   DateTime
   consumedAt  DateTime?
   createdAt   DateTime  @default(now())
-
-  workspace Project @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, shopDomain])
   @@index(expiresAt)

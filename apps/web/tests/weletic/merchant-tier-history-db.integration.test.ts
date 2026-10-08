@@ -103,7 +103,7 @@ beforeAll(async () => {
         programId: programIds[index],
         shopDomain: `tier-export-${index}-${suffix}.myshopify.com`,
         shopCurrency: "USD",
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
       },
     });
     await prisma.weleticLoyaltyProgram.create({

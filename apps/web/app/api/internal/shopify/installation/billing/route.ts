@@ -22,7 +22,7 @@ export async function POST(request: Request) {
         { status: 400, headers },
       );
     const body = new TextDecoder().decode(bytes);
-    if (!verifyWeleticShopifyRequest({ request, body }))
+    if (!(await verifyWeleticShopifyRequest({ request, body })))
       return Response.json({ error: "unauthorized" }, { status: 401, headers });
     const value: unknown = JSON.parse(body);
     const actor = await prisma.$transaction(async (tx) => {

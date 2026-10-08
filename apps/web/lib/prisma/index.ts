@@ -1,5 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 
+// Ensure BigInt serialization does not crash JSON.stringify in scripts and workers
+if (!("toJSON" in BigInt.prototype)) {
+  Object.defineProperty(BigInt.prototype, "toJSON", {
+    value: function (this: bigint) {
+      const num = Number(this);
+      return Number.isSafeInteger(num) ? num : this.toString();
+    },
+    writable: true,
+    configurable: true,
+  });
+}
+
 const prismaClientSingleton = () =>
   new PrismaClient({
     omit: {

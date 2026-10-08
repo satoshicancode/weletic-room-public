@@ -1314,7 +1314,7 @@ export default function extension() {
 
 export function CustomerAccountModules() {
   const queryProducts = useRef<ReviewProductQuery>((query, options) =>
-    shopify.query(query, options),
+    shopify.query(query, options as any),
   );
   const [reviewPending, setReviewPending] = useState(false);
   const [storeReviewPending, setStoreReviewPending] = useState(false);

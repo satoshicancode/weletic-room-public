@@ -1,3 +1,4 @@
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import {
   interpretActiveSubscription,
   pricingIdentitySchema,
@@ -45,7 +46,7 @@ export async function fetchActiveAppSubscription(
   try {
     const signal = AbortSignal.timeout(10_000);
     const response = await customFetch(
-      `https://partners.shopify.com/${organization}/api/2026-07/graphql.json`,
+      `https://partners.shopify.com/${organization}/api/${SHOPIFY_ADMIN_API_VERSION}/graphql.json`,
       {
         method: "POST",
         redirect: "error",

@@ -63,7 +63,7 @@ vi.mock("@/lib/weletic/loyalty/shopper-privacy", () => ({
 }));
 
 // In-memory Database Store
-const db = {
+const db = vi.hoisted(() => ({
   projects: new Map<string, any>(),
   programs: new Map<string, any>(),
   weleticShopifyStores: new Map<string, any>(),
@@ -81,7 +81,27 @@ const db = {
   reconciliationIssues: new Map<string, any>(),
   programEnrollments: new Map<string, any>(),
   rewards: new Map<string, any>(),
-};
+}));
+
+vi.mock("@/lib/weletic/shopify/store-resolver", () => ({
+  resolveShopifyStoreByDomain: vi.fn(async (shopDomain: string) => {
+    const store = Array.from(db.weleticShopifyStores.values()).find(
+      (s) => s.shopDomain === shopDomain,
+    );
+    return store
+      ? {
+          workspaceId: store.projectId || `ws_${store.id}`,
+          storeId: store.id,
+          shopId: `shop_${store.id}`,
+          primaryDomain: shopDomain,
+          myshopifyDomain: shopDomain,
+          allDomains: [shopDomain],
+          programId: store.programId,
+          accessToken: "shpat_mock",
+        }
+      : null;
+  }),
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -225,6 +245,16 @@ vi.mock("@/lib/prisma", () => ({
     }),
     weleticShopifyStore: {
       findUnique: vi.fn(async ({ where }: any) => {
+        if (where.projectId) {
+          for (const s of db.weleticShopifyStores.values()) {
+            if (
+              s.projectId === where.projectId ||
+              `ws_${s.id}` === where.projectId ||
+              s.id === where.projectId
+            )
+              return s;
+          }
+        }
         if (where.shopDomain) {
           for (const s of db.weleticShopifyStores.values()) {
             if (s.shopDomain === where.shopDomain) return s;
@@ -784,7 +814,7 @@ describe("Challenger 2: Financial Settlement & ADR 0004 Proportional Refund Claw
       const refundCommissions = Array.from(db.commissions.values());
       expect(refundCommissions).toHaveLength(1);
       const refundComm1 = refundCommissions[0];
-      expect(refundComm1.earnings).toBe(-800); // -$8.00 (50% of $16.00)
+      expect(refundComm1.earnings).toBe(BigInt(-800)); // -$8.00 (50% of $16.00)
       expect(refundComm1.partnerId).toBe("partner_hiro");
       expect(refundComm1.status).toBe("pending");
 
@@ -835,7 +865,7 @@ describe("Challenger 2: Financial Settlement & ADR 0004 Proportional Refund Claw
       expect(allCommissions).toHaveLength(2);
       const refundComm2 = allCommissions[1];
       // Remaining $8.00 from Line 1 + full $4.00 from Line 2 = -$12.00 (-1200 cents)
-      expect(refundComm2.earnings).toBe(-1200);
+      expect(refundComm2.earnings).toBe(BigInt(-1200));
 
       // Verify total net commission across entire order: $20.00 original - $8.00 - $12.00 = $0.00
       const totalCommissionNet =

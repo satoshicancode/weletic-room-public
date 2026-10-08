@@ -16,12 +16,7 @@ import {
   getPartnerCatalogPreferences,
   savePartnerCatalogPreferences,
 } from "@/lib/weletic/partner-preferences";
-import {
-  BlurImage,
-  LoadingSpinner,
-  PaginationControls,
-  usePagination,
-} from "@dub/ui";
+import { BlurImage, PaginationControls, usePagination } from "@dub/ui";
 import { ChevronDown, Eye, Search } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -34,6 +29,128 @@ const localeLabels: Record<WeleticLocale, string> = {
   vi: "Tiếng Việt",
   ja: "日本語",
 };
+
+const catalogI18n: Record<
+  WeleticLocale,
+  {
+    title: string;
+    subtitle: string;
+    marketLabel: string;
+    countryLabel: string;
+    languageLabel: string;
+    searchPlaceholder: string;
+    emptyMessage: string;
+    getLink: string;
+    details: string;
+    commissionLabel: string;
+    discountLabel: string;
+    productUnit: (p?: boolean) => string;
+    categories: {
+      all: string;
+      xtra: string;
+      shoes: string;
+      apparel: string;
+      accessories: string;
+    };
+  }
+> = {
+  en: {
+    title: "Product Offers",
+    subtitle:
+      "Explore product catalog and generate affiliate links to earn commission",
+    marketLabel: "Market",
+    countryLabel: "Country",
+    languageLabel: "Language",
+    searchPlaceholder: "Search for all Store Products...",
+    emptyMessage: "No products match your selected filters.",
+    getLink: "Get Link",
+    details: "Details",
+    commissionLabel: "Commission",
+    discountLabel: "Discount",
+    productUnit: (p) => `product${p ? "s" : ""}`,
+    categories: {
+      all: "All",
+      xtra: "Commissions XTRA",
+      shoes: "Shoes & Footwear",
+      apparel: "Clothing & Tops",
+      accessories: "Accessories & Bags",
+    },
+  },
+  vi: {
+    title: "Danh mục sản phẩm",
+    subtitle:
+      "Khám phá danh mục sản phẩm và lấy link tiếp thị liên kết (Affiliate Links) nhận hoa hồng",
+    marketLabel: "Thị trường",
+    countryLabel: "Quốc gia",
+    languageLabel: "Ngôn ngữ",
+    searchPlaceholder: "Tìm kiếm sản phẩm trong cửa hàng...",
+    emptyMessage: "Không tìm thấy sản phẩm phù hợp với bộ lọc.",
+    getLink: "Lấy link",
+    details: "Chi tiết",
+    commissionLabel: "Hoa hồng",
+    discountLabel: "Mã giảm",
+    productUnit: () => "sản phẩm",
+    categories: {
+      all: "Tất cả",
+      xtra: "Hoa hồng XTRA",
+      shoes: "Giày dép",
+      apparel: "Quần áo",
+      accessories: "Phụ kiện & Túi",
+    },
+  },
+  ja: {
+    title: "商品オファー",
+    subtitle:
+      "商品カタログを閲覧し、アフィリエイトリンクを取得して報酬を獲得します",
+    marketLabel: "マーケット",
+    countryLabel: "国",
+    languageLabel: "言語",
+    searchPlaceholder: "ストア内の商品を検索...",
+    emptyMessage: "条件に一致する商品が見つかりませんでした。",
+    getLink: "リンク取得",
+    details: "詳細",
+    commissionLabel: "報酬",
+    discountLabel: "割引",
+    productUnit: () => "件の商品",
+    categories: {
+      all: "すべて",
+      xtra: "高コミッション",
+      shoes: "シューズ",
+      apparel: "アパレル",
+      accessories: "アクセサリー",
+    },
+  },
+};
+
+function CatalogSkeletonGrid() {
+  return (
+    <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5">
+      {Array.from({ length: 15 }).map((_, idx) => (
+        <div
+          key={idx}
+          className="flex flex-col justify-between overflow-hidden rounded-xl border border-neutral-200 bg-white"
+        >
+          {/* Square Image Placeholder 1:1 */}
+          <div className="aspect-square w-full animate-pulse bg-neutral-100" />
+          {/* Content lines */}
+          <div className="space-y-2 p-3.5">
+            <div className="h-3.5 w-3/4 animate-pulse rounded bg-neutral-200" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-neutral-100" />
+            <div className="flex gap-1.5 pt-1">
+              <div className="h-5 w-16 animate-pulse rounded bg-neutral-100" />
+              <div className="h-5 w-14 animate-pulse rounded bg-neutral-100" />
+            </div>
+            <div className="h-4 w-20 animate-pulse rounded bg-neutral-200" />
+          </div>
+          {/* Button placeholder */}
+          <div className="p-3.5 pt-0">
+            <div className="h-7 w-full animate-pulse rounded-lg bg-neutral-100" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function WeleticProductsPageClient() {
   const { programSlug } = useParams();
@@ -64,9 +181,24 @@ export function WeleticProductsPageClient() {
   const [detailProduct, setDetailProduct] =
     useState<WeleticCatalogProduct | null>(null);
 
+  // Derive effective search query sent to backend API
+  const effectiveQuery = useMemo(() => {
+    const term = debouncedSearch.trim();
+    if (selectedCategory === "shoes") {
+      return term ? `${term} shoe` : "shoe";
+    }
+    if (selectedCategory === "apparel") {
+      return term ? `${term} apparel` : "apparel";
+    }
+    if (selectedCategory === "accessories") {
+      return term ? `${term} accessory` : "accessory";
+    }
+    return term || undefined;
+  }, [debouncedSearch, selectedCategory]);
+
   const { data, error, loading } = useWeleticProducts({
     programId: effectiveProgramId,
-    q: debouncedSearch,
+    q: effectiveQuery,
     marketId,
     countryCode,
     locale,
@@ -77,7 +209,7 @@ export function WeleticProductsPageClient() {
   useEffect(() => {
     setPagination((p) => ({ ...p, pageIndex: 1 }));
   }, [
-    debouncedSearch,
+    effectiveQuery,
     marketId,
     countryCode,
     locale,
@@ -137,17 +269,19 @@ export function WeleticProductsPageClient() {
     }
   }, [selectedMarket, countryCode, effectiveProgramId]);
 
+  const t = catalogI18n[locale] || catalogI18n.en;
+
   // Extract unique categories from current products
-  const categories = useMemo(() => {
-    const defaultCats = [
-      { id: "all", label: "All" },
-      { id: "xtra", label: "Commissions XTRA" },
-      { id: "shoes", label: "Shoes & Footwear" },
-      { id: "apparel", label: "Clothing & Tops" },
-      { id: "accessories", label: "Accessories & Bags" },
-    ];
-    return defaultCats;
-  }, []);
+  const categories = useMemo(
+    () => [
+      { id: "all", label: t.categories.all },
+      { id: "xtra", label: t.categories.xtra },
+      { id: "shoes", label: t.categories.shoes },
+      { id: "apparel", label: t.categories.apparel },
+      { id: "accessories", label: t.categories.accessories },
+    ],
+    [t],
+  );
 
   // Filter products by category tab
   const filteredProducts = useMemo(() => {
@@ -195,7 +329,13 @@ export function WeleticProductsPageClient() {
   }, [data?.products, selectedCategory]);
 
   const totalPages = data?.pagination.totalPages ?? 1;
-  const totalProducts = data?.pagination.total ?? 0;
+  const totalProducts = useMemo(() => {
+    if (!data) return 0;
+    if (selectedCategory === "xtra") {
+      return filteredProducts.length;
+    }
+    return data.pagination.total;
+  }, [data, selectedCategory, filteredProducts.length]);
 
   return (
     <div className="space-y-6">
@@ -203,20 +343,15 @@ export function WeleticProductsPageClient() {
       <div className="shadow-xs space-y-4 rounded-2xl border border-neutral-200 bg-white p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-xl font-bold text-neutral-900">
-              Product Offers
-            </h1>
-            <p className="mt-0.5 text-xs text-neutral-500">
-              Khám phá danh mục sản phẩm và lấy link tiếp thị liên kết
-              (Affiliate Links) nhận hoa hồng
-            </p>
+            <h1 className="text-xl font-bold text-neutral-900">{t.title}</h1>
+            <p className="mt-0.5 text-xs text-neutral-500">{t.subtitle}</p>
           </div>
 
           {/* Market & Language selector */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative inline-flex items-center">
               <select
-                aria-label="Thị trường"
+                aria-label={t.marketLabel}
                 value={marketId ?? ""}
                 onChange={(e) => {
                   const val = e.target.value || undefined;
@@ -242,7 +377,7 @@ export function WeleticProductsPageClient() {
 
             <div className="relative inline-flex items-center">
               <select
-                aria-label="Quốc gia"
+                aria-label={t.countryLabel}
                 value={countryCode ?? ""}
                 onChange={(e) => {
                   const val = e.target.value || undefined;
@@ -264,7 +399,7 @@ export function WeleticProductsPageClient() {
 
             <div className="relative inline-flex items-center">
               <select
-                aria-label="Ngôn ngữ"
+                aria-label={t.languageLabel}
                 value={locale}
                 onChange={(e) => {
                   const val = e.target.value as WeleticLocale;
@@ -292,7 +427,7 @@ export function WeleticProductsPageClient() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search for all Store Products..."
+            placeholder={t.searchPlaceholder}
             className="shadow-xs h-9 w-full rounded-lg border border-neutral-200 bg-white pl-9 pr-3 text-sm text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-neutral-500"
           />
         </div>
@@ -317,15 +452,13 @@ export function WeleticProductsPageClient() {
 
       {/* Grid Content */}
       {loading && !data ? (
-        <div className="flex min-h-64 items-center justify-center">
-          <LoadingSpinner />
-        </div>
+        <CatalogSkeletonGrid />
       ) : error ? (
         <EmptyCatalog
           message={getWeleticMessage(locale, "catalog.loadError")}
         />
       ) : !filteredProducts.length ? (
-        <EmptyCatalog message="Không tìm thấy sản phẩm phù hợp với bộ lọc." />
+        <EmptyCatalog message={t.emptyMessage} />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5">
@@ -335,6 +468,7 @@ export function WeleticProductsPageClient() {
                 product={product}
                 programSlug={programSlug as string}
                 locale={locale}
+                t={t}
                 onGetLink={() => setOfferLinkProduct(product)}
               />
             ))}
@@ -346,7 +480,7 @@ export function WeleticProductsPageClient() {
               pagination={pagination}
               setPagination={setPagination}
               totalCount={totalProducts}
-              unit={(p) => `product${p ? "s" : ""}`}
+              unit={t.productUnit}
             />
           </div>
         </>
@@ -375,11 +509,13 @@ function ShopeeProductCard({
   product,
   programSlug,
   locale,
+  t,
   onGetLink,
 }: {
   product: WeleticCatalogProduct;
   programSlug: string;
   locale: WeleticLocale;
+  t: (typeof catalogI18n)["en"];
   onGetLink: () => void;
 }) {
   const defaultVariant = product.variants[0];
@@ -430,7 +566,7 @@ function ShopeeProductCard({
           <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition group-hover:bg-black/10 group-hover:opacity-100">
             <span className="shadow-xs backdrop-blur-xs flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1 text-xs font-medium text-neutral-900">
               <Eye className="h-3.5 w-3.5" />
-              Chi tiết
+              {t.details}
             </span>
           </div>
         </div>
@@ -445,13 +581,13 @@ function ShopeeProductCard({
           {/* HOA HỒNG & VOUCHER KHÁCH Badges */}
           <div className="flex flex-wrap items-center gap-1.5">
             <div className="inline-flex items-center gap-1 rounded-md border border-green-200/60 bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-700">
-              <span>Hoa hồng</span>
+              <span>{t.commissionLabel}</span>
               <span className="font-semibold">{commRatePercent}</span>
             </div>
 
             {product.customerDiscount && (
               <div className="inline-flex items-center gap-1 rounded-md border border-indigo-200/60 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
-                <span>Mã giảm</span>
+                <span>{t.discountLabel}</span>
                 <span className="font-semibold">
                   {product.customerDiscount.formatted}
                 </span>
@@ -489,7 +625,7 @@ function ShopeeProductCard({
           }}
           className="shadow-xs w-full rounded-lg border border-neutral-200 bg-white py-1.5 text-xs font-medium text-neutral-900 transition hover:bg-neutral-50"
         >
-          Get Link
+          {t.getLink}
         </button>
       </div>
     </article>

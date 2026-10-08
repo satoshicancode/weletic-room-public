@@ -204,7 +204,7 @@ export async function executeWorkflows({
         leads: totalLeads,
         conversions: totalConversions,
         saleAmount: totalSaleAmount,
-        commissions: totalCommissions._sum.earnings ?? 0,
+        commissions: Number(totalCommissions._sum.earnings ?? 0),
       },
     },
   };

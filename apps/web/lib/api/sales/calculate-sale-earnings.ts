@@ -1,6 +1,5 @@
 import { getRewardAmount } from "@/lib/partners/get-reward-amount";
 import { RewardProps } from "@/lib/types";
-import { Commission } from "@prisma/client";
 
 /* 
   Calculate the commission earned for a sale
@@ -10,7 +9,7 @@ export const calculateSaleEarnings = ({
   sale,
 }: {
   reward: Pick<RewardProps, "type" | "amountInCents" | "amountInPercentage">;
-  sale: Pick<Commission, "quantity" | "amount">;
+  sale: { quantity: number; amount: number | bigint };
 }) => {
   if (!reward) {
     return 0;
@@ -21,7 +20,7 @@ export const calculateSaleEarnings = ({
   if (reward.type === "flat") {
     return sale.quantity * amount;
   } else if (reward.type === "percentage") {
-    return sale.amount * (amount / 100);
+    return Number(sale.amount) * (amount / 100);
   }
 
   return 0;

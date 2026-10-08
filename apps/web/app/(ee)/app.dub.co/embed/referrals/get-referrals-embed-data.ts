@@ -127,11 +127,13 @@ export const getReferralsEmbedData = async (token: string) => {
     earnings: {
       upcoming: commissions.reduce((acc, c) => {
         if (c.status === "pending" || c.status === "processed") {
-          return acc + (c._sum.earnings ?? 0);
+          return acc + Number(c._sum.earnings ?? 0);
         }
         return acc;
       }, 0),
-      paid: commissions.find((c) => c.status === "paid")?._sum.earnings ?? 0,
+      paid: Number(
+        commissions.find((c) => c.status === "paid")?._sum.earnings ?? 0,
+      ),
       totalCount: commissions.reduce((acc, c) => acc + c._count.id, 0),
     },
     stats: {

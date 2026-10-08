@@ -348,7 +348,7 @@ async function getHistoricalEarnings({
   for (const commission of commissions) {
     historicalEarningsByPartner.set(
       commission.partnerId,
-      commission._sum.earnings ?? 0,
+      Number(commission._sum.earnings ?? 0),
     );
   }
 

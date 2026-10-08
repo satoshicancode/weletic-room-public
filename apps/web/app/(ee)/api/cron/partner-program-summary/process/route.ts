@@ -261,19 +261,19 @@ export const POST = withCron(async ({ rawBody }) => {
     return {
       partner,
       previousMonth: {
-        earnings: _previousMonthEarnings?._sum.earnings ?? 0,
+        earnings: Number(_previousMonthEarnings?._sum.earnings ?? 0),
         clicks: _previousMonthAnalytics?.clicks ?? 0,
         leads: _previousMonthAnalytics?.leads ?? 0,
         sales: _previousMonthAnalytics?.sales ?? 0,
       },
       currentMonth: {
-        earnings: _currentMonthEarnings?._sum.earnings ?? 0,
+        earnings: Number(_currentMonthEarnings?._sum.earnings ?? 0),
         clicks: _currentMonthAnalytics?.clicks ?? 0,
         leads: _currentMonthAnalytics?.leads ?? 0,
         sales: _currentMonthAnalytics?.sales ?? 0,
       },
       lifetime: {
-        earnings: _lifetimeEarnings?._sum.earnings ?? 0,
+        earnings: Number(_lifetimeEarnings?._sum.earnings ?? 0),
         clicks: _lifetimeAnalytics?.clicks ?? 0,
         leads: _lifetimeAnalytics?.leads ?? 0,
         sales: _lifetimeAnalytics?.sales ?? 0,

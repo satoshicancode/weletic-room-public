@@ -55,7 +55,7 @@ async function seed() {
       shopDomain: `${id}.myshopify.com`,
       shopCurrency: "JPY",
       currencyVerifiedAt: new Date(),
-      apiVersion: "2026-07",
+      apiVersion: "2026-10",
       installationGeneration: "g1",
     },
   });

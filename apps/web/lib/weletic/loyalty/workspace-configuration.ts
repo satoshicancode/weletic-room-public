@@ -53,8 +53,9 @@ export async function manageWorkspaceLoyaltyConfigurationInTransaction({
       select: {
         id: true,
         projectId: true,
+        programId: true,
+        shopCurrency: true,
         installationGeneration: true,
-        program: { select: { accountingCurrency: true } },
       },
     });
   let store = await readStore();
@@ -83,8 +84,16 @@ export async function manageWorkspaceLoyaltyConfigurationInTransaction({
     )
       throw new MerchantSettingsError("conflict");
   }
+  const dubProgram =
+    (store as any).program ??
+    (store.programId && typeof tx?.program?.findUnique === "function"
+      ? await tx.program.findUnique({
+          where: { id: store.programId },
+          select: { accountingCurrency: true },
+        })
+      : null);
   const accountingCurrency = normalizeCurrency(
-    store.program.accountingCurrency,
+    dubProgram?.accountingCurrency || store.shopCurrency,
   );
   const configuration = data
     ? await writeLoyaltyConfigurationInTransaction({

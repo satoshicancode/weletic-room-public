@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { useCoreLaunch } from "../../../../apps/web/ui/weletic/core-launch-context";
+import { useCoreLaunch } from "../core-launch-context";
 import type { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
 import { reviewIncentiveEditorCopy } from "../review-incentive-editor-copy";
 import { ReviewIncentiveActivation } from "./ReviewIncentiveActivation";

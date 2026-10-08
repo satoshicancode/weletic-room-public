@@ -23,7 +23,7 @@ export async function seedFlowOwner(database: PrismaClient, owner = true) {
       shopDomain: shop,
       shopCurrency: "JPY",
       currencyVerifiedAt: new Date(),
-      apiVersion: "2026-07",
+      apiVersion: "2026-10",
       installationGeneration,
       storeAccessState: "active",
     },

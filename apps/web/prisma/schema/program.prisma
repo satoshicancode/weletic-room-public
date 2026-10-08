@@ -94,12 +94,6 @@ model Program {
   partnerTags              PartnerTag[]
   programPartnerTags       ProgramPartnerTag[]
   submittedLeads           SubmittedLead[]
-  weleticShopifyStore      WeleticShopifyStore?
-  weleticProducts          WeleticShopifyProduct[]
-  weleticProductLinks      WeleticProductLink[]
-  weleticOrders            WeleticCommerceOrder[]
-  weleticCommissionRules   WeleticCommissionRule[]
-  weleticPayoutProfiles    WeleticPayoutProfile[]
 
   @@index(workspaceId)
   @@index(addedToMarketplaceAt)

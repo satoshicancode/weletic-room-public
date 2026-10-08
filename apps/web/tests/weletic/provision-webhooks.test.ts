@@ -227,7 +227,7 @@ describe("Requirement R1: Multi-Tenant Automated Webhook Provisioning", () => {
               format: "JSON",
             }),
           }),
-          apiVersion: "2026-07",
+          apiVersion: "2026-10",
         }),
       );
     });

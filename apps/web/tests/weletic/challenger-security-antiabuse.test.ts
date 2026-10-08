@@ -15,6 +15,7 @@ import {
 import {
   WELETIC_SHOPIFY_MAX_BODY_BYTES,
   WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
   readWeleticShopifyRequestBody,
@@ -24,6 +25,12 @@ import {
 import { verifyShopifyWebhookSignature } from "@/lib/weletic/shopify/webhook-signature";
 import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: vi.fn().mockResolvedValue("OK"),
+  },
+}));
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -251,13 +258,15 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
     });
 
     describe("1.1 Clock Skew Boundary & Manipulation", () => {
-      it("accepts request exactly at 0 ms skew", () => {
+      it("accepts request exactly at 0 ms skew", async () => {
         const timestamp = String(fixedNow);
+        const requestId = crypto.randomUUID();
         const signature = signWeleticShopifyRequest({
           timestamp,
           method: "POST",
           path: testPath,
           body: testBody,
+          requestId,
           secret: validSecret,
         });
 
@@ -266,12 +275,13 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
           headers: {
             [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
             [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+            [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
           },
           body: testBody,
         });
 
         expect(
-          verifyWeleticShopifyRequest({
+          await verifyWeleticShopifyRequest({
             request: req,
             body: testBody,
             now: fixedNow,
@@ -279,13 +289,15 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         ).toBe(true);
       });
 
-      it("accepts request at exact maximum allowable past clock skew (5 min = 300,000 ms)", () => {
+      it("accepts request at exact maximum allowable past clock skew (5 min = 300,000 ms)", async () => {
         const timestamp = String(fixedNow - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS);
+        const requestId = crypto.randomUUID();
         const signature = signWeleticShopifyRequest({
           timestamp,
           method: "POST",
           path: testPath,
           body: testBody,
+          requestId,
           secret: validSecret,
         });
 
@@ -294,12 +306,13 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
           headers: {
             [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
             [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+            [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
           },
           body: testBody,
         });
 
         expect(
-          verifyWeleticShopifyRequest({
+          await verifyWeleticShopifyRequest({
             request: req,
             body: testBody,
             now: fixedNow,
@@ -307,13 +320,15 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         ).toBe(true);
       });
 
-      it("accepts request at exact maximum allowable future clock skew (5 min = +300,000 ms)", () => {
+      it("accepts request at exact maximum allowable future clock skew (5 min = +300,000 ms)", async () => {
         const timestamp = String(fixedNow + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS);
+        const requestId = crypto.randomUUID();
         const signature = signWeleticShopifyRequest({
           timestamp,
           method: "POST",
           path: testPath,
           body: testBody,
+          requestId,
           secret: validSecret,
         });
 
@@ -322,12 +337,13 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
           headers: {
             [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
             [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+            [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
           },
           body: testBody,
         });
 
         expect(
-          verifyWeleticShopifyRequest({
+          await verifyWeleticShopifyRequest({
             request: req,
             body: testBody,
             now: fixedNow,
@@ -335,7 +351,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         ).toBe(true);
       });
 
-      it("strictly rejects request when past clock skew exceeds 5 min by 1 ms (300,001 ms)", () => {
+      it("strictly rejects request when past clock skew exceeds 5 min by 1 ms (300,001 ms)", async () => {
         const timestamp = String(
           fixedNow - (WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 1),
         );
@@ -357,7 +373,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         });
 
         expect(
-          verifyWeleticShopifyRequest({
+          await verifyWeleticShopifyRequest({
             request: req,
             body: testBody,
             now: fixedNow,
@@ -365,7 +381,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         ).toBe(false);
       });
 
-      it("strictly rejects request when future clock skew exceeds 5 min by 1 ms (+300,001 ms)", () => {
+      it("strictly rejects request when future clock skew exceeds 5 min by 1 ms (+300,001 ms)", async () => {
         const timestamp = String(
           fixedNow + (WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 1),
         );
@@ -387,7 +403,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         });
 
         expect(
-          verifyWeleticShopifyRequest({
+          await verifyWeleticShopifyRequest({
             request: req,
             body: testBody,
             now: fixedNow,
@@ -395,7 +411,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         ).toBe(false);
       });
 
-      it("strictly rejects non-numeric, NaN, Infinity, negative, and malformed timestamps", () => {
+      it("strictly rejects non-numeric, NaN, Infinity, negative, and malformed timestamps", async () => {
         const malformedTimestamps = [
           "abc",
           "NaN",
@@ -424,7 +440,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
           });
 
           expect(
-            verifyWeleticShopifyRequest({
+            await verifyWeleticShopifyRequest({
               request: req,
               body: testBody,
               now: fixedNow,
@@ -507,7 +523,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
     });
 
     describe("1.3 Constant-Time Signature Verification & Malicious Signature Attacks", () => {
-      it("rejects signatures that are not 64-character lowercase hex", () => {
+      it("rejects signatures that are not 64-character lowercase hex", async () => {
         const badSignatures = [
           "invalid",
           "a".repeat(63), // 63 chars (too short)
@@ -528,7 +544,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
           });
 
           expect(
-            verifyWeleticShopifyRequest({
+            await verifyWeleticShopifyRequest({
               request: req,
               body: testBody,
               now: fixedNow,
@@ -537,7 +553,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         }
       });
 
-      it("rejects tampered HTTP method (e.g. signed GET, sent POST)", () => {
+      it("rejects tampered HTTP method (e.g. signed GET, sent POST)", async () => {
         const timestamp = String(fixedNow);
         const signature = signWeleticShopifyRequest({
           timestamp,
@@ -557,7 +573,7 @@ describe("Adversarial Security & Anti-Abuse Stress Harness (Challenger 2)", () =
         });
 
         expect(
-          verifyWeleticShopifyRequest({
+          await verifyWeleticShopifyRequest({
             request: req,
             body: testBody,
             now: fixedNow,

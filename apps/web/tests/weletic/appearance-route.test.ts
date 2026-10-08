@@ -28,22 +28,26 @@ const actor = {
 };
 const input = { actor, request: { operation: "read" } };
 const tx = { fixture: true };
+let requestCounter = 0;
 function request(
   body: string,
   signedBody = body,
   timestamp = String(Date.now()),
 ) {
+  const requestId = `req_app_${Date.now()}_${++requestCounter}`;
   return new Request(`https://backend.example${path}`, {
     method: "POST",
     body,
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "POST",
         path,
         body: signedBody,
         secret,
+        requestId,
       }),
     },
   });

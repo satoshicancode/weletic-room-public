@@ -87,7 +87,7 @@ async function run(message: unknown) {
     stage = "provider_request";
     if (
       String(url) !==
-        `https://${input.suffix}.myshopify.com/admin/api/2026-07/graphql.json` ||
+        `https://${input.suffix}.myshopify.com/admin/api/2026-10/graphql.json` ||
       init?.method !== "POST" ||
       typeof init.body !== "string" ||
       ++creates !== 1
