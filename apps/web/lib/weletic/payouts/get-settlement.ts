@@ -21,29 +21,32 @@ export async function getWeleticPayoutSettlement({
   if (quote.expiresAt && quote.expiresAt <= new Date()) {
     throw new Error(`Payout quote ${quote.id} expired before settlement.`);
   }
-  const boundAccount = await prisma.weleticPayoutQuote.findUniqueOrThrow({
-    where: { id: quote.id },
-    select: {
-      profile: {
-        select: {
-          method: true,
-          payoutCurrency: true,
-          providerAccountRef: true,
-        },
-      },
-      payout: {
-        select: {
-          partner: {
-            select: { stripeConnectId: true, paypalEmail: true },
+  const [boundAccount, payout] = await Promise.all([
+    prisma.weleticPayoutQuote.findUniqueOrThrow({
+      where: { id: quote.id },
+      select: {
+        profile: {
+          select: {
+            method: true,
+            payoutCurrency: true,
+            providerAccountRef: true,
           },
         },
       },
-    },
-  });
+    }),
+    prisma.payout.findUniqueOrThrow({
+      where: { id: quote.payoutId },
+      select: {
+        partner: {
+          select: { stripeConnectId: true, paypalEmail: true },
+        },
+      },
+    }),
+  ]);
   const currentAccount =
     provider === "stripe_connect"
-      ? boundAccount.payout.partner.stripeConnectId
-      : boundAccount.payout.partner.paypalEmail;
+      ? payout.partner.stripeConnectId
+      : payout.partner.paypalEmail;
   if (
     !currentAccount ||
     boundAccount.profile?.providerAccountRef !== currentAccount

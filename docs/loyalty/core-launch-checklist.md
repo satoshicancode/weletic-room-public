@@ -1,0 +1,261 @@
+# Core loyalty and reviews launch — authoritative checklist
+
+Approved September 26, 2026. [ADR 0045](../adr/0045-core-loyalty-reviews-launch.md).
+This checklist supersedes conflicting launch requirements in the company-store
+completion matrix and older roadmaps. Those records retain evidence and backlog
+contracts; they are not additional launch blockers.
+
+**Not launched. No hosted, billing, live-delivery or Shopify approval gate is closed
+by this scope reset.** Baseline: public main c86f216e87. All changes below require
+implementation and evidence before acceptance; checked-in configuration is not a
+remote deployment.
+
+## Launch contract
+
+- One-time merchandise purchase points; fixed-value native discount redemption;
+  wallet/history, account hub and storefront launcher; EN/JA/VI.
+- Verified product reviews: text and optional photos, seven-day request delay,
+  thirty-day validity, manual publication, no reminders; merchant replies and stars.
+- One disclosed participation-points award per order, independent of rating and
+  publication. No silent enrollment. No historical sends or imports.
+- Flow: points earned, reward redeemed, review submitted, review published,
+  and owner-granted bounded points adjustment. No duplicate built-in award.
+- Shopify App Pricing: USD 500/month public plan, no trial/annual/usage tier;
+  private free company plan. Paying outsiders receive these same features and
+  basic support. Limited visibility does not prevent installation or waive review.
+
+## P0 — release sequence and evidence
+
+- [ ] P0.1 Scope: enforce core restrictions through UI, APIs, service mutations,
+      event producers and worker execution; preserve cleanup/refund/privacy paths.
+- [ ] P0.2 Runtime: approved exact resource proposal, persistent HTTPS, isolated
+      SQL/Redis/queue/media, paired public identity, supervised workers, alerts,
+      backup/restore, target schema inventory and public-owned extension mapping.
+- [ ] P0.3 Billing: verified subscription snapshot scoped to app/shop/generation;
+      hosted pricing return and entry refresh, five-minute reconciliation,
+      paid/private-free provisioning, suspension and stale-check containment.
+- [ ] P0.4 Loyalty: real purchase/earn/redeem/use/partial-and-full-refund journey,
+      duplicates, crash/ambiguous issuance and independent ledger reconciliation.
+- [ ] P0.5 Reviews: fulfillment/inbox/single-use form/photo/award/moderation/display;
+      low-rating neutrality, privacy and exact private-object cleanup.
+- [ ] P0.6 Flow: public-owned enabled capabilities, real workflow receipts,
+      duplicate/revoked/stale generation behavior and bounded grants.
+- [ ] P0.7 Release: protected-data evidence and approval, accurate paid listing,
+      support/privacy links, reviewer journeys, approved production activation and
+      72-hour monitoring of the first company store.
+
+## Implementation boundaries
+
+Use the existing Node/Cloudflare Containers/R2 topology with compatible managed
+SQL, Redis and QStash. Remove video capacity from the first release. Produce a
+complete acceptance and production quote before spending or provisioning; partial
+historical estimates are not approval. Keep company and acceptance data separate.
+
+Use Partner API activeSubscription as subscription authority; redirect parameters
+are hints only. Current Shopify App Pricing does not send subscription-change
+webhooks. Verification expires after five minutes: pause new benefits until it
+refreshes. Privacy, refunds and existing obligations must remain recoverable.
+No inherited Stripe checkout and no generic SaaS onboarding project.
+
+Inventory exact target tables/columns/enums before deployment. Disabled modules
+can still have required shared privacy/delivery readers. Apply reviewed compatible
+DDL before deploying dependent readers. No automatic destructive schema rollback.
+
+## Backlog order — not launch gates
+
+1. P1: Forms → customer segments → Messaging with consent and idempotency;
+   referrals; VIP/campaigns; additional earning and reward types; store reviews
+   and reminders. Validate each independently before enabling it.
+2. P2: subscription-order policies, advanced analytics/exports, appearance/nudges,
+   open reviews and manual review translations.
+3. P3: points/review imports, video, Q&A, Gift Cards/Store Credit, POS,
+   Plus checkout and Shop syndication.
+4. Indefinite: merchant acquisition features, pricing tiers, third-party ESP,
+   AI translation and unrelated creator/affiliate expansion.
+
+Preserve existing work and provider data. Do not launch deferred features through
+legacy URLs or stale queued jobs. Existing financial/cleanup obligations must not
+be silently discarded when new work is restricted.
+
+## Verification and execution gates
+
+September 28 testing decision: [ADR 0047](../adr/0047-restricted-yamaxdev-testing.md)
+permits restricted local yamaxdev feature testing while registration and hosted
+pricing remain deferred. This separate, expiring development receipt is not a
+verified subscription and does not close P0.3. See the
+[testing contract and evidence](restricted-yamaxdev-testing-2026-09-28.md).
+Installed loyalty/review acceptance, real billing and production operation remain
+separate evidence gates.
+
+Each code slice needs focused production-path tests, adversarial review, types,
+lint/build and CI. Finance/auth/billing needs isolated SQL concurrency proof.
+Named yamaxdev acceptance must record immutable shop identity, public app/version,
+release SHA, installation generation, fixtures, expected/observed outcomes,
+independent reconciliation and cleanup. Historical or synthetic evidence retains
+its original scope.
+
+Spending, shared/production DDL, live sends/orders, external publication and
+production activation require the exact approval packets specified in the plan.
+Keep the old apps installed until separate retirement approval. Shipping a code
+slice does not satisfy any external acceptance checkbox.
+
+## Implementation checkpoint — September 26
+
+Core-v1 restrictions, a reduced extension staging bundle, Partner subscription
+verification, paid/free native admission, fresh-billing new-benefit gates, status
+UI and reconciliation jobs are implemented on `codex/core-loyalty-launch`.
+Existing financial compensation/refunds/privacy remain independent of billing.
+The original historical-import checkout and open work are preserved.
+
+Local evidence: full existing unit run 673 files / 10,516 passed / 6 skipped;
+subsequent focused billing/UI/compensation tests; isolated MySQL bootstrap,
+mapped refresh, suspension/expiry, stale response and reinstall tests; metadata
+schema inventory; web and Shopify type checks, repository lint and application
+builds. Exact PR-head CI is recorded in the PR, not inferred here.
+
+These are source and synthetic checks. None closes an installed-app acceptance
+gate above. The [execution packets](core-launch-execution-packets.md) contain
+resource selection/costs, additive SQL, runtime/pricing/schedule settings,
+public extension publication and bounded live journeys. Pending approvals are
+specific to those actions; the implementation plan itself remains approved.
+
+### Free-first testing checkpoint
+
+Additional infrastructure spending is capped at $0 under the September 27
+free-first decision. The paid proposal is an unapproved historical alternative;
+see the [current execution path](core-launch-execution-packets.md#current-approved-testing-path).
+The approved continuation uses local Docker,
+synthetic SQL fixtures and a capture-only email inbox. Seven HTTP probes, nine
+explicit core SQL checks and three localized email captures passed. The broad
+legacy SQL run has one deferred referral failure; it is not recorded as green.
+See [the evidence and limits](free-first-acceptance-2026-09-26.md). Installed-store,
+durability and real-provider acceptance remain open.
+
+The [yamaxdev preview preparation packet](yamaxdev-core-preview-packet-2026-09-26.md)
+records verified public app/store identities, the unchanged `example.com` active
+version, explicit core billing configuration for local tooling, and remaining
+sign-in/resource prerequisites. It is not approval or evidence of a live preview.
+
+## Testing-first execution consolidation
+
+The [September 26 plan reconciliation](testing-first-plan-reconciliation-2026-09-26.md)
+maps the last month of discoverable plans and open PRs to the reduced scope and
+orders local, installed-store, persistent acceptance and production evidence.
+It preserves the deferred backlog and all explicit execution approvals.
+
+Additional local evidence now includes six billing SQL lifecycle tests and an
+opt-in production-storage photo upload/erasure check against local SeaweedFS.
+The combined core SQL selection passes 11 tests; installed billing, storefront
+photo delivery and deployed R2 remain open. See the detailed [billing and photo limits](testing-first-plan-reconciliation-2026-09-26.md#free-billing-revalidation-checkpoint).
+
+The [fixed-coupon SQL checkpoint](testing-first-plan-reconciliation-2026-09-26.md#core-fixed-coupon-sql-checkpoint)
+adds three passing core cases and three passing legacy compatibility cases,
+including existing settlement and partial/full refunds after billing expiry.
+Shopify responses and earning inputs remain synthetic; installed checkout and
+worker restart acceptance are still required. Registration remains deferred.
+
+A subsequent [ambiguous-coupon recovery correction](testing-first-plan-reconciliation-2026-09-26.md#ambiguous-coupon-recovery-correction)
+passes the saved currency-verification timestamp to transactional adoption.
+Five core SQL cases now pass, including recovery after billing expiry and
+compensation when currency verification changes during lookup. Real provider
+and worker-process acceptance remain open.
+
+The [September 27 Flow and review crash checkpoint](testing-first-plan-reconciliation-2026-09-26.md#core-flow-and-review-crash-checkpoint--september-27)
+records 29 core Flow SQL cases and actual before/after-commit review process-kill
+checks. Core children preserve one participation award and suppress deferred tier
+jobs. Local transaction recovery is proven; real Flow receipts and deployed
+worker supervision remain required.
+
+The [local captured-invitation checkpoint](testing-first-plan-reconciliation-2026-09-26.md#captured-invitation-journey--september-27)
+adds EN/JA/VI production SMTP capture, token consumption, participation points
+and manual publication/hiding. The combined core selection passes 14 cases,
+including actual local photo storage. External inbox delivery, browser navigation
+and installed merchant acceptance remain open; registration remains deferred.
+
+The [customer and reviewer copy correction](testing-first-plan-reconciliation-2026-09-26.md#core-customer-and-reviewer-copy-reconciliation--september-27)
+removes deferred-feature claims from core participation disclosures and replaces
+the reviewer packet's obsolete free/company-only policy. Prior saved promises
+remain intact. Public materials still require installed acceptance and approval.
+
+The [core merchant Reviews interface](testing-first-plan-reconciliation-2026-09-26.md#core-merchant-reviews-interface--september-27)
+loads participation settings without the disabled coupon catalog and hides
+deferred controls. Seventy focused UI tests and both application type-checks
+pass; installed browser acceptance remains open.
+
+The [coupon issuer crash checkpoint](testing-first-plan-reconciliation-2026-09-26.md#core-coupon-issuer-crash-checkpoint--september-27)
+adds real process termination before the provider response and after committed
+issuance. Seven core SQL cases pass, including single-debit/event recovery after
+billing expiry. Provider and Redis boundaries remain synthetic; deployed worker
+supervision and actual checkout acceptance remain open.
+
+The [local logical restore checkpoint](testing-first-plan-reconciliation-2026-09-26.md#local-logical-restore-checkpoint--september-27)
+proves a separate synthetic SQL restore with 177 tables, 4,217 identical rows,
+matching read-only ledger audits and a rolled-back corruption-detection probe.
+The source remained unchanged; 143 known fixture anomalies were preserved,
+not repaired. This does not close managed backup/PITR, media/key recovery,
+queue containment or supervised-worker acceptance. Registration remains deferred.
+
+The [local worker CLI restart checkpoint](testing-first-plan-reconciliation-2026-09-26.md#local-worker-cli-restart-checkpoint--september-27)
+adds actual CLI termination and automatic local-harness restart with the normal
+five-minute SQL lease. The job completed on attempt 2 after 307.7 seconds; the
+other store remained untouched, and idle/active-batch SIGTERM checks exited
+cleanly. Its cleanup receipt was synthetic and already completed. Deployed supervision, alerts and
+installed mid-issuance recovery remain open.
+
+### September 27: setup-only development decision
+
+Hiro approved [ADR 0046](../adr/0046-setup-only-development-mode.md): isolated
+authentication/identity testing may omit hosted pricing handles while registration
+remains deferred. New benefits and provisioning remain disabled, including with
+retained valid subscription snapshots. Production rejects this mode. The
+[preview packet](yamaxdev-core-preview-packet-2026-09-26.md) documents the exact
+configuration; public exposure still requires its separate execution approval.
+
+### September 27: approved installed setup preview
+
+The [bounded setup preview](yamaxdev-setup-preview-evidence-2026-09-27.md) verified
+real authentication, immutable public app/shop identity and a second billing
+refresh with unavailable entitlement. No store or benefit rows were created.
+The preview is stopped and the active Shopify version restored. Initial tunnel
+routing and Vite first-load failures are recorded. A subsequent dependency-scan
+fix at `5b17457cfa` passed a new installed first load from an empty Vite cache,
+without manual reload, with interactive EN/JA/VI overview changes and unchanged
+setup-only entitlement. All 325 Shopify tests, types, build and focused lint pass;
+PR #176 merged as `e45516bdad` with passing pre-merge and post-merge CI. This bounded cold-start result does
+not close sustained runtime, staff-role, billing, live-webhook or customer-journey
+gates. The subscription banner uses its own browser locale, so synchronized
+language selection across the app is not proven by the overview test.
+
+### September 27: connected local review browser journey
+
+The [connected browser checkpoint](testing-first-plan-reconciliation-2026-09-26.md#connected-local-review-browser-journey--september-27)
+joins captured SMTP invitations to the production form, signed gateway, review
+HTTP handler and isolated SQL. All three EN/JA/VI one-star submissions passed,
+with exact consumed-token replay rejection, one participation award and unchanged
+points after publication/hiding. Photos were disabled for this run. Shopify
+identity, subscription authority and merchant moderation authority are synthetic;
+this closes a local integration gap without closing the installed P0.5 gate.
+
+### September 27: connected local photo review journey
+
+The [photo browser checkpoint](testing-first-plan-reconciliation-2026-09-26.md#connected-local-photo-review-journey--september-27)
+extends that fixture through actual local private storage. All three EN/JA/VI
+browser uploads and submissions passed, including attachment, anonymous-access
+denial, publication/hiding, exact object deletion and retention of the single
+participation award. Chrome upload permission was enabled by Hiro after an
+interrupted first attempt. The synthetic identity/authority and local-provider
+limits remain; installed P0.5 acceptance is still open.
+
+## Installed acceptance checkpoint — September 28
+
+Restricted yamaxdev testing now has real test-gateway purchase and two-stage
+refund receipts: order #1047 earned 2,000 points, then reversed 1,000 twice to zero.
+Order #1048 earned 1,000 points after the participation policy was activated. The
+blank customer-projection defect was fixed and the failed sync retried successfully.
+See [bounded evidence and open gates](restricted-yamaxdev-testing-2026-09-28.md#installed-purchase-and-refund-evidence--september-28).
+
+P0.4 and P0.5 remain open: coupon checkout is unproven, and Shopify denies the
+Email field, preventing review invitation creation. The email-access change is
+prepared but not saved pending explicit confirmation. P0.6 remains open because
+the required Flow extension is absent from the preview. These findings do not
+close any full release gate or authorize production.

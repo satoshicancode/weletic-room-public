@@ -1,4 +1,4 @@
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import {
   Banner,
   BlockStack,
@@ -11,13 +11,14 @@ import {
   Text,
   TextField,
 } from "@shopify/polaris";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   SHOPIFY_STAFF_PERMISSIONS,
   type ShopifyStaffGrantView,
   type ShopifyStaffPermission,
-} from "../../../../apps/web/lib/weletic/shopify/staff-contract";
+} from "@weletic/contracts/shopify/staff-contract";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StaffExport } from "../components/StaffExport";
+import { useMerchantLocale } from "../merchant-locale";
 import {
   createStaffAccessClient,
   StaffAccessClientError,
@@ -32,7 +33,7 @@ export default function StaffAccessPage() {
     () => createStaffAccessClient(() => shopify.idToken()),
     [shopify],
   );
-  const [locale, setLocale] = useState<"en" | "ja" | "vi">("en");
+  const [locale, setLocale] = useMerchantLocale();
   const copy = staffAccessCopy[locale];
   const [grants, setGrants] = useState<ShopifyStaffGrantView[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -126,6 +127,7 @@ export default function StaffAccessPage() {
       setNextCursor(page.nextCursor);
       setReloadRequired(false);
       setSaved(true);
+      shopify.toast?.show?.(copy.saved);
       resetEditor();
     } catch (failure) {
       fail(failure);
@@ -137,6 +139,7 @@ export default function StaffAccessPage() {
   return (
     <div lang={locale}>
       <Page title={copy.title}>
+        <TitleBar title={copy.title} />
         <BlockStack gap="400">
           <Select
             label={copy.language}

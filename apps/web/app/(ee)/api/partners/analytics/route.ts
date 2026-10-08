@@ -113,7 +113,7 @@ export const GET = withWorkspace(
 
       return NextResponse.json({
         ...analytics,
-        earnings: earnings._sum.earnings || 0,
+        earnings: Number(earnings._sum.earnings || 0),
       });
     }
 

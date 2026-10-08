@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { createWeleticId } from "@/lib/weletic/ids";
 import {
+  hasRemoteProvisionAttempt,
   markFinancialRewardExpired,
   provisionFinancialRewardReservation,
 } from "@/lib/weletic/loyalty/financial-reward-saga";
@@ -63,6 +64,7 @@ import {
   lookupShopifyGiftCard,
 } from "@/lib/weletic/loyalty/shopify-financial-rewards";
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
+import { reconcilePendingStoreCreditRedemption } from "@/lib/weletic/loyalty/store-credit-reconciliation";
 import { evaluateTierMaintenanceCycle } from "@/lib/weletic/loyalty/tier-lifecycle";
 import {
   handleVoucherPrivacyCleanup,
@@ -97,6 +99,11 @@ import {
   WeleticRedemptionStatus,
   WeleticRewardArtifactKind,
 } from "@prisma/client";
+import {
+  assertCoreLaunchJob,
+  CoreLaunchDeferredError,
+} from "../core-launch-policy";
+import { SubscriptionVerificationRequiredError } from "../shopify/app-pricing-service";
 import { CommunicationDeliveryReconciliationRequiredError } from "./communication-delivery-snapshot";
 import {
   ExpiryDeliveryReconciliationRequiredError,
@@ -153,7 +160,11 @@ type OutboxExecutionResult = {
     | "healed"
     | "financial_expired"
     | "financial_issued"
-    | "dedicated_referral_recovery";
+    | "dedicated_referral_recovery"
+    | "confirmed"
+    | "refunded_and_failed"
+    | "deferred"
+    | "skipped";
   voucherPrivacyCleanupOutcome?:
     | "deactivated"
     | "verified_absent"
@@ -1353,6 +1364,23 @@ export async function processOutboxJobsBatch(
       });
     } catch (error: any) {
       if (
+        error instanceof CoreLaunchDeferredError ||
+        error instanceof SubscriptionVerificationRequiredError
+      ) {
+        // Retain the job and its financial evidence. Disabled capabilities must
+        // not be acknowledged, consume retries or be silently discarded.
+        const deferredAt = new Date();
+        await restoreOutboxClaim({
+          db: prisma,
+          claim,
+          restoredAt: deferredAt,
+          retryAt: new Date(deferredAt.getTime() + 30 * 60_000),
+        });
+        summary.processed--;
+        summary.skipped++;
+        continue;
+      }
+      if (
         candidate.jobType === "REVIEW_POINTS_RECOVERY" &&
         error instanceof ReviewPointsRecoveryPendingError
       ) {
@@ -1585,6 +1613,7 @@ export async function executeOutboxJob(
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
   queueClaim?: HistoricalImportWorkerClaim | ExpiryDeliveryClaim,
 ): Promise<OutboxExecutionResult | undefined> {
+  assertCoreLaunchJob(job.jobType, job.payload);
   const deliveryClaim =
     queueClaim && "candidate" in queueClaim ? queueClaim : undefined;
   const importClaim = queueClaim && {
@@ -2532,6 +2561,20 @@ async function handleFinancialRedemptionRecovery({
       `Financial redemption ${redemption.id} is missing its immutable provisioning snapshot.`,
     );
   }
+
+  if (
+    redemption.artifactKind === WeleticRewardArtifactKind.store_credit &&
+    hasRemoteProvisionAttempt(redemption.metadata)
+  ) {
+    const reconciliation = await reconcilePendingStoreCreditRedemption({
+      storeId,
+      redemptionId: redemption.id,
+      now,
+      loyaltyMaintenancePermit,
+    });
+    return reconciliation.outcome;
+  }
+
   await provisionFinancialRewardReservation({
     storeId,
     accountId: redemption.accountId,
@@ -2775,6 +2818,7 @@ export async function handleRedemptionRecovery(
         redemption.account.status === "active" &&
         !hasShopifyCustomerRedactionTombstone(redemption.account.metadata);
       let configurationMatches = true;
+      let expectedCurrencyVerifiedAt: string | null | undefined;
       if (accountIsActive) {
         const snapshot = readLoyaltyRedemptionProvisioningSnapshot(
           redemption.metadata,
@@ -2784,6 +2828,7 @@ export async function handleRedemptionRecovery(
             `Provisioning redemption ${redemptionId} is missing its immutable Shopify configuration snapshot.`,
           );
         }
+        expectedCurrencyVerifiedAt = snapshot.currencyVerifiedAt;
         const snapshotExpiresAt = snapshot.expiresAt
           ? new Date(snapshot.expiresAt)
           : null;
@@ -2817,6 +2862,7 @@ export async function handleRedemptionRecovery(
         remoteDiscount: remoteNode,
         accountIsActive,
         configurationMatches,
+        expectedCurrencyVerifiedAt,
         shopDomain: creds.shopDomain,
         accessToken: creds.accessToken,
         loyaltyMaintenancePermit,

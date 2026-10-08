@@ -2,8 +2,8 @@ import { json } from "@remix-run/node";
 import {
   merchantAccountRowExportRequestSchema,
   verifyMerchantAccountRowExportResponse,
-} from "../../../apps/web/lib/weletic/loyalty/account-row-export-contract";
-import { readWeleticShopifyRequestBodyBytes } from "../../../apps/web/lib/weletic/shopify/service-auth";
+} from "@weletic/contracts/loyalty/account-row-export-contract";
+import { readWeleticShopifyRequestBodyBytes } from "@weletic/contracts/shopify/service-auth";
 import type { createMerchantAuthenticator } from "./merchant-authentication.server";
 import { weleticApiJson, WeleticGatewayError } from "./weletic-api.server";
 

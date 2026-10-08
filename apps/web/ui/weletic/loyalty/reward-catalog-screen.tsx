@@ -6,6 +6,7 @@ import type {
   RewardCatalogResponse,
   RewardCatalogWrite,
 } from "../../../lib/weletic/loyalty/reward-catalog-contract";
+import { useCoreLaunch } from "../core-launch-context";
 import {
   changeRewardCatalogType,
   newRewardCatalogFields,
@@ -251,6 +252,7 @@ function RewardEditor({
   onSave: (fields: RewardCatalogFields) => void;
   onCancel: () => void;
 }) {
+  const coreLaunch = useCoreLaunch();
   const [form, setForm] = React.useState(() =>
     rewardCatalogFormFromFields(initial),
   );
@@ -385,7 +387,21 @@ function RewardEditor({
                   onChange={(event) => change(key, event.target.value)}
                   aria-invalid={errors.includes(key)}
                 >
-                  {options[key]!.map(([value, ...text]) => (
+                  {options[key]!.filter(
+                    ([value]) =>
+                      !coreLaunch ||
+                      !["rewardType", "exchangeType", "purchaseType"].includes(
+                        key,
+                      ) ||
+                      value ===
+                        (
+                          {
+                            rewardType: "amount_off",
+                            exchangeType: "fixed",
+                            purchaseType: "one_time",
+                          } as Record<string, string>
+                        )[key],
+                  ).map(([value, ...text]) => (
                     <option key={value} value={value}>
                       {text[language]}
                     </option>

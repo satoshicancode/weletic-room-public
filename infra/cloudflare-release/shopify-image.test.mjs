@@ -45,7 +45,11 @@ test("Vite selects the adapter from the shared build policy", () => {
   const vite = read("../../packages/shopify-app/vite.config.ts");
   assert.match(
     vite,
-    /presets: useNodeShopifyBuild\(process.env\) \? \[\] : \[vercelPreset\(\)\]/,
+    /import \{ useNodeShopifyBuild as isNodeShopifyBuild \} from "\.\/node-build-policy\.mjs"/,
+  );
+  assert.match(
+    vite,
+    /presets: isNodeShopifyBuild\(process.env\) \? \[\] : \[vercelPreset\(\)\]/,
   );
 });
 

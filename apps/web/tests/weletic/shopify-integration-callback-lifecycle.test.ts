@@ -474,7 +474,7 @@ describe("Shopify integration lifecycle boundary", () => {
           shopCurrency: "JPY",
           currencyVerifiedAt: expect.any(Date),
           installationGeneration: expect.stringMatching(/^sgen_/),
-          apiVersion: "2026-07",
+          apiVersion: "2026-10",
           syncStatus: "pending",
           complianceState: "active",
         },

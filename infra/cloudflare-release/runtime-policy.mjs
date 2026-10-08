@@ -4,6 +4,7 @@ import {
   PUBLIC_LOYALTY_APP_ORIGIN,
   PUBLIC_LOYALTY_CLIENT_ID,
 } from "../../packages/shopify-app/app/public-runtime-policy.mjs";
+import { assertCoreBillingEnvironment } from "./billing-policy.mjs";
 
 const fail = () => {
   throw new Error("Cloudflare runtime admission rejected");
@@ -22,6 +23,7 @@ export function assertCloudflareRuntime(role, env) {
     typeof env !== "object" ||
     Array.isArray(env) ||
     env.NODE_ENV !== "production" ||
+    env.WELETIC_FEATURE_PROFILE !== "core-v1" ||
     env.SHOPIFY_API_KEY !== PUBLIC_LOYALTY_CLIENT_ID ||
     env.SHOPIFY_APP_URL !== PUBLIC_LOYALTY_APP_ORIGIN
   )
@@ -46,6 +48,11 @@ export function assertCloudflareRuntime(role, env) {
     "WELETIC_LOCAL_CONTAINER_BUILD",
   ]) {
     if (env[key] !== undefined && env[key] !== "0") fail();
+  }
+  try {
+    assertCoreBillingEnvironment(role, env);
+  } catch {
+    fail();
   }
   const service = secret(env.WELETIC_SHOPIFY_SERVICE_SECRET);
   // Only a memory limit is supported. Preloads/loaders can change the admitted

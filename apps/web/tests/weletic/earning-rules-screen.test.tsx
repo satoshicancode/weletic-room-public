@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EarningRulesResponse } from "../../lib/weletic/loyalty/earning-rule-contract";
+import { CoreLaunchContext } from "../../ui/weletic/core-launch-context";
 import {
   newEarningRuleForm,
   parseEarningRuleForm,
@@ -196,4 +197,36 @@ describe("shared earning-rule management screen", () => {
     expect(transport.save).toHaveBeenCalledTimes(1);
     await act(async () => resolve(view));
   });
+});
+
+it("creates a valid one-time purchase rule without hidden subscription fields", async () => {
+  await act(async () =>
+    root.render(
+      createElement(
+        CoreLaunchContext.Provider,
+        { value: true },
+        createElement(EarningRulesScreen, { transport }),
+      ),
+    ),
+  );
+  await click("New rule");
+  const name = container.querySelector<HTMLInputElement>('input[name="name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!.call(name, "Core purchase");
+    name.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await submit();
+  expect(transport.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      rule: expect.objectContaining({
+        triggerCode: "order_paid",
+        purchaseType: "one_time",
+        subscriptionCadence: "first_payment",
+        subscriptionPaymentLimit: null,
+      }),
+    }),
+  );
 });

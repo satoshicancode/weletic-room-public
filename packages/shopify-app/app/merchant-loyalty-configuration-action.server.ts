@@ -1,6 +1,6 @@
 import { json } from "@remix-run/node";
-import { shopifyLoyaltyConfigurationInputSchema } from "../../../apps/web/lib/weletic/loyalty/configuration-contract";
-import { readWeleticShopifyRequestBodyBytes } from "../../../apps/web/lib/weletic/shopify/service-auth";
+import { shopifyLoyaltyConfigurationInputSchema } from "@weletic/contracts/loyalty/configuration-contract";
+import { readWeleticShopifyRequestBodyBytes } from "@weletic/contracts/shopify/service-auth";
 import type { createMerchantAuthenticator } from "./merchant-authentication.server";
 import { weleticApiJson, WeleticGatewayError } from "./weletic-api.server";
 

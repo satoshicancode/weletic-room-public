@@ -12,7 +12,12 @@ import { redis } from "@/lib/upstash";
 import { sendWorkspaceWebhook } from "@/lib/webhook/publish";
 import { transformSaleEventData } from "@/lib/webhook/transform";
 import { recordWeleticOrder } from "@/lib/weletic/commerce/record-order";
-import { decimalToMinorUnits } from "@/lib/weletic/money";
+import { getAccountingFxQuote } from "@/lib/weletic/fx";
+import {
+  convertMoney,
+  decimalToMinorUnits,
+  normalizeCurrency,
+} from "@/lib/weletic/money";
 import {
   assertShopifySettlementLockContext,
   type ShopifySettlementLockContext,
@@ -58,11 +63,9 @@ export async function createShopifySale({
     current_subtotal_price_set: { shop_money: shopMoney },
   } = order;
 
-  let amount = Number(
-    decimalToMinorUnits(shopMoney.amount, shopMoney.currency_code),
-  );
   const { link_id: linkId } = leadData;
-  let currency = shopMoney.currency_code.toLowerCase();
+  const shopCurrency = normalizeCurrency(shopMoney.currency_code);
+  const rawShopAmount = decimalToMinorUnits(shopMoney.amount, shopCurrency);
 
   // Skip if invoice id is already processed
   const idempotencyKey = `dub_sale_events:linkId:${linkId}:invoiceId:${invoiceId}`;
@@ -85,12 +88,33 @@ export async function createShopifySale({
     });
     const attributedLink = await prisma.link.findUniqueOrThrow({
       where: { id: linkId },
+      include: {
+        program: {
+          select: { accountingCurrency: true },
+        },
+      },
     });
     if (attributedLink.projectId !== workspaceId) {
       throw new Error(
         "Attributed link does not belong to the Shopify workspace.",
       );
     }
+
+    const targetStatsCurrency = normalizeCurrency(
+      attributedLink.program?.accountingCurrency || "USD",
+    );
+    const statsFxQuote = await getAccountingFxQuote({
+      base: shopCurrency,
+      quote: targetStatsCurrency,
+    });
+    const convertedStatsMoney = convertMoney(
+      { amount: rawShopAmount, currency: shopCurrency },
+      statsFxQuote,
+    );
+    let statsAmount = Number(convertedStatsMoney.amount);
+    let amount = statsAmount;
+    let currency = targetStatsCurrency.toLowerCase();
+
     let webhookPartner;
     let ledgerOrderId: string | undefined;
     let analyticsRecordedAt: Date | null = null;
@@ -125,6 +149,7 @@ export async function createShopifySale({
       }
       amount = Number(ledger.accountingNet);
       currency = ledger.accountingCurrency.toLowerCase();
+      statsAmount = amount;
       const enrollment = await getProgramEnrollmentOrThrow({
         partnerId: attributedLink.partnerId,
         programId: attributedLink.programId,
@@ -175,7 +200,7 @@ export async function createShopifySale({
             lastConversionAt: new Date(),
           }),
           sales: { increment: 1 },
-          saleAmount: { increment: amount },
+          saleAmount: { increment: statsAmount },
         },
         include: includeTags,
       });
@@ -187,7 +212,7 @@ export async function createShopifySale({
         where: { id: existingCustomer.id },
         data: {
           sales: { increment: 1 },
-          saleAmount: { increment: amount },
+          saleAmount: { increment: statsAmount },
           firstSaleAt: existingCustomer.firstSaleAt ? undefined : new Date(),
         },
       });

@@ -46,7 +46,7 @@ export async function GET(request: Request) {
 
   // 1. Verify HMAC signature & clock skew
   const bodyText = (await readWeleticShopifyRequestBody(request)) ?? "";
-  if (!verifyWeleticShopifyRequest({ request, body: bodyText })) {
+  if (!(await verifyWeleticShopifyRequest({ request, body: bodyText }))) {
     return loyaltyErrorResponse(
       "unauthorized",
       "Unauthorized service request",

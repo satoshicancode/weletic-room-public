@@ -111,8 +111,6 @@ model WeleticShopifyStore {
   createdAt               DateTime                           @default(now())
   updatedAt               DateTime                           @updatedAt
 
-  project                      Project                                   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  program                      Program                                   @relation(fields: [programId], references: [id], onDelete: Cascade)
   markets                      WeleticShopifyMarket[]
   products                     WeleticShopifyProduct[]
   syncRuns                     WeleticShopifySyncRun[]
@@ -333,7 +331,6 @@ model WeleticShopifyProduct {
   updatedAt             DateTime             @updatedAt
 
   store           WeleticShopifyStore         @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  program         Program                     @relation(fields: [programId], references: [id], onDelete: Cascade)
   variants        WeleticShopifyVariant[]
   translations    WeleticShopifyTranslation[]
   productLinks    WeleticProductLink[]
@@ -473,12 +470,9 @@ model WeleticProductLink {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  program Program                @relation(fields: [programId], references: [id], onDelete: Cascade)
-  partner Partner                @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   product WeleticShopifyProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
   variant WeleticShopifyVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
   market  WeleticShopifyMarket?  @relation(fields: [marketId], references: [id], onDelete: SetNull)
-  link    Link                   @relation(fields: [linkId], references: [id], onDelete: Cascade)
 
   @@index([programId, partnerId, createdAt])
   @@index([productId, marketId])
@@ -548,9 +542,6 @@ model WeleticCommerceOrder {
   updatedAt               DateTime                      @updatedAt
 
   store                 WeleticShopifyStore               @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  program               Program                           @relation(fields: [programId], references: [id])
-  partner               Partner?                          @relation(fields: [partnerId], references: [id], onDelete: SetNull)
-  link                  Link?                             @relation(fields: [linkId], references: [id], onDelete: SetNull)
   shopper               WeleticShopper?                   @relation(fields: [shopperId], references: [id], onDelete: SetNull)
   market                WeleticShopifyMarket?             @relation(fields: [marketId], references: [id], onDelete: SetNull)
   fxRateSnapshot        WeleticFxRateSnapshot?            @relation(fields: [fxRateSnapshotId], references: [id], onDelete: SetNull)
@@ -691,8 +682,6 @@ model WeleticCommissionRule {
   createdByUserId      String?
   createdAt            DateTime                  @default(now())
 
-  program      Program                        @relation(fields: [programId], references: [id], onDelete: Cascade)
-  partner      Partner?                       @relation(fields: [partnerId], references: [id], onDelete: Cascade)
   product      WeleticShopifyProduct?         @relation(fields: [productId], references: [id], onDelete: Cascade)
   variant      WeleticShopifyVariant?         @relation(fields: [variantId], references: [id], onDelete: Cascade)
   calculations WeleticCommissionCalculation[]
@@ -722,7 +711,6 @@ model WeleticCommissionCalculation {
 
   orderLine  WeleticCommerceOrderLine?  @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
   refundLine WeleticCommerceRefundLine? @relation(fields: [refundLineId], references: [id], onDelete: Cascade)
-  commission Commission?                @relation(fields: [commissionId], references: [id], onDelete: SetNull)
   rule       WeleticCommissionRule      @relation(fields: [ruleId], references: [id])
 
   @@index(orderLineId)
@@ -751,8 +739,6 @@ model WeleticPayoutProfile {
   createdAt           DateTime                   @default(now())
   updatedAt           DateTime                   @updatedAt
 
-  partner Partner              @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  program Program              @relation(fields: [programId], references: [id], onDelete: Cascade)
   quotes  WeleticPayoutQuote[]
 
   @@unique([partnerId, programId, payoutCurrency, provider])
@@ -778,7 +764,6 @@ model WeleticPayoutQuote {
   expiresAt          DateTime?
   createdAt          DateTime  @default(now())
 
-  payout         Payout                 @relation(fields: [payoutId], references: [id], onDelete: Cascade)
   profile        WeleticPayoutProfile?  @relation(fields: [payoutProfileId], references: [id], onDelete: SetNull)
   fxRateSnapshot WeleticFxRateSnapshot? @relation(fields: [fxRateSnapshotId], references: [id], onDelete: SetNull)
 
@@ -797,8 +782,6 @@ model WeleticPayoutStatement {
   snapshot           Json     @db.Json
   generatedAt        DateTime
   createdAt          DateTime @default(now())
-
-  payout Payout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
 }
 
 model WeleticReconciliationIssue {

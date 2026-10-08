@@ -17,7 +17,7 @@ interface SessionResponse {
   }>;
 }
 
-const SHOPIFY_ACCESS_SCOPE_API_VERSION = "2026-07";
+const SHOPIFY_ACCESS_SCOPE_API_VERSION = "2026-10";
 const CURRENT_APP_INSTALLATION_SCOPES_QUERY = `
   query WeleticCurrentAppInstallationScopes {
     currentAppInstallation {

@@ -14,7 +14,22 @@ import { runtimeCommand, startRuntime } from "./start.mjs";
 
 function fixture(role) {
   return {
+    ...(role === "shopify"
+      ? {
+          SHOPIFY_APP_HANDLE: "weletic-room",
+          WELETIC_SUPPORT_EMAIL: "support@example.test",
+        }
+      : role === "web"
+        ? {
+            SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1",
+            SHOPIFY_PARTNER_ORGANIZATION_ID: "123",
+            SHOPIFY_PARTNER_API_TOKEN: "synthetic-partner-api-token-not-real",
+            WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE: "core-monthly",
+            WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE: "company-free",
+          }
+        : { SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1" }),
     NODE_ENV: "production",
+    WELETIC_FEATURE_PROFILE: "core-v1",
     SHOPIFY_API_KEY: client,
     SHOPIFY_APP_URL: app,
     WELETIC_SHOPIFY_SERVICE_SECRET: "synthetic-service".repeat(4),
@@ -81,6 +96,17 @@ function harness(role = "web", changes = {}) {
 }
 
 for (const role of ["web", "shopify", "outbox"]) {
+  test(`${role}: rejects omitted or legacy feature profiles`, () => {
+    for (const profile of [undefined, "legacy", "core-vl", ""])
+      assert.throws(
+        () =>
+          assertCloudflareRuntime(role, {
+            ...fixture(role),
+            WELETIC_FEATURE_PROFILE: profile,
+          }),
+        /admission rejected/,
+      );
+  });
   test(`${role}: accepts only explicit review route configuration without changing other admission`, () => {
     for (const value of [undefined, "0", "1"])
       assert.doesNotThrow(() =>

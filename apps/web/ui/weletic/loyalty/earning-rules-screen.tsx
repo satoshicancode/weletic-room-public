@@ -5,6 +5,7 @@ import type {
   EarningRulesResponse,
   EarningRuleWrite,
 } from "../../../lib/weletic/loyalty/earning-rule-contract";
+import { useCoreLaunch } from "../core-launch-context";
 import { earningRuleCopy, type EarningRuleLocale } from "./earning-rule-copy";
 import { EarningRuleEditor } from "./earning-rule-editor";
 import {
@@ -219,6 +220,7 @@ function ScopeScreen({
     operation: () => Promise<EarningRulesResponse>,
   ) => Promise<EarningRulesResponse | null>;
 }) {
+  const coreLaunch = useCoreLaunch();
   const copy = messages[locale];
   const [view, setView] = React.useState<EarningRulesResponse | null>(null);
   const [failed, setFailed] = React.useState(false);
@@ -309,7 +311,19 @@ function ScopeScreen({
               onClick={() => {
                 setSaved(false);
                 setRetiring(null);
-                setEditing({ id: null, form: newEarningRuleForm() });
+                setEditing({
+                  id: null,
+                  form: {
+                    ...newEarningRuleForm(),
+                    ...(coreLaunch
+                      ? {
+                          purchaseType: "one_time" as const,
+                          subscriptionCadence: "first_payment" as const,
+                          subscriptionPaymentLimit: "",
+                        }
+                      : {}),
+                  },
+                });
               }}
             >
               {copy.create}

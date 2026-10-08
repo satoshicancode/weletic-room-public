@@ -23,6 +23,7 @@ import {
 } from "@/lib/weletic/shopify/store-compliance-state";
 import { resolveShopifyStoreByDomain } from "@/lib/weletic/shopify/store-resolver";
 import { Prisma, WeleticLoyaltyReferralStatus } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
 import {
   assertRecordedShopifyOrder,
   shopifyOrderSettlementLockKey,
@@ -74,16 +75,15 @@ export function calculateRefundReversal({
   return reversal > BigInt(0) ? reversal : BigInt(0);
 }
 
-function toSafeInt(value: bigint, field: string) {
-  const number = Number(value);
-  if (
-    !Number.isSafeInteger(number) ||
-    number > 2_147_483_647 ||
-    number < -2_147_483_648
-  ) {
-    throw new Error(`${field} exceeds the Dub integer money range.`);
+const MAX_SAFE_BIGINT = BigInt("9223372036854775807");
+const MIN_SAFE_BIGINT = BigInt("-9223372036854775808");
+
+export function toSafeBigInt(value: bigint | number, field: string): bigint {
+  const bigValue = typeof value === "bigint" ? value : BigInt(value);
+  if (bigValue > MAX_SAFE_BIGINT || bigValue < MIN_SAFE_BIGINT) {
+    throw new Error(`${field} exceeds the 64-bit integer money range.`);
   }
-  return number;
+  return bigValue;
 }
 
 async function assertRefundStoreAcceptsWrite({
@@ -142,21 +142,13 @@ export async function recordWeleticRefund(
   const refundEvent = refundSchema.parse(input.event);
   let workspaceId = input.workspaceId;
   if (!workspaceId && input.shopDomain) {
-    const store =
-      (await prisma.weleticShopifyStore?.findFirst?.({
-        where: { shopDomain: input.shopDomain },
-      })) ||
-      (await prisma.weleticShopifyStore?.findUnique?.({
-        where: { shopDomain: input.shopDomain } as any,
-      }));
-    if (store?.projectId || store?.id) {
-      workspaceId = (store.projectId || store.id) as string;
-    } else {
-      const resolved = await resolveShopifyStoreByDomain(input.shopDomain);
-      if (resolved?.workspaceId) {
-        workspaceId = resolved.workspaceId;
-      }
+    const resolved = await resolveShopifyStoreByDomain(input.shopDomain);
+    if (!resolved?.workspaceId) {
+      throw new Error(
+        `Shopify store ${input.shopDomain} could not be resolved`,
+      );
     }
+    workspaceId = resolved.workspaceId;
   }
   if (!workspaceId) {
     throw new Error(`Shopify store ${input.shopDomain} could not be resolved`);
@@ -316,7 +308,7 @@ async function processLoyaltyRefundEffectsUnlocked({
     }
   }
 
-  if (shopperId && !privacyMinimizedFinancialSettlement) {
+  if (shopperId && !privacyMinimizedFinancialSettlement && !isCoreLaunch()) {
     const { evaluateAccountTier } = await import("@/lib/weletic/loyalty/tiers");
     const loyaltyAccount = await prisma.weleticLoyaltyAccount.findUnique({
       where: { shopperId },
@@ -473,16 +465,9 @@ async function recordWeleticRefundUnlocked({
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
 }) {
   const refundEvent = refundSchema.parse(event);
-  const store =
-    (await prisma.weleticShopifyStore.findUnique({
-      where: { projectId: workspaceId },
-    })) ||
-    (await prisma.weleticShopifyStore.findUnique({
-      where: { id: workspaceId } as any,
-    })) ||
-    (await prisma.weleticShopifyStore.findFirst?.({
-      where: { OR: [{ projectId: workspaceId }, { id: workspaceId }] },
-    }));
+  const store = await prisma.weleticShopifyStore.findUnique({
+    where: { projectId: workspaceId },
+  });
   if (!store)
     throw new Error(`Weletic Shopify store ${workspaceId} was not synced.`);
   await assertRefundStoreAcceptsWrite({
@@ -774,9 +759,9 @@ async function recordWeleticRefundUnlocked({
             eventId: `weletic:shopify:refund:${store.id}:${externalId}`,
             description: `Refund for Shopify order ${order.orderName ?? order.externalId}`,
             type: "custom",
-            amount: 0,
+            amount: BigInt(0),
             quantity: lines.reduce((total, line) => total + line.quantity, 0),
-            earnings: toSafeInt(totalEarnings, "Refund reversal"),
+            earnings: toSafeBigInt(totalEarnings, "Refund reversal"),
             currency: order.accountingCurrency,
             status: "pending",
             sourceCommissionId,

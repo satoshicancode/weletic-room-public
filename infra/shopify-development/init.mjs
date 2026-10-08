@@ -3,6 +3,12 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PUBLIC_LOYALTY_SCOPES } from "../../packages/shopify-app/app/public-runtime-policy.mjs";
+import {
+  DEFAULT_SERVICE_PORTS,
+  parseProvisioningFlags,
+  servicePortsComposeOverride,
+  validateServicePorts,
+} from "./service-ports.mjs";
 
 export const databaseName = "weletic_loyalty_dev";
 export const buckets = [
@@ -23,7 +29,11 @@ export const hasRetainedEnvironment = (root) =>
   );
 
 /** Generate new local credentials only. Never rotate or overwrite existing files. */
-export function initializeLocalServices(root) {
+export function initializeLocalServices(
+  root,
+  selectedPorts = DEFAULT_SERVICE_PORTS,
+) {
+  const ports = validateServicePorts(selectedPorts);
   const directory = join(root, secretDirectory);
   const webPath = join(root, "apps/web/.env.loyalty.local");
   const shopifyPath = join(root, "packages/shopify-app/.env.loyalty.local");
@@ -48,6 +58,11 @@ export function initializeLocalServices(root) {
   const serviceSecret = secret();
   const writeSecret = (path, value) =>
     writeFileSync(path, value, { mode: 0o600, flag: "wx" });
+  writeSecret(join(directory, "service-ports.json"), JSON.stringify(ports));
+  writeSecret(
+    join(directory, "compose-ports.yaml"),
+    servicePortsComposeOverride(ports),
+  );
   writeSecret(join(directory, "mysql-root"), secret());
   writeSecret(join(directory, "mysql-app"), databasePassword);
   writeSecret(
@@ -87,8 +102,8 @@ export function initializeLocalServices(root) {
     }),
   );
   const web = {
-    DATABASE_URL: `mysql://loyalty_dev:${databasePassword}@127.0.0.1:3307/${databaseName}`,
-    PLANETSCALE_DATABASE_URL: `http://loyalty_dev:${databasePassword}@127.0.0.1:3902/${databaseName}`,
+    DATABASE_URL: `mysql://loyalty_dev:${databasePassword}@127.0.0.1:${ports.mysql}/${databaseName}`,
+    PLANETSCALE_DATABASE_URL: `http://loyalty_dev:${databasePassword}@127.0.0.1:${ports.sqlHttp}/${databaseName}`,
     ENCRYPTION_KEY: secret(),
     NEXTAUTH_SECRET: secret(),
     CRON_SECRET: secret(),
@@ -146,11 +161,10 @@ if (
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
   try {
-    if (process.argv.slice(2).join(" ") !== "--confirm-local-provisioning") {
-      throw new Error("Explicit local provisioning confirmation required.");
-    }
+    const ports = parseProvisioningFlags(process.argv.slice(2));
     initializeLocalServices(
       resolve(dirname(fileURLToPath(import.meta.url)), "../.."),
+      ports,
     );
     console.log(
       "Created private local configuration. No services started; Shopify secret remains unset.",

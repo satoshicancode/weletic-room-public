@@ -99,7 +99,7 @@ async function main() {
 
     try {
       const resp = await fetch(
-        "http://localhost:3457/graphiql/graphql.json?key=8d84b19a2ec1298c8ddc775d74143afedffa0cd7c0e2975cea9e1e70d6631847&api_version=2025-01",
+        "http://localhost:3457/graphiql/graphql.json?key=8d84b19a2ec1298c8ddc775d74143afedffa0cd7c0e2975cea9e1e70d6631847&api_version=2026-10",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

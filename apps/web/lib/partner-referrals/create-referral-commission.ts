@@ -134,11 +134,11 @@ export const createReferralCommission = async (
 
     if (trigger === "commissionEarned") {
       commissionData.earnings = Math.floor(
-        (sourceCommission.earnings * amountInPercentage) / 100,
+        (Number(sourceCommission.earnings) * amountInPercentage) / 100,
       );
     } else if (trigger === "saleRecorded") {
       commissionData.earnings = Math.floor(
-        (sourceCommission.amount * amountInPercentage) / 100,
+        (Number(sourceCommission.amount) * amountInPercentage) / 100,
       );
     }
 

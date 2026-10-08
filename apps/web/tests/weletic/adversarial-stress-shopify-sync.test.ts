@@ -113,6 +113,7 @@ vi.mock("@/lib/api/links/cache", () => ({
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", async () => {
   return {
+    SHOPIFY_ADMIN_API_VERSION: "2026-10",
     shopifyAdminGraphql: vi.fn(),
     ShopifyAdminGraphqlError: class extends Error {
       code: string;
@@ -400,6 +401,10 @@ vi.mock("@/lib/prisma", () => ({
     },
     weleticRewardRedemption: {
       findMany: vi.fn().mockResolvedValue([]),
+    },
+    weleticShopifyShopPrivacyTombstone: {
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
     },
     weleticShopifyWebhookEvent: {
       create: vi.fn(async ({ data }: { data: any }) => {
@@ -981,24 +986,36 @@ describe("Adversarial Stress Test Suite (Challenger 1 Verification)", () => {
     });
 
     it("2.3: returns 503 when SHOPIFY_WEBHOOK_SECRET is missing in production mode", async () => {
+      const origEnv = process.env.NODE_ENV;
+      // @ts-expect-error test override
+      process.env.NODE_ENV = "production";
       delete process.env.SHOPIFY_WEBHOOK_SECRET;
 
-      const rawBody = JSON.stringify({ id: 1001 });
-      const res = await shopifyWebhookHandler(
-        new Request("https://app.weletic.com/api/shopify/integration/webhook", {
-          method: "POST",
-          headers: {
-            "x-shopify-topic": "orders/paid",
-            "x-shopify-shop-domain": "yamax-adversarial.myshopify.com",
-            "content-type": "application/json",
-          },
-          body: rawBody,
-        }),
-      );
+      try {
+        const rawBody = JSON.stringify({ id: 1001 });
+        const res = await shopifyWebhookHandler(
+          new Request(
+            "https://app.weletic.com/api/shopify/integration/webhook",
+            {
+              method: "POST",
+              headers: {
+                "x-shopify-topic": "orders/paid",
+                "x-shopify-shop-domain": "yamax-adversarial.myshopify.com",
+                "content-type": "application/json",
+              },
+              body: rawBody,
+            },
+          ),
+        );
 
-      expect(res.status).toBe(503);
-      const text = await res.text();
-      expect(text).toContain("Webhook verification is unavailable");
+        expect(res.status).toBe(503);
+        const text = await res.text();
+        expect(text).toContain("Webhook verification is unavailable");
+      } finally {
+        // @ts-expect-error test restore
+        process.env.NODE_ENV = origEnv;
+        process.env.SHOPIFY_WEBHOOK_SECRET = secret;
+      }
     });
 
     it("2.4: local dev mode accepts valid secret signature and rejects invalid signature when header provided", async () => {

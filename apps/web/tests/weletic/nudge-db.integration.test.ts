@@ -110,7 +110,7 @@ async function seed() {
       storeAccessState: "active",
       complianceState: "active",
       installationGeneration: "g1",
-      apiVersion: "2026-07",
+      apiVersion: "2026-10",
     },
   });
   await prisma.weleticLoyaltyProgram.create({

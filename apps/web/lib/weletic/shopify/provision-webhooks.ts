@@ -1,4 +1,7 @@
-import { shopifyAdminGraphql } from "@/lib/integrations/shopify/admin-graphql";
+import {
+  SHOPIFY_ADMIN_API_VERSION,
+  shopifyAdminGraphql,
+} from "@/lib/integrations/shopify/admin-graphql";
 import { APP_DOMAIN_WITH_NGROK } from "@dub/utils";
 import { resolvePublicShopifyWebhookCallback } from "./public-webhook-policy";
 
@@ -129,7 +132,7 @@ async function auditExactWebhookSubscriptions({
   }>({
     shopifyStoreId: shopDomain,
     accessToken,
-    apiVersion: "2026-07",
+    apiVersion: SHOPIFY_ADMIN_API_VERSION,
     query: AUDIT_WEBHOOK_SUBSCRIPTIONS_QUERY,
     variables: { first: 250, topics },
     allowSdkFallback,
@@ -197,7 +200,7 @@ export async function ensureShopifyWebhooksRegistered({
       }>({
         shopifyStoreId: shopDomain,
         accessToken,
-        apiVersion: "2026-07",
+        apiVersion: SHOPIFY_ADMIN_API_VERSION,
         query: CREATE_WEBHOOK_MUTATION,
         allowSdkFallback,
         variables: {
@@ -327,7 +330,7 @@ export async function ensureShopifySegmentWebhooksRegistered({
       }>({
         shopifyStoreId: shopDomain,
         accessToken,
-        apiVersion: "2026-07",
+        apiVersion: SHOPIFY_ADMIN_API_VERSION,
         query: CREATE_WEBHOOK_MUTATION,
         variables: {
           topic,

@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { assertCoreLaunchReward } from "../core-launch-policy";
 import {
   rewardCatalogContainSchema,
   rewardCatalogWriteSchema,
@@ -97,6 +98,7 @@ export async function saveRewardCatalogInTransaction({
   input: unknown;
 }) {
   const data = rewardCatalogWriteSchema.parse(input);
+  assertCoreLaunchReward(data.reward);
   if (data.expectedInstallationGeneration !== installationGeneration)
     throw new RewardDefinitionConflictError();
   const state = await readRewardCatalogInTransaction(tx, storeId);

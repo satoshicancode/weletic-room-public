@@ -1,3 +1,4 @@
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { withShopifyCustomerSettlementLocks } from "../shopify/customer-settlement-lock";
@@ -70,7 +71,7 @@ export async function handleFlowPointsAction(
     // Read-only live shop verification happens outside SQL/Redis locks.
     // Redirects are forbidden: the token must never leave the configured shop.
     const verification = await fetch(
-      `https://${identity.shop}/admin/api/2026-07/graphql.json`,
+      `https://${identity.shop}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/graphql.json`,
       {
         method: "POST",
         redirect: "error",

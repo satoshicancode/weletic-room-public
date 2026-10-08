@@ -74,7 +74,7 @@ function financialArtifactKind(rewardType: FinancialRewardType) {
     : WeleticRewardArtifactKind.store_credit;
 }
 
-function hasRemoteProvisionAttempt(metadata: unknown) {
+export function hasRemoteProvisionAttempt(metadata: unknown) {
   return Boolean(
     metadata &&
       typeof metadata === "object" &&

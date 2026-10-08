@@ -1,5 +1,6 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import { Prisma, type WeleticLoyaltyProgram } from "@prisma/client";
+import { CoreLaunchDeferredError, isCoreLaunch } from "../core-launch-policy";
 import { publishLoyaltyEarnPolicyRevision } from "./earn-policy-revision";
 import { calculateNextPointsExpiryDate } from "./points-expiry-policy";
 
@@ -109,11 +110,22 @@ export async function writeValidatedLoyaltySettingsInTransaction(
       : parsedExpiryDays !== undefined
         ? 0
         : existing?.pointsExpiryMonths || 0;
+  const nextVipAutoDowngradeEnabled =
+    vipAutoDowngradeEnabled ??
+    existing?.vipAutoDowngradeEnabled ??
+    !isCoreLaunch();
   const nextStatus = status ?? existing?.status ?? "draft";
   const nextKillSwitch =
     killSwitchActive !== undefined
       ? Boolean(killSwitchActive)
       : existing?.killSwitchActive || false;
+  if (
+    isCoreLaunch() &&
+    nextStatus === "active" &&
+    !nextKillSwitch &&
+    (nextExpiryDays > 0 || nextExpiryMonths > 0 || nextVipAutoDowngradeEnabled)
+  )
+    throw new CoreLaunchDeferredError();
   const currentEnabled = Boolean(
     existing &&
       existing.status === "active" &&
@@ -214,8 +226,7 @@ export async function writeValidatedLoyaltySettingsInTransaction(
       vipMilestoneMode: vipMilestoneMode || "amount_spent",
       vipTimeframe: vipTimeframe || "rolling_12m",
       vipDowngradeGraceDays: parsedVipGraceDays ?? 30,
-      vipAutoDowngradeEnabled:
-        vipAutoDowngradeEnabled === undefined ? true : vipAutoDowngradeEnabled,
+      vipAutoDowngradeEnabled: nextVipAutoDowngradeEnabled,
     },
     update: {
       name: name !== undefined ? name : undefined,

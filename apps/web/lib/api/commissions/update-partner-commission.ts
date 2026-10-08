@@ -94,7 +94,8 @@ export async function updatePartnerCommission({
     });
   }
 
-  const { partner, amount: originalSaleAmount } = commission;
+  const { partner, amount: rawSaleAmount } = commission;
+  const originalSaleAmount = Number(rawSaleAmount);
 
   let finalSaleAmount: number | undefined;
   let finalEarnings: number | undefined;

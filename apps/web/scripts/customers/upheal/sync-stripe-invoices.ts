@@ -74,7 +74,7 @@ async function main() {
       const existingCommission = existingCommissions.find(
         (commission) =>
           commission.invoiceId === invoice.id ||
-          (commission.amount === invoice.amount_paid &&
+          (Number(commission.amount) === invoice.amount_paid &&
             new Date(commission.createdAt).getTime() >=
               new Date(invoice.created * 1000).getTime() - 60 * 60 * 1000 &&
             new Date(commission.createdAt).getTime() <=

@@ -69,7 +69,7 @@ export async function splitPayouts({
     if (previousCommissionsCount > 0) {
       await prisma.$transaction(async (tx) => {
         const previousAmount = previousCommissions.reduce(
-          (total, commission) => total + commission.earnings,
+          (total, commission) => total + Number(commission.earnings),
           0,
         );
 
@@ -105,7 +105,7 @@ export async function splitPayouts({
               periodEnd:
                 currentCommissions[currentCommissionsCount - 1].createdAt,
               amount: currentCommissions.reduce(
-                (total, commission) => total + commission.earnings,
+                (total, commission) => total + Number(commission.earnings),
                 0,
               ),
               currency: program.accountingCurrency,

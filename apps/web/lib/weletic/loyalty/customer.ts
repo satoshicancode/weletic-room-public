@@ -39,6 +39,11 @@ import {
   WeleticRewardStatus,
   WeleticRewardType,
 } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
+import {
+  assertStoreSubscriptionForNewBenefit,
+  SubscriptionVerificationRequiredError,
+} from "../shopify/app-pricing-service";
 
 export const CUSTOMER_REWARD_HISTORY_LIMIT = 50;
 
@@ -849,7 +854,20 @@ export async function getCustomerLoyaltySummary({
   const programIsActive = Boolean(
     loyaltyProgram?.status === "active" && !loyaltyProgram.killSwitchActive,
   );
-  const canParticipate = programIsActive && account.status === "active";
+  let subscriptionActive = true;
+  if (isCoreLaunch()) {
+    try {
+      await prisma.$transaction((tx) =>
+        assertStoreSubscriptionForNewBenefit(tx, storeId),
+      );
+    } catch (error) {
+      if (!(error instanceof SubscriptionVerificationRequiredError))
+        throw error;
+      subscriptionActive = false;
+    }
+  }
+  const canParticipate =
+    programIsActive && account.status === "active" && subscriptionActive;
   const configuredReferralRule = loyaltyProgram?.referralRules?.[0] ?? null;
   const rewardsPromise = canParticipate
     ? listRewardDefinitions({
@@ -857,22 +875,32 @@ export async function getCustomerLoyaltySummary({
         status: WeleticRewardStatus.active,
         provisionableOnly: true,
       }).then((rewards) =>
-        rewards.filter((reward) =>
-          isRewardAvailableOnSalesChannel(reward, redemptionChannel),
+        rewards.filter(
+          (reward) =>
+            isRewardAvailableOnSalesChannel(reward, redemptionChannel) &&
+            (!isCoreLaunch() ||
+              (reward.rewardType === "amount_off" &&
+                reward.exchangeType === "fixed" &&
+                readLoyaltyPurchasePolicy(
+                  reward.purchasePolicy,
+                  DEFAULT_REWARD_PURCHASE_POLICY,
+                ).purchaseType === "one_time")),
         ),
       )
     : Promise.resolve([]);
-  const referralOfferPromise = canParticipate
-    ? rewardsPromise.then((rewards) =>
-        getCustomerReferralOffer({
-          programStatus: loyaltyProgram?.status,
-          killSwitchActive: loyaltyProgram?.killSwitchActive,
-          rule: configuredReferralRule,
-          rewards,
-        }),
-      )
-    : Promise.resolve(null);
+  const referralOfferPromise =
+    canParticipate && !isCoreLaunch()
+      ? rewardsPromise.then((rewards) =>
+          getCustomerReferralOffer({
+            programStatus: loyaltyProgram?.status,
+            killSwitchActive: loyaltyProgram?.killSwitchActive,
+            rule: configuredReferralRule,
+            rewards,
+          }),
+        )
+      : Promise.resolve(null);
   const canProvisionReferralIdentity =
+    !isCoreLaunch() &&
     provisionReferralIdentity &&
     canParticipate &&
     !hasShopifyCustomerRedactionTombstone(account.metadata);
@@ -962,26 +990,29 @@ export async function getCustomerLoyaltySummary({
       ? (account.metadata as Record<string, any>).birthday
       : null;
   const waysToEarn = canParticipate
-    ? (program?.earningRules || []).map(serializeCustomerEarningRule)
+    ? (program?.earningRules || [])
+        .filter((rule) => !isCoreLaunch() || rule.triggerCode === "order_paid")
+        .map(serializeCustomerEarningRule)
     : [];
-  const activeCampaigns = canParticipate
-    ? (program?.bonusCampaigns || [])
-        .filter(
-          (campaign) =>
-            !Array.isArray(campaign.eligibleTierIds) ||
-            campaign.eligibleTierIds.length === 0 ||
-            (account.currentTierId &&
-              campaign.eligibleTierIds.includes(account.currentTierId)),
-        )
-        .map((campaign) => ({
-          id: campaign.id,
-          name: campaign.name,
-          description: campaign.description,
-          multiplier: Number(campaign.multiplier),
-          startAt: campaign.startAt,
-          endAt: campaign.endAt,
-        }))
-    : [];
+  const activeCampaigns =
+    canParticipate && !isCoreLaunch()
+      ? (program?.bonusCampaigns || [])
+          .filter(
+            (campaign) =>
+              !Array.isArray(campaign.eligibleTierIds) ||
+              campaign.eligibleTierIds.length === 0 ||
+              (account.currentTierId &&
+                campaign.eligibleTierIds.includes(account.currentTierId)),
+          )
+          .map((campaign) => ({
+            id: campaign.id,
+            name: campaign.name,
+            description: campaign.description,
+            multiplier: Number(campaign.multiplier),
+            startAt: campaign.startAt,
+            endAt: campaign.endAt,
+          }))
+      : [];
   const rewardCatalog = rewards.map((reward) => ({
     id: reward.id,
     purchasePolicy: readLoyaltyPurchasePolicy(
@@ -1196,72 +1227,78 @@ export async function getCustomerLoyaltySummary({
         primaryColor: programBranding.primaryColor,
       },
     },
-    tier: {
-      ...tierProgress,
-      rollingSpend: (
-        tierProgress.rollingSpend ??
-        account.tierSpendRolling12Months ??
-        0
-      ).toString(),
-      lifetimePoints: (
-        tierProgress.lifetimePoints ??
-        account.lifetimePointsEarned ??
-        0
-      ).toString(),
-      currentTier: tierProgress.currentTier
-        ? mapCustomerTier(tierProgress.currentTier)
-        : null,
-      nextTier: tierProgress.nextTier
-        ? mapCustomerTier(tierProgress.nextTier)
-        : null,
-      allTiers: tierProgress.allTiers.map(mapCustomerTier),
-      tierExpiresAt: account.tierExpiresAt,
-      history: (account.tierHistory || []).map((entry) => ({
-        id: entry.id,
-        fromTier: entry.fromTier,
-        toTier: entry.toTier,
-        changeReason: entry.changeReason,
-        qualifyingSpendSnapshot:
-          entry.qualifyingSpendSnapshot?.toString() ?? null,
-        qualifyingPointsSnapshot:
-          entry.qualifyingPointsSnapshot?.toString() ?? null,
-        effectiveAt: entry.effectiveAt,
-      })),
-      progress: tierProgress.nextTier
-        ? calculateCustomerVipProgress({
-            milestoneMode: program?.vipMilestoneMode || "amount_spent",
-            currentSpend: tierProgress.rollingSpend,
-            spendThreshold:
-              tierProgress.nextTier.minSpendThreshold ?? BigInt(0),
-            currentPoints: tierProgress.lifetimePoints,
-            pointsThreshold:
-              tierProgress.nextTier.minPointsThreshold ?? BigInt(0),
-          })
-        : null,
-    },
-    referral: {
-      referralCode: referralLink.referralCode,
-      referralShareUrl: referralOffer ? referralLink.referralLink : null,
-      dubLinkId: referralLink.dubLinkId,
-      totalReferrals: referralStats.totalReferralCount,
-      qualifiedReferrals: referralStats.qualifiedReferralCount,
-      totalPointsEarned: referralStats.referralPointsEarned.toString(),
-      offer: referralOffer,
-      activity: (referralStats.referrals || []).map((referral) => ({
-        id: referral.id,
-        status: referral.status,
-        refereeName: referral.refereeName,
-        advocatePointsAwarded: referral.advocatePointsAwarded.toString(),
-        refereePointsAwarded: referral.refereePointsAwarded?.toString() ?? "0",
-        rewardedAt: referral.rewardedAt ?? null,
-        createdAt: referral.createdAt,
-      })),
-    },
+    tier: isCoreLaunch()
+      ? null
+      : {
+          ...tierProgress,
+          rollingSpend: (
+            tierProgress.rollingSpend ??
+            account.tierSpendRolling12Months ??
+            0
+          ).toString(),
+          lifetimePoints: (
+            tierProgress.lifetimePoints ??
+            account.lifetimePointsEarned ??
+            0
+          ).toString(),
+          currentTier: tierProgress.currentTier
+            ? mapCustomerTier(tierProgress.currentTier)
+            : null,
+          nextTier: tierProgress.nextTier
+            ? mapCustomerTier(tierProgress.nextTier)
+            : null,
+          allTiers: tierProgress.allTiers.map(mapCustomerTier),
+          tierExpiresAt: account.tierExpiresAt,
+          history: (account.tierHistory || []).map((entry) => ({
+            id: entry.id,
+            fromTier: entry.fromTier,
+            toTier: entry.toTier,
+            changeReason: entry.changeReason,
+            qualifyingSpendSnapshot:
+              entry.qualifyingSpendSnapshot?.toString() ?? null,
+            qualifyingPointsSnapshot:
+              entry.qualifyingPointsSnapshot?.toString() ?? null,
+            effectiveAt: entry.effectiveAt,
+          })),
+          progress: tierProgress.nextTier
+            ? calculateCustomerVipProgress({
+                milestoneMode: program?.vipMilestoneMode || "amount_spent",
+                currentSpend: tierProgress.rollingSpend,
+                spendThreshold:
+                  tierProgress.nextTier.minSpendThreshold ?? BigInt(0),
+                currentPoints: tierProgress.lifetimePoints,
+                pointsThreshold:
+                  tierProgress.nextTier.minPointsThreshold ?? BigInt(0),
+              })
+            : null,
+        },
+    referral: isCoreLaunch()
+      ? null
+      : {
+          referralCode: referralLink.referralCode,
+          referralShareUrl: referralOffer ? referralLink.referralLink : null,
+          dubLinkId: referralLink.dubLinkId,
+          totalReferrals: referralStats.totalReferralCount,
+          qualifiedReferrals: referralStats.qualifiedReferralCount,
+          totalPointsEarned: referralStats.referralPointsEarned.toString(),
+          offer: referralOffer,
+          activity: (referralStats.referrals || []).map((referral) => ({
+            id: referral.id,
+            status: referral.status,
+            refereeName: referral.refereeName,
+            advocatePointsAwarded: referral.advocatePointsAwarded.toString(),
+            refereePointsAwarded:
+              referral.refereePointsAwarded?.toString() ?? "0",
+            rewardedAt: referral.rewardedAt ?? null,
+            createdAt: referral.createdAt,
+          })),
+        },
     waysToEarn,
     activeCampaigns,
     pointsExpiry: {
       enabled: Boolean(
-        program?.status === "active" &&
+        !isCoreLaunch() &&
+          program?.status === "active" &&
           !program.killSwitchActive &&
           (program.pointsExpiryDays > 0 || program.pointsExpiryMonths > 0),
       ),

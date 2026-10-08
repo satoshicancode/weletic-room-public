@@ -317,11 +317,41 @@ async function aggregateDueCommissionsForPartner({
     },
   });
 
+  const netEarnings = Number(totalEarningsForPayout ?? 0);
+  if (netEarnings <= 0) {
+    console.log(
+      `[aggregateDueCommissionsForPartner] Partner ${partnerId} has non-positive due commissions (${totalEarningsForPayout}). Rolling back to unassigned pending commissions.`,
+    );
+
+    // Rollback claimed commissions back to unassigned pending
+    await prisma.commission.updateMany({
+      where: {
+        payoutId: payoutToUse.id,
+      },
+      data: {
+        payoutId: null,
+        status: CommissionStatus.pending,
+      },
+    });
+
+    // Delete payout record
+    await prisma.payout.deleteMany({
+      where: {
+        id: payoutToUse.id,
+        status: {
+          in: MUTABLE_PAYOUT_STATUSES,
+        },
+      },
+    });
+
+    return false;
+  }
+
   // Raw SQL: Prisma updateMany also drops status predicates on MySQL.
   const updatedPayout = await prisma.$executeRaw`
     UPDATE Payout
     SET
-      amount = ${totalEarningsForPayout ?? 0},
+      amount = ${netEarnings},
       periodEnd = COALESCE(${isReusingPendingPayout ? periodEnd : null}, periodEnd),
       updatedAt = NOW()
     WHERE id = ${payoutToUse.id}

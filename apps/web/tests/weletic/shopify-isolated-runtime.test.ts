@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { applyCoreRuntimeConfiguration } from "../../../../infra/shopify-development/core-runtime.mjs";
 import { initializeLocalServices } from "../../../../infra/shopify-development/init.mjs";
 import { buildPreviewEnvironment } from "../../../../infra/shopify-development/preview-runtime.mjs";
 import {
@@ -49,48 +50,93 @@ afterEach(() => {
 });
 
 describe("isolated development runtime", () => {
-  it("stages private CLI configuration without changing public or legacy identities", () => {
-    const { root } = configuration();
-    const source = readFileSync(
-      new URL(
-        "../../../../packages/shopify-app/shopify.app.loyalty-public.toml",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    const publicPath = join(
-      root,
-      "packages/shopify-app/shopify.app.loyalty-public.toml",
-    );
-    writeFileSync(publicPath, source);
-    const pair = {
-      appOrigin: "https://synthetic-app.trycloudflare.com",
-      apiOrigin: "https://synthetic-api.trycloudflare.com",
+  it("adds core billing to the validated pair without sharing database or Partner authority", () => {
+    const { web, shopify } = configuration();
+    const core = {
+      SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/1",
+      SHOPIFY_PARTNER_ORGANIZATION_ID: "123",
+      SHOPIFY_PARTNER_API_TOKEN: "synthetic-partner-token",
+      WELETIC_SHOPIFY_PUBLIC_PLAN_HANDLE: "core-monthly",
+      WELETIC_SHOPIFY_PRIVATE_PLAN_HANDLE: "company-free",
+      SHOPIFY_APP_HANDLE: "weletic-loyalty-reviews-dev",
+      WELETIC_SUPPORT_EMAIL: "support@example.test",
     };
-    const staged = stagePreview(
-      root,
-      pair,
-      "/retained/web",
-      "/retained/shopify",
-    );
-    const manifest = readFileSync(staged.manifest, "utf8");
-    expect(manifest).toContain(`application_url = "${pair.appOrigin}"`);
-    expect(manifest).toContain(
-      `${pair.apiOrigin}/api/shopify/integration/webhook`,
-    );
-    expect(manifest).toContain(
-      'extension_directories = ["public-extensions-disabled/*"]',
-    );
-    expect(manifest).toContain('web_directories = [".loyalty-preview/web"]');
-    expect(manifest).not.toContain("loyalty-api-dev.weletic.com");
-    expect(manifest).not.toContain("loyalty-shopify-dev.weletic.com");
-    expect(lstatSync(staged.manifest).mode & 0o777).toBe(0o600);
-    expect(lstatSync(staged.configPath).mode & 0o777).toBe(0o600);
-    expect(readFileSync(publicPath, "utf8")).toBe(source);
-    expect(() =>
-      stagePreview(root, pair, "/retained/web", "/retained/shopify"),
-    ).toThrow("must not be overwritten");
+    for (const role of ["web", "shopify"]) {
+      const base = buildRuntimeEnvironment(role, web, shopify, {
+        SHOPIFY_PARTNER_API_TOKEN: "untrusted-ambient-token",
+      });
+      const env = applyCoreRuntimeConfiguration(role, base, core);
+      expect(env.WELETIC_FEATURE_PROFILE).toBe("core-v1");
+      expect(env.WELETIC_RELEASE_PROFILE).toBe("loyalty-only");
+      expect(env.DATABASE_URL).toBe(
+        role === "web" ? web.DATABASE_URL : undefined,
+      );
+      expect(env.SHOPIFY_PARTNER_API_TOKEN).toBe(
+        role === "web" ? core.SHOPIFY_PARTNER_API_TOKEN : undefined,
+      );
+      expect(() =>
+        applyCoreRuntimeConfiguration(role, base, {
+          ...core,
+          DATABASE_URL: "mysql://foreign.invalid/shared",
+        }),
+      ).toThrow();
+    }
   });
+  it.each([undefined, "/private/core.json"])(
+    "stages private CLI configuration without changing public or legacy identities (core=%s)",
+    (corePath) => {
+      const { root } = configuration();
+      const source = readFileSync(
+        new URL(
+          "../../../../packages/shopify-app/shopify.app.loyalty-public.toml",
+          import.meta.url,
+        ),
+        "utf8",
+      );
+      const publicPath = join(
+        root,
+        "packages/shopify-app/shopify.app.loyalty-public.toml",
+      );
+      writeFileSync(publicPath, source);
+      const pair = {
+        appOrigin: "https://synthetic-app.trycloudflare.com",
+        apiOrigin: "https://synthetic-api.trycloudflare.com",
+      };
+      const staged = stagePreview(
+        root,
+        pair,
+        "/retained/web",
+        "/retained/shopify",
+        corePath,
+      );
+      const manifest = readFileSync(staged.manifest, "utf8");
+      expect(manifest).toContain(`application_url = "${pair.appOrigin}"`);
+      expect(manifest).toContain(
+        `${pair.apiOrigin}/api/shopify/integration/webhook`,
+      );
+      expect(manifest).toContain(
+        'extension_directories = ["public-extensions-disabled/*"]',
+      );
+      expect(manifest).toContain('web_directories = [".loyalty-preview/web"]');
+      expect(manifest).not.toContain("loyalty-api-dev.weletic.com");
+      expect(manifest).not.toContain("loyalty-shopify-dev.weletic.com");
+      expect(lstatSync(staged.manifest).mode & 0o777).toBe(0o600);
+      expect(lstatSync(staged.configPath).mode & 0o777).toBe(0o600);
+      expect(readFileSync(publicPath, "utf8")).toBe(source);
+      const webConfig = readFileSync(
+        join(
+          root,
+          "packages/shopify-app/.loyalty-preview/web/shopify.web.toml",
+        ),
+        "utf8",
+      );
+      if (corePath) expect(webConfig).toContain(`--core-config=${corePath}`);
+      else expect(webConfig).not.toContain("--core-config");
+      expect(() =>
+        stagePreview(root, pair, "/retained/web", "/retained/shopify"),
+      ).toThrow("must not be overwritten");
+    },
+  );
   it("pairs explicit preview origins while preserving local data and service routing", () => {
     const { web, shopify } = configuration();
     shopify.SHOPIFY_API_SECRET = "synthetic-app-secret-".repeat(3);
@@ -340,9 +386,20 @@ describe("isolated development runtime", () => {
       "--confirm-local-runtime",
     ];
     expect(parseRuntimeFlags(flags).app).toBe("web");
+    expect(
+      parseRuntimeFlags([...flags, "--core-config=/private/core.json"])[
+        "core-config"
+      ],
+    ).toBe("/private/core.json");
     for (const invalid of [
       flags.slice(0, 3),
       [...flags, "--force"],
+      [...flags, "--core-config="],
+      [
+        ...flags,
+        "--core-config=/private/core.json",
+        "--core-config=/other.json",
+      ],
       flags.map((flag) => (flag === "--app=web" ? "--app=worker" : flag)),
       flags.map((flag) =>
         flag.startsWith("--retained-web=") ? "--retained-web=" : flag,

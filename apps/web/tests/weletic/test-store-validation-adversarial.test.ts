@@ -2,6 +2,7 @@ import {
   signWeleticShopifyRequest,
   verifyWeleticShopifyRequest,
   WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
 } from "@/lib/weletic/shopify/service-auth";
@@ -173,7 +174,7 @@ describe("Milestone 6 Adversarial Stress Suite: Test Store Validation Resilience
       process.env.WELETIC_SHOPIFY_SERVICE_SECRET = VALID_SECRET;
     });
 
-    it("strictly rejects malformed, non-hex, or corrupted HMAC signatures", () => {
+    it("strictly rejects malformed, non-hex, or corrupted HMAC signatures", async () => {
       const timestamp = String(Date.now());
       const method = "GET";
       const path = "/api/internal/shopify/loyalty/program?shop=" + TEST_STORE;
@@ -196,7 +197,7 @@ describe("Milestone 6 Adversarial Stress Suite: Test Store Validation Resilience
           },
         });
 
-        const isValid = verifyWeleticShopifyRequest({
+        const isValid = await verifyWeleticShopifyRequest({
           request: req,
           body,
           now: Number(timestamp),
@@ -206,7 +207,7 @@ describe("Milestone 6 Adversarial Stress Suite: Test Store Validation Resilience
       }
     });
 
-    it("strictly rejects future timestamps exceeding max clock skew (> 5 minutes into the future)", () => {
+    it("strictly rejects future timestamps exceeding max clock skew (> 5 minutes into the future)", async () => {
       const futureTimestamp = String(
         Date.now() + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 10000,
       );
@@ -228,7 +229,7 @@ describe("Milestone 6 Adversarial Stress Suite: Test Store Validation Resilience
         },
       });
 
-      const isValid = verifyWeleticShopifyRequest({
+      const isValid = await verifyWeleticShopifyRequest({
         request: req,
         body: "",
         now: Date.now(),
@@ -237,7 +238,7 @@ describe("Milestone 6 Adversarial Stress Suite: Test Store Validation Resilience
       expect(isValid).toBe(false);
     });
 
-    it("rejects non-numeric, negative, and NaN timestamp headers", () => {
+    it("rejects non-numeric, negative, and NaN timestamp headers", async () => {
       const invalidTimestamps = [
         "NaN",
         "undefined",
@@ -259,7 +260,7 @@ describe("Milestone 6 Adversarial Stress Suite: Test Store Validation Resilience
           },
         );
 
-        const isValid = verifyWeleticShopifyRequest({
+        const isValid = await verifyWeleticShopifyRequest({
           request: req,
           body: "",
           now: Date.now(),
@@ -269,7 +270,7 @@ describe("Milestone 6 Adversarial Stress Suite: Test Store Validation Resilience
       }
     });
 
-    it("rejects request when secret is below 32 chars in verification", () => {
+    it("rejects request when secret is below 32 chars in verification", async () => {
       process.env.WELETIC_SHOPIFY_SERVICE_SECRET = "short_secret";
       const req = new Request(
         `https://app.weletic.com/api/internal/shopify/loyalty/program`,
@@ -278,17 +279,18 @@ describe("Milestone 6 Adversarial Stress Suite: Test Store Validation Resilience
           headers: {
             [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: String(Date.now()),
             [WELETIC_SHOPIFY_SIGNATURE_HEADER]: "a".repeat(64),
+            [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: crypto.randomUUID(),
           },
         },
       );
 
-      expect(() => {
+      await expect(
         verifyWeleticShopifyRequest({
           request: req,
           body: "",
           now: Date.now(),
-        });
-      }).toThrow(
+        }),
+      ).rejects.toThrow(
         /WELETIC_SHOPIFY_SERVICE_SECRET must be at least 32 characters/,
       );
     });

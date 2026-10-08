@@ -4,6 +4,7 @@ import {
   type FlowTriggerPayload,
 } from "@/lib/weletic/loyalty/outbox";
 import type { Prisma } from "@prisma/client";
+import { CORE_FLOW_HANDLES, isCoreLaunch } from "../core-launch-policy";
 
 /**
  * Persists a Flow event beside the loyalty mutation that produced it. The
@@ -24,6 +25,8 @@ export function enqueueFlowTriggerJob({
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
   tx: Prisma.TransactionClient;
 }) {
+  if (isCoreLaunch() && !CORE_FLOW_HANDLES.includes(payload.handle))
+    return Promise.resolve(null);
   return enqueueOutboxJobFromProgramTransaction({
     storeId,
     jobType: "FLOW_TRIGGER",

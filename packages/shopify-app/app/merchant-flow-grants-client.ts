@@ -2,7 +2,7 @@ import {
   FlowGrantListResponseSchema,
   FlowGrantMutationResponseSchema,
   FlowGrantsMerchantRequestSchema,
-} from "../../../apps/web/lib/weletic/loyalty/flow-grants-merchant-contract";
+} from "@weletic/contracts/loyalty/flow-grants-merchant-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

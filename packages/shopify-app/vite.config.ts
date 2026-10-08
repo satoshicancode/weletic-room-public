@@ -3,7 +3,7 @@ import { vercelPreset } from "@vercel/remix/vite";
 import { defineConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { previewOrigins } from "./app/preview-origins.mjs";
-import { useNodeShopifyBuild } from "./node-build-policy.mjs";
+import { useNodeShopifyBuild as isNodeShopifyBuild } from "./node-build-policy.mjs";
 import { shopifyExtensionDevCorsPlugin } from "./shopify-extension-dev-cors";
 
 const preview = previewOrigins(process.env);
@@ -17,8 +17,11 @@ export default defineConfig({
     remix({
       // Explicit Node release builds and legacy local probes share the adapter;
       // ordinary builds retain the Vercel preset.
-      presets: useNodeShopifyBuild(process.env) ? [] : [vercelPreset()],
+      presets: isNodeShopifyBuild(process.env) ? [] : [vercelPreset()],
       future: {
+        // Prebundle route imports to avoid dependency reloads during the first
+        // browser hydration, including schemas shared from the web workspace.
+        unstable_optimizeDeps: true,
         v3_fetcherPersist: true,
         v3_relativeSplatPath: true,
         v3_throwAbortReason: true,

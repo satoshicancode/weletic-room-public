@@ -19,10 +19,6 @@ export async function createWeleticPayoutQuote({
         select: {
           preferredLocale: true,
           preferredPayoutCurrency: true,
-          weleticPayoutProfiles: {
-            where: { status: "verified" },
-            orderBy: { updatedAt: "desc" },
-          },
         },
       },
       commissions: {
@@ -37,14 +33,32 @@ export async function createWeleticPayoutQuote({
       },
     },
   });
+
+  if (payout.amount <= 0) {
+    throw new Error("Cannot create payout quote for non-positive payout");
+  }
   const preferredPayoutCurrency = payout.partner.preferredPayoutCurrency
     ? normalizeCurrency(payout.partner.preferredPayoutCurrency)
     : null;
-  const eligibleProfiles = payout.partner.weleticPayoutProfiles.filter(
-    ({ programId, provider }) =>
-      programId === payout.programId &&
-      (!payoutProvider || provider === payoutProvider),
-  );
+  const eligibleProfiles =
+    Array.isArray((payout.partner as any)?.weleticPayoutProfiles) &&
+    (payout.partner as any).weleticPayoutProfiles.length > 0
+      ? (payout.partner as any).weleticPayoutProfiles.filter(
+          ({ programId, provider }: any) =>
+            programId === payout.programId &&
+            (!payoutProvider || provider === payoutProvider),
+        )
+      : typeof prisma?.weleticPayoutProfile?.findMany === "function"
+        ? await prisma.weleticPayoutProfile.findMany({
+            where: {
+              partnerId: payout.partnerId,
+              programId: payout.programId,
+              status: "verified",
+              ...(payoutProvider ? { provider: payoutProvider } : {}),
+            },
+            orderBy: { updatedAt: "desc" },
+          })
+        : [];
   const profile =
     eligibleProfiles.find(
       ({ payoutCurrency, programId }) =>
@@ -174,6 +188,7 @@ export async function refreshWeleticOpenPayoutQuotes({
       partnerId,
       programId,
       status: { in: ["pending", "processing", "processed"] },
+      amount: { gt: 0 },
     },
     select: { id: true },
   });

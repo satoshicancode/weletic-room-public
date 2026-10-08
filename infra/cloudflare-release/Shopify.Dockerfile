@@ -5,16 +5,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/package.json
-COPY packages/cli/package.json packages/cli/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/embeds/core/package.json packages/embeds/core/package.json
 COPY packages/embeds/react/package.json packages/embeds/react/package.json
-COPY packages/hubspot-app/package.json packages/hubspot-app/package.json
 COPY packages/shopify-app/package.json packages/shopify-app/package.json
 COPY packages/shopify-app/extensions/weletic-free-product/package.json packages/shopify-app/extensions/weletic-free-product/package.json
-COPY packages/stripe-app/package.json packages/stripe-app/package.json
 COPY packages/tailwind-config/package.json packages/tailwind-config/package.json
-COPY packages/tinybird/package.json packages/tinybird/package.json
 COPY packages/tsconfig/package.json packages/tsconfig/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/utils/package.json packages/utils/package.json
@@ -43,7 +40,7 @@ COPY --from=runtime-dependencies /opt/shopify-runtime/node_modules ./packages/sh
 COPY --from=build /workspace/packages/shopify-app/package.json ./packages/shopify-app/package.json
 COPY --from=build /workspace/packages/shopify-app/build ./packages/shopify-app/build
 COPY packages/shopify-app/app/public-runtime-policy.mjs packages/shopify-app/app/preview-origins.mjs ./packages/shopify-app/app/
-COPY infra/cloudflare-release/start.mjs infra/cloudflare-release/runtime-policy.mjs ./infra/cloudflare-release/
+COPY infra/cloudflare-release/start.mjs infra/cloudflare-release/runtime-policy.mjs infra/cloudflare-release/billing-policy.mjs ./infra/cloudflare-release/
 USER node
 EXPOSE 3000
 STOPSIGNAL SIGTERM

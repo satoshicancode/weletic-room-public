@@ -90,7 +90,7 @@ describe("loyalty operational paths real database concurrency", () => {
         shopDomain: `${RUN_ID}.myshopify.com`,
         shopCurrency: "USD",
         currencyVerifiedAt: new Date(),
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
       },
     });
     await prisma.weleticLoyaltyProgram.create({
@@ -153,8 +153,16 @@ describe("loyalty operational paths real database concurrency", () => {
       ),
     );
 
-    expect(results.filter((result) => result.created)).toHaveLength(1);
-    expect(new Set(results.map((result) => result.job.id)).size).toBe(1);
+    expect(results.filter((result) => result?.created)).toHaveLength(1);
+    expect(
+      new Set(
+        results.map((result) => {
+          if (!result)
+            throw new Error("Core points-earned event unexpectedly deferred");
+          return result.job.id;
+        }),
+      ).size,
+    ).toBe(1);
     await expect(
       prisma.weleticLoyaltyOutboxJob.count({
         where: { storeId, idempotencyKey },
@@ -183,8 +191,16 @@ describe("loyalty operational paths real database concurrency", () => {
       ),
     );
 
-    expect(results.filter((result) => result.created)).toHaveLength(1);
-    expect(new Set(results.map((result) => result.job.id)).size).toBe(1);
+    expect(results.filter((result) => result?.created)).toHaveLength(1);
+    expect(
+      new Set(
+        results.map((result) => {
+          if (!result)
+            throw new Error("Core points-earned event unexpectedly deferred");
+          return result.job.id;
+        }),
+      ).size,
+    ).toBe(1);
     await expect(
       prisma.weleticLoyaltyOutboxJob.count({
         where: {

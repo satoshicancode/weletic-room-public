@@ -184,7 +184,7 @@ export async function releaseHoldCommissions({
           : commissionsToRelease;
 
       const releasedEarnings = releasedCommissions.reduce(
-        (sum, commission) => sum + commission.earnings,
+        (sum, commission) => sum + Number(commission.earnings),
         0,
       );
 

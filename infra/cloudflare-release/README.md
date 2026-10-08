@@ -358,3 +358,30 @@ complete layer/secret auditing or Cloudflare deployment readiness.
 
 References: [Docker build-context exclusions](https://docs.docker.com/build/concepts/context/)
 and [Next custom-server packaging](https://nextjs.org/docs/pages/guides/custom-server).
+
+## Core launch profile
+
+New guarded release processes require `WELETIC_FEATURE_PROFILE=core-v1` on
+web, Shopify and outbox. Paired preflight rejects missing or legacy values.
+This is separate from `WELETIC_RELEASE_PROFILE=loyalty-only`, which scopes
+worker ownership. General development entrypoints keep compatibility defaults.
+Select review ingress explicitly with `WELETIC_RELEASE_REVIEW_ROUTES=1` only
+after the complete target schema audit and deployment packet are approved.
+
+Build the reduced, unowned extension candidate offline with
+`node infra/shopify-development/stage-public-extensions.mjs <fresh-temp-directory> --core-v1`.
+The nine-extension bundle includes the theme/account surfaces, four triggers,
+the points-adjustment action and Flow lifecycle configuration. It excludes
+checkout and deferred triggers. It does not generate public UIDs or publish.
+The account review browser is an open-submission feature and is hidden; the
+verified invitation-token journey remains the product-review entrypoint.
+
+## Core launch billing
+
+Use the [core execution packet](../../docs/loyalty/core-launch-execution-packets.md)
+for the new subscription schema, role-specific environment and schedule. Startup
+requires `WELETIC_FEATURE_PROFILE=core-v1`; the Partner API token belongs only to
+web, while outbox receives the Partner App GID to check persisted authority.
+The embedded app requires its hosted-pricing handle and support email. Apply the
+approved additive schema before any dependent reader, including privacy workers.
+No provider schedule, plan, extension or shared schema is created by these checks.

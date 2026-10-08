@@ -3,7 +3,7 @@ import {
   replaceShopifyStaffGrantSchema,
   shopifyStaffGrantListResponseSchema,
   shopifyStaffGrantSaveResponseSchema,
-} from "../../../apps/web/lib/weletic/shopify/staff-contract";
+} from "@weletic/contracts/shopify/staff-contract";
 
 export class StaffAccessClientError extends Error {
   constructor(

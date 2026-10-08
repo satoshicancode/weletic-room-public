@@ -3,12 +3,13 @@ import {
   type HeadersFunction,
   type LoaderFunctionArgs,
 } from "@remix-run/node";
-import { Link, useRouteError } from "@remix-run/react";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { useRouteError } from "@remix-run/react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-remix/server";
 import { useId, useMemo, type ReactNode } from "react";
-import { MerchantSettingsSession } from "../../../../apps/web/ui/weletic/merchant-settings/settings-form";
+import { MerchantSettingsSession } from "~/ui/merchant-settings/settings-form";
 import styles from "../customers.css?url";
+import { useMerchantLocale } from "../merchant-locale";
 import {
   createMerchantAppearanceClient,
   createMerchantSettingsClient,
@@ -42,6 +43,7 @@ export default function SettingsPage({
   children?: ReactNode;
 }) {
   const shopify = useAppBridge();
+  const [locale] = useMerchantLocale();
   const scopeKey = useId();
   const transport = useMemo(
     () => ({
@@ -54,11 +56,22 @@ export default function SettingsPage({
     }),
     [scopeKey, shopify, appearanceOnly],
   );
+
+  const pageTitle = appearanceOnly
+    ? locale === "ja"
+      ? "外観"
+      : locale === "vi"
+        ? "Giao diện"
+        : "Appearance"
+    : locale === "ja"
+      ? "設定"
+      : locale === "vi"
+        ? "Cài đặt"
+        : "Settings";
+
   return (
     <main className="weletic-shoppers">
-      <nav aria-label="Weletic">
-        <Link to="/">Weletic</Link>
-      </nav>
+      <TitleBar title={pageTitle} />
       <MerchantSettingsSession transport={transport} canEdit />
       {children}
     </main>

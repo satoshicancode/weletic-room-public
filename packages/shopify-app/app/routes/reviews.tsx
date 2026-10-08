@@ -4,7 +4,7 @@ import {
   type LoaderFunctionArgs,
 } from "@remix-run/node";
 import { Link, useRouteError } from "@remix-run/react";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import {
   AppProvider,
   Banner,
@@ -19,14 +19,15 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 import jaTranslations from "@shopify/polaris/locales/ja.json";
 import viTranslations from "@shopify/polaris/locales/vi.json";
 import { boundary } from "@shopify/shopify-app-remix/server";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   merchantReviewRequestStatusSchema,
   merchantReviewStatusSchema,
   type MerchantReviewListInput,
   type MerchantReviewListPage,
-} from "../../../../apps/web/lib/weletic/reviews/merchant-contract";
-import type { AuditedReviewModerationInput } from "../../../../apps/web/lib/weletic/reviews/moderation-contract";
+} from "@weletic/contracts/reviews/merchant-contract";
+import type { AuditedReviewModerationInput } from "@weletic/contracts/reviews/moderation-contract";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCoreLaunch } from "~/core-launch-context";
 import { OpenReviewPolicyPanel } from "../components/OpenReviewPolicyPanel";
 import { ReviewCollectionPanel } from "../components/ReviewCollectionPanel";
 import { ReviewDeliveryHistory } from "../components/ReviewDeliveryHistory";
@@ -35,6 +36,7 @@ import { ReviewModerationForm } from "../components/ReviewModerationForm";
 import { ReviewTranslationsPanel } from "../components/ReviewTranslationsPanel";
 import { StoreReviewSettingsPanel } from "../components/StoreReviewSettingsPanel";
 import { StoreReviewsPanel } from "../components/StoreReviewsPanel";
+import { useMerchantLocale } from "../merchant-locale";
 import { createMerchantOpenReviewPolicyClient } from "../merchant-open-review-policy-client";
 import { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
@@ -75,12 +77,13 @@ export function action() {
 }
 
 export default function ReviewsPage() {
+  const coreLaunch = useCoreLaunch();
   const shopify = useAppBridge();
   const read = useMemo(
     () => createMerchantReviewsClient(() => shopify.idToken()),
     [shopify],
   );
-  const [locale, setLocale] = useState<"en" | "ja" | "vi">("en");
+  const [locale, setLocale] = useMerchantLocale();
   const openPolicyClient = useMemo(
     () => createMerchantOpenReviewPolicyClient(() => shopify.idToken()),
     [shopify],
@@ -204,14 +207,19 @@ export default function ReviewsPage() {
     setModerationResult(null);
     try {
       await write(input);
-      if (mounted.current) setModerationResult("saved");
+      if (mounted.current) {
+        setModerationResult("saved");
+        shopify.toast?.show?.(moderationCopy.saved);
+      }
     } catch (failure) {
-      if (mounted.current)
-        setModerationResult(
-          failure instanceof StaffAccessClientError
-            ? failure.code
-            : "unavailable",
-        );
+      const code =
+        failure instanceof StaffAccessClientError
+          ? failure.code
+          : "unavailable";
+      if (mounted.current) {
+        setModerationResult(code);
+        shopify.toast?.show?.(moderationCopy[code], { isError: true });
+      }
     } finally {
       inFlight.current = false;
       if (mounted.current) {
@@ -247,6 +255,7 @@ export default function ReviewsPage() {
     <AppProvider i18n={polarisTranslations[locale]}>
       <div lang={locale}>
         <Page title={copy.title}>
+          <TitleBar title={copy.title} />
           <BlockStack gap="400">
             <Link
               to="/"
@@ -279,23 +288,30 @@ export default function ReviewsPage() {
                 locale={locale}
               />
             </Card>
-            <Card>
-              <OpenReviewPolicyPanel
-                client={openPolicyClient}
-                locale={locale}
-                acquireOperation={acquireTranslationOperation}
-                onDirtyChange={policyDirtyChanged}
-              />
-            </Card>
-            <Card>
-              <StoreReviewSettingsPanel
-                client={storeReviewSettingsClient}
-                locale={locale}
-              />
-            </Card>
-            <Card>
-              <StoreReviewsPanel client={storeReviewsClient} locale={locale} />
-            </Card>
+            {!coreLaunch && (
+              <>
+                <Card>
+                  <OpenReviewPolicyPanel
+                    client={openPolicyClient}
+                    locale={locale}
+                    acquireOperation={acquireTranslationOperation}
+                    onDirtyChange={policyDirtyChanged}
+                  />
+                </Card>
+                <Card>
+                  <StoreReviewSettingsPanel
+                    client={storeReviewSettingsClient}
+                    locale={locale}
+                  />
+                </Card>
+                <Card>
+                  <StoreReviewsPanel
+                    client={storeReviewsClient}
+                    locale={locale}
+                  />
+                </Card>
+              </>
+            )}
             <Select
               disabled={busy}
               label={copy.view}
@@ -451,7 +467,7 @@ export default function ReviewsPage() {
                                 save={save}
                               />
                             )}
-                          {row.status !== "redacted" && (
+                          {!coreLaunch && row.status !== "redacted" && (
                             <ReviewTranslationsPanel
                               key={`translations:${row.id}:${row.version}`}
                               reviewId={row.id}

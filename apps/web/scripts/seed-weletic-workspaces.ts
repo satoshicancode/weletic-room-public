@@ -1,3 +1,4 @@
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import {
   publishLoyaltyEarnPolicyRevision,
   verifyLoyaltyEarnPolicyRevisionSnapshot,
@@ -317,7 +318,7 @@ async function main(prisma: PrismaClient) {
         shopDomain: "weletic.myshopify.com",
         shopCurrency: "USD",
         defaultLocale: "en",
-        apiVersion: "2026-07",
+        apiVersion: SHOPIFY_ADMIN_API_VERSION,
         syncStatus: "succeeded",
       },
     });
@@ -373,7 +374,7 @@ async function main(prisma: PrismaClient) {
             shopDomain: "yamaxpro.myshopify.com",
             shopCurrency: "USD",
             defaultLocale: "en",
-            apiVersion: "2026-07",
+            apiVersion: SHOPIFY_ADMIN_API_VERSION,
             syncStatus: "succeeded",
           },
         });

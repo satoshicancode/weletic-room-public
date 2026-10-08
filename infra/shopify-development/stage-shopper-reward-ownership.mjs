@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasRetainedEnvironment } from "./init.mjs";
+import { readLocalServicePorts } from "./service-ports.mjs";
 import { planShopperRewardExpansion } from "./shopper-reward-migration-plan.mjs";
 import { isLocalServiceTarget, privateCredentialFiles } from "./verify.mjs";
 
@@ -36,6 +37,7 @@ try {
   )
     throw new Error();
   const source = resolve(args[2]);
+  const servicePorts = readLocalServicePorts(source);
   stage = "credentials";
   if (
     hasRetainedEnvironment(root) ||
@@ -57,12 +59,12 @@ try {
   } finally {
     closeSync(fd);
   }
-  if (!isLocalServiceTarget(config)) throw new Error();
+  if (!isLocalServiceTarget(config, servicePorts)) throw new Error();
   const url = new URL(config.DATABASE_URL);
   if (
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
-    url.port !== "3307" ||
+    url.port !== servicePorts.mysql ||
     url.username !== "loyalty_dev" ||
     url.pathname !== "/weletic_loyalty_dev"
   )
@@ -81,7 +83,7 @@ try {
       "weletic-loyalty-dev" ||
     ports.length !== 1 ||
     ports[0].HostIp !== "127.0.0.1" ||
-    ports[0].HostPort !== "3307"
+    ports[0].HostPort !== servicePorts.mysql
   )
     throw new Error();
   const { PrismaClient } = require("@prisma/client");

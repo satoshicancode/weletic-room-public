@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { assertStoreSubscriptionForNewBenefit } from "../shopify/app-pricing-service";
 import { hasShopifyCustomerPrivacyTombstone } from "../shopify/privacy-identity";
 import { assertShopifyStoreAcceptsOperationalWrites } from "../shopify/store-compliance-state";
 import {
@@ -138,6 +139,8 @@ export async function executeFlowPointsActionInTransaction({
   )
     throw new FlowActionExecutionError("unavailable");
   const pointsDelta = BigInt(action.properties.points_delta);
+  if (pointsDelta > BigInt(0))
+    await assertStoreSubscriptionForNewBenefit(tx, storeId);
   const balance = account.cachedPointsBalance + pointsDelta;
   if (
     balance < BigInt("-9223372036854775808") ||

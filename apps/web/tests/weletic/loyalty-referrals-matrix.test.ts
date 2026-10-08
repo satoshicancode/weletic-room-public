@@ -205,6 +205,13 @@ vi.mock("@/lib/auth/workspace-cache", () => ({
   },
 }));
 
+vi.mock("@/lib/auth/rate-limit-request", () => ({
+  rateLimitRequest: vi.fn(async () => ({
+    success: true,
+    headers: {},
+  })),
+}));
+
 vi.mock("next/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("next/server")>();
   return {

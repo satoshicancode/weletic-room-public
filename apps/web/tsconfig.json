@@ -11,7 +11,10 @@
       "@/styles/*": ["styles/*"],
       "@/ui/*": ["ui/*"],
       "@/lib/*": ["lib/*"],
-      "@/components/*": ["components/*"]
+      "@/components/*": ["components/*"],
+      "@weletic/contracts": ["../../packages/contracts/src/index.ts"],
+      "@weletic/contracts/*": ["../../packages/contracts/src/*"],
+      "~/*": ["../../packages/shopify-app/app/*"]
     },
     "downlevelIteration": true,
     "forceConsistentCasingInFileNames": true,

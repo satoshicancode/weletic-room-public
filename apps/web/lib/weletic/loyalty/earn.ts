@@ -37,6 +37,8 @@ import {
   WeleticPointsLedgerEntryType,
 } from "@prisma/client";
 import { createHash } from "node:crypto";
+import { CoreLaunchDeferredError, isCoreLaunch } from "../core-launch-policy";
+import { assertStoreSubscriptionForNewBenefit } from "../shopify/app-pricing-service";
 import { enqueuePurchasePointsCommunication } from "./points-communication-producer";
 import {
   classifyLoyaltyPurchaseLine,
@@ -1749,6 +1751,29 @@ export async function processOrderPointsEarn({
   } else {
     policyResolutionFailure = "policy_revision_delegate_unavailable";
   }
+
+  await assertStoreSubscriptionForNewBenefit(db, storeId);
+
+  // Never reinterpret an existing immutable promise as a smaller core award.
+  // Fresh core programs must have compatible policies before order processing.
+  if (
+    isCoreLaunch() &&
+    policyContext &&
+    (policyContext.policy.tiers.length > 0 ||
+      policyContext.policy.bonusCampaigns.some(
+        (campaign) => campaign.isActive,
+      ) ||
+      policyContext.policy.earningRules.some(
+        (rule) =>
+          rule.isActive &&
+          (rule.triggerCode !== "order_paid" ||
+            readLoyaltyPurchasePolicy(
+              rule.purchasePolicy,
+              DEFAULT_EARNING_PURCHASE_POLICY,
+            ).purchaseType !== "one_time"),
+      ))
+  )
+    throw new CoreLaunchDeferredError();
 
   let tierStateIsEventTimeSafe = true;
   let tierStateFailureReason = "tier_history_unavailable";

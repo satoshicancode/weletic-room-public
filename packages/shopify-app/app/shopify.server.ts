@@ -7,6 +7,7 @@ import {
   shopifyApp,
 } from "@shopify/shopify-app-remix/server";
 import { CoordinatedWeleticSessionStorage } from "./coordinated-session-storage.server";
+import { assertCoreLaunchMerchantRoute } from "./core-launch-routes.server";
 import { createMerchantAuthenticator } from "./merchant-authentication.server";
 import { verifyShopifyMerchantIdentity } from "./merchant-identity.server";
 import { assertPublicShopifyRuntime } from "./public-runtime-policy.mjs";
@@ -35,7 +36,7 @@ const appDistribution =
 const shopify = shopifyApp({
   apiKey: requireEnv("SHOPIFY_API_KEY"),
   apiSecretKey: requireEnv("SHOPIFY_API_SECRET"),
-  apiVersion: ApiVersion.July26,
+  apiVersion: ((ApiVersion as any).October26 ?? "2026-10") as ApiVersion,
   sessionStorage: coordinatedStorage,
   scopes: getShopifyRequestedScopes(process.env.SCOPES),
   appUrl: requireUrlEnv("SHOPIFY_APP_URL").toString(),
@@ -51,7 +52,7 @@ export default shopify;
 const merchantSdk = shopifyApi({
   apiKey: requireEnv("SHOPIFY_API_KEY"),
   apiSecretKey: requireEnv("SHOPIFY_API_SECRET"),
-  apiVersion: ApiVersion.July26,
+  apiVersion: ((ApiVersion as any).October26 ?? "2026-10") as ApiVersion,
   hostName: requireUrlEnv("SHOPIFY_APP_URL").host,
   isEmbeddedApp: true,
   scopes: [],
@@ -69,8 +70,12 @@ export const withAuthenticatedMerchant = createMerchantAuthenticator({
 });
 export const authenticate = {
   ...shopify.authenticate,
-  admin: (...args: Parameters<typeof shopify.authenticate.admin>) =>
-    coordinatedStorage.runOperation(() => shopify.authenticate.admin(...args)),
+  admin: (...args: Parameters<typeof shopify.authenticate.admin>) => {
+    assertCoreLaunchMerchantRoute(args[0]);
+    return coordinatedStorage.runOperation(() =>
+      shopify.authenticate.admin(...args),
+    );
+  },
   public: {
     ...shopify.authenticate.public,
     appProxy: (

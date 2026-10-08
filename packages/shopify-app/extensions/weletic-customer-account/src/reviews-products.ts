@@ -2,7 +2,7 @@ export type ReviewProductQuery = (
   query: string,
   options: {
     variables: { after: string | null };
-    version: "2026-07";
+    version: "2026-10";
   },
 ) => Promise<unknown>;
 
@@ -29,7 +29,7 @@ export async function reviewProducts(
   try {
     const response = record(
       await Promise.race([
-        queryProducts(query, { variables: { after }, version: "2026-07" }),
+        queryProducts(query, { variables: { after }, version: "2026-10" }),
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => reject(new Error("unavailable")), 10_000);
         }),

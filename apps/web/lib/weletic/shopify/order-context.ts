@@ -1,4 +1,7 @@
-import { shopifyAdminGraphql } from "@/lib/integrations/shopify/admin-graphql";
+import {
+  SHOPIFY_ADMIN_API_VERSION,
+  shopifyAdminGraphql,
+} from "@/lib/integrations/shopify/admin-graphql";
 import { getWeleticShopifyInstallation } from "./get-installation";
 
 const numericShopifyId = (value: string | number) =>
@@ -87,7 +90,7 @@ export async function getShopifyOrderLineContext({
     }>({
       shopifyStoreId: installation.shopDomain,
       accessToken: installation.accessToken,
-      apiVersion: "2026-07",
+      apiVersion: SHOPIFY_ADMIN_API_VERSION,
       query: `#graphql
         query WeleticOrderLineContext($orderId: ID!, $after: String) {
           order(id: $orderId) {
@@ -146,7 +149,7 @@ export async function getShopifyOrderLineContext({
     }>({
       shopifyStoreId: installation.shopDomain,
       accessToken: installation.accessToken,
-      apiVersion: "2026-07",
+      apiVersion: SHOPIFY_ADMIN_API_VERSION,
       query: `#graphql
           query WeleticSellingPlanCategories($sellingPlanIds: [ID!]!) {
             nodes(ids: $sellingPlanIds) {
@@ -193,7 +196,7 @@ export async function getShopifyOrderLineContext({
       }>({
         shopifyStoreId: installation.shopDomain,
         accessToken: installation.accessToken,
-        apiVersion: "2026-07",
+        apiVersion: SHOPIFY_ADMIN_API_VERSION,
         query: `#graphql
           query WeleticProductCollectionMemberships(
             $productIds: [ID!]!, ${declarations}

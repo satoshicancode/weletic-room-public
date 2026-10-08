@@ -1,8 +1,14 @@
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { createHash, randomUUID } from "node:crypto";
 import * as z from "zod/v4";
+import { assertFreshInstallationSubscription } from "./app-pricing-service";
 import { readPendingInstallation } from "./installation-admission";
+import {
+  hasRestrictedDevelopmentConfiguration,
+  isRestrictedDevelopmentEnvironment,
+} from "./restricted-development";
 import { revokeShopifySessionCoordination } from "./session-coordination";
 import { lockShopifySessionLifecycle } from "./session-lifecycle-fence";
 import {
@@ -10,6 +16,7 @@ import {
   configuredShopifySessionScope,
   readShopifySessionSnapshot,
 } from "./session-snapshot";
+import { assertNewBenefitsEnabled } from "./setup-only";
 import { fetchVerifiedShopifyShopDetails } from "./store-resolver";
 
 const operatorText = (max: number) =>
@@ -105,7 +112,11 @@ async function capture(tx: Prisma.TransactionClient, input: BootstrapInput) {
   };
 }
 
-function preview(input: BootstrapInput, shopCurrency: string) {
+function preview(
+  input: BootstrapInput,
+  shopCurrency: string,
+  subscriber = false,
+) {
   const key = digest([
     input.appId,
     input.pendingInstallationId,
@@ -130,7 +141,9 @@ function preview(input: BootstrapInput, shopCurrency: string) {
     operator: input.operator,
     reason: input.reason,
     records,
-    storeAccessState: "pending_approval" as const,
+    storeAccessState: subscriber
+      ? ("active" as const)
+      : ("pending_approval" as const),
     loyaltyActivated: false as const,
     createsUser: false as const,
   };
@@ -144,6 +157,45 @@ export async function bootstrapCompanyStore(
   value: unknown,
   customFetch: typeof fetch = fetch,
 ) {
+  if (hasRestrictedDevelopmentConfiguration(process.env)) throw fail();
+  return bootstrapStore(value, customFetch, false);
+}
+
+/** Internal billing admission. The snapshot is rechecked under the final
+ * installation fence; payment never grants staff permissions or enables modules. */
+export async function bootstrapSubscribedStore(
+  input: Pick<
+    BootstrapInput,
+    | "appId"
+    | "shop"
+    | "pendingInstallationId"
+    | "expectedInstallationGeneration"
+    | "expectedRevision"
+  >,
+  customFetch: typeof fetch = fetch,
+) {
+  return bootstrapStore(
+    {
+      ...input,
+      operator: isRestrictedDevelopmentEnvironment(process.env)
+        ? "restricted-yamaxdev-testing"
+        : "shopify-app-pricing",
+      reason: isRestrictedDevelopmentEnvironment(process.env)
+        ? "Verified restricted development identity; billing untested"
+        : "Verified current Shopify-hosted subscription",
+      apply: false,
+    },
+    customFetch,
+    true,
+  );
+}
+
+async function bootstrapStore(
+  value: unknown,
+  customFetch: typeof fetch,
+  subscriber: boolean,
+) {
+  assertNewBenefitsEnabled();
   const input = companyStoreBootstrapInputSchema.parse(value);
   const first = await prisma.$transaction((tx) => capture(tx, input));
   const details = await fetchVerifiedShopifyShopDetails({
@@ -157,7 +209,7 @@ export async function bootstrapCompanyStore(
       }),
   });
   if (!details) throw fail();
-  const plan = preview(input, details.shopCurrency);
+  const plan = preview(input, details.shopCurrency, subscriber);
   if (input.apply && input.expectedPreview !== plan.previewDigest) throw fail();
   return prisma.$transaction(async (tx) => {
     const current = await capture(tx, input);
@@ -168,6 +220,13 @@ export async function bootstrapCompanyStore(
       current.now.getTime() - first.now.getTime() > 60_000
     )
       throw fail();
+    if (subscriber)
+      await assertFreshInstallationSubscription(
+        tx,
+        input.pendingInstallationId,
+        input.expectedInstallationGeneration,
+        current.now,
+      );
     const r = plan.records;
     // Never adopt existing records, including orphaned deterministic IDs.
     const conflicts = await Promise.all([
@@ -213,7 +272,7 @@ export async function bootstrapCompanyStore(
       }),
     ]);
     if (conflicts.some(Boolean)) throw fail();
-    if (!input.apply) return { ...plan, applied: false };
+    if (!input.apply && !subscriber) return { ...plan, applied: false };
 
     // Direct minimal records only: no generic onboarding, invites or billing.
     await tx.project.create({
@@ -263,9 +322,9 @@ export async function bootstrapCompanyStore(
         shopDomain: input.shop,
         shopCurrency: plan.shopCurrency,
         currencyVerifiedAt: first.now,
-        apiVersion: "2026-07",
+        apiVersion: SHOPIFY_ADMIN_API_VERSION,
         installationGeneration: input.expectedInstallationGeneration,
-        storeAccessState: "pending_approval",
+        storeAccessState: plan.storeAccessState,
         storeAccessRevision: 1,
       },
     });
@@ -286,7 +345,7 @@ export async function bootstrapCompanyStore(
         mappedStoreId: r.storeId,
         installationGeneration: input.expectedInstallationGeneration,
         revision,
-        operation: "bootstrap",
+        operation: subscriber ? "bootstrap_subscription" : "bootstrap",
         operator: input.operator,
         reason: `${plan.previewDigest}: ${input.reason}`,
       },

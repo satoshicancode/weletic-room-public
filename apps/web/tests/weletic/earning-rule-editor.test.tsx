@@ -2,6 +2,7 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CoreLaunchContext } from "../../ui/weletic/core-launch-context";
 import {
   earningRuleCopy,
   type EarningRuleLocale,
@@ -32,6 +33,7 @@ async function render(
   form: EarningRuleForm,
   locale: EarningRuleLocale = "en",
   disabled = false,
+  coreLaunch = false,
 ) {
   function Harness() {
     const [value, setValue] = React.useState(form);
@@ -46,7 +48,13 @@ async function render(
       />
     );
   }
-  await act(async () => root.render(<Harness />));
+  await act(async () =>
+    root.render(
+      <CoreLaunchContext.Provider value={coreLaunch}>
+        <Harness />
+      </CoreLaunchContext.Provider>,
+    ),
+  );
 }
 async function send() {
   await act(async () => {
@@ -273,3 +281,29 @@ describe("rendered shared earning-rule form", () => {
     expect(container.querySelector('input[name="targetUrl"]')).not.toBeNull();
   });
 });
+
+it.each(["en", "ja", "vi"] as const)(
+  "core launch offers only purchase earning and one-time orders in %s",
+  async (locale) => {
+    await render(
+      { ...newEarningRuleForm(), purchaseType: "one_time" },
+      locale,
+      false,
+      true,
+    );
+    expect(
+      Array.from(
+        container.querySelectorAll<HTMLSelectElement>(
+          'select[name="triggerCode"] option',
+        ),
+      ).map((option) => option.value),
+    ).toEqual(["order_paid"]);
+    expect(
+      Array.from(
+        container.querySelectorAll<HTMLSelectElement>(
+          'select[name="purchaseType"] option',
+        ),
+      ).map((option) => option.value),
+    ).toEqual(["one_time"]);
+  },
+);

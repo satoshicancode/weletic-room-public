@@ -239,3 +239,25 @@ describe("offline public extension staging", () => {
     expect(existsSync(join(root, "do-not-create"))).toBe(false);
   });
 });
+
+it("stages the core bundle with product photos and four Flow triggers, without deferred extensions", () => {
+  const files = buildPublicExtensionStage(root, { coreLaunch: true });
+  const report = JSON.parse(files["STAGING.json"]);
+  expect(report).toMatchObject({
+    featureProfile: "core-v1",
+    extensionCount: 9,
+    status: "unowned_not_deployable",
+  });
+  expect(Object.keys(files).join()).not.toMatch(
+    /loyalty-checkout-slider|weletic-vip-tier-changed|weletic-points-expiring-soon|weletic-referral-completed/,
+  );
+  expect(
+    files["extensions/weletic-analytics/blocks/product-reviews.liquid"],
+  ).toBeTruthy();
+  expect(
+    files["extensions/weletic-analytics/assets/weletic-reviews.js"],
+  ).toBeTruthy();
+  expect(
+    files["extensions/weletic-customer-account/src/release-profile.ts"],
+  ).toContain("CORE_LAUNCH = true");
+});

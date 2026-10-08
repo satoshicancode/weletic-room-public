@@ -1,6 +1,7 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { isCoreLaunch } from "../core-launch-policy";
 import { ReviewError } from "./contracts";
 import { REVIEW_FLOW_HANDLES } from "./flow-contract";
 import { enqueueReviewFlowEvent } from "./flow-producer";
@@ -43,6 +44,11 @@ export async function submitOpenReview({
     tx: Prisma.TransactionClient,
   ) => Promise<z.infer<typeof identitySchema>>;
 }) {
+  if (isCoreLaunch())
+    throw new ReviewError(
+      "disabled",
+      "Open reviews are unavailable in the core launch",
+    );
   z.string().min(1).max(191).parse(storeId);
   const data = openReviewSubmissionSchema.parse(input);
   if (data.expectedInstallationGeneration !== installationGeneration)

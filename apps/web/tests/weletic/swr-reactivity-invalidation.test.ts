@@ -1,102 +1,19 @@
-import * as SwrMutateModule from "@/lib/swr/mutate";
-import type { MutatorOptions } from "swr";
-import { beforeEach, describe, expect, it } from "vitest";
+import {
+  mutateCommissions,
+  mutateComposite,
+  mutateDiscountCodes,
+  mutatePartner,
+  mutatePartnerLinks,
+  mutatePayouts,
+  mutatePrefix,
+  mutateSuffix,
+} from "@/lib/swr/mutate";
+import { mutate, type MutatorOptions } from "swr";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// SWR Reactivity Invalidation Helpers & Contract Definitions
-// If exported from '@/lib/swr/mutate', use module export; otherwise use contract definition
-const mutatePrefix = SwrMutateModule.mutatePrefix;
-const mutateSuffix = SwrMutateModule.mutateSuffix;
-
-// Canonical contract definitions per PROJECT.md interface specifications:
-const mutatePartner =
-  (SwrMutateModule as any).mutatePartner ??
-  (async (
-    partnerId?: string | null,
-    opts: MutatorOptions = { revalidate: true },
-  ) => {
-    if (!partnerId) {
-      return mutatePrefix(["/api/partners"], undefined, opts);
-    }
-
-    const partnerIdParam = `partnerId=${partnerId}`;
-    const partnerEndpointPrefix = `/api/partners/${partnerId}`;
-
-    const predicate = (key: any) => {
-      if (typeof key !== "string") return false;
-
-      // Exact boundary check for partnerId param to avoid prefix collisions (e.g. pn_1 vs pn_10)
-      const hasPartnerIdParam =
-        key.includes(`?${partnerIdParam}&`) ||
-        key.endsWith(`?${partnerIdParam}`) ||
-        key.includes(`&${partnerIdParam}&`) ||
-        key.endsWith(`&${partnerIdParam}`);
-
-      // Path boundary check for /api/partners/:partnerId to avoid /api/partners/pn_1 vs /api/partners/pn_10
-      const matchesPartnerPath =
-        key === partnerEndpointPrefix ||
-        key.startsWith(`${partnerEndpointPrefix}?`) ||
-        key.startsWith(`${partnerEndpointPrefix}/`);
-
-      return (
-        matchesPartnerPath ||
-        hasPartnerIdParam ||
-        key === "/api/partners" ||
-        key.startsWith("/api/partners?") ||
-        key.startsWith("/api/partners/count")
-      );
-    };
-
-    return SwrMutateModule.mutatePrefix(predicate as any, undefined, opts);
-  });
-
-const mutateComposite =
-  (SwrMutateModule as any).mutateComposite ??
-  (async (partnerId: string, opts: MutatorOptions = { revalidate: true }) => {
-    const predicate = (key: any) =>
-      typeof key === "string" &&
-      (key === `/api/partners/${partnerId}` ||
-        key.startsWith(`/api/partners/${partnerId}?`) ||
-        key.startsWith(`/api/partners/${partnerId}/`)) &&
-      key.includes("includeComposite=true");
-
-    return SwrMutateModule.mutatePrefix(predicate as any, undefined, opts);
-  });
-
-const mutatePartnerLinks =
-  (SwrMutateModule as any).mutatePartnerLinks ??
-  (async (partnerId?: string) => {
-    await Promise.all([
-      mutatePrefix(["/api/links", "/api/partner-profile"]),
-      partnerId ? mutatePartner(partnerId) : mutatePrefix("/api/partners"),
-    ]);
-  });
-
-const mutateDiscountCodes =
-  (SwrMutateModule as any).mutateDiscountCodes ??
-  (async (partnerId?: string) => {
-    await Promise.all([
-      mutatePrefix("/api/discount-codes"),
-      partnerId ? mutatePartner(partnerId) : mutatePrefix("/api/partners"),
-    ]);
-  });
-
-const mutateCommissions =
-  (SwrMutateModule as any).mutateCommissions ??
-  (async (partnerId?: string) => {
-    await Promise.all([
-      mutatePrefix(["/api/commissions", "/api/payouts"]),
-      partnerId ? mutatePartner(partnerId) : mutatePrefix("/api/partners"),
-    ]);
-  });
-
-const mutatePayouts =
-  (SwrMutateModule as any).mutatePayouts ??
-  (async (partnerId?: string) => {
-    await Promise.all([
-      mutatePrefix("/api/payouts"),
-      partnerId ? mutatePartner(partnerId) : mutatePrefix("/api/partners"),
-    ]);
-  });
+vi.mock("swr", () => ({
+  mutate: vi.fn(),
+}));
 
 // SWR Invalidation Engine Simulator for realistic caching & state verification
 class SWRReactivityTestBed {
@@ -1516,7 +1433,13 @@ describe("Weletic SWR Reactivity & Cache Invalidation Contract Suite", () => {
       const partnerState = {
         id: partnerId,
         links: [{ id: "lnk_1", key: "sarah" }],
-        discountCodes: [] as any[],
+        discountCodes: [] as Array<{
+          id: string;
+          code: string;
+          partnerId: string;
+          linkId: string;
+          type: string;
+        }>,
       };
       testBed.set(compositeKey, partnerState);
       testBed.set(codesKey, []);
@@ -1839,6 +1762,72 @@ describe("Weletic SWR Reactivity & Cache Invalidation Contract Suite", () => {
       expect(finalState.pendingPayoutAmount).toBe(0);
       expect(finalState.lifetimePaidOut).toBe(2000);
       expect(finalState.groupId).toBe("grp_vip");
+    });
+  });
+
+  // =========================================================================
+  // TIER 5: CANONICAL SWR MUTATOR EXECUTION & CACHE INTEGRATION
+  // =========================================================================
+  describe("Tier 5: Canonical SWR Mutator Execution & Cache Integration", () => {
+    beforeEach(() => {
+      vi.mocked(mutate).mockClear();
+    });
+
+    it("T5.1: mutatePartner invokes swr.mutate with accurate key predicate", async () => {
+      await mutatePartner("pn_sarah_456");
+      expect(mutate).toHaveBeenCalled();
+      const predicate = vi.mocked(mutate).mock.calls[0][0] as (
+        key: any,
+      ) => boolean;
+      expect(typeof predicate).toBe("function");
+      expect(predicate("/api/partners/pn_sarah_456")).toBe(true);
+      expect(predicate("/api/partners/pn_other_789")).toBe(false);
+      expect(predicate("/api/partners?partnerId=pn_sarah_456")).toBe(true);
+      expect(predicate("/api/partners")).toBe(true);
+    });
+
+    it("T5.2: mutateComposite invokes swr.mutate targeting includeComposite=true", async () => {
+      await mutateComposite("pn_sarah_456");
+      expect(mutate).toHaveBeenCalled();
+      const predicate = vi.mocked(mutate).mock.calls[0][0] as (
+        key: any,
+      ) => boolean;
+      expect(typeof predicate).toBe("function");
+      expect(
+        predicate("/api/partners/pn_sarah_456?includeComposite=true"),
+      ).toBe(true);
+      expect(predicate("/api/partners/pn_sarah_456")).toBe(false);
+    });
+
+    it("T5.3: mutatePrefix and mutateSuffix correctly trigger swr.mutate", async () => {
+      await mutatePrefix("/api/links");
+      expect(mutate).toHaveBeenCalled();
+      const prefixPred = vi.mocked(mutate).mock.calls[0][0] as (
+        key: any,
+      ) => boolean;
+      expect(prefixPred("/api/links?page=1")).toBe(true);
+      expect(prefixPred("/api/partners")).toBe(false);
+
+      await mutateSuffix("/count");
+      const suffixPred = vi.mocked(mutate).mock.calls[1][0] as (
+        key: any,
+      ) => boolean;
+      expect(suffixPred("/api/partners/count")).toBe(true);
+      expect(suffixPred("/api/partners/list")).toBe(false);
+    });
+
+    it("T5.4: composite resource mutators invoke associated endpoint invalidations", async () => {
+      await mutatePartnerLinks("pn_sarah_456");
+      expect(mutate).toHaveBeenCalled();
+
+      await mutateDiscountCodes("pn_sarah_456");
+      expect(mutate).toHaveBeenCalled();
+
+      await mutateCommissions("pn_sarah_456");
+      expect(mutate).toHaveBeenCalled();
+
+      await mutatePayouts("pn_sarah_456");
+      expect(mutate).toHaveBeenCalled();
     });
   });
 });

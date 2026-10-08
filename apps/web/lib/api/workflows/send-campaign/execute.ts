@@ -405,7 +405,10 @@ async function resolveProgramEnrollment({
 
   const workflowContext = buildWorkflowContext({
     programEnrollment,
-    totalCommissions: totalCommissions._sum.earnings,
+    totalCommissions:
+      totalCommissions._sum.earnings != null
+        ? Number(totalCommissions._sum.earnings)
+        : null,
   });
 
   const shouldExecute = evaluateWorkflowConditions({
@@ -497,7 +500,7 @@ async function resolveProgramEnrollments({
     });
 
     for (const { partnerId, _sum } of commissionTotals) {
-      commissionsByPartnerId.set(partnerId, _sum.earnings ?? 0);
+      commissionsByPartnerId.set(partnerId, Number(_sum.earnings ?? 0));
     }
   }
 

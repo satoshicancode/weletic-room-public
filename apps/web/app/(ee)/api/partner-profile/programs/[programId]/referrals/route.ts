@@ -86,7 +86,7 @@ export const GET = withPartnerProfile(
         if (commission.sourcePartnerId) {
           commissionsMap.set(
             commission.sourcePartnerId,
-            commission._sum.earnings ?? 0,
+            Number(commission._sum.earnings ?? 0),
           );
         }
       }

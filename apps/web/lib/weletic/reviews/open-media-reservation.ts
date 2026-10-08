@@ -1,6 +1,7 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { Prisma } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
 import { REVIEW_MAX_PHOTOS, ReviewError } from "./contracts";
 import type {
   OpenReviewPhotoInput,
@@ -40,6 +41,11 @@ export async function reserveOpenReviewPhotoInTransaction({
   sizeBytes: number;
   maxSubmissionsPer24Hours: number;
 }): Promise<ReservedPhoto> {
+  if (isCoreLaunch())
+    throw new ReviewError(
+      "disabled",
+      "Open reviews are unavailable in the core launch",
+    );
   const { storeId, shopperId, installationGeneration, source } = scope;
   const clocks = await tx.$queryRaw<Array<{ now: Date }>>(
     Prisma.sql`SELECT CURRENT_TIMESTAMP(3) AS now`,
