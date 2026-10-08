@@ -48,12 +48,15 @@ function fixture() {
     weleticPointsLedgerEntry: { findMany: vi.fn().mockResolvedValue([entry]) },
   };
   let referenceIds: string[] | null = null;
+  let discoveredEntries = [entry];
   tx.$queryRaw.mockImplementation(async (query: { strings: string[] }) => {
-    if (query.strings.join(" ").includes("SELECT l.id FROM")) {
+    const sql = query.strings.join(" ");
+    if (sql.includes("FORCE INDEX (wl_import_metadata_source_idx)")) {
+      return discoveredEntries;
+    }
+    if (sql.includes("SELECT l.id FROM")) {
       if (referenceIds) return referenceIds.map((id) => ({ id }));
-      const discovered =
-        await tx.weleticPointsLedgerEntry.findMany.mock.results[0]?.value;
-      return (discovered ?? []).map((row: typeof entry) => ({ id: row.id }));
+      return discoveredEntries.map((row) => ({ id: row.id }));
     }
     const executions =
       await tx.weleticLoyaltyImportRowExecution.findMany.mock.results.at(-1)
@@ -73,6 +76,9 @@ function fixture() {
     tx,
     setReferenceIds: (ids: string[]) => {
       referenceIds = ids;
+    },
+    setDiscoveredEntries: (entries: typeof entry[]) => {
+      discoveredEntries = entries;
     },
     run: () =>
       readHistoricalImportReconciliationInTransaction({
@@ -126,7 +132,6 @@ describe("stored import reconciliation", () => {
         idempotencyKey: `loyalty_import_opening:source:${snapshot.id}`,
         metadata: { ...f.entry.metadata, snapshotId: snapshot.id },
       }));
-      const byId = new Map(entries.map((entry) => [entry.id, entry]));
       mocks.read.mockResolvedValue({
         source: { status: "committed", normalizedSha256: "a".repeat(64) },
         snapshots,
@@ -144,28 +149,15 @@ describe("stored import reconciliation", () => {
           shopifyCustomerId: String(index + 1),
         })),
       );
-      f.tx.weleticPointsLedgerEntry.findMany.mockImplementation(
-        async (query: {
-          where: {
-            metadata?: unknown;
-            id?: { in: string[] };
-            referenceId?: { in: string[] };
-          };
-        }) => {
-          if (query.where.metadata) return entries;
-          const ids = query.where.id?.in ?? query.where.referenceId!.in;
-          expect(ids.length).toBeLessThanOrEqual(1000);
-          return ids.map((id) => byId.get(id.replace("snapshot-", "ledger-"))!);
-        },
-      );
+      f.setDiscoveredEntries(entries);
       expect(await f.run()).toMatchObject({
         reconciled: true,
         fullyCommitted: true,
         rowCount: count,
         observedNetPoints: (points * BigInt(count)).toString(),
       });
-      expect(f.tx.$queryRaw).toHaveBeenCalledTimes(2);
-      expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(1);
+      expect(f.tx.$queryRaw).toHaveBeenCalledTimes(3);
+      expect(f.tx.weleticPointsLedgerEntry.findMany).not.toHaveBeenCalled();
       // Algorithmic bound, not a wall-clock benchmark or database load claim.
       expect(accountReads).toBeLessThanOrEqual(count * 6);
     },
@@ -232,13 +224,14 @@ describe("stored import reconciliation", () => {
       })),
     });
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
-    f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValue([]);
+    f.setDiscoveredEntries([]);
+    f.setReferenceIds([]);
     expect((await f.run()).reconciled).toBe(true);
-    expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(1);
-    expect(f.tx.$queryRaw.mock.calls[1][0].strings.join(" ")).toContain(
+    expect(f.tx.weleticPointsLedgerEntry.findMany).not.toHaveBeenCalled();
+    expect(f.tx.$queryRaw.mock.calls[2][0].strings.join(" ")).toContain(
       "JOIN WeleticPointsLedgerEntry",
     );
-    expect(f.tx.$queryRaw.mock.calls[1][0].values).toEqual(["source", 4003]);
+    expect(f.tx.$queryRaw.mock.calls[2][0].values).toEqual(["source", 4003]);
   });
   it("loads verified source evidence and returns only a summary", async () => {
     const f = fixture();
@@ -250,14 +243,13 @@ describe("stored import reconciliation", () => {
       observedNetPoints: "10",
     });
     expect(JSON.stringify(result)).not.toMatch(/snapshot|account|Customer/);
-    expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        take: 3,
-        where: {
-          metadata: { path: "$.sourceId", equals: "source" },
-        },
-      }),
+    expect(f.tx.$queryRaw.mock.calls[1][0].strings.join(" ")).toContain(
+      "FORCE INDEX (wl_import_metadata_source_idx)",
     );
+    expect(f.tx.$queryRaw.mock.calls[1][0].strings.join(" ")).toContain(
+      "JSON_CONTAINS(metadata, JSON_QUOTE(",
+    );
+    expect(f.tx.$queryRaw.mock.calls[1][0].values).toEqual(["source", "source", 3]);
   });
   it("stops before reading execution or ledger when source verification fails", async () => {
     const f = fixture();
@@ -266,6 +258,7 @@ describe("stored import reconciliation", () => {
     expect(
       f.tx.weleticLoyaltyImportRowExecution.findMany,
     ).not.toHaveBeenCalled();
+    expect(f.tx.$queryRaw).not.toHaveBeenCalled();
     expect(f.tx.weleticPointsLedgerEntry.findMany).not.toHaveBeenCalled();
   });
   it.each(["foreign", "orphan", "duplicate"])(
@@ -291,30 +284,31 @@ describe("stored import reconciliation", () => {
   it("finds a reference-linked orphan even when its source metadata is absent", async () => {
     const f = fixture();
     f.setReferenceIds([f.entry.id]);
+    f.setDiscoveredEntries([]);
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
-    f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ...f.entry, metadata: {} }]);
+    f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValueOnce([
+      { ...f.entry, metadata: {} },
+    ]);
     expect((await f.run()).reconciled).toBe(false);
-    expect(f.tx.$queryRaw.mock.calls[1][0].strings.join(" ")).toContain(
+    expect(f.tx.$queryRaw.mock.calls[2][0].strings.join(" ")).toContain(
       "JOIN WeleticPointsLedgerEntry",
     );
   });
   it("rejects a claimed ledger entry belonging to another store", async () => {
     const f = fixture();
+    f.setDiscoveredEntries([]);
     f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ...f.entry, storeId: "other" }])
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([{ ...f.entry, storeId: "other" }]);
     await expect(f.run()).rejects.toThrow();
   });
   it("rejects a foreign reference-only orphan without metadata or claims", async () => {
     const f = fixture();
     f.setReferenceIds([f.entry.id]);
+    f.setDiscoveredEntries([]);
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
-    f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ ...f.entry, storeId: "other", metadata: {} }]);
+    f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValueOnce([
+      { ...f.entry, storeId: "other", metadata: {} },
+    ]);
     await expect(f.run()).rejects.toThrow();
   });
   it("reuses metadata evidence for claims and reference IDs inside the same proof", async () => {
@@ -323,27 +317,22 @@ describe("stored import reconciliation", () => {
       reconciled: true,
       observedNetPoints: "10",
     });
-    expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenCalledTimes(1);
-    for (const [query] of f.tx.weleticPointsLedgerEntry.findMany.mock.calls) {
-      expect(query.where).not.toHaveProperty("storeId");
-      expect(query.take).toBe(3);
-    }
+    expect(f.tx.weleticPointsLedgerEntry.findMany).not.toHaveBeenCalled();
   });
   it("rejects a discovered reference that cannot be hydrated", async () => {
     const f = fixture();
     f.setReferenceIds(["orphan"]);
+    f.setDiscoveredEntries([]);
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
-    f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
+    f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValueOnce([]);
     await expect(f.run()).rejects.toThrow();
   });
   it.each(["missing", "corrupt", "valid"])(
     "hydrates a %s claim absent from metadata discovery",
     async (kind) => {
       const f = fixture();
+      f.setDiscoveredEntries([]);
       f.tx.weleticPointsLedgerEntry.findMany
-        .mockResolvedValueOnce([])
         .mockResolvedValueOnce(
           kind === "missing"
             ? []
@@ -361,7 +350,7 @@ describe("stored import reconciliation", () => {
       if (kind === "corrupt")
         expect(result.issues).toContain("ledger_provenance_mismatch");
       expect(f.tx.weleticPointsLedgerEntry.findMany).toHaveBeenNthCalledWith(
-        2,
+        1,
         expect.objectContaining({ where: { id: { in: ["ledger"] } } }),
       );
     },
@@ -430,11 +419,11 @@ describe("stored import reconciliation", () => {
         },
       },
     );
-    expect(f.tx.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(f.tx.$queryRaw).toHaveBeenCalledTimes(3);
   });
   it("detects an unclaimed foreign write with this source provenance", async () => {
     const f = fixture();
-    f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValue([
+    f.setDiscoveredEntries([
       f.entry,
       { ...f.entry, id: "foreign-ledger", storeId: "other" },
     ]);
@@ -442,7 +431,7 @@ describe("stored import reconciliation", () => {
   });
   it("fails closed when discovered evidence exceeds two entries per row", async () => {
     const f = fixture();
-    f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValue(
+    f.setDiscoveredEntries(
       ["one", "two", "three"].map((id) => ({ ...f.entry, id })),
     );
     await expect(f.run()).rejects.toThrow();
@@ -529,6 +518,7 @@ describe("stored import reconciliation", () => {
   it("detects a completed source with pending rows", async () => {
     const f = fixture();
     f.tx.weleticLoyaltyImportRowExecution.findMany.mockResolvedValue([]);
+    f.setDiscoveredEntries([]);
     f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValue([]);
     expect(await f.run()).toMatchObject({
       reconciled: false,

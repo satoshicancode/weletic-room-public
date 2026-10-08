@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, type WeleticPointsLedgerEntry } from "@prisma/client";
 import {
   HistoricalImportIntegrityError,
   readVerifiedHistoricalImportInTransaction,
@@ -122,11 +122,21 @@ export async function readHistoricalImportExecutionProofInTransaction({
   // hidden merely by omitting its execution record. Source/snapshot IDs are
   // globally unique. Discover foreign stray writes too, only after source
   // ownership validation; the checker rejects them without returning row data.
-  const discovered = await tx.weleticPointsLedgerEntry.findMany({
-    where: { metadata: { path: "$.sourceId", equals: sourceId } },
-    take: snapshots.length * 2 + 1,
-    orderBy: { id: "asc" },
-  });
+  const maximumSourceEntries = snapshots.length * 2;
+  // The first predicate matches the additive generated-column index. Force it because
+  // small-table statistics can choose a full scan; the release schema gate
+  // must apply the index before this reader is deployed. Keep the exact
+  // JSON string predicate too: a cast may truncate malformed long values and
+  // must never broaden the source evidence set. This discovery is global so a
+  // foreign-store orphan cannot be hidden by a tenant filter.
+  const discovered = await tx.$queryRaw<WeleticPointsLedgerEntry[]>(Prisma.sql`
+    SELECT * FROM WeleticPointsLedgerEntry FORCE INDEX (wl_import_metadata_source_idx)
+    WHERE importSourceId = ${sourceId}
+      AND JSON_CONTAINS(metadata, JSON_QUOTE(${sourceId}), '$.sourceId')
+    LIMIT ${maximumSourceEntries + 1}
+  `);
+  if (discovered.length > maximumSourceEntries)
+    throw new HistoricalImportIntegrityError();
   const byEntryId = new Map(discovered.map((entry) => [entry.id, entry]));
   if (byEntryId.size > snapshots.length * 2)
     throw new HistoricalImportIntegrityError();

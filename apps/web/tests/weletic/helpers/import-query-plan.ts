@@ -146,6 +146,7 @@ const knownKeys = new Set([
   "WeleticPointsLedgerEntry_accountId_sequenceNumber_key",
   "WeleticPointsLedgerEntry_referenceType_referenceId_idx",
   "WeleticPointsLedgerEntry_storeId_idempotencyKey_key",
+  "wl_import_metadata_source_idx",
 ]);
 
 export function summarizeImportPlan(json: string) {
