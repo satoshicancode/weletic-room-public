@@ -1,4 +1,5 @@
 export * from "./app-pricing-contract";
+export * from "./app-proxy-contract";
 export * from "./installation-admission-contract";
 export * from "./service-auth";
 export * from "./session-contract";

@@ -1,7 +1,7 @@
 import {
   appProxyObservationSchema,
   assertFreshAppProxyTimestamp,
-} from "../../../apps/web/lib/weletic/shopify/app-proxy-contract";
+} from "@weletic/contracts/shopify";
 import { weleticApiJson } from "./weletic-api.server";
 
 const observationAttempts = new Map<
