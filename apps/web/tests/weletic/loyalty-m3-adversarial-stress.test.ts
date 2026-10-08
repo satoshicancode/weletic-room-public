@@ -46,6 +46,9 @@ vi.mock("@/lib/prisma", () => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    weleticLoyaltyRefundAllocation: {
+      createMany: vi.fn(),
+    },
     weleticCommerceOrder: {
       findUnique: vi.fn(),
     },
@@ -77,6 +80,11 @@ describe("M3 Adversarial Stress Harness: Holding Periods, Negative Balances & OC
     vi.resetAllMocks();
     vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([]);
     vi.mocked(prisma.weleticLoyaltyEarnGrant.updateMany).mockResolvedValue({
+      count: 1,
+    });
+    vi.mocked(
+      prisma.weleticLoyaltyRefundAllocation.createMany,
+    ).mockResolvedValue({
       count: 1,
     });
   });

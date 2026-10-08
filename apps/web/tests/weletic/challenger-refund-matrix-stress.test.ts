@@ -68,6 +68,7 @@ interface MockDb {
   refundLines: Map<string, any>;
   grants: Map<string, any>;
   orderLineEarns: Map<string, any>;
+  refundAllocations: Map<string, any>;
   programs: Map<string, any>;
   outboxJobs: Map<string, any>;
   reconciliationIssues: Map<string, any>;
@@ -83,6 +84,7 @@ const db: MockDb = {
   refundLines: new Map(),
   grants: new Map(),
   orderLineEarns: new Map(),
+  refundAllocations: new Map(),
   programs: new Map(),
   outboxJobs: new Map(),
   reconciliationIssues: new Map(),
@@ -98,6 +100,7 @@ function resetDb() {
   db.refundLines.clear();
   db.grants.clear();
   db.orderLineEarns.clear();
+  db.refundAllocations.clear();
   db.programs.clear();
   db.outboxJobs.clear();
   db.reconciliationIssues.clear();
@@ -345,6 +348,17 @@ vi.mock("@/lib/prisma", () => {
           count++;
         }
         return { count };
+      }),
+    },
+    weleticLoyaltyRefundAllocation: {
+      createMany: vi.fn(async ({ data }: any) => {
+        for (const allocation of data) {
+          const key = `${allocation.storeId}:${allocation.ledgerEntryId}:${allocation.orderLineId}`;
+          if (db.refundAllocations.has(key))
+            throw new Error("Duplicate refund allocation");
+          db.refundAllocations.set(key, { ...allocation });
+        }
+        return { count: data.length };
       }),
     },
     weleticLoyaltyProgram: {
