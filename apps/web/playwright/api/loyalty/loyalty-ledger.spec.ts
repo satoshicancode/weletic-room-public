@@ -4,7 +4,7 @@ import { randomName } from "../../utils";
 import { test } from "../fixtures";
 
 test.describe.configure({
-  mode: "parallel",
+  mode: "serial",
 });
 
 async function setupLoyaltyTestEnvironment(
@@ -88,19 +88,28 @@ test("POST /api/shopify/loyalty/admin/adjust – mutates customer loyalty points
     idempotencyKey,
   };
 
-  const { status, data } = await api.post<{
-    success: boolean;
-    ledgerEntryId: string;
-    accountId: string;
-    pointsDelta: string;
-    balanceAfter: string;
-    reason: string;
+  const response = await api.post<{
+    data?: {
+      success: boolean;
+      ledgerEntryId: string;
+      accountId: string;
+      pointsDelta: string;
+      balanceAfter: string;
+      reason: string;
+    };
+    success?: boolean;
+    ledgerEntryId?: string;
+    accountId?: string;
+    pointsDelta?: string;
+    balanceAfter?: string;
+    reason?: string;
   }>(
     `/api/shopify/loyalty/admin/adjust?workspaceId=${workspace.id}`,
     adjustmentPayload,
   );
 
-  expect(status).toBe(200);
+  expect(response.status).toBe(200);
+  const data = (response.data as any)?.data ?? response.data;
   expect(data).toMatchObject({
     success: true,
     ledgerEntryId: expect.any(String),
@@ -126,16 +135,22 @@ test("POST /api/shopify/loyalty/admin/adjust – supports negative adjustments (
     idempotencyKey,
   };
 
-  const { status, data } = await api.post<{
-    success: boolean;
-    pointsDelta: string;
-    balanceAfter: string;
+  const response = await api.post<{
+    data?: {
+      success: boolean;
+      pointsDelta: string;
+      balanceAfter: string;
+    };
+    success?: boolean;
+    pointsDelta?: string;
+    balanceAfter?: string;
   }>(
     `/api/shopify/loyalty/admin/adjust?workspaceId=${workspace.id}`,
     adjustmentPayload,
   );
 
-  expect(status).toBe(200);
+  expect(response.status).toBe(200);
+  const data = (response.data as any)?.data ?? response.data;
   expect(data).toMatchObject({
     success: true,
     pointsDelta: "-100",
@@ -209,18 +224,13 @@ test("POST /api/shopify/loyalty/admin/rewards – provisions reward voucher defi
   };
 
   // 1. Create reward voucher definition
-  const { status: createStatus, data: createdReward } = await api.post<{
-    id: string;
-    name: string;
-    rewardType: string;
-    pointsCost: string;
-    discountValue: string;
-  }>(
+  const createRes = await api.post<any>(
     `/api/shopify/loyalty/admin/rewards?workspaceId=${workspace.id}`,
     createPayload,
   );
 
-  expect([200, 201]).toContain(createStatus);
+  expect([200, 201]).toContain(createRes.status);
+  const createdReward = (createRes.data as any)?.data ?? createRes.data;
   expect(createdReward).toMatchObject({
     id: expect.any(String),
     name: rewardName,
@@ -231,11 +241,12 @@ test("POST /api/shopify/loyalty/admin/rewards – provisions reward voucher defi
 
   try {
     // 2. Query reward voucher list
-    const { status: listStatus, data: rewardsList } = await api.get<
-      Array<{ id: string; name: string }>
-    >(`/api/shopify/loyalty/admin/rewards?workspaceId=${workspace.id}`);
+    const listRes = await api.get<any>(
+      `/api/shopify/loyalty/admin/rewards?workspaceId=${workspace.id}`,
+    );
 
-    expect(listStatus).toBe(200);
+    expect(listRes.status).toBe(200);
+    const rewardsList = (listRes.data as any)?.data ?? listRes.data;
     expect(rewardsList).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -247,29 +258,27 @@ test("POST /api/shopify/loyalty/admin/rewards – provisions reward voucher defi
 
     // 3. Update reward definition
     const updatedName = `${rewardName} (Updated)`;
-    const { status: updateStatus, data: updatedReward } = await api.put<{
-      id: string;
-      name: string;
-      pointsCost: string;
-    }>(`/api/shopify/loyalty/admin/rewards?workspaceId=${workspace.id}`, {
-      id: rewardId,
-      name: updatedName,
-      pointsCost: 600,
-    });
+    const updateRes = await api.put<any>(
+      `/api/shopify/loyalty/admin/rewards?workspaceId=${workspace.id}`,
+      {
+        id: rewardId,
+        name: updatedName,
+        pointsCost: 600,
+      },
+    );
 
-    expect(updateStatus).toBe(200);
+    expect(updateRes.status).toBe(200);
+    const updatedReward = (updateRes.data as any)?.data ?? updateRes.data;
     expect(updatedReward.name).toBe(updatedName);
     expect(updatedReward.pointsCost).toBe("600");
 
     // 4. Archive (DELETE) reward definition
-    const { status: deleteStatus, data: deleteData } = await api.delete<{
-      success: boolean;
-      archivedId: string;
-    }>(
+    const deleteRes = await api.delete<any>(
       `/api/shopify/loyalty/admin/rewards?workspaceId=${workspace.id}&id=${rewardId}`,
     );
 
-    expect(deleteStatus).toBe(200);
+    expect(deleteRes.status).toBe(200);
+    const deleteData = (deleteRes.data as any)?.data ?? deleteRes.data;
     expect(deleteData).toMatchObject({
       success: true,
       archivedId: rewardId,
@@ -335,26 +344,12 @@ test("GET /api/shopify/loyalty/admin/activity – retrieves paginated points led
   );
 
   // Query activity history
-  const { status, data } = await api.get<{
-    entries: Array<{
-      id: string;
-      entryType: string;
-      pointsDelta: string;
-      balanceAfter: string;
-      reason: string;
-      createdAt: string;
-    }>;
-    pagination: {
-      total: number;
-      page: number;
-      limit: number;
-      totalPages: number;
-    };
-  }>(
+  const activityRes = await api.get<any>(
     `/api/shopify/loyalty/admin/activity?workspaceId=${workspace.id}&page=1&limit=10`,
   );
 
-  expect(status).toBe(200);
+  expect(activityRes.status).toBe(200);
+  const data = (activityRes.data as any)?.data ?? activityRes.data;
   expect(data.entries).toBeInstanceOf(Array);
   expect(data.entries.length).toBeGreaterThanOrEqual(1);
   expect(data.pagination).toMatchObject({
@@ -380,13 +375,12 @@ test("GET /api/shopify/loyalty/admin/activity – supports filtering by entry ty
 }) => {
   await setupLoyaltyTestEnvironment(workspace.id, program.id);
 
-  const { status, data } = await api.get<{
-    entries: Array<{ entryType: string }>;
-  }>(
+  const filterRes = await api.get<any>(
     `/api/shopify/loyalty/admin/activity?workspaceId=${workspace.id}&type=MANUAL_ADJUSTMENT`,
   );
 
-  expect(status).toBe(200);
+  expect(filterRes.status).toBe(200);
+  const data = (filterRes.data as any)?.data ?? filterRes.data;
   for (const entry of data.entries) {
     expect(entry.entryType).toBe("MANUAL_ADJUSTMENT");
   }

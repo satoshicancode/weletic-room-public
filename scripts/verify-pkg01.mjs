@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const REPO_ROOT = process.cwd();
+const REPO_ROOT = process.cwd().endsWith("packages/shopify-app")
+  ? path.resolve(process.cwd(), "../..")
+  : process.cwd();
 const TARGET_DIR = path.resolve(REPO_ROOT, "packages/shopify-app");
 const EXCLUDED_DIRS = new Set(["node_modules", "build", ".turbo", ".git"]);
 const SCANNED_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"]);

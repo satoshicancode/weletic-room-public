@@ -2,6 +2,7 @@ import { WorkspaceRole } from "@prisma/client";
 import { PermissionAction } from "../rbac/permissions";
 import { permissionRegistry } from "../rbac/plugin-registry";
 import { ResourceKey } from "../rbac/resources";
+import "@/lib/weletic/rbac/register";
 
 export const DUB_SCOPES = [
   "links.read",
@@ -150,6 +151,8 @@ export const DUB_RESOURCE_SCOPES: {
       "workspaces.read",
       "analytics.read",
       "groups.read",
+      "integrations.read",
+      "loyalty.read",
     ],
   },
   {
@@ -169,6 +172,10 @@ export const DUB_RESOURCE_SCOPES: {
       "analytics.read",
       "groups.read",
       "groups.write",
+      "integrations.read",
+      "integrations.write",
+      "loyalty.read",
+      "loyalty.write",
     ],
   },
 ];
