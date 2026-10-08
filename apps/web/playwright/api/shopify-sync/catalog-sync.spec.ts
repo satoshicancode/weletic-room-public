@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { expect } from "@playwright/test";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
+import { expect } from "@playwright/test";
 import { randomName } from "../../utils";
 import { test } from "../fixtures";
 

@@ -8,7 +8,15 @@ const REPO_ROOT = process.cwd().endsWith("packages/shopify-app")
   : process.cwd();
 const TARGET_DIR = path.resolve(REPO_ROOT, "packages/shopify-app");
 const EXCLUDED_DIRS = new Set(["node_modules", "build", ".turbo", ".git"]);
-const SCANNED_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json"]);
+const SCANNED_EXTENSIONS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".json",
+]);
 
 const violations = [];
 
@@ -42,17 +50,25 @@ function checkFile(filePath) {
   });
 }
 
-console.log(`[PKG-01] Auditing ${TARGET_DIR} for inverted imports into apps/web...`);
+console.log(
+  `[PKG-01] Auditing ${TARGET_DIR} for inverted imports into apps/web...`,
+);
 scanDirectory(TARGET_DIR);
 
 if (violations.length === 0) {
-  console.log("✅ [PKG-01 PASS] Verified: Exactly 0 inverted imports from packages/shopify-app into apps/web.");
+  console.log(
+    "✅ [PKG-01 PASS] Verified: Exactly 0 inverted imports from packages/shopify-app into apps/web.",
+  );
   process.exit(0);
 } else {
-  console.error(`❌ [PKG-01 FAIL] Found ${violations.length} inverted references to apps/web across ${new Set(violations.map(v => v.file)).size} files:\n`);
+  console.error(
+    `❌ [PKG-01 FAIL] Found ${violations.length} inverted references to apps/web across ${new Set(violations.map((v) => v.file)).size} files:\n`,
+  );
   violations.forEach(({ file, line, content }) => {
     console.error(`  ${file}:${line} -> ${content}`);
   });
-  console.error(`\nTotal violations: ${violations.length}. All imports must resolve via @weletic/contracts or local package files.`);
+  console.error(
+    `\nTotal violations: ${violations.length}. All imports must resolve via @weletic/contracts or local package files.`,
+  );
   process.exit(1);
 }

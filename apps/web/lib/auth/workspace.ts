@@ -259,7 +259,12 @@ export const withWorkspace = (
           }
 
           // Find workspaceId if it's a restricted token
-          if (isRestrictedToken && token?.projectId && !workspaceId && !workspaceSlug) {
+          if (
+            isRestrictedToken &&
+            token?.projectId &&
+            !workspaceId &&
+            !workspaceSlug
+          ) {
             workspaceId = token.projectId;
           }
 

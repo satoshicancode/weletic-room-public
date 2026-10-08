@@ -4,8 +4,8 @@ import {
   normalizeShopDomain,
   shopifyCredentialVerificationHash,
 } from "@/lib/weletic/shopify/store-resolver";
-import { expect } from "@playwright/test";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
+import { expect } from "@playwright/test";
 import crypto from "crypto";
 import { randomName } from "../../utils";
 import { test } from "../fixtures";
@@ -215,16 +215,19 @@ test("Invariant 1: Multi-domain resolution across primary domain, myshopifyDomai
     const hmac = calculateHmac(body, webhookSecret);
 
     // 3. Test resolution by myshopifyDomain via HTTP webhook endpoint
-    const resMyshopify = await request.post("/api/shopify/integration/webhook", {
-      data: body,
-      headers: {
-        "Content-Type": "application/json",
-        "x-shopify-topic": "orders/fulfilled",
-        "x-shopify-hmac-sha256": hmac,
-        "x-shopify-shop-domain": myshopifyDomain,
-        "x-shopify-webhook-id": `wh_res_${Date.now()}_1`,
+    const resMyshopify = await request.post(
+      "/api/shopify/integration/webhook",
+      {
+        data: body,
+        headers: {
+          "Content-Type": "application/json",
+          "x-shopify-topic": "orders/fulfilled",
+          "x-shopify-hmac-sha256": hmac,
+          "x-shopify-shop-domain": myshopifyDomain,
+          "x-shopify-webhook-id": `wh_res_${Date.now()}_1`,
+        },
       },
-    });
+    );
     expect(resMyshopify.status()).toBe(200);
     const textMyshopify = await resMyshopify.text();
     expect(textMyshopify).not.toContain("Workspace not found for signed shop");
