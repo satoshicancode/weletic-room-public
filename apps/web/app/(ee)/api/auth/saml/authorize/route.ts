@@ -9,7 +9,7 @@ const handler = async (req: Request) => {
     req.method === "GET" ? getSearchParams(req.url) : await req.json();
 
   const { redirect_url, authorize_form } =
-    await oauthController.authorize(requestParams);
+    await oauthController.authorize(requestParams as any);
 
   if (redirect_url) {
     return NextResponse.redirect(redirect_url, {
