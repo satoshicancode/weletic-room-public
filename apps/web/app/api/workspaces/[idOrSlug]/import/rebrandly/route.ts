@@ -79,7 +79,7 @@ export const GET = withWorkspace(async ({ workspace }) => {
 // PUT /api/workspaces/[idOrSlug]/import/rebrandly - save Rebrandly API key
 export const PUT = withWorkspace(
   async ({ req, workspace }) => {
-    const { apiKey } = await req.json();
+    const { apiKey } = (await req.json()) as { apiKey: string };
     const response = await redis.set(
       `import:rebrandly:${workspace.id}`,
       apiKey,

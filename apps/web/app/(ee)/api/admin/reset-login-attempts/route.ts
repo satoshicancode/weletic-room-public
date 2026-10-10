@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 // POST /api/admin/reset-login-attempts
 export const POST = withAdmin(async ({ req }) => {
-  const { email } = await req.json();
+  const { email } = (await req.json()) as { email: string };
 
   if (!email) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
