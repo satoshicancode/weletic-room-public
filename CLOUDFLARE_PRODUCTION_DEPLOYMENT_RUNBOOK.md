@@ -54,7 +54,8 @@ npx wrangler queues create order-webhook-queue --dead-letter-queue order-webhook
 
 ```bash
 # Áp dụng migration lên database Cloudflare D1 Production
-npx wrangler d1 execute weletic-production --file=./packages/contracts/migrations/0001_initial_sqlite_schema.sql
+npx wrangler d1 execute weletic-production --file=./apps/web/d1/migrations/0000_init_d1.sql
+npx wrangler d1 execute weletic-production --file=./apps/web/d1/migrations/0001_service_auth_nonce.sql
 
 # Xác nhận các bảng chính đã được tạo thành công
 npx wrangler d1 execute weletic-production --command="SELECT name FROM sqlite_master WHERE type='table';"
