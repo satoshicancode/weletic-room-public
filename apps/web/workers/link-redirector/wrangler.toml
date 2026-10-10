@@ -1,0 +1,17 @@
+name = "weletic-link-redirector"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "LINKS_KV"
+id = "weletic-links-kv-prod"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "weletic-production"
+database_id = "weletic-d1-prod"
+
+[[analytics_engine_datasets]]
+binding = "CLICKS_ANALYTICS"
+dataset = "clicks_analytics"

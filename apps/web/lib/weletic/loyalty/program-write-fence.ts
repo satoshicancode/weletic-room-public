@@ -142,13 +142,17 @@ export async function lockLoyaltyProgramRow({
     );
   }
 
+  const forUpdateClause = process.env.DATABASE_URL?.startsWith("mysql:")
+    ? Prisma.sql`FOR UPDATE`
+    : Prisma.empty;
+
   // Acquire the store before the program, matching admission/lifecycle writers.
   // This also covers remote voucher workers that hold only this program fence.
   const stores = await tx.$queryRaw<
     Array<{ id: string; storeAccessState: string }>
   >(Prisma.sql`
       SELECT id, storeAccessState FROM WeleticShopifyStore
-      WHERE id = ${storeId} LIMIT 1 FOR UPDATE
+      WHERE id = ${storeId} LIMIT 1 ${forUpdateClause}
     `);
   const store = stores[0];
   if (
@@ -170,7 +174,7 @@ export async function lockLoyaltyProgramRow({
     FROM WeleticLoyaltyProgram
     WHERE storeId = ${storeId}
     LIMIT 1
-    FOR UPDATE
+    ${forUpdateClause}
   `);
   const program = programs[0];
   if (!program || program.storeId !== storeId) {
@@ -208,6 +212,9 @@ export async function lockLoyaltyProgramRowIfPresent({
       "Loyalty program currency-generation fence is unavailable.",
     );
   }
+  const forUpdateClause = process.env.DATABASE_URL?.startsWith("mysql:")
+    ? Prisma.sql`FOR UPDATE`
+    : Prisma.empty;
   const programs = await tx.$queryRaw<
     Array<LockedLoyaltyProgram & { version: number }>
   >(Prisma.sql`
@@ -215,7 +222,7 @@ export async function lockLoyaltyProgramRowIfPresent({
     FROM WeleticLoyaltyProgram
     WHERE storeId = ${storeId}
     LIMIT 1
-    FOR UPDATE
+    ${forUpdateClause}
   `);
   const program = programs[0] ?? null;
   if (

@@ -120,20 +120,31 @@ export const DUB_QR_LOGO = "https://assets.dub.co/logo.png";
 export const DUB_WORDMARK = "https://assets.dub.co/wordmark.png";
 export const DUB_THUMBNAIL = "https://assets.dub.co/thumbnail.jpg";
 
-export const DUB_WORKSPACE_ID = "cl7pj5kq4006835rbjlt2ofka";
-export const ACME_WORKSPACE_ID = "clrei1gld0002vs9mzn93p8ik";
-export const ACME_PROGRAM_ID = "prog_CYCu7IMAapjkRpTnr8F1azjN";
-export const LEGAL_WORKSPACE_ID = "clrflia0j0000vs7sqfhz9c7q";
-export const LEGAL_USER_ID = "clqei1lgc0000vsnzi01pbf47";
+export const DUB_WORKSPACE_ID =
+  process.env.DUB_WORKSPACE_ID ?? "cl7pj5kq4006835rbjlt2ofka";
+export const ACME_WORKSPACE_ID =
+  process.env.ACME_WORKSPACE_ID ?? "clrei1gld0002vs9mzn93p8ik";
+export const ACME_PROGRAM_ID =
+  process.env.ACME_PROGRAM_ID ?? "prog_CYCu7IMAapjkRpTnr8F1azjN";
+export const LEGAL_WORKSPACE_ID =
+  process.env.LEGAL_WORKSPACE_ID ?? "clrflia0j0000vs7sqfhz9c7q";
+export const LEGAL_USER_ID =
+  process.env.LEGAL_USER_ID ?? "clqei1lgc0000vsnzi01pbf47";
 
 export const R2_URL =
   process.env.STORAGE_BASE_URL || "https://assets.weletic.com";
 
 // Network program (TODO: Update this)
-export const NETWORK_WORKSPACE_ID = "ws_1KRHGNRSY2YZQZD96H5S85VX6";
-export const NETWORK_PROGRAM_ID = "prog_1KRHH2Y9XZJTJDSCD7B5NXECG";
-export const NETWORK_PROGRAM_SLUG = "network";
-export const NETWORK_PROGRAM_DEFAULT_GROUP_ID = "grp_1KRHH2YV0GH8AN57T1S9W9CBE";
+export const NETWORK_WORKSPACE_ID =
+  process.env.NETWORK_WORKSPACE_ID ?? "ws_1KRHGNRSY2YZQZD96H5S85VX6";
+export const NETWORK_PROGRAM_ID =
+  process.env.NETWORK_PROGRAM_ID ?? "prog_1KRHH2Y9XZJTJDSCD7B5NXECG";
+export const NETWORK_PROGRAM_SLUG =
+  process.env.NETWORK_PROGRAM_SLUG ?? "network";
+export const NETWORK_PROGRAM_DEFAULT_GROUP_ID =
+  process.env.NETWORK_PROGRAM_DEFAULT_GROUP_ID ?? "grp_1KRHH2YV0GH8AN57T1S9W9CBE";
 export const NETWORK_PROGRAM_DEFAULT_SALE_REWARD_ID =
+  process.env.NETWORK_PROGRAM_DEFAULT_SALE_REWARD_ID ??
   "rw_1KRHH2YVWP5TVHC30CZE5JVK7";
-export const NETWORK_USER_ID = "cl7p1s07k000687rbuhpwqkqa";
+export const NETWORK_USER_ID =
+  process.env.NETWORK_USER_ID ?? "cl7p1s07k000687rbuhpwqkqa";

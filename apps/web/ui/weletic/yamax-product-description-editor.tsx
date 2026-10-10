@@ -140,14 +140,27 @@ export const DEFAULT_YAMAX_ACCORDIONS: YamaxAccordionsContent = {
 };
 
 /**
+ * HTML-escapes a string to neutralize tag breakouts and DOM-XSS vectors.
+ */
+export function escapeHtml(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * Builds standard Shopify HTML for Hero Section.
  */
 export function generateYamaxHeroHtml(hero: YamaxHeroContent): string {
-  return `<p>${hero.tagline}</p>
+  return `<p>${escapeHtml(hero.tagline)}</p>
 <ul>
-  <li><strong>${hero.bullet1Title}</strong>: ${hero.bullet1Desc}</li>
-  <li><strong>${hero.bullet2Title}</strong>: ${hero.bullet2Desc}</li>
-  <li><strong>${hero.bullet3Title}</strong>: ${hero.bullet3Desc}</li>
+  <li><strong>${escapeHtml(hero.bullet1Title)}</strong>: ${escapeHtml(hero.bullet1Desc)}</li>
+  <li><strong>${escapeHtml(hero.bullet2Title)}</strong>: ${escapeHtml(hero.bullet2Desc)}</li>
+  <li><strong>${escapeHtml(hero.bullet3Title)}</strong>: ${escapeHtml(hero.bullet3Desc)}</li>
 </ul>`;
 }
 
@@ -160,7 +173,8 @@ export function generateYamaxHeroHtml(hero: YamaxHeroContent): string {
  * - How to Measure & Contact support link at bottom
  */
 export function generateYamaxSizeGuideHtml(fitTip: string): string {
-  return `<p><strong>Fit Tip:</strong> ${fitTip}</p>
+  const safeFitTip = escapeHtml(fitTip);
+  return `<p><strong>Fit Tip:</strong> ${safeFitTip}</p>
 <div style="overflow-x: auto; max-width: 100%; position: relative;">
   <table style="width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; text-align: center;">
     <thead>
@@ -219,12 +233,12 @@ export function generateYamaxSizeGuideHtml(fitTip: string): string {
 export function generateYamaxMaterialCareHtml(
   accordions: YamaxAccordionsContent,
 ): string {
-  return `<p><strong>Composition:</strong> ${accordions.fabricComposition}</p>
-<p><strong>Fabric Weight:</strong> ${accordions.fabricWeight}</p>
+  return `<p><strong>Composition:</strong> ${escapeHtml(accordions.fabricComposition)}</p>
+<p><strong>Fabric Weight:</strong> ${escapeHtml(accordions.fabricWeight)}</p>
 <ul>
-  <li><strong>Wash:</strong> ${accordions.washInstruction}</li>
-  <li><strong>Dry:</strong> ${accordions.dryInstruction}</li>
-  <li><strong>Care:</strong> ${accordions.careInstruction}</li>
+  <li><strong>Wash:</strong> ${escapeHtml(accordions.washInstruction)}</li>
+  <li><strong>Dry:</strong> ${escapeHtml(accordions.dryInstruction)}</li>
+  <li><strong>Care:</strong> ${escapeHtml(accordions.careInstruction)}</li>
 </ul>`;
 }
 
@@ -564,6 +578,18 @@ export function YamaxProductDescriptionEditor({
               Copy Table HTML
             </button>
           </div>
+          <textarea
+            value={accordions.fitTip}
+            onChange={(e) =>
+              setAccordions({
+                ...accordions,
+                fitTip: e.target.value,
+              })
+            }
+            placeholder="Fit Tip guidance for customers"
+            rows={2}
+            className="w-full rounded-lg border border-neutral-200 p-2 text-xs text-neutral-900 outline-none focus:border-neutral-500"
+          />
           <div
             className="rounded-lg border border-neutral-200 bg-white p-3"
             dangerouslySetInnerHTML={{ __html: sizeGuideHtml }}

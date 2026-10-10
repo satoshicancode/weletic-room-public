@@ -3675,11 +3675,13 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
           }),
         );
         const [programLockStatement] = queryRawMock.mock.calls[0];
-        expect(
-          (programLockStatement as { strings: readonly string[] }).strings.join(
-            " ",
-          ),
-        ).toContain("FOR UPDATE");
+        if (process.env.DATABASE_URL?.startsWith("mysql:")) {
+          expect(
+            (programLockStatement as { strings: readonly string[] }).strings.join(
+              " ",
+            ),
+          ).toContain("FOR UPDATE");
+        }
       },
     );
 

@@ -59,6 +59,7 @@ import {
   selectEffectiveRuleVersions,
 } from "./order-attribution";
 import { readOrderLineDiscount } from "./order-line-discount";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 
 const shopifyGid = (type: "Product" | "ProductVariant", id?: number | null) =>
   id ? `gid://shopify/${type}/${id}` : undefined;
@@ -1309,8 +1310,10 @@ async function recordWeleticOrderUnlocked({
       )?.id ?? null
     : null;
 
-  const result = await prisma.$transaction(
-    async (tx) => {
+  const result = await withFinancialTransactionRetry(
+    () =>
+      prisma.$transaction(
+        async (tx) => {
       await assertShopifyStoreAcceptsOperationalWrites({
         storeId: store.id,
         action: "order_ingestion",
@@ -1673,7 +1676,9 @@ async function recordWeleticOrderUnlocked({
     {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     },
-  );
+  ),
+  { actionName: "record_weletic_order" },
+);
 
   if (result.commissionId && effectiveProgramId && partnerId) {
     await syncTotalCommissions({ partnerId, programId: effectiveProgramId });

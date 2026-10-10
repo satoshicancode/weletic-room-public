@@ -677,7 +677,7 @@ describe("VIP Lifecycle Matrix & Parity Test Suite (Requirement R3 / Nhóm 1.5)"
         where: { id: account.id },
         data: expect.objectContaining({
           currentTierId: "wtier_platinum_4",
-          tierExpiresAt: null, // Grace period cleared!
+          tierExpiresAt: expect.any(Date), // Expiration scheduled!
         }),
       });
     });

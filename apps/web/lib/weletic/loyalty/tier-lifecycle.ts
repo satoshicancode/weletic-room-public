@@ -9,6 +9,7 @@ import { sumValidQualifyingPoints } from "@/lib/weletic/loyalty/qualifying-revie
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
 import { enqueueVipAchievementCommunication } from "@/lib/weletic/loyalty/vip-achievement-communication-producer";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
+import { addDays } from "date-fns";
 import {
   Prisma,
   WeleticLoyaltyTierChangeReason,
@@ -71,6 +72,7 @@ export interface NormalizedTier {
   minPointsThreshold: bigint;
   pointsMultiplier?: number | Prisma.Decimal;
   entryBonusPoints?: bigint;
+  qualificationWindowDays?: number;
 }
 
 /**
@@ -105,6 +107,11 @@ function normalizeTier(tier: any): NormalizedTier {
         ? BigInt(tier.entryBonusPoints)
         : BigInt(0);
 
+  const qualificationWindowDays =
+    typeof tier.qualificationWindowDays === "number"
+      ? tier.qualificationWindowDays
+      : undefined;
+
   return {
     id: tier.id,
     name: tier.name,
@@ -114,6 +121,7 @@ function normalizeTier(tier: any): NormalizedTier {
     minPointsThreshold,
     pointsMultiplier: tier.pointsMultiplier ?? 1.0,
     entryBonusPoints,
+    qualificationWindowDays,
   };
 }
 
@@ -431,11 +439,15 @@ export async function evaluateTierMaintenanceCycle(
   // Case 1: PROMOTION (Qualifies for a strictly higher tier)
   // ==========================================================================
   if (highestQualifyingTier.tierOrder > currentTier.tierOrder) {
+    const newTier = highestQualifyingTier;
     await db.weleticLoyaltyAccount.update({
       where: { id: account.id },
       data: {
         currentTierId: highestQualifyingTier.id,
-        tierExpiresAt: null, // Clear any active grace period
+        tierExpiresAt: addDays(
+          now,
+          newTier.qualificationWindowDays ?? 365,
+        ),
         tierSpendRolling12Months: qualifyingSpend,
         tierPointsRolling12Months: qualifyingPoints,
       },

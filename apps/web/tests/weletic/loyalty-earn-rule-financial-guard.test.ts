@@ -431,7 +431,14 @@ describe("loyalty earn-rule financial guard", () => {
     expect(domainMocks.scheduleTierReview).not.toHaveBeenCalled();
   });
 
-  it("keeps tax-and-shipping-inclusive earning replayable until its refund basis is supported", async () => {
+  it("calculates tax-and-shipping-inclusive earning when excludeTaxesAndShipping is false", async () => {
+    (prisma.weleticCommerceOrder.findUnique as any).mockResolvedValueOnce(
+      commerceOrder({
+        shopTax: BigInt(1_000),
+        shopShipping: BigInt(500),
+        shopTotal: BigInt(11_500),
+      }),
+    );
     (prisma.weleticLoyaltyProgram.findUnique as any).mockResolvedValueOnce(
       loyaltyProgram({
         earningRules: [orderPaidRule({ excludeTaxesAndShipping: false })],
@@ -443,20 +450,22 @@ describe("loyalty earn-rule financial guard", () => {
       orderId: ORDER_ID,
     });
 
-    expect(result).toBeNull();
-    expect(prisma.weleticReconciliationIssue.upsert).toHaveBeenCalledWith(
+    expect(result).not.toBeNull();
+    expect(domainMocks.appendPointsLedgerEntry).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({
-          kind: "loyalty_earn_rule_unsupported_financial_basis",
-          severity: "critical",
-          details: expect.objectContaining({
-            ruleId: "rule_order_paid",
-          }),
+        pointsDelta: BigInt(115),
+        storeId: STORE_ID,
+        accountId: ACCOUNT_ID,
+      }),
+    );
+    expect(prisma.weleticLoyaltyEarnGrant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          grossPoints: BigInt(115),
+          eligibleSubtotalAmount: BigInt(11_500),
         }),
       }),
     );
-    expect(prisma.weleticLoyaltyEarnGrant.create).not.toHaveBeenCalled();
-    expect(domainMocks.appendPointsLedgerEntry).not.toHaveBeenCalled();
   });
 
   it.each([true, false])(
@@ -516,7 +525,17 @@ describe("loyalty earn-rule financial guard", () => {
     },
   );
 
-  it("quarantines conditioned order earning until captured lines are evaluated against the condition", async () => {
+  it("evaluates conditioned order earning and awards points when lines match conditions", async () => {
+    (prisma.weleticCommerceOrder.findUnique as any).mockResolvedValueOnce(
+      commerceOrder({
+        lines: [
+          {
+            ...commerceOrder().lines[0],
+            productTags: ["loyalty-exclusive"],
+          },
+        ],
+      }),
+    );
     (prisma.weleticLoyaltyProgram.findUnique as any).mockResolvedValueOnce(
       loyaltyProgram({
         earningRules: [
@@ -532,20 +551,22 @@ describe("loyalty earn-rule financial guard", () => {
       orderId: ORDER_ID,
     });
 
-    expect(result).toBeNull();
-    expect(prisma.weleticReconciliationIssue.upsert).toHaveBeenCalledWith(
+    expect(result).not.toBeNull();
+    expect(domainMocks.appendPointsLedgerEntry).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({
-          kind: "loyalty_earn_rule_unsupported_conditions",
-          severity: "critical",
-          details: expect.objectContaining({
-            ruleId: "rule_order_paid",
-          }),
+        pointsDelta: BigInt(100),
+        storeId: STORE_ID,
+        accountId: ACCOUNT_ID,
+      }),
+    );
+    expect(prisma.weleticLoyaltyEarnGrant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          grossPoints: BigInt(100),
+          eligibleSubtotalAmount: BigInt(10_000),
         }),
       }),
     );
-    expect(prisma.weleticLoyaltyEarnGrant.create).not.toHaveBeenCalled();
-    expect(domainMocks.appendPointsLedgerEntry).not.toHaveBeenCalled();
   });
 
   it.each([

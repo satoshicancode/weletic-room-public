@@ -351,5 +351,30 @@ describe("Milestone 3: Serializable OCC Ledger Concurrency & Balance Invariants 
       expect(balanceState?.canRedeem).toBe(false);
       expect(balanceState?.pointsBalance).toBe(BigInt(-50));
     });
+
+    it("strictly rejects REDEEM_REWARD when redemption points exceed available balance (LOY-02)", async () => {
+      (prisma.weleticPointsLedgerEntry.findUnique as any).mockResolvedValue(
+        null,
+      );
+      (prisma.weleticLoyaltyAccount.findUnique as any).mockResolvedValue({
+        id: TEST_ACCOUNT_ID,
+        storeId: TEST_STORE_ID,
+        cachedPointsBalance: BigInt(50),
+        cachedPendingPoints: BigInt(0),
+        lifetimePointsEarned: BigInt(100),
+        lifetimePointsRedeemed: BigInt(50),
+        ledgerVersion: 1,
+      });
+
+      await expect(
+        appendPointsLedgerEntry({
+          storeId: TEST_STORE_ID,
+          accountId: TEST_ACCOUNT_ID,
+          entryType: WeleticPointsLedgerEntryType.REDEEM_REWARD,
+          pointsDelta: BigInt(-100),
+          idempotencyKey: "test_overdraw_redeem",
+        }),
+      ).rejects.toThrow(/Available points invariant failed/);
+    });
   });
 });

@@ -1,5 +1,9 @@
 import { DubApiError } from "@/lib/api/errors";
 import { Prisma } from "@prisma/client";
+import {
+  forUpdateClause,
+  currentTimestampClause,
+} from "@/lib/prisma/sql-helpers";
 import { ShopifyCredentialUnavailableError } from "./credential-errors";
 import { readPendingInstallation } from "./installation-admission";
 import { deriveAllShopifyShopPrivacyIdentities } from "./privacy-identity";
@@ -27,7 +31,7 @@ export async function lockLegacyShopifyConnection(
   >(Prisma.sql`
     SELECT id, projectId, shopDomain FROM WeleticShopifyStore
     WHERE shopDomain = ${input.shop} OR projectId = ${input.workspaceId}
-    ORDER BY id LIMIT 2 FOR UPDATE
+    ORDER BY id LIMIT 2 ${forUpdateClause}
   `);
   if (
     stores.length > 1 ||
@@ -50,8 +54,8 @@ export async function lockLegacyShopifyConnection(
   const tombstones = predicates.length
     ? await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id FROM WeleticShopifyShopPrivacyTombstone
-        WHERE expiresAt > CURRENT_TIMESTAMP(3) AND (${Prisma.join(predicates, " OR ")})
-        LIMIT 1 FOR UPDATE
+        WHERE expiresAt > ${currentTimestampClause} AND (${Prisma.join(predicates, " OR ")})
+        LIMIT 1 ${forUpdateClause}
       `)
     : [];
   if (tombstones.length)

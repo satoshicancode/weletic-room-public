@@ -2,7 +2,11 @@ import {
   createLoyaltyRedemptionProvisioningSnapshot,
   getShopifyCustomerSelectionDigest,
 } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
-import { auditShopifyCustomerStoreCreditTransactions } from "@/lib/weletic/loyalty/shopify-financial-rewards";
+import {
+  auditShopifyCustomerStoreCreditTransactions,
+  debitShopifyStoreCredit,
+} from "@/lib/weletic/loyalty/shopify-financial-rewards";
+import { provisionFinancialRewardReservation } from "@/lib/weletic/loyalty/financial-reward-saga";
 import {
   reconcilePendingStoreCreditRedemption,
   reconcilePendingStoreCreditRedemptionsSweep,
@@ -847,6 +851,339 @@ describe("FIN-03: Store Credit Remote Outcome Reconciliation", () => {
       refunded: expect.any(Number),
       deferred: expect.any(Number),
       errors: expect.any(Number),
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Test Case 8: Feature 10 - Unique Note / Token Correlation
+  // --------------------------------------------------------------------------
+  it("Test Case 8a: Matches exact redemption note when concurrent manual credit from Shopify admin exists with identical amount and window", async () => {
+    const { redemptionId } = createTestFixture();
+    const manualTxId =
+      "gid://shopify/StoreCreditAccountCreditTransaction/manual_admin_tx_888";
+    const weleticTxId =
+      "gid://shopify/StoreCreditAccountCreditTransaction/weletic_auto_tx_777";
+
+    const customFetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({
+        data: {
+          customer: {
+            id: customerGid,
+            storeCreditAccounts: {
+              edges: [
+                {
+                  node: {
+                    id: "gid://shopify/StoreCreditAccount/acc_01",
+                    balance: { amount: "10.00", currencyCode: "USD" },
+                    transactions: {
+                      edges: [
+                        {
+                          node: {
+                            id: manualTxId,
+                            amount: { amount: "5.00", currencyCode: "USD" },
+                            createdAt: "2026-10-05T10:00:06.000Z",
+                            expiresAt: null,
+                            note: "Shopify Admin manual goodwill credit",
+                          },
+                        },
+                        {
+                          node: {
+                            id: weleticTxId,
+                            amount: { amount: "5.00", currencyCode: "USD" },
+                            createdAt: "2026-10-05T10:00:07.000Z",
+                            expiresAt: null,
+                            note: `Weletic Redemption [${redemptionId}]`,
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    })) as any;
+
+    const result = await reconcilePendingStoreCreditRedemption({
+      storeId,
+      redemptionId,
+      now: new Date("2026-10-05T10:01:00.000Z"),
+      customFetch,
+    });
+
+    expect(result).toEqual({
+      outcome: "confirmed",
+      transactionId: weleticTxId,
+    });
+
+    const updated = mockState.redemptions.get(redemptionId);
+    expect(updated.status).toBe(WeleticRedemptionStatus.issued);
+    expect(updated.shopifyStoreCreditTransactionId).toBe(weleticTxId);
+  });
+
+  it("Test Case 8b: Rejects concurrent manual admin credit when automated redemption was dropped and only manual credit exists", async () => {
+    const { redemptionId } = createTestFixture();
+    const manualTxId =
+      "gid://shopify/StoreCreditAccountCreditTransaction/manual_admin_tx_999";
+
+    const customFetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({
+        data: {
+          customer: {
+            id: customerGid,
+            storeCreditAccounts: {
+              edges: [
+                {
+                  node: {
+                    id: "gid://shopify/StoreCreditAccount/acc_01",
+                    balance: { amount: "5.00", currencyCode: "USD" },
+                    transactions: {
+                      edges: [
+                        {
+                          node: {
+                            id: manualTxId,
+                            amount: { amount: "5.00", currencyCode: "USD" },
+                            createdAt: "2026-10-05T10:00:06.000Z",
+                            expiresAt: null,
+                            note: "Shopify Admin manual goodwill credit",
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    })) as any;
+
+    const result = await reconcilePendingStoreCreditRedemption({
+      storeId,
+      redemptionId,
+      now: new Date("2026-10-05T10:01:00.000Z"),
+      customFetch,
+    });
+
+    // Since note does not match redemption ID, manual credit is excluded
+    expect(result).toEqual({ outcome: "deferred" });
+
+    const current = mockState.redemptions.get(redemptionId);
+    expect(current.status).toBe(WeleticRedemptionStatus.provisioning);
+    expect(current.shopifyStoreCreditTransactionId).toBeNull();
+  });
+
+  it("Test Case 8c: Matches note via balanceTransaction.note structure", async () => {
+    const { redemptionId } = createTestFixture();
+    const weleticTxId =
+      "gid://shopify/StoreCreditAccountCreditTransaction/weletic_bal_tx_555";
+
+    const customFetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({
+        data: {
+          customer: {
+            id: customerGid,
+            storeCreditAccounts: {
+              edges: [
+                {
+                  node: {
+                    id: "gid://shopify/StoreCreditAccount/acc_01",
+                    balance: { amount: "5.00", currencyCode: "USD" },
+                    transactions: {
+                      edges: [
+                        {
+                          node: {
+                            id: weleticTxId,
+                            amount: { amount: "5.00", currencyCode: "USD" },
+                            createdAt: "2026-10-05T10:00:07.000Z",
+                            expiresAt: null,
+                            balanceTransaction: {
+                              note: `Weletic Redemption [${redemptionId}]`,
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    })) as any;
+
+    const result = await reconcilePendingStoreCreditRedemption({
+      storeId,
+      redemptionId,
+      now: new Date("2026-10-05T10:01:00.000Z"),
+      customFetch,
+    });
+
+    expect(result).toEqual({
+      outcome: "confirmed",
+      transactionId: weleticTxId,
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Test Case 9: Feature 11 - Store Credit Solvency Guards
+  // --------------------------------------------------------------------------
+  it("Test Case 9: Solvency guards in debitShopifyStoreCredit enforce balance limits", async () => {
+    const validCredentials = {
+      shopDomain: "acme.myshopify.com",
+      accessToken: "shpat_mock_debit",
+      scope:
+        "read_store_credit_accounts,write_store_credit_account_transactions",
+      source: "app_session" as const,
+    };
+
+    // 1. Rejects debit exceeding available balance when capAtAvailableBalance is false
+    await expect(
+      debitShopifyStoreCredit({
+        credentials: validCredentials,
+        accountId: "acc_solv_1",
+        amountMinor: BigInt(5000), // $50
+        currencyCode: "USD",
+        availableBalanceMinor: BigInt(2000), // $20
+        capAtAvailableBalance: false,
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_REQUEST",
+      message: "Store Credit debit amount cannot exceed available balance.",
+    });
+
+    // 2. Rejects debit when available balance is zero or negative
+    await expect(
+      debitShopifyStoreCredit({
+        credentials: validCredentials,
+        accountId: "acc_solv_2",
+        amountMinor: BigInt(1000),
+        currencyCode: "USD",
+        availableBalanceMinor: BigInt(0),
+        capAtAvailableBalance: true,
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_REQUEST",
+      message:
+        "Cannot debit store credit from an account with zero or negative balance.",
+    });
+
+    // 3. Caps debit to available balance when capAtAvailableBalance is true
+    const customFetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => ({
+        data: {
+          storeCreditAccountDebit: {
+            storeCreditAccountTransaction: {
+              id: "gid://shopify/StoreCreditAccountDebitTransaction/tx_capped_1",
+              amount: { amount: "-20.00", currencyCode: "USD" },
+              account: {
+                id: "gid://shopify/StoreCreditAccount/333",
+                balance: { amount: "0.00", currencyCode: "USD" },
+              },
+            },
+            userErrors: [],
+          },
+        },
+      }),
+    }));
+
+    const result = await debitShopifyStoreCredit({
+      credentials: validCredentials,
+      accountId: "333",
+      amountMinor: BigInt(5000), // $50 requested
+      currencyCode: "USD",
+      availableBalanceMinor: BigInt(2000), // $20 available
+      capAtAvailableBalance: true,
+      customFetch: customFetch as any,
+    });
+
+    expect(result.amount).toBe("-20.00");
+    expect(result.balanceAfter).toBe("0.00");
+  });
+
+  // --------------------------------------------------------------------------
+  // Test Case 10: Feature 12 - Graceful idempotent retry for PENDING_REMOTE_CONFIRMATION
+  // --------------------------------------------------------------------------
+  it("Test Case 10: Gracefully handles repeated requests for PENDING_REMOTE_CONFIRMATION store credit", async () => {
+    const { redemptionId } = createTestFixture();
+    const redemptionRow = mockState.redemptions.get(redemptionId);
+
+    // Call provisionFinancialRewardReservation when redemption has status PENDING_REMOTE_CONFIRMATION
+    const result = await provisionFinancialRewardReservation({
+      storeId,
+      accountId: redemptionRow.accountId,
+      rewardDefinitionId: "rdef_sc_test",
+      reservation: {
+        redemption: {
+          ...redemptionRow,
+          status: "PENDING_REMOTE_CONFIRMATION" as any,
+          shopifyGiftCardId: null,
+          shopifyStoreCreditTransactionId: null,
+          metadata: {
+            remoteProvisionAttemptedAt: new Date().toISOString(),
+            status: "PENDING_REMOTE_CONFIRMATION",
+          },
+        },
+        account: {
+          shopper: { shopifyCustomerId: "customer_gid_123" },
+        },
+        effectivePointsCost: BigInt(500),
+        balanceAfter: BigInt(1500),
+        expiresAt: null,
+        provisioningSnapshot: {
+          version: 1,
+          rewardDefinitionId: "rdef_sc_test",
+          name: "$5 Store Credit",
+          description: null,
+          rewardType: "store_credit",
+          pointsCost: "500",
+          discountValue: "500",
+          maxDiscountValue: null,
+          minOrderAmount: null,
+          appliesToResource: "entire_order",
+          entitledCollectionIds: [],
+          entitledProductIds: [],
+          entitledVariantIds: [],
+          combinesWithProductDiscounts: false,
+          combinesWithOrderDiscounts: false,
+          combinesWithShippingDiscounts: false,
+          usageLimit: null,
+          usageLimitPerCustomer: null,
+          expiresInDays: null,
+          shopCurrency: "USD",
+          currencyVerifiedAt: new Date().toISOString(),
+          customerSelectionDigest: "digest",
+          startsAt: new Date().toISOString(),
+          expiresAt: null,
+          contentDigest: "content_digest",
+        },
+      },
+      shopDomain: "acme.myshopify.com",
+      accessToken: "shpat_test",
+    });
+
+    expect(result).toMatchObject({
+      success: true,
+      redemptionId,
+      status: WeleticRedemptionStatus.provisioning,
+      pointsSpent: BigInt(500),
+      balanceAfter: BigInt(1500),
     });
   });
 });

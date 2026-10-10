@@ -1,52 +1,17 @@
 // Native product reviews. Verified invitations retain their purchase bindings.
 // Private identity remains on the shopper; public projections explicitly select
 // only published review content and never infer purchase proof from open input.
-enum WeleticReviewRequestStatus {
-  queued
-  sending
-  sent
-  submitted
-  expired
-  cancelled
-  failed
-}
-
-enum WeleticProductReviewStatus {
-  pending
-  published
-  hidden
-  rejected
-  redacted
-}
-
-enum WeleticReviewRewardStatus {
-  pending
-  awarded
-  ineligible
-  reversed
-  invalidated
-  recovery_pending
-  unrecoverable
-}
-
-enum WeleticReviewMediaStatus {
-  reserved
-  uploaded
-  deletion_pending
-  deleted
-}
-
 // Append-only open-collection configuration. Latest revision is authoritative;
 // disabling appends a disabled policy and never deletes accepted provenance.
 model WeleticOpenReviewPolicy {
   id                     String   @id
   storeId                String
   revision               Int
-  snapshot               Json     @db.Json
-  contentDigest          String   @db.VarChar(64)
-  installationGeneration String   @db.VarChar(64)
-  appId                  String   @db.VarChar(191)
-  shopifyUserId          String   @db.VarChar(20)
+  snapshot               Json
+  contentDigest          String
+  installationGeneration String
+  appId                  String
+  shopifyUserId          String
   createdAt              DateTime @default(now())
 
   store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Restrict)
@@ -64,7 +29,7 @@ model WeleticReviewSettings {
   requestEmailEnabled     Boolean   @default(false)
   collectionRevision      Int       @default(0)
   // Null is the legacy no-reminders configuration; never backfill old requests.
-  reminderAfterDays       Json?     @db.Json
+  reminderAfterDays       Json?
   // Revision allocation is separate from activation. No public activation writer
   // exists until direct fulfillment and privacy release gates pass.
   incentivePolicyRevision Int       @default(0)
@@ -74,7 +39,7 @@ model WeleticReviewSettings {
   updatedAt               DateTime  @updatedAt
 
   store                 WeleticShopifyStore           @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  activeIncentivePolicy WeleticReviewIncentivePolicy? @relation("ActiveReviewIncentivePolicy", fields: [storeId, activeIncentivePolicyId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+  activeIncentivePolicy WeleticReviewIncentivePolicy? @relation("ActiveReviewIncentivePolicy", fields: [storeId, activeIncentivePolicyId], references: [storeId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([storeId, activeIncentivePolicyId])
 }
@@ -85,8 +50,8 @@ model WeleticReviewIncentivePolicy {
   id            String   @id
   storeId       String
   revision      Int
-  snapshot      Json     @db.Json
-  contentDigest String   @db.VarChar(64)
+  snapshot      Json
+  contentDigest String
   createdAt     DateTime @default(now())
 
   store          WeleticShopifyStore           @relation(fields: [storeId], references: [id], onDelete: Restrict)
@@ -107,12 +72,12 @@ model WeleticReviewIncentiveActivation {
   policyId               String
   policyRevision         Int
   previousPolicyId       String?
-  contentDigest          String   @db.VarChar(64)
-  effectiveAt            DateTime @db.DateTime(3)
+  contentDigest          String
+  effectiveAt            DateTime
   appId                  String
-  installationGeneration String   @db.VarChar(64)
-  shopifyUserId          String   @db.VarChar(20)
-  merchantActionId       String   @unique @db.VarChar(64)
+  installationGeneration String
+  shopifyUserId          String
+  merchantActionId       String   @unique
   createdAt              DateTime @default(now())
 
   store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Restrict)
@@ -125,19 +90,19 @@ model WeleticReviewIncentiveActivation {
 // One order-wide claim shared by product and future store-experience reviews.
 // Reservation is not issuance; award/reversal services must retain this marker.
 model WeleticReviewIncentiveClaim {
-  id                 String   @id
-  storeId            String
-  orderId            String
-  shopperId          String
-  policyId           String
-  sourceReviewId     String
-  subjectType        String   @db.VarChar(32)
-  status             String   @default("reserved") @db.VarChar(32)
-  awardSnapshot      Json     @db.Json
-  validationSnapshot Json     @db.Json
+  id                         String    @id
+  storeId                    String
+  orderId                    String
+  shopperId                  String
+  policyId                   String
+  sourceReviewId             String
+  subjectType                String
+  status                     String    @default("reserved")
+  awardSnapshot              Json
+  validationSnapshot         Json
   // Operational discovery rotation only; never part of the immutable promise.
-  recoveryDiscoveryCheckedAt DateTime? @db.DateTime(3)
-  createdAt          DateTime @default(now())
+  recoveryDiscoveryCheckedAt DateTime?
+  createdAt                  DateTime  @default(now())
 
   store        WeleticShopifyStore                 @relation(fields: [storeId], references: [id], onDelete: Restrict)
   order        WeleticCommerceOrder                @relation(fields: [orderId], references: [id], onDelete: Restrict)
@@ -160,20 +125,20 @@ model WeleticReviewIncentiveInvalidation {
   storeId                String
   claimId                String
   shopperId              String
-  decisionId             String    @db.VarChar(191)
-  actorUserId            String    @db.VarChar(191)
-  reason                 String    @db.VarChar(64)
-  installationGeneration String    @db.VarChar(64)
-  decisionSnapshot       Json      @db.Json
-  outcome                String    @default("pending") @db.VarChar(32)
-  cleanupId              String?   @db.VarChar(191)
+  decisionId             String
+  actorUserId            String
+  reason                 String
+  installationGeneration String
+  decisionSnapshot       Json
+  outcome                String    @default("pending")
+  cleanupId              String?
   completedAt            DateTime?
   createdAt              DateTime  @default(now())
 
   store   WeleticShopifyStore           @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  claim   WeleticReviewIncentiveClaim   @relation(fields: [storeId, claimId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
-  shopper WeleticShopper                @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
-  cleanup WeleticShopifyVoucherCleanup? @relation(fields: [storeId, cleanupId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+  claim   WeleticReviewIncentiveClaim   @relation(fields: [storeId, claimId], references: [storeId, id], onDelete: Restrict, onUpdate: Restrict)
+  shopper WeleticShopper                @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict, onUpdate: Restrict)
+  cleanup WeleticShopifyVoucherCleanup? @relation(fields: [storeId, cleanupId], references: [storeId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([storeId, decisionId], map: "wl_review_invalidation_decision_uq")
   @@unique([storeId, claimId], map: "wl_review_invalidation_claim_uq")
@@ -186,7 +151,7 @@ model WeleticReviewIncentiveInvalidation {
 // Retain its order identity so delayed events cannot revive invitations.
 model WeleticReviewOrderCancellation {
   storeId         String
-  orderExternalId String              @db.VarChar(191)
+  orderExternalId String
   cancelledAt     DateTime
   store           WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
@@ -194,37 +159,37 @@ model WeleticReviewOrderCancellation {
 }
 
 model WeleticReviewRequest {
-  id                     String                     @id
-  storeId                String
-  orderId                String
-  productId              String
-  shopperId              String
-  incentivePolicyId      String?
-  installationGeneration String?                    @db.VarChar(64)
-  status                 WeleticReviewRequestStatus @default(queued)
-  fulfilledAt            DateTime
-  sendAt                 DateTime
-  expiresAt              DateTime
+  id                        String    @id
+  storeId                   String
+  orderId                   String
+  productId                 String
+  shopperId                 String
+  incentivePolicyId         String?
+  installationGeneration    String?
+  status                    String    @default("queued")
+  fulfilledAt               DateTime
+  sendAt                    DateTime
+  expiresAt                 DateTime
   // Immutable prospective reminder schedule. Null means no historical backfill.
-  reminderSnapshot       Json?                      @db.Json
+  reminderSnapshot          Json?
   // Recoverable only for future enabled reminders; never returned to merchants.
-  encryptedReminderToken String?                    @db.Text
-  tokenHash              String?                    @unique @db.VarChar(64)
+  encryptedReminderToken    String?
+  tokenHash                 String?   @unique
   // Only the delivery worker needs recoverable token material; cleared on send.
-  encryptedDeliveryToken String?                    @db.Text
+  encryptedDeliveryToken    String?
   // Final provider request, private and immutable across retries; cleared with token material.
-  encryptedDeliverySnapshot String?                 @db.MediumText
-  deliveryToken          String?                    @db.VarChar(64)
-  deliveryReservedAt     DateTime?
-  deliveryLeaseExpiresAt DateTime?
-  deliveryAttempts       Int                        @default(0)
-  lastError              String?                    @db.VarChar(191)
-  sentAt                 DateTime?
-  submittedAt            DateTime?
-  cancelledAt            DateTime?
-  cancellationReason     String?                    @db.VarChar(191)
-  createdAt              DateTime                   @default(now())
-  updatedAt              DateTime                   @updatedAt
+  encryptedDeliverySnapshot String?
+  deliveryToken             String?
+  deliveryReservedAt        DateTime?
+  deliveryLeaseExpiresAt    DateTime?
+  deliveryAttempts          Int       @default(0)
+  lastError                 String?
+  sentAt                    DateTime?
+  submittedAt               DateTime?
+  cancelledAt               DateTime?
+  cancellationReason        String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
   store           WeleticShopifyStore           @relation(fields: [storeId], references: [id], onDelete: Cascade)
   order           WeleticCommerceOrder          @relation(fields: [orderId], references: [id], onDelete: Restrict)
@@ -250,24 +215,24 @@ model WeleticReviewRequest {
 // One immutable logical delivery per invitation/sequence. Transport retries
 // retain this identity; they never mint another invitation or incentive claim.
 model WeleticReviewReminder {
-  id                        String   @id
+  id                        String    @id
   storeId                   String
   requestId                 String
   sequence                  Int
-  installationGeneration    String   @db.VarChar(64)
-  scheduledFor              DateTime @db.DateTime(3)
-  status                    String   @default("queued") @db.VarChar(32)
-  attempts                  Int      @default(0)
-  leaseToken                String?  @db.VarChar(64)
-  leaseExpiresAt            DateTime? @db.DateTime(3)
-  encryptedDeliverySnapshot String?  @db.MediumText
-  sentAt                    DateTime? @db.DateTime(3)
-  settledAt                 DateTime? @db.DateTime(3)
-  outcomeReason             String?  @db.VarChar(191)
-  createdAt                 DateTime @default(now()) @db.DateTime(3)
-  updatedAt                 DateTime @updatedAt @db.DateTime(3)
+  installationGeneration    String
+  scheduledFor              DateTime
+  status                    String    @default("queued")
+  attempts                  Int       @default(0)
+  leaseToken                String?
+  leaseExpiresAt            DateTime?
+  encryptedDeliverySnapshot String?
+  sentAt                    DateTime?
+  settledAt                 DateTime?
+  outcomeReason             String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
-  request WeleticReviewRequest @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict, onUpdate: NoAction)
+  request WeleticReviewRequest @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([storeId, requestId, sequence], map: "review_reminder_delivery_uq")
   @@index([status, scheduledFor, id], map: "review_reminder_due")
@@ -289,41 +254,41 @@ model WeleticReviewRequestLine {
 }
 
 model WeleticProductReview {
-  id                              String                     @id
+  id                              String    @id
   storeId                         String
   // Invitation-backed reviews retain their original binding. Requestless
   // writers remain disabled until explicit provenance and all readers ship.
-  requestId                       String?                    @unique
+  requestId                       String?   @unique
   productId                       String
   shopperId                       String
-  status                          WeleticProductReviewStatus @default(pending)
-  version                         Int                        @default(1)
+  status                          String    @default("pending")
+  version                         Int       @default(1)
   rating                          Int
-  title                           String                     @db.VarChar(120)
-  body                            String                     @db.Text
-  displayName                     String                     @db.VarChar(80)
-  merchantReply                   String?                    @db.Text
-  verifiedPurchase                Boolean                    @default(false)
+  title                           String
+  body                            String
+  displayName                     String
+  merchantReply                   String?
+  verifiedPurchase                Boolean   @default(false)
   // Set only by the future trusted participation validator, never moderation.
-  participationStatus             String                     @default("pending") @db.VarChar(32)
+  participationStatus             String    @default("pending")
   participationValidatedAt        DateTime?
-  participationValidationRevision String?                    @db.VarChar(64)
-  participationContentDigest      String?                    @db.VarChar(64)
-  incentivized                    Boolean                    @default(false)
-  rewardStatus                    WeleticReviewRewardStatus  @default(pending)
-  rewardLedgerId                  String?                    @db.VarChar(191)
-  rewardReason                    String?                    @db.VarChar(191)
+  participationValidationRevision String?
+  participationContentDigest      String?
+  incentivized                    Boolean   @default(false)
+  rewardStatus                    String    @default("pending")
+  rewardLedgerId                  String?
+  rewardReason                    String?
   publishedAt                     DateTime?
   moderatedAt                     DateTime?
   moderatedByUserId               String?
   redactedAt                      DateTime?
-  createdAt                       DateTime                   @default(now())
-  updatedAt                       DateTime                   @updatedAt
+  createdAt                       DateTime  @default(now())
+  updatedAt                       DateTime  @updatedAt
 
-  store            WeleticShopifyStore            @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  request          WeleticReviewRequest?          @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
-  product          WeleticShopifyProduct          @relation(fields: [productId], references: [id], onDelete: Restrict)
-  shopper          WeleticShopper                 @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
+  store            WeleticShopifyStore               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  request          WeleticReviewRequest?             @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
+  product          WeleticShopifyProduct             @relation(fields: [productId], references: [id], onDelete: Restrict)
+  shopper          WeleticShopper                    @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
   media            WeleticReviewMedia[]
   moderationAudits WeleticReviewModerationAudit[]
   translations     WeleticProductReviewTranslation[]
@@ -341,19 +306,19 @@ model WeleticProductReview {
 // customer identity, client UUID or duplicate review text. Content hash alone
 // is private and cleared by customer erasure; the retry marker stays terminal.
 model WeleticOpenReviewSubmission {
-  id                     String   @id
+  id                     String    @id
   storeId                String
-  reviewId               String   @unique(map: "open_review_source_review")
+  reviewId               String    @unique(map: "open_review_source_review")
   shopperId              String
-  installationGeneration String   @db.VarChar(64)
-  source                 String   @db.VarChar(32)
-  idempotencyKey         String   @db.VarChar(64)
-  contentDigest          String?  @db.VarChar(64)
+  installationGeneration String
+  source                 String
+  idempotencyKey         String
+  contentDigest          String?
   settingsRevision       Int
-  disclosureRevision     String   @db.VarChar(64)
-  locale                 String   @db.VarChar(8)
-  createdAt              DateTime @default(now()) @db.DateTime(3)
-  redactedAt             DateTime? @db.DateTime(3)
+  disclosureRevision     String
+  locale                 String
+  createdAt              DateTime  @default(now())
+  redactedAt             DateTime?
 
   review WeleticProductReview @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
 
@@ -366,22 +331,22 @@ model WeleticOpenReviewSubmission {
 // Manual content only. No rating, verification, publication or reward authority.
 // Removal retains revision identity; privacy erasure clears text and source hash.
 model WeleticProductReviewTranslation {
-  id                     String   @id
-  storeId                String
-  reviewId               String
-  locale                 String   @db.VarChar(8)
-  revision               Int      @default(1)
-  status                 String   @default("active") @db.VarChar(16)
-  sourceReviewVersion    Int
-  sourceDigest           String?  @db.VarChar(64)
-  sourceLocale           String?  @db.VarChar(8)
-  title                  String?  @db.VarChar(120)
-  body                   String?  @db.Text
-  redactedAt             DateTime?
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  id                  String    @id
+  storeId             String
+  reviewId            String
+  locale              String
+  revision            Int       @default(1)
+  status              String    @default("active")
+  sourceReviewVersion Int
+  sourceDigest        String?
+  sourceLocale        String?
+  title               String?
+  body                String?
+  redactedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  review WeleticProductReview @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
+  review WeleticProductReview            @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
   audits WeleticReviewTranslationAudit[]
 
   @@unique([storeId, reviewId, locale], map: "review_translation_locale")
@@ -392,19 +357,19 @@ model WeleticProductReviewTranslation {
 // Audit metadata never duplicates source or translated text. Actor identity can
 // be erased independently while keeping revision/tombstone evidence.
 model WeleticReviewTranslationAudit {
-  id                     String   @id
+  id                     String    @id
   storeId                String
   translationId          String
   fromRevision           Int
   toRevision             Int
-  action                 String   @db.VarChar(16)
+  action                 String
   sourceReviewVersion    Int
-  appId                  String   @db.VarChar(191)
-  installationGeneration String   @db.VarChar(64)
-  actorShopifyUserId     String?  @db.VarChar(20)
-  merchantActionId       String   @unique(map: "review_translation_action") @db.VarChar(64)
+  appId                  String
+  installationGeneration String
+  actorShopifyUserId     String?
+  merchantActionId       String    @unique(map: "review_translation_action")
   staffRedactedAt        DateTime?
-  createdAt             DateTime @default(now())
+  createdAt              DateTime  @default(now())
 
   translation WeleticProductReviewTranslation @relation(fields: [storeId, translationId], references: [storeId, id], onDelete: Restrict)
 
@@ -415,23 +380,23 @@ model WeleticReviewTranslationAudit {
 // Prospective content-moderation history; never a replacement for financial
 // ledger evidence. Private explanation/actor links are scrubbed on erasure.
 model WeleticReviewModerationAudit {
-  id                     String                     @id
+  id                     String    @id
   storeId                String
   reviewId               String
-  actorKind              String                     @db.VarChar(32)
+  actorKind              String
   actorUserId            String?
   appId                  String?
-  installationGeneration String?                    @db.VarChar(64)
-  merchantActionId       String?                    @db.VarChar(64)
-  reasonCode             String                     @db.VarChar(32)
-  reasonDetails          String?                    @db.Text
+  installationGeneration String?
+  merchantActionId       String?
+  reasonCode             String
+  reasonDetails          String?
   fromVersion            Int
   toVersion              Int
-  fromStatus             WeleticProductReviewStatus
-  toStatus               WeleticProductReviewStatus
+  fromStatus             String
+  toStatus               String
   replyChanged           Boolean
   redactedAt             DateTime?
-  createdAt              DateTime                   @default(now())
+  createdAt              DateTime  @default(now())
 
   review WeleticProductReview @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
 
@@ -441,20 +406,20 @@ model WeleticReviewModerationAudit {
 }
 
 model WeleticReviewMedia {
-  id              String                   @id
+  id              String   @id
   storeId         String
   requestId       String?
   reviewId        String?
-  objectKey       String                   @unique @db.VarChar(191)
-  contentType     String                   @db.VarChar(32)
+  objectKey       String   @unique
+  contentType     String
   sizeBytes       Int
-  status          WeleticReviewMediaStatus @default(reserved)
+  status          String   @default("reserved")
   uploadExpiresAt DateTime
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  request WeleticReviewRequest? @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
-  review  WeleticProductReview? @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
+  request       WeleticReviewRequest?            @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
+  review        WeleticProductReview?            @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
   openOwnership WeleticOpenReviewMediaOwnership?
 
   @@unique([storeId, id], map: "review_media_owned_id")
@@ -467,21 +432,21 @@ model WeleticReviewMedia {
 // Exactly one source (invitation OR open ownership) is required by writers.
 // Erasure clears contentDigest but retains the terminal retry identity.
 model WeleticOpenReviewMediaOwnership {
-  id                     String   @id
+  id                     String    @id
   storeId                String
-  mediaId                String   @unique(map: "open_review_media_id")
+  mediaId                String    @unique(map: "open_review_media_id")
   shopperId              String
   productId              String
-  installationGeneration String   @db.VarChar(64)
-  source                 String   @db.VarChar(32)
-  submissionKey          String   @db.VarChar(64)
-  idempotencyKey         String   @db.VarChar(64)
-  contentDigest          String?  @db.VarChar(64)
+  installationGeneration String
+  source                 String
+  submissionKey          String
+  idempotencyKey         String
+  contentDigest          String?
   settingsRevision       Int
-  storageWriteState      String   @default("not_started") @db.VarChar(16)
-  storageWriteToken      String?  @db.VarChar(64)
-  createdAt              DateTime @default(now()) @db.DateTime(3)
-  redactedAt             DateTime? @db.DateTime(3)
+  storageWriteState      String    @default("not_started")
+  storageWriteToken      String?
+  createdAt              DateTime  @default(now())
+  redactedAt             DateTime?
 
   media WeleticReviewMedia @relation(fields: [storeId, mediaId], references: [storeId, id], onDelete: Restrict)
 

@@ -17,6 +17,7 @@ import {
   renewDistributedLock,
   withDistributedLock,
 } from "@/lib/weletic/redis-lock";
+import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import {
   Prisma,
   WeleticProductStatus,
@@ -280,13 +281,17 @@ async function upsertTranslations({
         : marketId == null,
     );
     const title = translationValue(scoped, "title");
+    const rawBodyHtml = translationValue(scoped, "body_html");
+    const cleanBodyHtml = rawBodyHtml
+      ? sanitizeProductDescriptionHtml(rawBodyHtml)
+      : null;
     return title
       ? [
           {
             marketKey: scope.marketKey,
             marketId: scope.marketId,
             title,
-            descriptionHtml: translationValue(scoped, "body_html"),
+            descriptionHtml: cleanBodyHtml,
           },
         ]
       : [];
@@ -301,6 +306,9 @@ async function upsertTranslations({
       expectedInstallationGeneration,
       operation: async (tx) => {
         for (const write of chunk) {
+          const sanitizedWriteDesc = write.descriptionHtml
+            ? sanitizeProductDescriptionHtml(write.descriptionHtml)
+            : null;
           await tx.weleticShopifyTranslation.upsert({
             where: {
               productId_locale_marketKey: {
@@ -316,12 +324,12 @@ async function upsertTranslations({
               locale,
               marketKey: write.marketKey,
               title: write.title,
-              descriptionHtml: write.descriptionHtml,
+              descriptionHtml: sanitizedWriteDesc,
             },
             update: {
               marketId: write.marketId,
               title: write.title,
-              descriptionHtml: write.descriptionHtml,
+              descriptionHtml: sanitizedWriteDesc,
             },
           });
         }
@@ -811,7 +819,9 @@ async function performWeleticShopifyCatalogSync({
                 externalId: product.id,
                 handle: product.handle,
                 title: product.title,
-                descriptionHtml: product.descriptionHtml,
+                descriptionHtml: product.descriptionHtml
+                  ? sanitizeProductDescriptionHtml(product.descriptionHtml)
+                  : null,
                 productType: product.productType,
                 vendor: product.vendor,
                 tags: product.tags,
@@ -829,7 +839,9 @@ async function performWeleticShopifyCatalogSync({
                 programId: installation.programId,
                 handle: product.handle,
                 title: product.title,
-                descriptionHtml: product.descriptionHtml,
+                descriptionHtml: product.descriptionHtml
+                  ? sanitizeProductDescriptionHtml(product.descriptionHtml)
+                  : null,
                 productType: product.productType,
                 vendor: product.vendor,
                 tags: product.tags,

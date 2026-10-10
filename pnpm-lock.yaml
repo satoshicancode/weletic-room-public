@@ -100,6 +100,9 @@ importers:
       '@planetscale/database':
         specifier: 1.19.0
         version: 1.19.0
+      '@prisma/adapter-d1':
+        specifier: 6.19.1
+        version: 6.19.1
       '@prisma/adapter-planetscale':
         specifier: 6.19.1
         version: 6.19.1
@@ -416,6 +419,9 @@ importers:
         specifier: 5.4.6
         version: 5.4.6(zod@4.3.5)
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^5.20261008.1
+        version: 5.20261008.1
       '@playwright/test':
         specifier: ^1.52.0
         version: 1.58.2
@@ -1636,6 +1642,12 @@ packages:
     resolution: {integrity: sha512-OWdZt5EULFgDaHTbkxkxN130ohapRxSMaYdaW/fZTcQP3z1c4cYk4izJwbbTPOP4GdQeys18Prls0xz4NpFV0A==}
     peerDependencies:
       zod: ^4.0.0
+
+  '@cloudflare/workers-types@4.20260702.1':
+    resolution: {integrity: sha512-mOhf5TUEB1m2vPrxtqoIGfz0fUC9xyxRDx5gWHy5s+OCo6dcV+g7wI1R7gYCMFohhqF/2y2xeKVwMwCJjfn/WA==}
+
+  '@cloudflare/workers-types@5.20261008.1':
+    resolution: {integrity: sha512-Ya6zuPTAQPka+Mn5rMI5f8Zl5bihhm+ytqhHiMzMgpLDGrD24A1k/Z/JPSBIqhIC0bx0AclgYyoZoRs6UWVlmw==}
 
   '@cspotcode/source-map-support@0.8.1':
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
@@ -3701,6 +3713,9 @@ packages:
     resolution: {integrity: sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA==}
     engines: {node: '>=18'}
     hasBin: true
+
+  '@prisma/adapter-d1@6.19.1':
+    resolution: {integrity: sha512-mV177ozp2w/zTbohTe+hLXyXBCFTcAFXPh+W72ZuR65giKYmib08xLHMYyfGkeoYXOOiyPk/VfbJKF3sOn2qyA==}
 
   '@prisma/adapter-planetscale@6.19.1':
     resolution: {integrity: sha512-5ooI/q9mzBUnomqqx6ADkaE706AukbliH3O8cWujGOYyH/uQbZhlNOMJX7oKLOz1nWEV3BvnxLI9qGK0+fg50Q==}
@@ -9558,6 +9573,10 @@ packages:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
 
+  ky@1.7.5:
+    resolution: {integrity: sha512-HzhziW6sc5m0pwi5M196+7cEBtbt0lCYi67wNsiwMUmz833wloE0gbzJPWKs1gliFKQb34huItDQX97LyOdPdA==}
+    engines: {node: '>=18'}
+
   language-subtag-registry@0.3.23:
     resolution: {integrity: sha512-0K65Lea881pHotoGEa5gDlMxt3pctLi2RplBb7Ezh4rRdLEOtgi7n4EwK9lamnUCkKBqaeKRVebTq6BAxSkpXQ==}
 
@@ -14667,6 +14686,10 @@ snapshots:
     dependencies:
       zod: 4.3.5
 
+  '@cloudflare/workers-types@4.20260702.1': {}
+
+  '@cloudflare/workers-types@5.20261008.1': {}
+
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
@@ -16420,6 +16443,12 @@ snapshots:
   '@playwright/test@1.58.2':
     dependencies:
       playwright: 1.58.2
+
+  '@prisma/adapter-d1@6.19.1':
+    dependencies:
+      '@cloudflare/workers-types': 4.20260702.1
+      '@prisma/driver-adapter-utils': 6.19.1
+      ky: 1.7.5
 
   '@prisma/adapter-planetscale@6.19.1':
     dependencies:
@@ -23424,6 +23453,8 @@ snapshots:
   kleur@3.0.3: {}
 
   kleur@4.1.5: {}
+
+  ky@1.7.5: {}
 
   language-subtag-registry@0.3.23: {}
 

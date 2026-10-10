@@ -17,7 +17,7 @@ export function adminSessionResponse(
   requireGeneration = false,
 ) {
   return async ({ request }: LoaderFunctionArgs) => {
-    if (!verifyWeleticInternalRequest({ request }))
+    if (!verifyWeleticInternalRequest({ request, requireRequestId: true }))
       return json({ error: "Unauthorized" }, { status: 401, headers });
     const params = new URL(request.url).searchParams;
     const shop = params.get("shop")?.trim().toLowerCase();

@@ -28,6 +28,7 @@ import {
   assertRecordedShopifyOrder,
   shopifyOrderSettlementLockKey,
 } from "./order-attribution";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 
 function divideAndRound(numerator: bigint, denominator: bigint) {
   if (denominator <= BigInt(0)) return BigInt(0);
@@ -499,24 +500,28 @@ async function recordWeleticRefundUnlocked({
   if (duplicate) {
     const hasPersistedMerchandiseRefund = duplicate.lines.length > 0;
     if (!hasPersistedMerchandiseRefund) {
-      await prisma.$transaction(async (tx) => {
-        await assertRefundStoreAcceptsWrite({
-          storeId: store.id,
-          action: "refund_reconciliation_issue",
-          privacyMinimizedFinancialSettlement,
-          expectedInstallationGeneration,
-          loyaltyMaintenancePermit,
-          tx,
-        });
-        return ensureUnresolvedLoyaltyRefundIssue({
-          db: tx,
-          storeId: store.id,
-          orderId: duplicate.order.id,
-          orderExternalId: duplicate.order.externalId,
-          refundId: duplicate.id,
-          refundExternalId: externalId,
-        });
-      });
+      await withFinancialTransactionRetry(
+        () =>
+          prisma.$transaction(async (tx) => {
+            await assertRefundStoreAcceptsWrite({
+              storeId: store.id,
+              action: "refund_reconciliation_issue",
+              privacyMinimizedFinancialSettlement,
+              expectedInstallationGeneration,
+              loyaltyMaintenancePermit,
+              tx,
+            });
+            return ensureUnresolvedLoyaltyRefundIssue({
+              db: tx,
+              storeId: store.id,
+              orderId: duplicate.order.id,
+              orderExternalId: duplicate.order.externalId,
+              refundId: duplicate.id,
+              refundExternalId: externalId,
+            });
+          }),
+        { actionName: "record_refund_reconciliation_issue" },
+      );
     }
     if (duplicate.order.partnerId) {
       await syncTotalCommissions({
@@ -637,8 +642,10 @@ async function recordWeleticRefundUnlocked({
     (total, line) => total + line.presentmentAmount,
     BigInt(0),
   );
-  const result = await prisma.$transaction(
-    async (tx) => {
+  const result = await withFinancialTransactionRetry(
+    () =>
+      prisma.$transaction(
+        async (tx) => {
       await assertRefundStoreAcceptsWrite({
         storeId: store.id,
         action: privacyMinimizedFinancialSettlement
@@ -815,7 +822,9 @@ async function recordWeleticRefundUnlocked({
     {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
     },
-  );
+  ),
+  { actionName: "record_weletic_refund" },
+);
 
   if (result.commissionId && order.partnerId) {
     await syncTotalCommissions({

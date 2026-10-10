@@ -7,8 +7,10 @@ import { fetchShopifyTokenAuthorityCredential } from "@/lib/weletic/shopify/toke
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   verifyWeleticInternalRequest,
+  clearInternalNonceCacheForTest,
   WELETIC_INTERNAL_SIGNATURE_HEADER,
   WELETIC_INTERNAL_TIMESTAMP_HEADER,
+  WELETIC_REQUEST_ID_HEADER,
 } from "../../../../packages/shopify-app/app/weletic-api.server";
 
 const unauthenticatedAdmin = vi.fn();
@@ -26,6 +28,7 @@ function signedAuthorityRequest(
   targetShop = shop,
   generation?: string,
   installed = false,
+  requestId = crypto.randomUUID(),
 ) {
   const path = `/api/internal/${installed ? "installed-admin-session" : "admin-session"}?shop=${encodeURIComponent(targetShop)}${generation === undefined ? "" : `&generation=${encodeURIComponent(generation)}`}`;
   const timestamp = String(Date.now());
@@ -37,8 +40,10 @@ function signedAuthorityRequest(
         method: "GET",
         path,
         body: "",
+        requestId,
         secret,
       }),
+      [WELETIC_REQUEST_ID_HEADER]: requestId,
     },
   });
 }
@@ -46,6 +51,7 @@ function signedAuthorityRequest(
 describe("Shopify offline-token authority", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearInternalNonceCacheForTest();
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("SHOPIFY_APP_URL", "https://shopify.weletic.com");
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);

@@ -57,8 +57,10 @@ export const GET = withPartnerProfile(
         ? search.includes("@")
           ? { email: search }
           : {
-              email: { search: sanitizeFullTextSearch(search) },
-              name: { search: sanitizeFullTextSearch(search) },
+              OR: [
+                { email: { contains: search } },
+                { name: { contains: search } },
+              ],
             }
         : {}),
     };

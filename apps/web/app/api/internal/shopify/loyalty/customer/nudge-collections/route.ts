@@ -7,6 +7,7 @@ import {
 } from "@/lib/weletic/loyalty/response";
 import { createShopifyDerivedPrivacyDigest } from "@/lib/weletic/shopify/privacy-identity";
 import { verifyWeleticShopifyRequest } from "@/lib/weletic/shopify/service-auth";
+import { resolveShopifyStoreByDomain } from "@/lib/weletic/shopify/store-resolver";
 
 export const dynamic = "force-dynamic";
 const headers = {
@@ -60,26 +61,41 @@ export async function GET(request: Request) {
       { headers },
     );
   try {
-    // Do not use the credential-bearing resolver: it can verify/rebind tokens.
-    // Ambiguous persisted aliases must fail closed, never select the first store.
-    const matchingProject =
-      typeof prisma.project?.findFirst === "function"
-        ? await prisma.project.findFirst({
-            where: { shopifyStoreId: shop },
-            select: { id: true },
-          })
-        : null;
-    const stores = await prisma.weleticShopifyStore.findMany({
-      where: {
-        OR: [
-          { shopDomain: shop },
-          ...(matchingProject ? [{ projectId: matchingProject.id }] : []),
-        ],
-      },
-      select: { id: true },
-      take: 2,
-    });
-    if (stores.length !== 1)
+    let store = null;
+    try {
+      store = await resolveShopifyStoreByDomain(shop);
+    } catch {
+      store = null;
+    }
+    let storeId: string | null = store?.storeId ?? null;
+
+    if (!storeId) {
+      const matchingProject =
+        typeof prisma?.project?.findFirst === "function"
+          ? await prisma.project.findFirst({
+              where: { shopifyStoreId: shop },
+              select: { id: true },
+            })
+          : null;
+      const stores =
+        typeof prisma?.weleticShopifyStore?.findMany === "function"
+          ? await prisma.weleticShopifyStore.findMany({
+              where: {
+                OR: [
+                  { shopDomain: shop },
+                  ...(matchingProject ? [{ projectId: matchingProject.id }] : []),
+                ],
+              },
+              select: { id: true },
+              take: 2,
+            })
+          : [];
+      if (stores.length === 1) {
+        storeId = stores[0].id;
+      }
+    }
+
+    if (!storeId)
       return loyaltyErrorResponse(
         "store_not_found",
         "Store unavailable",
@@ -89,11 +105,11 @@ export async function GET(request: Request) {
       );
     const storeKey = createShopifyDerivedPrivacyDigest({
       purpose: "nudge_membership",
-      values: [stores[0].id],
+      values: [storeId],
     });
     const shopperKey = createShopifyDerivedPrivacyDigest({
       purpose: "nudge_membership",
-      values: [stores[0].id, customerId],
+      values: [storeId, customerId],
     });
     const limits = await Promise.all([
       ratelimit(60, "1 m").limit(`loyalty:nudge-membership:store:${storeKey}`),
@@ -118,7 +134,7 @@ export async function GET(request: Request) {
         { headers },
       );
     const membership = await readCustomerNudgeCollectionMembership({
-      storeId: stores[0].id,
+      storeId,
       shopifyCustomerId: customerId,
       productIds: products.map((id) => `gid://shopify/Product/${id}`),
     });

@@ -24,36 +24,33 @@ import { withReviewMutation } from "./transaction";
  * automatic moderation/refund caller is activated here. The original claim,
  * policy, award and validation snapshots remain intact.
  */
-export function invalidateReviewIncentive({
+export async function invalidateReviewIncentiveInTransaction({
+  tx,
   storeId,
   claimId,
-  expectedInstallationGeneration,
+  generation,
   decision: input,
 }: {
+  tx: Prisma.TransactionClient;
   storeId: string;
   claimId: string;
-  expectedInstallationGeneration: string;
+  generation: string;
   decision: z.input<typeof reviewIncentiveDecisionSchema>;
 }) {
   const decision = reviewIncentiveDecisionSchema.parse(input);
-  if (!expectedInstallationGeneration)
-    throw new ReviewError("unavailable", "Installation identity is required");
-  return withReviewMutation(
-    storeId,
-    async (tx, generation) => {
-      if (!generation)
-        throw new ReviewError(
-          "unavailable",
-          "Installation identity is required",
-        );
-      const claim = await tx.weleticReviewIncentiveClaim.findFirst({
-        where: { id: claimId, storeId },
-        include: {
-          policy: true,
-          order: true,
-          shopper: { include: { privacyTombstones: true } },
-        },
-      });
+  if (!generation)
+    throw new ReviewError(
+      "unavailable",
+      "Installation identity is required",
+    );
+  const claim = await tx.weleticReviewIncentiveClaim.findFirst({
+    where: { id: claimId, storeId },
+    include: {
+      policy: true,
+      order: true,
+      shopper: { include: { privacyTombstones: true } },
+    },
+  });
       if (
         !claim ||
         !["product", "store"].includes(claim.subjectType) ||
@@ -397,11 +394,36 @@ export function invalidateReviewIncentive({
           data: { cleanupId: cleanup.id },
         });
       }
-      return {
-        status: "recorded" as const,
-        invalidationId: invalidation.id,
-        outcome,
-      };
+  return {
+    status: "recorded" as const,
+    invalidationId: invalidation.id,
+    outcome,
+  };
+}
+
+export function invalidateReviewIncentive({
+  storeId,
+  claimId,
+  expectedInstallationGeneration,
+  decision: input,
+}: {
+  storeId: string;
+  claimId: string;
+  expectedInstallationGeneration: string;
+  decision: z.input<typeof reviewIncentiveDecisionSchema>;
+}) {
+  if (!expectedInstallationGeneration)
+    throw new ReviewError("unavailable", "Installation identity is required");
+  return withReviewMutation(
+    storeId,
+    async (tx, generation) => {
+      return invalidateReviewIncentiveInTransaction({
+        tx,
+        storeId,
+        claimId,
+        generation,
+        decision: input,
+      });
     },
     expectedInstallationGeneration,
   );

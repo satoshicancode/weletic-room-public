@@ -21,6 +21,7 @@ const environment = {
   WELETIC_RESTRICTED_DEVELOPMENT_GENERATION: generation,
   SHOPIFY_API_KEY: identity.appId,
   SHOPIFY_PARTNER_APP_ID: identity.partnerAppId,
+  SHOPIFY_RESTRICTED_DEV_STORES: identity.shop,
   DATABASE_URL: "mysql://synthetic@127.0.0.1:60101/test",
   PLANETSCALE_DATABASE_URL: "http://127.0.0.1:65367/test",
   UPSTASH_REDIS_REST_URL: "http://127.0.0.1:8079",
@@ -30,6 +31,7 @@ const now = new Date("2026-09-28T00:00:00Z");
 function setup() {
   for (const [key, value] of Object.entries(environment))
     vi.stubEnv(key, value);
+  vi.stubEnv("WELETIC_RESTRICTED_DEV_SHOP_ID", identity.shopId);
   vi.stubEnv("WELETIC_SETUP_ONLY", undefined);
 }
 function receipt() {

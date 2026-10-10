@@ -19,6 +19,10 @@ import { linkCache } from "./cache";
 import { encodeKeyIfCaseSensitive } from "./case-sensitivity";
 import { includeTags } from "./include-tags";
 import { transformLink } from "./utils";
+import {
+  evictLinkFromKv,
+  tombstoneLinkInKv,
+} from "@/lib/weletic/link-kv-cache";
 
 export async function updateLink({
   oldLink,
@@ -181,6 +185,18 @@ export async function updateLink({
           ...(partner && { partner }),
           ...(discount && { discount }),
         }),
+
+        // Enforce Invariant 2: Set tombstone in KV if disabled, else evict stale KV entry
+        response.disabledAt
+          ? tombstoneLinkInKv({
+              domain: response.domain,
+              key: response.key,
+              disabledAt: response.disabledAt,
+            })
+          : evictLinkFromKv({
+              domain: response.domain,
+              key: response.key,
+            }),
 
         // Record link in Tinybird
         recordLink({

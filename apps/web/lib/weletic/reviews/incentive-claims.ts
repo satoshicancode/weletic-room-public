@@ -216,20 +216,22 @@ export async function reserveProductReviewIncentiveInTransaction({
         "unavailable",
         "Current installation identity is required",
       );
-    const fulfillment = await fulfillReviewPointsClaimInTransaction({
-      tx,
-      storeId,
-      claimId: claim.id,
-      generation,
-    });
-    if (fulfillment.status === "fulfilled")
-      return {
-        status: "fulfilled" as const,
-        claim: await tx.weleticReviewIncentiveClaim.findUniqueOrThrow({
-          where: { id: claim.id },
-        }),
-        created: true,
-      };
+    if (review.status === "published") {
+      const fulfillment = await fulfillReviewPointsClaimInTransaction({
+        tx,
+        storeId,
+        claimId: claim.id,
+        generation,
+      });
+      if (fulfillment.status === "fulfilled")
+        return {
+          status: "fulfilled" as const,
+          claim: await tx.weleticReviewIncentiveClaim.findUniqueOrThrow({
+            where: { id: claim.id },
+          }),
+          created: true,
+        };
+    }
   }
   return { status: "reserved" as const, claim, created: true };
 }

@@ -3,6 +3,7 @@ import { storage } from "@/lib/storage";
 import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { Prisma } from "@prisma/client";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { REVIEW_MAX_PHOTO_BYTES, ReviewError } from "./contracts";
@@ -106,7 +107,7 @@ export async function uploadOpenReviewPhoto({
         const settings = await tx.$queryRaw<
           Array<{ photoUploadsEnabled: boolean | number }>
         >(Prisma.sql`
-          SELECT photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${storeId} FOR UPDATE
+          SELECT photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${storeId} ${forUpdateClause}
         `);
         if (
           settings.length !== 1 ||
@@ -121,7 +122,7 @@ export async function uploadOpenReviewPhoto({
         });
         const products = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
           SELECT id FROM WeleticShopifyProduct WHERE storeId = ${storeId}
-            AND externalId = ${data.productId} AND status = 'active' LIMIT 1 FOR UPDATE
+            AND externalId = ${data.productId} AND status = 'active' LIMIT 1 ${forUpdateClause}
         `);
         if (products.length !== 1)
           throw new ReviewError("not_found", "Product unavailable");

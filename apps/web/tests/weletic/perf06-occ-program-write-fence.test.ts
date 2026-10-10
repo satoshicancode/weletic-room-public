@@ -441,8 +441,28 @@ describe("PERF-06: Optimistic Concurrency Control & Write-Fence Lock Elimination
         }, 150);
       });
 
+      const mockClient = {
+        $queryRaw: vi.fn().mockImplementation(async (query: any) => {
+          const sql = String(query?.strings || query || "");
+          if (sql.includes("WeleticShopifyStore")) {
+            return [{ id: "store_123", storeAccessState: "active" }];
+          }
+          return [
+            {
+              id: "prog_stage_test",
+              storeId: "store_123",
+              status: "active",
+              killSwitchActive: false,
+              metadata: null,
+              version: 1,
+            },
+          ];
+        }),
+      } as unknown as Prisma.TransactionClient;
+
       const startTime = Date.now();
       const readPromise = readLoyaltyProgramSnapshot({
+        client: mockClient,
         storeId: "store_123",
         mode: "active",
       });

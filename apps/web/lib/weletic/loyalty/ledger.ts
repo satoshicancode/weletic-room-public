@@ -219,6 +219,15 @@ export async function appendPointsLedgerEntryWithReceipt(
           );
         }
 
+        if (
+          entryType === WeleticPointsLedgerEntryType.REDEEM_REWARD &&
+          balanceAfter < BigInt(0)
+        ) {
+          throw new OptimisticConcurrencyError(
+            `Available points invariant failed for loyalty account ${accountId}: redemption of ${-deltaBigInt} exceeds available balance ${currentBalance}`,
+          );
+        }
+
         const lifetimeEarned =
           currentLifetimeEarned +
           getLifetimeEarnedPointsDelta(entryType, deltaBigInt, referenceType);

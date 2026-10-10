@@ -35,8 +35,10 @@ export const GET = withWorkspace(
         ? search.includes("@")
           ? { email: search }
           : {
-              email: { search: sanitizeFullTextSearch(search) },
-              name: { search: sanitizeFullTextSearch(search) },
+              OR: [
+                { email: { contains: search } },
+                { name: { contains: search } },
+              ],
             }
         : {}),
     };

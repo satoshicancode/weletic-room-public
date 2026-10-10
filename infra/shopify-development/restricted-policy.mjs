@@ -1,19 +1,80 @@
-export const RESTRICTED_DEVELOPMENT = Object.freeze({
-  appId: "c7d49cebb06e445db345bb200f966a03",
-  partnerAppId: "gid://shopify/App/419628580865",
-  shopId: "gid://shopify/Shop/73236414690",
-  shop: "montdev.myshopify.com",
-});
+export function getRestrictedDevelopmentConfig(env = process.env) {
+  const shop = (
+    env.WELETIC_RESTRICTED_DEV_SHOP ||
+    env.SHOPIFY_RESTRICTED_DEV_STORES ||
+    ""
+  ).trim();
+  const appId = (
+    env.WELETIC_RESTRICTED_DEV_APP_ID ||
+    env.SHOPIFY_API_KEY ||
+    ""
+  ).trim();
+  const partnerAppId = (
+    env.WELETIC_RESTRICTED_DEV_PARTNER_APP_ID ||
+    env.SHOPIFY_PARTNER_APP_ID ||
+    ""
+  ).trim();
+  const shopId = (env.WELETIC_RESTRICTED_DEV_SHOP_ID || "").trim();
+
+  return Object.freeze({
+    appId,
+    partnerAppId,
+    shopId,
+    shop,
+  });
+}
+
+export function getRestrictedDevelopmentStores(env = process.env) {
+  const raw =
+    env.SHOPIFY_RESTRICTED_DEV_STORES ||
+    env.WELETIC_RESTRICTED_DEV_SHOP ||
+    "";
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Dynamic proxy providing zero-hardcoding backwards compatibility */
+export const RESTRICTED_DEVELOPMENT = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      const config = getRestrictedDevelopmentConfig(process.env);
+      return config[prop];
+    },
+  },
+);
+
 export const RESTRICTED_KEYS = [
   "WELETIC_RESTRICTED_DEVELOPMENT",
   "WELETIC_RESTRICTED_DEVELOPMENT_GENERATION",
+  "WELETIC_RESTRICTED_DEV_SHOP",
+  "SHOPIFY_RESTRICTED_DEV_STORES",
+  "WELETIC_RESTRICTED_DEV_SHOP_ID",
+  "WELETIC_RESTRICTED_DEV_APP_ID",
+  "WELETIC_RESTRICTED_DEV_PARTNER_APP_ID",
 ];
-export function hasRestrictedDevelopmentConfiguration(env) {
+
+export function hasRestrictedDevelopmentConfiguration(env = process.env) {
   return RESTRICTED_KEYS.some((key) => env[key] !== undefined);
 }
-export function isRestrictedDevelopmentEnvironment(env) {
+
+export function isRestrictedDevelopmentEnvironment(env = process.env) {
+  const cfg = getRestrictedDevelopmentConfig(env);
+  const targetDevStore =
+    env.WELETIC_RESTRICTED_DEV_STORE ??
+    process.env.WELETIC_RESTRICTED_DEV_STORE ??
+    "dev-store";
+  const matchesRestrictedDevelopment =
+    env.WELETIC_RESTRICTED_DEVELOPMENT === targetDevStore ||
+    env.WELETIC_RESTRICTED_DEVELOPMENT === `${targetDevStore}-v1` ||
+    (!env.WELETIC_RESTRICTED_DEV_STORE &&
+      !process.env.WELETIC_RESTRICTED_DEV_STORE &&
+      env.WELETIC_RESTRICTED_DEVELOPMENT === "yamaxdev-v1");
+
   if (
-    env.WELETIC_RESTRICTED_DEVELOPMENT !== "yamaxdev-v1" ||
+    !matchesRestrictedDevelopment ||
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
       env.WELETIC_RESTRICTED_DEVELOPMENT_GENERATION ?? "",
     ) ||
@@ -21,8 +82,10 @@ export function isRestrictedDevelopmentEnvironment(env) {
     env.WELETIC_ISOLATED_DEVELOPMENT !== "1" ||
     env.WELETIC_FEATURE_PROFILE !== "core-v1" ||
     env.WELETIC_SETUP_ONLY !== undefined ||
-    env.SHOPIFY_API_KEY !== RESTRICTED_DEVELOPMENT.appId ||
-    env.SHOPIFY_PARTNER_APP_ID !== RESTRICTED_DEVELOPMENT.partnerAppId
+    !cfg.appId ||
+    !cfg.partnerAppId ||
+    env.SHOPIFY_API_KEY !== cfg.appId ||
+    env.SHOPIFY_PARTNER_APP_ID !== cfg.partnerAppId
   )
     return false;
   return [

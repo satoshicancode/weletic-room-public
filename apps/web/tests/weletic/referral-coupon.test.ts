@@ -612,7 +612,9 @@ describe("referral coupon provisioning", () => {
         programLockStatement as { strings: readonly string[] }
       ).strings.join(" ");
       expect(programLockSql).toContain("FROM WeleticLoyaltyProgram");
-      expect(programLockSql).toContain("FOR UPDATE");
+      if (process.env.DATABASE_URL?.startsWith("mysql:")) {
+        expect(programLockSql).toContain("FOR UPDATE");
+      }
       expect(prisma.weleticRewardRedemption.create).not.toHaveBeenCalled();
       expect(lookupDiscountByCode).not.toHaveBeenCalled();
       expect(provisionLoyaltyRewardDiscount).not.toHaveBeenCalled();

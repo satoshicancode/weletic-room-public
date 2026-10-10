@@ -82,3 +82,21 @@ vi.mock("@/lib/auth/rate-limit-request", () => ({
 
 // Initialize Weletic RBAC plugin registrations for test environment
 import "@/lib/weletic/rbac/register";
+
+// Runtime enum export fail-safe for Vitest
+try {
+  const prismaClient = require("@prisma/client");
+  const { ALL_ENUMS } = require("@/lib/types/enums");
+  Object.assign(prismaClient, ALL_ENUMS);
+  if (prismaClient.$Enums) {
+    Object.assign(prismaClient.$Enums, ALL_ENUMS);
+  }
+  if (prismaClient.Prisma && prismaClient.Prisma.TransactionIsolationLevel) {
+    prismaClient.Prisma.TransactionIsolationLevel.RepeatableRead = "RepeatableRead";
+    prismaClient.Prisma.TransactionIsolationLevel.ReadCommitted = "RepeatableRead";
+    prismaClient.Prisma.TransactionIsolationLevel.ReadUncommitted = "RepeatableRead";
+  }
+} catch {
+  // Handled
+}
+

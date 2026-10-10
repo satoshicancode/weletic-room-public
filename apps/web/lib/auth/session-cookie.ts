@@ -4,6 +4,7 @@ export interface SessionCookieDomainOptions {
   vercelEnv?: string;
   vercelUrl?: string;
   nextPublicVercelEnv?: string;
+  hostOnly?: boolean;
 }
 
 const SECOND_LEVEL_DOMAINS = new Set([
@@ -35,17 +36,25 @@ function extractApexDomain(hostname: string): string | undefined {
  * Dynamically resolves the session cookie domain for NextAuth.
  *
  * Rules:
- * 1. Preview environments (process.env.VERCEL_ENV === "preview", NEXT_PUBLIC_VERCEL_ENV === "preview",
+ * 1. If hostOnly is true (or NEXTAUTH_COOKIE_HOST_ONLY === "true"), returns `undefined`
+ *    (host-only cookie per RFC 6265bis) preventing cookie tossing and supporting multi-tenant custom domains.
+ * 2. Preview environments (process.env.VERCEL_ENV === "preview", NEXT_PUBLIC_VERCEL_ENV === "preview",
  *    or preview URL patterns) MUST return `undefined` (host-only cookie per RFC 6265)
  *    to prevent infinite login redirect loops.
- * 2. Localhost, loopback, and numeric IP addresses MUST return `undefined`.
- * 3. Production custom domains (e.g. app.weletic.com, app.dub.co) extract the apex domain
- *    with a leading dot (e.g. .weletic.com, .dub.co) to allow cross-subdomain SSO sharing.
- * 4. Fallback: if no valid apex domain can be derived, returns `undefined` (safe host-only cookie).
+ * 3. Localhost, loopback, and numeric IP addresses MUST return `undefined`.
+ * 4. Production custom domains (e.g. app.weletic.com, app.dub.co) extract the apex domain
+ *    with a leading dot (e.g. .weletic.com, .dub.co) to allow cross-subdomain SSO sharing when requested.
+ * 5. Fallback: if no valid apex domain can be derived, returns `undefined` (safe host-only cookie).
  */
 export function getSessionCookieDomain(
   customEnv?: SessionCookieDomainOptions,
 ): string | undefined {
+  if (
+    customEnv?.hostOnly ||
+    process.env.NEXTAUTH_COOKIE_HOST_ONLY === "true"
+  ) {
+    return undefined;
+  }
   const vercelEnv = customEnv?.vercelEnv ?? process.env.VERCEL_ENV;
   const nextPublicVercelEnv =
     customEnv?.nextPublicVercelEnv ?? process.env.NEXT_PUBLIC_VERCEL_ENV;

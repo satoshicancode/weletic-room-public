@@ -10,6 +10,7 @@ import { includeProgramEnrollment } from "./include-program-enrollment";
 import { includeTags } from "./include-tags";
 import { propagateBulkLinkChanges } from "./propagate-bulk-link-changes";
 import { transformLink } from "./utils";
+import { evictLinksBatchFromKv } from "@/lib/weletic/link-kv-cache";
 
 export async function bulkUpdateLinks(
   // omit externalIds from params
@@ -115,6 +116,10 @@ export async function bulkUpdateLinks(
       propagateBulkLinkChanges({
         links: updatedLinks,
       }),
+      // explicitly ensure KV cache is evicted for all modified links in batch
+      evictLinksBatchFromKv(
+        updatedLinks.map((link) => ({ domain: link.domain, key: link.key })),
+      ),
       // if proxy is true and image is not stored in R2, upload image to R2
       proxy &&
         image &&

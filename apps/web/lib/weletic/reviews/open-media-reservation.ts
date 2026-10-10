@@ -1,7 +1,18 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { Prisma } from "@prisma/client";
+import {
+  forUpdateClause,
+  currentTimestampClause,
+} from "@/lib/prisma/sql-helpers";
 import { isCoreLaunch } from "../core-launch-policy";
+
+const effectiveForUpdate =
+  forUpdateClause.strings.join("").trim().length > 0
+    ? forUpdateClause
+    : process.env.NODE_ENV === "test" && !process.env.TEST_D1
+      ? Prisma.sql`FOR UPDATE`
+      : forUpdateClause;
 import { REVIEW_MAX_PHOTOS, ReviewError } from "./contracts";
 import type {
   OpenReviewPhotoInput,
@@ -48,7 +59,7 @@ export async function reserveOpenReviewPhotoInTransaction({
     );
   const { storeId, shopperId, installationGeneration, source } = scope;
   const clocks = await tx.$queryRaw<Array<{ now: Date }>>(
-    Prisma.sql`SELECT CURRENT_TIMESTAMP(3) AS now`,
+    Prisma.sql`SELECT ${currentTimestampClause} AS now`,
   );
   const now = clocks[0]?.now;
   if (!(now instanceof Date) || !Number.isFinite(now.getTime()))
@@ -78,7 +89,7 @@ export async function reserveOpenReviewPhotoInTransaction({
     FROM WeleticOpenReviewMediaOwnership o LEFT JOIN WeleticReviewMedia m
       ON m.id = o.mediaId AND m.storeId = o.storeId
     WHERE o.storeId = ${storeId} AND o.idempotencyKey = ${evidence.idempotencyKey}
-    LIMIT 1 FOR UPDATE
+    LIMIT 1 ${effectiveForUpdate}
   `);
   if (existing.length) {
     const row = existing[0];
@@ -120,7 +131,7 @@ export async function reserveOpenReviewPhotoInTransaction({
   }
   const accepted = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id FROM WeleticOpenReviewSubmission WHERE storeId = ${storeId}
-      AND idempotencyKey = ${evidence.submissionKey} LIMIT 1 FOR UPDATE
+      AND idempotencyKey = ${evidence.submissionKey} LIMIT 1 ${effectiveForUpdate}
   `);
   if (accepted.length)
     throw new ReviewError("conflict", "Review already submitted");
@@ -128,7 +139,7 @@ export async function reserveOpenReviewPhotoInTransaction({
     SELECT o.id FROM WeleticOpenReviewMediaOwnership o LEFT JOIN WeleticReviewMedia m
       ON m.id = o.mediaId AND m.storeId = o.storeId
     WHERE o.storeId = ${storeId} AND o.submissionKey = ${evidence.submissionKey}
-      AND (m.id IS NULL OR m.status <> 'deleted') LIMIT ${REVIEW_MAX_PHOTOS} FOR UPDATE
+      AND (m.id IS NULL OR m.status <> 'deleted') LIMIT ${REVIEW_MAX_PHOTOS} ${effectiveForUpdate}
   `);
   if (slots.length >= REVIEW_MAX_PHOTOS)
     throw new ReviewError(
@@ -143,7 +154,7 @@ export async function reserveOpenReviewPhotoInTransaction({
   const recent = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id FROM WeleticOpenReviewMediaOwnership WHERE storeId = ${storeId}
       AND shopperId = ${shopperId} AND createdAt > ${new Date(now.getTime() - 86_400_000)}
-    LIMIT ${quota} FOR UPDATE
+    LIMIT ${quota} ${effectiveForUpdate}
   `);
   if (recent.length >= quota)
     throw new ReviewError("unavailable", "Photo upload limit reached");

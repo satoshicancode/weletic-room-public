@@ -5,6 +5,7 @@ import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { Prisma, type WeleticReviewMedia } from "@prisma/client";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import sharp from "sharp";
 import {
   REVIEW_MAX_PHOTO_BYTES,
@@ -263,7 +264,7 @@ export async function cleanupReviewPhoto(storeId: string, mediaId: string) {
 async function cleanupReviewPhotoLocked(storeId: string, mediaId: string) {
   const media = await prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<WeleticReviewMedia[]>(Prisma.sql`
-      SELECT * FROM WeleticReviewMedia WHERE id = ${mediaId} AND storeId = ${storeId} FOR UPDATE
+      SELECT * FROM WeleticReviewMedia WHERE id = ${mediaId} AND storeId = ${storeId} ${forUpdateClause}
     `);
     const current = rows[0];
     if (!current) return null;

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { publishLoyaltyEarnPolicyRevision } from "@/lib/weletic/loyalty/earn-policy-revision";
 import { enqueueFlowTriggerJob } from "@/lib/weletic/loyalty/flow-trigger-outbox";
+import { SHOPIFY_FLOW_TRIGGER_HANDLES } from "@/lib/weletic/loyalty/flow-triggers";
 import { isLoyaltyMaintenanceBlockedError } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
 import { enqueueOutboxJobFromProgramTransaction } from "@/lib/weletic/loyalty/outbox";
@@ -54,13 +55,20 @@ export async function enqueuePointsExpiryLifecycleJobs({
   });
 
   let remaining = effectiveBatchSize;
-  for (const candidate of programs) {
+  const programCount = programs.length;
+  for (let i = 0; i < programCount; i++) {
     if (remaining <= 0) break;
+    const candidate = programs[i];
     result.programsScanned++;
+
+    const remainingPrograms = programCount - i;
+    const storeQuota = Math.max(1, Math.ceil(remaining / remainingPrograms));
+    let storeRemaining = Math.min(storeQuota, remaining);
 
     for (let attempt = 1; attempt <= 3; attempt++) {
       const resultBeforeAttempt = { ...result };
       const remainingBeforeAttempt = remaining;
+      const storeRemainingBeforeAttempt = storeRemaining;
       try {
         await withActiveStoreLoyaltyMutation({
           storeId: candidate.storeId,
@@ -125,7 +133,7 @@ export async function enqueuePointsExpiryLifecycleJobs({
                   pointsExpiryPolicyVersion: true,
                 },
                 orderBy: { id: "asc" },
-                take: remaining,
+                take: Math.min(storeRemaining, remaining),
               },
             );
 
@@ -154,8 +162,9 @@ export async function enqueuePointsExpiryLifecycleJobs({
               if (reconciled.count === 1) {
                 result.accountsReconciled++;
                 remaining--;
+                storeRemaining--;
               }
-              if (remaining <= 0) return;
+              if (remaining <= 0 || storeRemaining <= 0) return;
             }
 
             const maximumNoticeDays = Math.max(
@@ -184,7 +193,7 @@ export async function enqueuePointsExpiryLifecycleJobs({
                 nextExpiryDate: true,
               },
               orderBy: [{ nextExpiryDate: "asc" }, { id: "asc" }],
-              take: remaining,
+              take: Math.min(storeRemaining, remaining),
             });
 
             for (const account of accountsToSchedule) {
@@ -252,16 +261,19 @@ export async function enqueuePointsExpiryLifecycleJobs({
                   tx,
                 });
                 result.jobsEnqueued++;
-                if (stage !== "expire") {
+                if (
+                  stage !== "expire" &&
+                  account.cachedPointsBalance > BigInt(0)
+                ) {
                   await enqueueFlowTriggerJob({
                     storeId: candidate.storeId,
                     eventId: `${stage}:${account.id}:${expiryAt.toISOString()}:v${program.pointsExpiryPolicyVersion}`,
                     payload: {
                       accountId: account.id,
-                      handle: "weletic-points-expiring-soon",
+                      handle: SHOPIFY_FLOW_TRIGGER_HANDLES.POINTS_EXPIRING_SOON,
                       pointsExpiring: account.cachedPointsBalance.toString(),
                       expiryDate: expiryAt.toISOString(),
-                      urgency: stage,
+                      urgency: stage as "warning" | "last_chance",
                       policyVersion: program.pointsExpiryPolicyVersion,
                     },
                     scheduledFor: scheduledFor < now ? now : scheduledFor,
@@ -284,8 +296,9 @@ export async function enqueuePointsExpiryLifecycleJobs({
               if (marked.count === 1) {
                 result.accountsScheduled++;
                 remaining--;
+                storeRemaining--;
               }
-              if (remaining <= 0) return;
+              if (remaining <= 0 || storeRemaining <= 0) return;
             }
           },
         });
@@ -293,6 +306,7 @@ export async function enqueuePointsExpiryLifecycleJobs({
       } catch (error) {
         Object.assign(result, resultBeforeAttempt);
         remaining = remainingBeforeAttempt;
+        storeRemaining = storeRemainingBeforeAttempt;
         const retryable =
           error instanceof Prisma.PrismaClientKnownRequestError &&
           error.code === "P2034";

@@ -8,6 +8,7 @@ import {
 } from "@/lib/weletic/shopify/store-resolver";
 import { SHOPIFY_INTEGRATION_ID, nanoid } from "@dub/utils";
 import { Discount, Prisma, Project } from "@prisma/client";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import {
   ShopifyAdminGraphqlError,
   shopifyAdminGraphql,
@@ -346,7 +347,7 @@ function createShopifyDiscountProvider() {
             }>
           >(Prisma.sql`
           SELECT id, projectId, shopDomain, installationGeneration, complianceState, storeAccessState
-          FROM WeleticShopifyStore WHERE id = ${nativeStore.id} LIMIT 1 FOR UPDATE
+          FROM WeleticShopifyStore WHERE id = ${nativeStore.id} LIMIT 1 ${forUpdateClause}
         `);
           const store = rows[0];
           if (

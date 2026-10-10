@@ -1029,6 +1029,7 @@ describe("Enterprise Archived & Disabled Discount Codes System (Milestone 1 Test
       const mockShopifyOrderEvent = {
         id: 99887766,
         name: "#1001",
+        created_at: "2026-08-10T00:00:00Z",
         confirmation_number: "CN1001",
         checkout_token: "chk_hist_123",
         current_subtotal_price_set: {
@@ -1082,6 +1083,7 @@ describe("Enterprise Archived & Disabled Discount Codes System (Milestone 1 Test
       const mockShopifyOrderEvent = {
         id: 99887767,
         name: "#1002",
+        created_at: "2026-08-10T00:00:00Z",
         confirmation_number: "CN1002",
         checkout_token: "chk_unlinked_123",
         current_subtotal_price_set: {
@@ -1186,6 +1188,7 @@ describe("Enterprise Archived & Disabled Discount Codes System (Milestone 1 Test
       const mockShopifyOrderEvent = {
         id: 99887769,
         name: "#1004",
+        created_at: "2026-08-05T00:00:00Z",
         confirmation_number: "CN1004",
         checkout_token: "chk_multi_123",
         current_subtotal_price_set: {

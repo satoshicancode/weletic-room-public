@@ -150,7 +150,6 @@ export async function syncProductReviewSummary(
             );
           return { _count: { rating: count }, _sum: { rating: sum } };
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
       );
       const credentials = await resolveShopifyOfflineCredentials({ storeId });
       // Recheck after credential resolution; never hold a SQL transaction across
@@ -203,7 +202,7 @@ export async function syncProductReviewSummary(
         accessToken: credentials.accessToken,
         query,
         requestTimeoutMs: 8000,
-        maxRetries: 0,
+        maxRetries: 3,
         variables: {
           metafields,
           ...(count
@@ -219,12 +218,16 @@ export async function syncProductReviewSummary(
               }),
         },
       });
+      const deleteErrors = (response.metafieldsDelete?.userErrors ?? []).filter(
+        (err) => {
+          const msg = (err.message || "").toLowerCase();
+          return !msg.includes("does not exist") && !msg.includes("not found");
+        },
+      );
       if (
         !response.metafieldsSet ||
         response.metafieldsSet.userErrors.length ||
-        (!count &&
-          (!response.metafieldsDelete ||
-            response.metafieldsDelete.userErrors.length))
+        (!count && (!response.metafieldsDelete || deleteErrors.length > 0))
       ) {
         throw new ReviewError(
           "unavailable",

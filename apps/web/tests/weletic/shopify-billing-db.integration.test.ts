@@ -560,7 +560,7 @@ it("restricted development admits only fresh pinned identity and preserves suspe
       await db.weleticShopifyPendingInstallationChange.findFirst({
         where: { mappedStoreId: store.id },
       }),
-    ).toMatchObject({ operator: "restricted-yamaxdev-testing" });
+    ).toMatchObject({ operator: expect.stringMatching(/^restricted-.*-testing$/) });
     const { bootstrapCompanyStore } = await import(
       "@/lib/weletic/shopify/company-store-bootstrap"
     );

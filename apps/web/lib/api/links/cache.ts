@@ -10,6 +10,10 @@ import { LRUCache } from "lru-cache";
 import { revalidateTag } from "next/cache";
 import { decodeKey, isCaseSensitiveDomain } from "./case-sensitivity";
 import { ExpandedLink } from "./utils/transform-link";
+import {
+  evictLinkFromKv,
+  evictLinksBatchFromKv,
+} from "@/lib/weletic/link-kv-cache";
 
 /*
  * Link LRU cache to reduce Redis load during traffic spikes.
@@ -44,6 +48,12 @@ class LinkCache {
       revalidateTag(`static:${link.domain.toLowerCase()}:${link.key}`);
     });
 
+    waitUntil(
+      evictLinksBatchFromKv(
+        links.map((link) => ({ domain: link.domain, key: link.key })),
+      ),
+    );
+
     return await pipeline.exec();
   }
 
@@ -65,6 +75,7 @@ class LinkCache {
         ex: REDIS_CACHE_EXPIRATION,
       }),
       this._invalidateVercelRuntimeCache(cacheKey),
+      evictLinkFromKv({ domain: link.domain, key: link.key }),
     ]);
   }
 
@@ -135,6 +146,7 @@ class LinkCache {
   async delete({ domain, key }: Pick<LinkProps, "domain" | "key">) {
     const cacheKey = this._createKey({ domain, key });
     waitUntil(this._invalidateVercelRuntimeCache(cacheKey));
+    waitUntil(evictLinkFromKv({ domain, key }));
     return await redisGlobal.del(cacheKey);
   }
 
@@ -149,6 +161,7 @@ class LinkCache {
       pipeline.del(this._createKey({ domain, key }));
     });
 
+    waitUntil(evictLinksBatchFromKv(links));
     return await pipeline.exec();
   }
 
@@ -180,6 +193,7 @@ class LinkCache {
       revalidateTag(`static:${link.domain.toLowerCase()}`);
     }
 
+    runtimeInvalidations.push(evictLinksBatchFromKv(links));
     await Promise.all([pipeline.exec(), ...runtimeInvalidations]);
   }
 

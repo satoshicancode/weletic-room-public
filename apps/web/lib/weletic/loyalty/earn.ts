@@ -264,6 +264,7 @@ export interface LineAllocationInput {
   sku?: string | null;
   collectionExternalIds?: unknown;
   exclusionReason?: string | null;
+  productTags?: unknown;
 }
 
 export interface LineAllocationResult {
@@ -419,6 +420,147 @@ type CampaignCalculationInput = {
   eligibleSkus?: unknown;
   eligibleCollectionIds?: unknown;
 };
+
+export function doesOrderLineMatchRuleConditions({
+  conditions,
+  line,
+}: {
+  conditions: unknown;
+  line: {
+    productId?: string | null;
+    variantId?: string | null;
+    lineExternalId?: string | null;
+    sku?: string | null;
+    collectionExternalIds?: unknown;
+    productTags?: unknown;
+  };
+}): boolean {
+  if (!conditions || typeof conditions !== "object" || Array.isArray(conditions)) {
+    return true;
+  }
+
+  const cond = conditions as Record<string, unknown>;
+
+  // 1. productTags / tags matching
+  const targetTags = Array.isArray(cond.productTags)
+    ? cond.productTags
+    : Array.isArray(cond.tags)
+      ? cond.tags
+      : typeof cond.tag === "string"
+        ? [cond.tag]
+        : null;
+
+  if (targetTags && targetTags.length > 0) {
+    const rawLineTags = (line as any).productTags;
+    const lineTags: string[] = Array.isArray(rawLineTags)
+      ? rawLineTags.map((t: unknown) => String(t).trim().toLowerCase())
+      : [];
+    const hasTagMatch = targetTags.some((tag: unknown) =>
+      typeof tag === "string" && lineTags.includes(tag.trim().toLowerCase()),
+    );
+    if (!hasTagMatch) return false;
+  }
+
+  // 2. collections / collectionExternalIds matching
+  const targetCollections = Array.isArray(cond.collections)
+    ? cond.collections
+    : Array.isArray(cond.collectionExternalIds)
+      ? cond.collectionExternalIds
+      : Array.isArray(cond.collectionIds)
+        ? cond.collectionIds
+        : typeof cond.collectionExternalId === "string"
+          ? [cond.collectionExternalId]
+          : null;
+
+  if (targetCollections && targetCollections.length > 0) {
+    const rawCollectionIds = line.collectionExternalIds;
+    const lineCollections: string[] = Array.isArray(rawCollectionIds)
+      ? rawCollectionIds.map((c: unknown) => String(c).trim())
+      : [];
+    const hasCollectionMatch = targetCollections.some((col: unknown) => {
+      if (typeof col !== "string") return false;
+      const cleanCol = col.trim();
+      const gidSuffix = cleanCol.replace(/^gid:\/\/shopify\/Collection\//, "");
+      return lineCollections.some(
+        (lc) =>
+          lc === cleanCol ||
+          lc === gidSuffix ||
+          lc === `gid://shopify/Collection/${gidSuffix}`,
+      );
+    });
+    if (!hasCollectionMatch) return false;
+  }
+
+  // 3. productIds matching
+  const targetProductIds = Array.isArray(cond.productIds)
+    ? cond.productIds
+    : typeof cond.productId === "string"
+      ? [cond.productId]
+      : null;
+
+  if (targetProductIds && targetProductIds.length > 0) {
+    const linePid = line.productId ? String(line.productId).trim() : null;
+    const lineExternalId = line.lineExternalId ? String(line.lineExternalId).trim() : null;
+    const hasProductMatch = targetProductIds.some((pid: unknown) => {
+      if (typeof pid !== "string") return false;
+      const cleanPid = pid.trim();
+      const gidSuffix = cleanPid.replace(/^gid:\/\/shopify\/Product\//, "");
+      return (
+        linePid === cleanPid ||
+        linePid === gidSuffix ||
+        linePid === `gid://shopify/Product/${gidSuffix}` ||
+        lineExternalId === cleanPid
+      );
+    });
+    if (!hasProductMatch) return false;
+  }
+
+  // 4. skus matching
+  const targetSkus = Array.isArray(cond.skus)
+    ? cond.skus
+    : typeof cond.sku === "string"
+      ? [cond.sku]
+      : null;
+
+  if (targetSkus && targetSkus.length > 0) {
+    const lineSku = line.sku ? String(line.sku).trim().toLowerCase() : null;
+    if (!lineSku || !targetSkus.some((s: unknown) => typeof s === "string" && s.trim().toLowerCase() === lineSku)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function doesShopperMatchRuleConditions({
+  conditions,
+  shopper,
+}: {
+  conditions: unknown;
+  shopper: { tags?: unknown };
+}): boolean {
+  if (!conditions || typeof conditions !== "object" || Array.isArray(conditions)) {
+    return true;
+  }
+  const cond = conditions as Record<string, unknown>;
+  const targetCustomerTags = Array.isArray(cond.customerTags)
+    ? cond.customerTags
+    : typeof cond.customerTag === "string"
+      ? [cond.customerTag]
+      : null;
+  if (targetCustomerTags && targetCustomerTags.length > 0) {
+    const rawTags = shopper.tags;
+    const shopperTags: string[] = Array.isArray(rawTags)
+      ? rawTags.map((t: unknown) => String(t).trim().toLowerCase())
+      : typeof rawTags === "string"
+        ? rawTags.split(",").map((t: string) => t.trim().toLowerCase())
+        : [];
+    return targetCustomerTags.some((tag: unknown) =>
+      typeof tag === "string" && shopperTags.includes(tag.trim().toLowerCase()),
+    );
+  }
+  return true;
+}
 
 function calculateTargetedMultiplierOrderPoints({
   lines,
@@ -2408,20 +2550,20 @@ export async function processOrderPointsEarn({
   if (!selectedRule) {
     return persistNoAwardOutcome({ reason: "no_eligible_order_paid_rule" });
   }
-  if (!selectedRule.excludeTaxesAndShipping) {
-    await retainUnsupportedEarnRuleIssue(selectedRule.id);
-    return null;
-  }
-  const selectedRuleConditions = selectedRule.conditions;
-  const hasConfiguredConditions =
-    selectedRuleConditions !== null &&
-    selectedRuleConditions !== undefined &&
-    (typeof selectedRuleConditions !== "object" ||
-      Array.isArray(selectedRuleConditions) ||
-      Object.keys(selectedRuleConditions).length > 0);
-  if (hasConfiguredConditions) {
-    await retainUnsupportedEarnRuleConditionsIssue(selectedRule.id);
-    return null;
+  if (
+    selectedRule.conditions &&
+    !doesShopperMatchRuleConditions({
+      conditions: selectedRule.conditions,
+      shopper,
+    })
+  ) {
+    return persistNoAwardOutcome({
+      reason: "customer_condition_unmatched",
+      selectedRuleId: selectedRule.id,
+      selectedCampaignId: selectedCampaign?.id ?? null,
+      ruleMultiplier: selectedRule.multiplier,
+      campaignMultiplier: selectedCampaign?.multiplier,
+    });
   }
   if (reconciliationDelegate?.updateMany) {
     await reconciliationDelegate.updateMany({
@@ -2530,6 +2672,23 @@ export async function processOrderPointsEarn({
       isExcluded = true;
       exclusionReason = "discounted_item";
     }
+    if (!isExcluded && selectedRule.conditions) {
+      const matchesConditions = doesOrderLineMatchRuleConditions({
+        conditions: selectedRule.conditions,
+        line: {
+          productId: line.productId ?? null,
+          variantId: line.variantId ?? null,
+          lineExternalId: line.externalId ?? null,
+          sku: line.sku ?? null,
+          collectionExternalIds: line.collectionExternalIds,
+          productTags: (line as any).productTags,
+        },
+      });
+      if (!matchesConditions) {
+        isExcluded = true;
+        exclusionReason = "rule_condition_unmatched";
+      }
+    }
     const lineNetAmount =
       line.shopNet ?? line.shopGross ?? line.presentmentNet ?? BigInt(0);
 
@@ -2545,6 +2704,7 @@ export async function processOrderPointsEarn({
       quantity: line.quantity ?? 1,
       sku: line.sku ?? null,
       collectionExternalIds: line.collectionExternalIds,
+      productTags: (line as any).productTags,
     };
   });
   const capturedLineNet = lineInputs.reduce(
@@ -2579,12 +2739,33 @@ export async function processOrderPointsEarn({
     });
   }
 
-  const eligibleSubtotal =
+  const merchandiseEligibleSubtotal =
     lineInputs.length > 0
       ? lineInputs
           .filter((l) => !l.isExcluded)
           .reduce((sum, l) => sum + l.lineNetAmount, BigInt(0))
       : capturedOrderNet;
+
+  const includeTaxesAndShipping =
+    !selectedRule.excludeTaxesAndShipping ||
+    (program as any)?.excludeTaxesAndShipping === false ||
+    (policyProgram as any)?.excludeTaxesAndShipping === false;
+
+  const orderTax =
+    currency === order.shopCurrency
+      ? (order.shopTax ?? BigInt(0))
+      : (order.presentmentTax ?? order.shopTax ?? BigInt(0));
+  const orderShipping =
+    currency === order.shopCurrency
+      ? (order.shopShipping ?? BigInt(0))
+      : (order.presentmentShipping ?? order.shopShipping ?? BigInt(0));
+
+  const taxAndShippingAmount =
+    includeTaxesAndShipping && merchandiseEligibleSubtotal > BigInt(0)
+      ? orderTax + orderShipping
+      : BigInt(0);
+
+  const eligibleSubtotal = merchandiseEligibleSubtotal + taxAndShippingAmount;
 
   if (eligibleSubtotal <= BigInt(0)) {
     return persistNoAwardOutcome({
@@ -2633,12 +2814,33 @@ export async function processOrderPointsEarn({
           campaign: selectedCampaign,
           maxPointsPerEvent: selectedRule.maxPointsPerEvent,
         });
+  let taxAndShippingPoints = BigInt(0);
+  if (
+    selectedRule.ruleType !== "fixed_points" &&
+    includeTaxesAndShipping &&
+    taxAndShippingAmount > BigInt(0)
+  ) {
+    const rateAndBaseMultiplier = multiplyFractions([
+      parseDecimalToFraction(pointsPerCurrencyUnit),
+      parseDecimalToFraction(ruleMultiplier),
+      parseDecimalToFraction(tierMultiplier),
+    ]);
+    const currencyScale = powerOfTenBigInt(
+      currencyMinorUnits(normalizeCurrency(currency)),
+    );
+    taxAndShippingPoints =
+      (taxAndShippingAmount * rateAndBaseMultiplier.num) /
+      (currencyScale * rateAndBaseMultiplier.den);
+    if (taxAndShippingPoints < BigInt(0)) {
+      taxAndShippingPoints = BigInt(0);
+    }
+  }
+
   let grossPoints = targetedCalculation
-    ? targetedCalculation.grossPoints
+    ? targetedCalculation.grossPoints + taxAndShippingPoints
     : selectedRule.fixedPoints ?? BigInt(0);
 
   if (
-    !targetedCalculation &&
     selectedRule.maxPointsPerEvent !== null &&
     selectedRule.maxPointsPerEvent !== undefined &&
     grossPoints > selectedRule.maxPointsPerEvent
@@ -2659,8 +2861,10 @@ export async function processOrderPointsEarn({
 
   // 7. Execute penny-conserving proportional allocation
   const lineAllocations =
-    targetedCalculation?.lineAllocations ??
-    allocatePointsAcrossOrderLines({ grossPoints, lines: lineInputs });
+    taxAndShippingPoints > BigInt(0)
+      ? allocatePointsAcrossOrderLines({ grossPoints, lines: lineInputs })
+      : targetedCalculation?.lineAllocations ??
+        allocatePointsAcrossOrderLines({ grossPoints, lines: lineInputs });
 
   // 8. Determine holding period lifecycle
   const holdingPeriodDays = policyProgram.holdingPeriodDays || 0;

@@ -70,8 +70,10 @@ export async function getCustomers(filters: GetCustomersInput) {
             ? search.includes("@")
               ? { email: search }
               : {
-                  email: { search: sanitizeFullTextSearch(search) },
-                  name: { search: sanitizeFullTextSearch(search) },
+                  OR: [
+                    { email: { contains: search } },
+                    { name: { contains: search } },
+                  ],
                 }
             : {}),
       ...(country && {

@@ -14,9 +14,13 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
       ),
       "utf8",
     );
-    const prismaEnum = schema.match(
-      /enum WeleticLoyaltyOutboxJobType\s*\{([^}]+)\}/,
+    const enumsFile = readFileSync(
+      new URL("../../lib/types/enums.ts", import.meta.url),
+      "utf8",
     );
+    const prismaEnum =
+      schema.match(/enum WeleticLoyaltyOutboxJobType\s*\{([^}]+)\}/) ??
+      enumsFile.match(/export const WeleticLoyaltyOutboxJobType = \{([^}]+)\}/);
     const sqlEnum = sql.match(/MODIFY COLUMN `jobType` ENUM\(([^)]+)\)/);
     expect(prismaEnum).not.toBeNull();
     expect(sqlEnum).not.toBeNull();
@@ -25,7 +29,7 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
 
     const prismaLabels = prismaEnum[1]
       .split("\n")
-      .map((line) => line.replace(/\/\/.*$/, "").trim())
+      .map((line) => line.replace(/\/\/.*$/, "").replace(/:.*$/, "").trim())
       .filter(Boolean);
     const sqlLabels = Array.from(
       sqlEnum[1].matchAll(/'([^']+)'/g),

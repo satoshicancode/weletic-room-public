@@ -154,6 +154,155 @@ export interface RedisSetClient {
   ): Promise<unknown>;
 }
 
+export interface KVNamespaceLike {
+  get(key: string): Promise<string | null>;
+  put(
+    key: string,
+    value: string,
+    options?: { expirationTtl?: number },
+  ): Promise<void>;
+}
+
+export interface D1DatabaseLike {
+  prepare(query: string): {
+    bind(...values: unknown[]): {
+      run(): Promise<{ success: boolean; meta?: { changes?: number } }>;
+      first<T = unknown>(): Promise<T | null>;
+    };
+  };
+}
+
+/**
+ * Creates a RedisSetClient adapter backed by Cloudflare KV.
+ * @deprecated Cloudflare KV lacks atomic write-if-absent guarantees and exhibits eventual consistency lag (SEC-R1-05).
+ * Use createD1NonceClient (Cloudflare D1), createPrismaNonceClient (Prisma SQLite), or Redis for atomic replay deduplication.
+ */
+export function createKVNonceClient(kv: KVNamespaceLike): RedisSetClient {
+  return {
+    async set(key: string, value: string, opts?: { nx?: boolean; ex?: number }) {
+      if (opts?.nx) {
+        const existing = await kv.get(key);
+        if (existing !== null) {
+          return null; // Replay detected
+        }
+      }
+      await kv.put(key, value, {
+        expirationTtl: opts?.ex ?? WELETIC_SHOPIFY_NONCE_TTL_SECONDS,
+      });
+      return "OK";
+    },
+  };
+}
+
+export interface PrismaNonceClientLike {
+  serviceAuthNonce: {
+    create(args: { data: { nonceKey: string; expiresAt: number } }): Promise<unknown>;
+    findUnique?(args: { where: { nonceKey: string } }): Promise<{ expiresAt: number } | null>;
+    update?(args: { where: { nonceKey: string }; data: { expiresAt: number } }): Promise<unknown>;
+  };
+}
+
+/** Creates a RedisSetClient adapter backed by Prisma (model ServiceAuthNonce) */
+export function createPrismaNonceClient(client: PrismaNonceClientLike): RedisSetClient {
+  return {
+    async set(key: string, value: string, opts?: { nx?: boolean; ex?: number }) {
+      const nowMs = Date.now();
+      const expiresAt =
+        nowMs + (opts?.ex ?? WELETIC_SHOPIFY_NONCE_TTL_SECONDS) * 1000;
+      try {
+        await client.serviceAuthNonce.create({
+          data: { nonceKey: key, expiresAt },
+        });
+        return "OK";
+      } catch (err: any) {
+        const msg = String(err?.message || err);
+        const isConstraint =
+          err?.code === "P2002" ||
+          msg.includes("UNIQUE") ||
+          msg.includes("constraint") ||
+          msg.includes("Unique constraint");
+        if (isConstraint) {
+          if (client.serviceAuthNonce.findUnique && client.serviceAuthNonce.update) {
+            try {
+              const existing = await client.serviceAuthNonce.findUnique({
+                where: { nonceKey: key },
+              });
+              if (existing && existing.expiresAt <= nowMs) {
+                await client.serviceAuthNonce.update({
+                  where: { nonceKey: key },
+                  data: { expiresAt },
+                });
+                return "OK";
+              }
+            } catch {
+              // Fail closed on error
+            }
+          }
+          return null; // Active nonce collision -> replay detected
+        }
+        throw err;
+      }
+    },
+  };
+}
+
+/** Creates a RedisSetClient adapter backed by Cloudflare D1 (SQLite) */
+export function createD1NonceClient(db: D1DatabaseLike): RedisSetClient {
+  return {
+    async set(key: string, value: string, opts?: { nx?: boolean; ex?: number }) {
+      const nowMs = Date.now();
+      const expiresAt =
+        nowMs + (opts?.ex ?? WELETIC_SHOPIFY_NONCE_TTL_SECONDS) * 1000;
+      try {
+        const stmt = db
+          .prepare(
+            "INSERT INTO ServiceAuthNonce (nonceKey, expiresAt) VALUES (?, ?)",
+          )
+          .bind(key, expiresAt);
+        const res = await stmt.run();
+        if (res.success && (res.meta?.changes ?? 1) > 0) {
+          return "OK";
+        }
+        return null;
+      } catch (err: any) {
+        const msg = String(err?.message || err);
+        if (msg.includes("UNIQUE") || msg.includes("constraint")) {
+          // Check if previously recorded nonce has expired
+          try {
+            const row = await db
+              .prepare(
+                "SELECT expiresAt FROM ServiceAuthNonce WHERE nonceKey = ?",
+              )
+              .bind(key)
+              .first<{ expiresAt: number }>();
+            if (row && row.expiresAt <= nowMs) {
+              await db
+                .prepare(
+                  "UPDATE ServiceAuthNonce SET expiresAt = ? WHERE nonceKey = ?",
+                )
+                .bind(expiresAt, key)
+                .run();
+              return "OK";
+            }
+          } catch {
+            // In error, fail closed
+          }
+          return null; // Active nonce collision -> replay detected
+        }
+        throw err;
+      }
+    },
+  };
+}
+
+export function isServiceAuthFailClosed(): boolean {
+  const mode = process.env.WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE;
+  if (mode === "fail_closed") return true;
+  if (mode === "fallback_memory" || mode === "fail_open") return false;
+  // In production, default to fail-closed
+  return process.env.NODE_ENV === "production";
+}
+
 let explicitRedisClient: RedisSetClient | null | undefined = undefined;
 let redisProvider: (() => Promise<RedisSetClient | null>) | null = null;
 let cachedRedisClient: RedisSetClient | null | undefined = undefined;
@@ -241,9 +390,10 @@ async function verifyAndRecordNonce(
   try {
     const redisClient = await getRedisClient(redisClientOverride);
     if (!redisClient) {
-      if (
-        process.env.WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE === "fail_closed"
-      ) {
+      if (isServiceAuthFailClosed()) {
+        console.warn(
+          "[service-auth] Distributed nonce provider unavailable in fail-closed mode. Rejecting request to prevent replay attack.",
+        );
         return false;
       }
       console.warn(
@@ -262,7 +412,11 @@ async function verifyAndRecordNonce(
     }
     return false;
   } catch (error) {
-    if (process.env.WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE === "fail_closed") {
+    if (isServiceAuthFailClosed()) {
+      console.warn(
+        "[service-auth] Error accessing distributed nonce provider in fail-closed mode:",
+        error instanceof Error ? error.message : String(error),
+      );
       return false;
     }
     console.warn(
@@ -280,7 +434,7 @@ export async function verifyWeleticShopifyRequest({
   requireRequestId,
   redisClient,
 }: {
-  request: Request;
+  request: Request | any;
   body: string;
   now?: number;
   secret?: string;

@@ -1,5 +1,9 @@
 import { decrypt } from "@/lib/encryption";
 import { Prisma } from "@prisma/client";
+import {
+  forUpdateClause,
+  currentTimestampClause,
+} from "@/lib/prisma/sql-helpers";
 import { createHash } from "node:crypto";
 import { lockShopifySessionLifecycle } from "./session-lifecycle-fence";
 import { readShopifySessionPayload } from "./session-online-binding";
@@ -112,11 +116,11 @@ export async function authorizeShopifyMerchantInTransaction({
     }>
   >(Prisma.sql`
     SELECT payload, shop, isOnline, expiresAt FROM WeleticShopifyAppSession
-    WHERE id = ${actor.sessionId} FOR UPDATE
+    WHERE id = ${actor.sessionId} ${forUpdateClause}
   `);
   // Read the database clock AFTER lock waits, not the HTTP request's start time.
   const clocks = await tx.$queryRaw<Array<{ now: Date }>>(
-    Prisma.sql`SELECT CURRENT_TIMESTAMP(3) AS now`,
+    Prisma.sql`SELECT ${currentTimestampClause} AS now`,
   );
   const now = clocks[0]?.now.getTime();
   const row = rows[0];
@@ -164,7 +168,7 @@ export async function authorizeShopifyMerchantInTransaction({
       SELECT permissions, revision FROM WeleticShopifyStaffGrant
       WHERE id = ${shopifyStaffGrantId(actor)} AND storeId = ${actor.storeId}
         AND appId = ${actor.appId} AND installationGeneration = ${actor.installationGeneration}
-        AND shopifyUserId = ${actor.userId} FOR UPDATE
+        AND shopifyUserId = ${actor.userId} ${forUpdateClause}
     `);
     const grant = grants[0];
     if (
@@ -184,7 +188,7 @@ export async function authorizeShopifyMerchantInTransaction({
     actor.requestId,
   ]);
   const prior = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT id FROM WeleticShopifyMerchantAction WHERE id = ${actionId} FOR UPDATE
+    SELECT id FROM WeleticShopifyMerchantAction WHERE id = ${actionId} ${forUpdateClause}
   `);
   if (prior.length)
     throw new ShopifyStaffAuthorizationError("request_replayed");

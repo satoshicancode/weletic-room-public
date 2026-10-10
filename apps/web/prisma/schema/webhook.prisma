@@ -1,32 +1,18 @@
-enum WebhookReceiver {
-  user
-  zapier
-  make
-  slack
-  segment
-}
-
-enum LinkScope {
-  workspace // All links in the workspace
-  folders // Links inside specific folders
-  links // Specific links
-}
-
 model Webhook {
-  id                  String          @id
+  id                  String    @id
   projectId           String
   installationId      String? // indicates which integration installation added the webhook
-  receiver            WebhookReceiver @default(user)
+  receiver            String    @default("user")
   name                String
-  url                 String          @db.LongText
+  url                 String
   secret              String
   triggers            Json
-  linkScope           LinkScope? // Only set for webhooks with the link.clicked trigger
-  consecutiveFailures Int             @default(0)
+  linkScope           String? // Only set for webhooks with the link.clicked trigger
+  consecutiveFailures Int       @default(0)
   lastFailedAt        DateTime?
   disabledAt          DateTime?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   project              Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   installedIntegration InstalledIntegration? @relation(fields: [installationId], references: [id], onDelete: Cascade)
