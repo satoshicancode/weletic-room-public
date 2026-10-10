@@ -121,7 +121,7 @@ function SheetContent({
 
   const { data: partner, isLoading } = useSWR<PartnerDetail>(
     `/api/admin/partners/${fraudAlert.partner.id}`,
-    (url: string) => fetch(url).then((r) => r.json()),
+    (url: string) => fetch(url).then((r) => r.json() as Promise<PartnerDetail>),
   );
 
   const handleReview = async (action: "confirmed" | "dismissed") => {
