@@ -1,6 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { ReviewError } from "@/lib/weletic/reviews/contracts";
-import { reserveProductReviewIncentiveInTransaction } from "@/lib/weletic/reviews/incentive-claims";
+import {
+  reserveProductReviewIncentiveInTransaction,
+  reviewParticipationContentDigest,
+} from "@/lib/weletic/reviews/incentive-claims";
 import {
   reviewIncentivePolicyDigest,
 } from "@/lib/weletic/reviews/incentive-policy";
@@ -15,6 +18,13 @@ vi.mock("@/lib/weletic/redis-lock", () => ({
 
 vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
   assertShopifyStoreMatchesInstallationGeneration: vi.fn().mockResolvedValue({
+    id: "store_m2_audit",
+    shopDomain: "test-shop.myshopify.com",
+    installationGeneration: "gen_m2_1",
+    complianceState: "active",
+    storeAccessState: "active",
+  }),
+  assertShopifyStoreAcceptsOperationalWrites: vi.fn().mockResolvedValue({
     id: "store_m2_audit",
     shopDomain: "test-shop.myshopify.com",
     installationGeneration: "gen_m2_1",
@@ -81,28 +91,73 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
 
   describe("REV-01: Review Incentive Moderation Timing & Clawback/Revocation", () => {
     it("defers points fulfillment when review is pending upon submission", async () => {
-      const pendingReview = {
+      const basePendingReview = {
         id: "wreview_pending_1",
         storeId,
+        productId: "product_1",
+        requestId: "req_1",
+        title: "Great product",
+        body: "Really loved it!",
+        rating: 5,
         status: "pending",
         shopperId: "shopper_1",
+        verifiedPurchase: true,
         participationStatus: "validated",
-        participationValidationRevision: 1,
+        participationValidationRevision: "purchase_abuse_v1",
         participationValidatedAt: new Date(),
         request: {
           id: "req_1",
           storeId,
           orderId: "order_1",
+          productId: "product_1",
           incentivePolicyId: "wrevpol_1",
           status: "submitted",
           shopperId: "shopper_1",
           installationGeneration: generation,
           order: {
+            id: "order_1",
+            storeId,
+            shopperId: "shopper_1",
+            status: "paid",
             externalId: "ext_order_1",
             generation,
           },
+          product: {
+            id: "product_1",
+            storeId,
+            externalId: "gid://shopify/Product/123",
+            title: "Product",
+            handle: "product",
+          },
+          shopper: {
+            id: "shopper_1",
+            storeId,
+            shopifyCustomerId: "123",
+            email: "shopper@example.com",
+            privacyTombstones: [],
+          },
+          lines: [
+            {
+              purchasedQuantity: 1,
+              orderLine: {
+                orderId: "order_1",
+                productId: "product_1",
+                quantity: 1,
+                shopNet: BigInt(100),
+                refundLines: [],
+              },
+            },
+          ],
         },
         media: [],
+      };
+
+      const pendingReview = {
+        ...basePendingReview,
+        participationContentDigest: reviewParticipationContentDigest({
+          ...basePendingReview,
+          mediaIds: [],
+        }),
       };
 
       const policySnapshot = {
@@ -163,6 +218,9 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
         weleticShopifyCustomerPrivacyTombstone: {
           findFirst: vi.fn().mockResolvedValue(null),
         },
+        weleticReviewRequest: {
+          findFirst: vi.fn().mockResolvedValue(null),
+        },
       };
 
       const result = await reserveProductReviewIncentiveInTransaction({
@@ -179,24 +237,92 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
     });
 
     it("fulfills reserved points claim when review transitions from pending to published", async () => {
-      const reviewId = "wreview_pending_1";
-      const existingReview = {
+      const reviewId = "wreview_12345678901234567890";
+      const policySnapshot = {
+        version: 1 as const,
+        award: {
+          kind: "points" as const,
+          basePoints: "150",
+          photoBonusPoints: "0",
+          videoBonusPoints: "0",
+          maxPoints: "150",
+        },
+      };
+
+      const validatedAt = new Date();
+      const baseReview = {
         id: reviewId,
         storeId,
         version: 1,
         status: "pending",
         rewardStatus: "pending",
         rating: 5,
+        title: "Great product",
+        body: "Really loved it!",
         productId: "gid://shopify/Product/101",
         shopperId: "shopper_1",
+        verifiedPurchase: true,
+        participationStatus: "validated",
+        participationValidationRevision: "purchase_abuse_v1",
+        participationValidatedAt: validatedAt,
         publishedAt: null,
         merchantReply: null,
+        requestId: "req_1",
+        media: [],
         request: {
           id: "req_1",
           storeId,
           orderId: "order_1",
+          productId: "gid://shopify/Product/101",
           incentivePolicyId: "wrevpol_1",
+          status: "submitted",
+          shopperId: "shopper_1",
+          installationGeneration: generation,
+          order: {
+            id: "order_1",
+            storeId,
+            shopperId: "shopper_1",
+            status: "paid",
+            externalId: "ext_order_1",
+            generation,
+          },
+          product: {
+            id: "gid://shopify/Product/101",
+            storeId,
+            externalId: "gid://shopify/Product/101",
+            title: "Product",
+            handle: "product",
+          },
+          shopper: {
+            id: "shopper_1",
+            storeId,
+            shopifyCustomerId: "123",
+            email: "shopper@example.com",
+            privacyTombstones: [],
+          },
+          lines: [
+            {
+              purchasedQuantity: 1,
+              orderLine: {
+                orderId: "order_1",
+                productId: "gid://shopify/Product/101",
+                quantity: 1,
+                shopNet: BigInt(100),
+                refundLines: [],
+              },
+            },
+          ],
         },
+      };
+
+      const digest = reviewParticipationContentDigest({
+        ...baseReview,
+        mediaIds: [],
+      });
+
+      const existingReview = {
+        ...baseReview,
+        participationContentDigest: digest,
       };
 
       const reservedClaim = {
@@ -211,23 +337,15 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
         awardSnapshot: { kind: "points", points: "150" },
         validationSnapshot: {
           revision: "purchase_abuse_v1",
-          validatedAt: new Date().toISOString(),
-          contentDigest: "d".repeat(64),
+          validatedAt: validatedAt.toISOString(),
+          contentDigest: digest,
           installationGeneration: generation,
         },
         policy: {
           id: "wrevpol_1",
           storeId,
-          snapshot: {
-            version: 1,
-            award: {
-              kind: "points",
-              basePoints: "150",
-              photoBonusPoints: "0",
-              videoBonusPoints: "0",
-              maxPoints: "150",
-            },
-          },
+          contentDigest: reviewIncentivePolicyDigest(policySnapshot),
+          snapshot: policySnapshot,
         },
       };
 
@@ -250,17 +368,73 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
         },
         weleticPointsLedgerEntry: {
           findFirst: vi.fn().mockResolvedValue(null),
-          create: vi.fn().mockResolvedValue({ id: "ledger_1" }),
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockImplementation(({ data }: any) => ({
+            ...data,
+            id: "ledger_1",
+          })),
+        },
+        weleticLoyaltyAccount: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "wlacc_1",
+            storeId,
+            shopperId: "shopper_1",
+            status: "active",
+            metadata: null,
+            cachedPointsBalance: BigInt(0),
+            cachedPendingPoints: BigInt(0),
+            lifetimePointsEarned: BigInt(0),
+            lifetimePointsRedeemed: BigInt(0),
+            ledgerVersion: 0,
+            program: {
+              id: "wprog_1",
+              storeId,
+              status: "active",
+              killSwitchActive: false,
+            },
+          }),
+          findUnique: vi.fn().mockResolvedValue({
+            id: "wlacc_1",
+            storeId,
+            shopperId: "shopper_1",
+            status: "active",
+            cachedPointsBalance: BigInt(0),
+            cachedPendingPoints: BigInt(0),
+            lifetimePointsEarned: BigInt(0),
+            lifetimePointsRedeemed: BigInt(0),
+            ledgerVersion: 0,
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         weleticShopper: {
           findUnique: vi.fn().mockResolvedValue({ id: "shopper_1", storeId, pointsBalance: BigInt(0) }),
           update: vi.fn().mockResolvedValue({ id: "shopper_1", pointsBalance: BigInt(150) }),
         },
         weleticLoyaltyOutboxJob: {
+          findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: "job_1" }),
+          updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        weleticShopifyStore: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: storeId,
+            developmentStorePolicy: "permitted",
+            billingPlanState: "active",
+            complianceState: "active",
+            installationGeneration: generation,
+          }),
         },
         weleticReviewSettings: {
           findUnique: vi.fn().mockResolvedValue({ enabled: true }),
+        },
+        weleticShopifyCustomerPrivacyTombstone: {
+          findFirst: vi.fn().mockResolvedValue(null),
+        },
+        weleticReviewRequest: {
+          findFirst: vi.fn().mockResolvedValue(null),
+        },
+        weleticRewardRedemption: {
+          findFirst: vi.fn().mockResolvedValue(null),
         },
       };
 
@@ -289,6 +463,7 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
         status: "published",
         rewardStatus: "awarded",
         rewardReason: "review_published",
+        rewardLedgerId: "ledger_award_1",
         rating: 1,
         productId: "gid://shopify/Product/101",
         shopperId: "shopper_1",
@@ -298,6 +473,7 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
           id: "req_1",
           storeId,
           orderId: "order_1",
+          productId: "gid://shopify/Product/101",
           incentivePolicyId: "wrevpol_1",
           installationGeneration: generation,
           shopperId: "shopper_1",
@@ -326,7 +502,7 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
         status: "fulfilled",
         awardSnapshot: { kind: "points", points: "150" },
         validationSnapshot: {
-          revision: 1,
+          revision: "purchase_abuse_v1",
           validatedAt: new Date().toISOString(),
           contentDigest: "d".repeat(64),
           installationGeneration: generation,
@@ -345,11 +521,15 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
         id: "ledger_award_1",
         storeId,
         shopperId: "shopper_1",
+        accountId: "wlacc_1",
         pointsDelta: BigInt(150),
         pendingDelta: BigInt(0),
         entryType: "EARN_BONUS",
+        referenceType: "REVIEW_INCENTIVE",
+        referenceId: "wrevclaim_1",
         grantId: null,
         account: {
+          id: "wlacc_1",
           storeId,
           shopperId: "shopper_1",
           metadata: null,
@@ -375,18 +555,53 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
         },
         weleticRewardRedemption: {
           findMany: vi.fn().mockResolvedValue([]),
+          findFirst: vi.fn().mockResolvedValue(null),
         },
         weleticReviewIncentiveInvalidation: {
           findUnique: vi.fn().mockResolvedValue(null),
           create: vi.fn().mockResolvedValue({ id: "wrevinv_1", outcome: "points_reversed" }),
         },
         weleticLoyaltyOutboxJob: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: "job_1" }),
           updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+        },
+        weleticShopifyStore: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: storeId,
+            developmentStorePolicy: "permitted",
+            billingPlanState: "active",
+            complianceState: "active",
+            installationGeneration: generation,
+          }),
         },
         weleticPointsLedgerEntry: {
           findFirst: vi.fn().mockResolvedValue(awardLedgerEntry),
-          findUnique: vi.fn().mockResolvedValue(awardLedgerEntry),
-          create: vi.fn().mockResolvedValue({ id: "ledger_reversal_1" }),
+          findUnique: vi.fn().mockImplementation(({ where }: any) => {
+            if (where?.storeId_idempotencyKey?.idempotencyKey?.includes("reversal")) {
+              return Promise.resolve(null);
+            }
+            return Promise.resolve(awardLedgerEntry);
+          }),
+          create: vi.fn().mockResolvedValue({
+            id: "ledger_reversal_1",
+            sequenceNumber: 2,
+            balanceAfter: BigInt(0),
+          }),
+        },
+        weleticLoyaltyAccount: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "wlacc_1",
+            storeId,
+            shopperId: "shopper_1",
+            status: "active",
+            cachedPointsBalance: BigInt(150),
+            cachedPendingPoints: BigInt(0),
+            lifetimePointsEarned: BigInt(150),
+            lifetimePointsRedeemed: BigInt(0),
+            ledgerVersion: 1,
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         weleticShopper: {
           findUnique: vi.fn().mockResolvedValue({ id: "shopper_1", storeId, pointsBalance: BigInt(150) }),

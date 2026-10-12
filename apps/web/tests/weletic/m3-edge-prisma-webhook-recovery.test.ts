@@ -138,6 +138,7 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
           }
           if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
+              bind: vi.fn().mockReturnThis(),
               async all() {
                 return {
                   results: [
@@ -158,7 +159,8 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
           if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
               bind(...args: any[]) {
-                executedUpdates.push(args);
+                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                executedUpdates.push([id]);
                 return {
                   async run() {
                     return { success: true };
@@ -168,6 +170,7 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
             };
           }
           return {
+            bind: vi.fn().mockReturnThis(),
             async all() { return { results: [] }; },
             async run() { return { success: true }; },
           };
@@ -215,6 +218,7 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
         prepare(query: string) {
           if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
+              bind: vi.fn().mockReturnThis(),
               async all() {
                 return {
                   results: [
@@ -235,7 +239,8 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
           if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
               bind(...args: any[]) {
-                executedUpdates.push(args);
+                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                executedUpdates.push([id]);
                 return {
                   async run() {
                     return { success: true };
@@ -245,6 +250,7 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
             };
           }
           return {
+            bind: vi.fn().mockReturnThis(),
             async all() { return { results: [] }; },
             async run() { return { success: true }; },
           };

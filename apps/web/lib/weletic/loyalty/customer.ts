@@ -842,7 +842,7 @@ export async function getCustomerLoyaltySummary({
           select: redemptionSelect,
         }),
       ]),
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
   // After identity is resolved, these reads are independent. Running them
   // together removes avoidable database round trips from the critical path.

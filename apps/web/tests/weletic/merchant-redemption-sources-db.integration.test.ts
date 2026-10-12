@@ -218,7 +218,7 @@ it("independently reconciles recorded debits, captured names and unknown provena
         startAt,
         endAt,
       }),
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
   expect(result.rows).toEqual([
     {
@@ -286,7 +286,7 @@ it("independently reconciles recorded debits, captured names and unknown provena
         startAt,
         endAt,
       }),
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
   expect(bounded.rows).toHaveLength(10);
   expect(bounded.other).toEqual({ eventCount: "3", pointsSpent: "30" });
@@ -376,7 +376,7 @@ it("independently reconciles recorded debits, captured names and unknown provena
         startAt,
         endAt,
       }),
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
   expect(caseSensitive.rows).toHaveLength(4);
   expect(caseSensitive.rows.map((row) => row.rewardDefinitionId)).toEqual(

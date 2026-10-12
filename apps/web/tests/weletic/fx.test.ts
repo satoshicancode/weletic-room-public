@@ -77,7 +77,8 @@ describe("Weletic FX derivation", () => {
       if (field === "JPY") return "160.5";
       return null;
     });
-    vi.mocked(redis.get).mockResolvedValue("2026-10-09T00:00:00.000Z");
+    const asOf = new Date().toISOString();
+    vi.mocked(redis.get).mockResolvedValue(asOf);
 
     const quote = await getAccountingFxQuote({
       base: "USD",
@@ -86,7 +87,7 @@ describe("Weletic FX derivation", () => {
 
     expect(quote.rate).toBe("160.5");
     expect(quote.provider).toBe("dub-fxRates:usd");
-    expect(quote.providerRef).toContain("redis:fxRates:usd:2026-10-09");
+    expect(quote.providerRef).toBe(`redis:fxRates:usd:${asOf}`);
   });
 
   test("FIN-AUDIT-07: Returns identity quote for identical currencies without calling Redis", async () => {

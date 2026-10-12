@@ -453,19 +453,14 @@ describe("M1 Database Migration Challenger 2: Empirical Verification Suite", () 
       expect(currentPartner?.name).toBe(originalName);
     });
 
-    it("3.4 [CHALLENGER FAILURE FINDING] SQLite syntax error on unmitigated FOR UPDATE vs mitigation success", async () => {
-      // 1. Unmitigated FOR UPDATE query fails on SQLite
-      let forUpdateError: any = null;
-      try {
-        await prisma.$queryRawUnsafe(
-          `SELECT id FROM WeleticShopifyStore WHERE id = '${testStoreId}' LIMIT 1 FOR UPDATE`,
-        );
-      } catch (err: any) {
-        forUpdateError = err;
-      }
-      expect(forUpdateError).not.toBeNull();
-      expect(forUpdateError.code).toBe("P2010");
-      expect(forUpdateError.message).toContain('near "FOR": syntax error');
+    it("3.4 MySQL-style FOR UPDATE is neutralised by the SQL dialect extension", async () => {
+      // 1. SQLite has no row locks; the dialect extension strips FOR UPDATE so
+      // legacy MySQL-style raw queries no longer raise a syntax error.
+      const legacy = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id FROM WeleticShopifyStore WHERE id = '${testStoreId}' LIMIT 1 FOR UPDATE`,
+      );
+      expect(legacy).toHaveLength(1);
+      expect(legacy[0].id).toBe(testStoreId);
 
       // 2. Conditionally guarded clause succeeds on SQLite
       const forUpdateClause = process.env.DATABASE_URL?.startsWith("mysql:")

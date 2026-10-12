@@ -196,9 +196,11 @@ export function createKVNonceClient(kv: KVNamespaceLike): RedisSetClient {
 
 export interface PrismaNonceClientLike {
   serviceAuthNonce: {
-    create(args: { data: { nonceKey: string; expiresAt: number } }): Promise<unknown>;
-    findUnique?(args: { where: { nonceKey: string } }): Promise<{ expiresAt: number } | null>;
-    update?(args: { where: { nonceKey: string }; data: { expiresAt: number } }): Promise<unknown>;
+    // expiresAt is a BigInt column (epoch ms). Prisma accepts number | bigint on
+    // write and returns bigint on read.
+    create(args: { data: { nonceKey: string; expiresAt: number | bigint } }): Promise<unknown>;
+    findUnique?(args: { where: { nonceKey: string } }): Promise<{ expiresAt: number | bigint } | null>;
+    update?(args: { where: { nonceKey: string }; data: { expiresAt: number | bigint } }): Promise<unknown>;
   };
 }
 

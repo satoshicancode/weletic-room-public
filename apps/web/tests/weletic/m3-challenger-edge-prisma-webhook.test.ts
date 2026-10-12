@@ -298,6 +298,7 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
         prepare(query: string) {
           if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
+              bind: vi.fn().mockReturnThis(),
               async all() {
                 return {
                   results: [
@@ -327,7 +328,7 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
           if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
               bind(...args: any[]) {
-                const id = args[0];
+                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
                 return {
                   async run() {
                     updatedRecords.push({ id, status: "failed", error: "Orphaned event: associated store not found" });
@@ -338,6 +339,7 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
             };
           }
           return {
+            bind: vi.fn().mockReturnThis(),
             async all() { return { results: [] }; },
             async run() { return { success: true }; },
           };
@@ -377,6 +379,7 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
         prepare(query: string) {
           if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
+              bind: vi.fn().mockReturnThis(),
               async all() {
                 return {
                   results: [
@@ -397,9 +400,10 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
           if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
               bind(...args: any[]) {
+                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
                 return {
                   async run() {
-                    updatedRecords.push(args[0]);
+                    updatedRecords.push(id);
                     return { success: true };
                   },
                 };
@@ -407,6 +411,7 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
             };
           }
           return {
+            bind: vi.fn().mockReturnThis(),
             async all() { return { results: [] }; },
             async run() { return { success: true }; },
           };
@@ -507,6 +512,7 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
         prepare(query: string) {
           if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
+              bind: vi.fn().mockReturnThis(),
               async all() {
                 // Find up to 10 matching events (limit 10 in query)
                 const matching = dbEvents
@@ -518,7 +524,8 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
           }
           if (query.includes("UPDATE WeleticShopifyWebhookEvent SET status = 'failed'")) {
             return {
-              bind(id: string) {
+              bind(...args: any[]) {
+                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
                 return {
                   async run() {
                     const row = dbEvents.find((e) => e.id === id);
@@ -534,7 +541,8 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
           }
           if (query.includes("UPDATE WeleticShopifyWebhookEvent SET attempts = attempts + 1")) {
             return {
-              bind(id: string) {
+              bind(...args: any[]) {
+                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
                 return {
                   async run() {
                     const row = dbEvents.find((e) => e.id === id);
@@ -551,6 +559,7 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
             };
           }
           return {
+            bind: vi.fn().mockReturnThis(),
             async all() { return { results: [] }; },
             async run() { return { success: true }; },
           };

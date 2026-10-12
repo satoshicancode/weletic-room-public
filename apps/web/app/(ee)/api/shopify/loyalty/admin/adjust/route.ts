@@ -46,6 +46,7 @@ export const POST = withWorkspace(
       shopperId,
       shopifyCustomerId,
       pointsDelta,
+      reason,
     });
 
     // Resolve target loyalty account
@@ -106,6 +107,27 @@ export const POST = withWorkspace(
           storeId,
           accountId: targetAccountId,
         });
+
+        if (typeof (tx as any).weleticPointsLedgerEntry?.count === "function") {
+          const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const dailyCount = await (
+            tx as any
+          ).weleticPointsLedgerEntry.count({
+            where: {
+              storeId,
+              entryType: WeleticPointsLedgerEntryType.MANUAL_ADJUSTMENT,
+              createdAt: { gte: oneDayAgo },
+            },
+          });
+          if (typeof dailyCount === "number" && dailyCount >= 1000) {
+            throw new DubApiError({
+              code: "bad_request",
+              message:
+                "Daily manual points adjustment limit reached (max 1,000 adjustments per 24 hours).",
+            });
+          }
+        }
+
         if (isCoreLaunch() && BigInt(pointsDelta) > BigInt(0)) {
           const existing = await tx.weleticPointsLedgerEntry.findUnique({
             where: { storeId_idempotencyKey: { storeId, idempotencyKey: key } },

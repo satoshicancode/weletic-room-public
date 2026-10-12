@@ -113,6 +113,7 @@ describe("Customer Loyalty APIs & Surfaces", () => {
       complianceState: "active",
     } as any);
     vi.mocked(prisma.weleticRewardRedemption.findMany).mockResolvedValue([]);
+    vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([]);
     vi.mocked(
       prisma.weleticShopifyCustomerPrivacyTombstone.findFirst,
     ).mockResolvedValue(null);
@@ -1931,7 +1932,7 @@ describe("Customer Loyalty APIs & Surfaces", () => {
       ),
     ).toHaveLength(1);
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
-      isolationLevel: "RepeatableRead",
+      isolationLevel: "Serializable",
     });
     expect(prisma.weleticRewardRedemption.findMany).toHaveBeenNthCalledWith(
       1,
@@ -2104,6 +2105,21 @@ describe("Customer Loyalty APIs & Surfaces", () => {
       sequenceNumber: 2,
       balanceAfter: BigInt(500),
     } as any);
+
+    vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([
+      {
+        id: "ledger_init_1",
+        storeId: "store_123",
+        sequenceNumber: 1,
+        pointsDelta: BigInt(250),
+      },
+      {
+        id: "ledger_init_2",
+        storeId: "store_123",
+        sequenceNumber: 2,
+        pointsDelta: BigInt(250),
+      },
+    ] as any);
 
     const ledgerEntry = {
       id: "ledger_redeem_1",

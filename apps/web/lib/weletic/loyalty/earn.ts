@@ -15,6 +15,7 @@ import {
   appendPointsLedgerEntryWithReceipt,
   OptimisticConcurrencyError,
 } from "@/lib/weletic/loyalty/ledger";
+import { isRetriableSqliteError } from "@/lib/weletic/sqlite-retry";
 import { allocateReversalAcrossRemainingLines } from "@/lib/weletic/loyalty/line-reversal-allocation";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
@@ -79,7 +80,8 @@ function isRetryableFinancialTransactionError(error: unknown): boolean {
   return (
     error instanceof OptimisticConcurrencyError ||
     (error instanceof Prisma.PrismaClientKnownRequestError &&
-      ["P2002", "P2034"].includes(error.code))
+      ["P2002", "P2034"].includes(error.code)) ||
+    isRetriableSqliteError(error)
   );
 }
 
@@ -2557,12 +2559,11 @@ export async function processOrderPointsEarn({
       shopper,
     })
   ) {
+    // The bonus campaign is resolved in step 4 (below); none is selected yet.
     return persistNoAwardOutcome({
       reason: "customer_condition_unmatched",
       selectedRuleId: selectedRule.id,
-      selectedCampaignId: selectedCampaign?.id ?? null,
       ruleMultiplier: selectedRule.multiplier,
-      campaignMultiplier: selectedCampaign?.multiplier,
     });
   }
   if (reconciliationDelegate?.updateMany) {

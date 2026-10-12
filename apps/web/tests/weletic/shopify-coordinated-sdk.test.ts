@@ -571,18 +571,22 @@ describe("coordinated Shopify SDK operations", () => {
       signWeleticShopifyRequest,
       WELETIC_SHOPIFY_SIGNATURE_HEADER,
       WELETIC_SHOPIFY_TIMESTAMP_HEADER,
+      WELETIC_SHOPIFY_REQUEST_ID_HEADER,
     } = await import("@/lib/weletic/shopify/service-auth");
     const path = `/api/internal/installed-admin-session?shop=${shop}&generation=generation-1`;
     const timestamp = String(Date.now());
+    const requestId = "req_missing_session_test_1";
     const request = new Request(`https://shopify-runtime.invalid${path}`, {
       headers: {
         [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
         [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signWeleticShopifyRequest({
           timestamp,
           method: "GET",
           path,
           body: "",
           secret: serviceSecret,
+          requestId,
         }),
       },
     });

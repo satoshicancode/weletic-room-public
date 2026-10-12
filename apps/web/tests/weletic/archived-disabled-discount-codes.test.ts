@@ -1505,7 +1505,7 @@ describe("Enterprise Archived & Disabled Discount Codes System (Milestone 1 Test
       expect(preservedCommission.earnings).toBe(1500);
     });
 
-    it("7.2: re-creating / reactivating a discount code with a new partner does not mutate or orphan previous order records", async () => {
+    it("7.2: reactivating a disabled code for a different partner is rejected and previous order records are untouched", async () => {
       const { workspace, discount } = resetTestData();
 
       // Seed disabled code previously belonging to Alice
@@ -1553,19 +1553,26 @@ describe("Enterprise Archived & Disabled Discount Codes System (Milestone 1 Test
       };
       testDb.links.set(linkBob.id, linkBob);
 
-      // Re-create SUMMERFEST for Bob (auto-reactivates existing record)
-      const reactivated = await createDiscountCode({
-        workspace,
-        partner: partnerBob,
-        link: linkBob,
-        discount: discount as any,
-        code: "SUMMERFEST",
+      // Re-creating SUMMERFEST for Bob must be rejected: a disabled code keeps
+      // its original partner (policy: pick a different code instead).
+      await expect(
+        createDiscountCode({
+          workspace,
+          partner: partnerBob,
+          link: linkBob,
+          discount: discount as any,
+          code: "SUMMERFEST",
+        }),
+      ).rejects.toMatchObject({
+        code: "conflict",
+        message: expect.stringMatching(/choose a different code/i),
       });
 
-      expect(reactivated.id).toBe(disabledCode.id);
-      expect(reactivated.partnerId).toBe("partner_bob");
-      expect(reactivated.linkId).toBe(linkBob.id);
-      expect(reactivated.disabledAt).toBeNull();
+      // The disabled code stays Alice's, still disabled and unlinked
+      const stillAlices = testDb.discountCodes.get(disabledCode.id);
+      expect(stillAlices.partnerId).toBe("partner_alice");
+      expect(stillAlices.disabledAt).not.toBeNull();
+      expect(stillAlices.linkId).toBeNull();
 
       // Alice's historical order remains unchanged
       const preservedAliceOrder = testDb.weleticOrders.get(aliceOrder.id);

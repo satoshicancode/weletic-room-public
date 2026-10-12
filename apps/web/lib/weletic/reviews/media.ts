@@ -348,7 +348,7 @@ export async function getPublicReviewPhoto(storeId: string, mediaId: string) {
         throw new ReviewError("not_found", "Photo unavailable");
       return media.objectKey;
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
   requireReviewStorage();
   return {

@@ -96,7 +96,7 @@ it("reconciles retained enrollments across partial months and isolated stores", 
         startAt,
         endAt,
       }),
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
   expect(result).toEqual({
     status: "available",

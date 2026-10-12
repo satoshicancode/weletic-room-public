@@ -758,6 +758,7 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
         prepare(query: string) {
           if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
+              bind: vi.fn().mockReturnThis(),
               async all() {
                 return {
                   results: [
@@ -778,7 +779,8 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
           if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
             return {
               bind(...args: any[]) {
-                executedUpdates.push(args);
+                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                executedUpdates.push([id]);
                 return {
                   async run() {
                     return { success: true };
@@ -788,6 +790,7 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
             };
           }
           return {
+            bind: vi.fn().mockReturnThis(),
             async all() { return { results: [] }; },
             async run() { return { success: true }; },
           };

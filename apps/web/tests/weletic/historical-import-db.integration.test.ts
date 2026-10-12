@@ -101,7 +101,7 @@ async function seed() {
   };
 }
 const options = {
-  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   timeout: 20_000,
 };
 

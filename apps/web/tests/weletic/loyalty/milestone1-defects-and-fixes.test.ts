@@ -583,7 +583,7 @@ describe("Milestone 1: Loyalty Points & VIP Progression Defect & Fix Verificatio
         pointsExpiryMonths: 6,
         pointsExpiryDays: 0,
         pointsExpiryPolicyVersion: 1,
-        pointsExpiryPolicyAnchorAt: null,
+        pointsExpiryPolicyAnchorAt: new Date("2026-01-01T00:00:00.000Z"),
       };
 
       const store2Program = {
@@ -593,13 +593,20 @@ describe("Milestone 1: Loyalty Points & VIP Progression Defect & Fix Verificatio
         pointsExpiryMonths: 12,
         pointsExpiryDays: 0,
         pointsExpiryPolicyVersion: 1,
-        pointsExpiryPolicyAnchorAt: null,
+        pointsExpiryPolicyAnchorAt: new Date("2026-01-01T00:00:00.000Z"),
       };
 
       (prisma.weleticLoyaltyProgram.findMany as any).mockResolvedValue([
         store1Program,
         store2Program,
       ]);
+      (prisma.weleticLoyaltyProgram.findUnique as any).mockImplementation(
+        (args: any) => {
+          if (args.where.storeId === "store_1") return Promise.resolve(store1Program);
+          if (args.where.storeId === "store_2") return Promise.resolve(store2Program);
+          return Promise.resolve(null);
+        },
+      );
 
       // Mock finding accounts for store 1 and store 2
       // Store 1 has 100 accounts available, but with batchSize 20 and 2 stores,

@@ -6,3 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [[queues.producers]]
 queue = "order-webhook-queue"
 binding = "ORDER_WEBHOOK_QUEUE"
+
+[alias]
+"server-only" = "../empty.ts"
+

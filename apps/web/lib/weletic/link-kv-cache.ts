@@ -60,6 +60,7 @@ export async function evictLinkFromKv(options: EvictLinkOptions): Promise<boolea
   const namespaceId =
     options.namespaceId ||
     process.env.CLOUDFLARE_LINKS_KV_NAMESPACE_ID ||
+    process.env.CLOUDFLARE_LINKS_KV_ID ||
     process.env.LINKS_KV_NAMESPACE_ID ||
     "weletic-links-kv-prod";
 
@@ -115,6 +116,7 @@ export async function evictLinksBatchFromKv(
   const namespaceId =
     options?.namespaceId ||
     process.env.CLOUDFLARE_LINKS_KV_NAMESPACE_ID ||
+    process.env.CLOUDFLARE_LINKS_KV_ID ||
     process.env.LINKS_KV_NAMESPACE_ID ||
     "weletic-links-kv-prod";
 

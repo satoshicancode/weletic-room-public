@@ -258,7 +258,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
             now: at,
             priorAttempt,
           }),
-        { isolationLevel: "ReadCommitted", timeout: 15_000 },
+        { isolationLevel: "Serializable", timeout: 15_000 },
       );
     return { ...fixture, now, input, admit, core };
   }
@@ -621,7 +621,7 @@ describe("shopper profile production queries on isolated MySQL", () => {
           }),
         ).rejects.toBeInstanceOf(f.core.ShopperDeliveryDeferredError);
       },
-      { isolationLevel: "RepeatableRead", timeout: 15_000 },
+      { isolationLevel: "Serializable", timeout: 15_000 },
     );
     expect(
       await database.weleticShopperDeliveryReservation.count({

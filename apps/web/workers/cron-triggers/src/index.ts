@@ -195,8 +195,10 @@ export async function processLoyaltyOutboxJob(
   // Lightweight check on D1 if available
   if (env.DB?.prepare) {
     const countCheck = await env.DB.prepare(
-      "SELECT COUNT(*) as count FROM WeleticLoyaltyOutboxJob WHERE status = 'pending' AND scheduledFor <= CURRENT_TIMESTAMP",
-    ).first<{ count: number }>();
+      "SELECT COUNT(*) as count FROM WeleticLoyaltyOutboxJob WHERE status = 'pending' AND scheduledFor <= ?",
+    )
+      .bind(Date.now())
+      .first<{ count: number }>();
 
     if (!countCheck || countCheck.count === 0) {
       return { processed: 0, workerId };
@@ -245,27 +247,29 @@ export async function recoverStalledWebhooksJob(
        FROM WeleticShopifyWebhookEvent e
        LEFT JOIN WeleticShopifyStore s ON e.storeId = s.id
        WHERE e.status = 'received' 
-         AND e.updatedAt < datetime('now', '-3 minutes') 
+         AND e.updatedAt < ? 
          AND e.attempts < 5 
        LIMIT 10`,
-    ).all<{
-      id: string;
-      webhookId: string;
-      topic: string;
-      storeId: string;
-      shopDomain: string | null;
-      attempts: number;
-      payload: string | null;
-    }>();
+    )
+      .bind(Date.now() - 180_000)
+      .all<{
+        id: string;
+        webhookId: string;
+        topic: string;
+        storeId: string;
+        shopDomain: string | null;
+        attempts: number;
+        payload: string | null;
+      }>();
 
     if (stalledEvents.results && stalledEvents.results.length > 0) {
       for (const event of stalledEvents.results) {
         if (!event.shopDomain) {
           // Orphaned webhook event: mark failed so it doesn't repeatedly consume recovery slots
           await env.DB.prepare(
-            "UPDATE WeleticShopifyWebhookEvent SET status = 'failed', error = 'Orphaned event: associated store not found', attempts = attempts + 1, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+            "UPDATE WeleticShopifyWebhookEvent SET status = 'failed', error = 'Orphaned event: associated store not found', attempts = attempts + 1, updatedAt = ? WHERE id = ?",
           )
-            .bind(event.id)
+            .bind(Date.now(), event.id)
             .run();
           continue;
         }
@@ -279,9 +283,9 @@ export async function recoverStalledWebhooksJob(
           enqueuedAt: Date.now(),
         });
         await env.DB.prepare(
-          "UPDATE WeleticShopifyWebhookEvent SET attempts = attempts + 1, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+          "UPDATE WeleticShopifyWebhookEvent SET attempts = attempts + 1, updatedAt = ? WHERE id = ?",
         )
-          .bind(event.id)
+          .bind(Date.now(), event.id)
           .run();
         reEnqueuedCount++;
       }

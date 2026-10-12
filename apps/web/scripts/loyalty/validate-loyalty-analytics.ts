@@ -344,7 +344,7 @@ export async function validateLoyaltyAnalytics(
       };
     },
     {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       maxWait: 30_000,
       timeout: 120_000,
     },

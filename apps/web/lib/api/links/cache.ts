@@ -13,6 +13,7 @@ import { ExpandedLink } from "./utils/transform-link";
 import {
   evictLinkFromKv,
   evictLinksBatchFromKv,
+  tombstoneLinkInKv,
 } from "@/lib/weletic/link-kv-cache";
 
 /*
@@ -75,7 +76,13 @@ class LinkCache {
         ex: REDIS_CACHE_EXPIRATION,
       }),
       this._invalidateVercelRuntimeCache(cacheKey),
-      evictLinkFromKv({ domain: link.domain, key: link.key }),
+      link.disabledAt
+        ? tombstoneLinkInKv({
+            domain: link.domain,
+            key: link.key,
+            disabledAt: link.disabledAt,
+          })
+        : evictLinkFromKv({ domain: link.domain, key: link.key }),
     ]);
   }
 

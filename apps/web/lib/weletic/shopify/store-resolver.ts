@@ -529,6 +529,7 @@ export async function resolveShopifyStoreByDomain(
       // Public credentials authenticate only their canonical shop. Never inherit
       // a generic integration's alias or mutable Project alias as authority.
       if (domain !== storeShop) return null;
+
       return {
         shopId: `shop_${matchingProject.id}`,
         primaryDomain: storeShop,

@@ -177,11 +177,12 @@ async function markWebhookCompleted(
       ? crypto.randomUUID()
       : "whook_" + Math.random().toString(36).substring(2);
 
+  const nowMs = Date.now();
   if (env.DB?.prepare) {
     await env.DB.prepare(
       "INSERT INTO WeleticShopifyWebhookEvent (id, storeId, webhookId, topic, status, attempts, processedAt, updatedAt) " +
-        "VALUES (?, ?, ?, ?, 'completed', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) " +
-        "ON CONFLICT(webhookId) DO UPDATE SET status = 'completed', attempts = excluded.attempts, processedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP",
+        "VALUES (?, ?, ?, ?, 'completed', ?, ?, ?) " +
+        "ON CONFLICT(webhookId) DO UPDATE SET status = 'completed', attempts = excluded.attempts, processedAt = excluded.processedAt, updatedAt = excluded.updatedAt",
     )
       .bind(
         eventId,
@@ -189,6 +190,8 @@ async function markWebhookCompleted(
         params.webhookId,
         params.topic,
         params.attempts,
+        nowMs,
+        nowMs,
       )
       .run();
     return;
@@ -229,11 +232,12 @@ async function recordWebhookFailure(
       ? crypto.randomUUID()
       : "whook_" + Math.random().toString(36).substring(2);
 
+  const nowMs = Date.now();
   if (env.DB?.prepare) {
     await env.DB.prepare(
       "INSERT INTO WeleticShopifyWebhookEvent (id, storeId, webhookId, topic, status, error, attempts, updatedAt) " +
-        "VALUES (?, ?, ?, ?, 'failed', ?, ?, CURRENT_TIMESTAMP) " +
-        "ON CONFLICT(webhookId) DO UPDATE SET status = 'failed', error = excluded.error, attempts = excluded.attempts, updatedAt = CURRENT_TIMESTAMP",
+        "VALUES (?, ?, ?, ?, 'failed', ?, ?, ?) " +
+        "ON CONFLICT(webhookId) DO UPDATE SET status = 'failed', error = excluded.error, attempts = excluded.attempts, updatedAt = excluded.updatedAt",
     )
       .bind(
         eventId,
@@ -242,6 +246,7 @@ async function recordWebhookFailure(
         params.topic,
         params.error,
         params.attempts,
+        nowMs,
       )
       .run();
     return;

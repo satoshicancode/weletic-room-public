@@ -50,7 +50,7 @@ it("binds actor and request into signature verification before one transaction",
     expect.objectContaining({ body: JSON.stringify(input) }),
   );
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
   });
   expect(mocks.manage).toHaveBeenCalledWith({
     tx,

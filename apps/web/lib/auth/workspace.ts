@@ -481,6 +481,21 @@ export const withWorkspace = (
             workspaceId: workspace.id,
             externalRequest: Boolean(apiKey),
           });
+        } else if (
+          isRestrictedToken &&
+          token?.scopes &&
+          requiredRoles.length > 0 &&
+          !token.scopes.split(" ").includes("apis.all")
+        ) {
+          // Restricted tokens act as an owner machine user, and scopes are only
+          // enforced through `requiredPermissions`. A route that declares just
+          // `requiredRoles` would otherwise accept any restricted key regardless
+          // of its scopes, so require the full-access scope there.
+          throw new DubApiError({
+            code: "forbidden",
+            message:
+              "This API key doesn't have the required scope to access this endpoint.",
+          });
         }
 
         // role checks

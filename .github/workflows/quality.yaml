@@ -19,8 +19,7 @@ permissions:
 env:
   CI: "true"
   DOTENV_FLOW_SILENT: "true"
-  DATABASE_URL: "mysql://root:@localhost:3306/planetscale"
-  PLANETSCALE_DATABASE_URL: "http://root:unused@localhost:3900/planetscale"
+  DATABASE_URL: "file:/tmp/weletic-ci.db"
   NEXTAUTH_SECRET: "quality-gate-secret-at-least-32-characters"
   NEXTAUTH_URL: "http://partners.localhost:8888"
   TINYBIRD_API_KEY: "xx"

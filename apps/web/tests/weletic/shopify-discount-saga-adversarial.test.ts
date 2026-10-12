@@ -345,6 +345,18 @@ describe("Adversarial Stress Verification: 4-Phase Distributed Discount Saga (Mi
       },
     });
 
+    // Seed matching authoritative ledger entry for pre-flight check
+    mockState.ledgerEntries.push({
+      id: "wledger_initial_adv_1",
+      storeId,
+      accountId,
+      sequenceNumber: 1,
+      entryType: "EARN_ORDER",
+      pointsDelta: BigInt(1000),
+      balanceAfter: BigInt(1000),
+      createdAt: new Date(),
+    });
+
     // Setup active $50 Off reward costing 500 points
     mockState.rewards.set(rewardDefId, {
       id: rewardDefId,
@@ -1100,6 +1112,8 @@ describe("Adversarial Stress Verification: 4-Phase Distributed Discount Saga (Mi
     it("5.1: Insufficient points balance rejects immediately at Phase 1 with zero ledger writes or API calls", async () => {
       // Set account balance to 100 (needs 500)
       mockState.accounts.get(accountId).cachedPointsBalance = BigInt(100);
+      mockState.ledgerEntries[0].pointsDelta = BigInt(100);
+      mockState.ledgerEntries[0].balanceAfter = BigInt(100);
 
       const mockFetch = vi.fn();
 
@@ -1113,8 +1127,8 @@ describe("Adversarial Stress Verification: 4-Phase Distributed Discount Saga (Mi
         }),
       ).rejects.toThrow(/Insufficient points balance/i);
 
-      // Verify zero ledger writes
-      expect(mockState.ledgerEntries.length).toBe(0);
+      // Verify zero new ledger writes (only initial ledger entry remains)
+      expect(mockState.ledgerEntries.length).toBe(1);
       // Verify zero Shopify API calls
       expect(mockFetch).not.toHaveBeenCalled();
       // Balance remains untouched
@@ -1138,7 +1152,7 @@ describe("Adversarial Stress Verification: 4-Phase Distributed Discount Saga (Mi
         }),
       ).rejects.toThrow(/disabled or inactive/i);
 
-      expect(mockState.ledgerEntries.length).toBe(0);
+      expect(mockState.ledgerEntries.length).toBe(1);
       expect(mockFetch).not.toHaveBeenCalled();
     });
 

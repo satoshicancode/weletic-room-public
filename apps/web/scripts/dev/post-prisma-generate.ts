@@ -20,24 +20,11 @@ function generateStaticJsInjection(): string {
     injection += `module.exports.${enumName} = exports.${enumName} = _injectedEnums.${enumName};\n`;
   }
 
-  // SQLite / D1 TransactionIsolationLevel compatibility bridge
-  injection += `
-const _patchTIL = (p) => {
-  if (p && p.TransactionIsolationLevel) {
-    try {
-      p.TransactionIsolationLevel.RepeatableRead = "RepeatableRead";
-      p.TransactionIsolationLevel.ReadCommitted = "ReadCommitted";
-      p.TransactionIsolationLevel.ReadUncommitted = "ReadUncommitted";
-    } catch {}
-  }
-};
-if (typeof module !== 'undefined' && module.exports) {
-  _patchTIL(module.exports.Prisma);
-}
-if (typeof exports !== 'undefined') {
-  _patchTIL(exports.Prisma);
-}
-`;
+  // NOTE: Do NOT patch Prisma.TransactionIsolationLevel here. The SQLite engine
+  // only supports Serializable; mapping RepeatableRead/ReadUncommitted to
+  // unsupported values makes the engine start `BEGIN IMMEDIATE`, fail, and never
+  // roll back, which poisons the connection. Application code must only use
+  // Prisma.TransactionIsolationLevel.Serializable (D1 ignores isolation levels).
   return injection;
 }
 
@@ -76,16 +63,18 @@ export function augmentPrismaClientWithEnums() {
     }
   }
 
-  // 1. Runtime JS Augmentation across all 4 entrypoints
+  // 1. Runtime JS Augmentation across all entrypoints (including browser bundles)
   const targetFiles: string[] = [
     path.join(prismaClientDir, "index.js"),
     path.join(prismaClientDir, "default.js"),
+    path.join(prismaClientDir, "index-browser.js"),
   ];
 
   if (dotPrismaDir) {
     targetFiles.push(
       path.join(dotPrismaDir, "index.js"),
-      path.join(dotPrismaDir, "default.js")
+      path.join(dotPrismaDir, "default.js"),
+      path.join(dotPrismaDir, "index-browser.js")
     );
   }
 
@@ -185,6 +174,15 @@ export function augmentPrismaClientWithEnums() {
           }
         }
       }
+
+      // Allow skipDuplicates: boolean in index.d.ts (handled by runtime createMany extension)
+      dts = dts.replace(/skipDuplicates\?: never;/g, "skipDuplicates?: boolean;");
+
+      // Add programId_partnerId alias to ProgramApplicationEventWhereUniqueInput (handled by runtime query extension)
+      dts = dts.replace(
+        "export type ProgramApplicationEventWhereUniqueInput = {",
+        "export type ProgramApplicationEventWhereUniqueInput = {\n    programId_partnerId?: Prisma.ProgramApplicationEventPartnerIdProgramIdCompoundUniqueInput;\n"
+      );
 
       fs.writeFileSync(dotPrismaIndexDts, dts);
       console.log("Augmented enum types in:", dotPrismaIndexDts);

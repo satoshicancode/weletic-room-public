@@ -74,7 +74,7 @@ export const GET = withWorkspace(
               : undefined,
           tx,
         }),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
     return loyaltySuccessResponse(result, { headers: COMMON_CORS_HEADERS });

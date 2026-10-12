@@ -15,3 +15,7 @@ database_id = "weletic-d1-prod"
 [[analytics_engine_datasets]]
 binding = "CLICKS_ANALYTICS"
 dataset = "clicks_analytics"
+
+[alias]
+"server-only" = "../empty.ts"
+

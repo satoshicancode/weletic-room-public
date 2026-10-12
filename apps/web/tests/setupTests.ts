@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import { vi } from "vitest";
 
+vi.mock("server-only", () => ({}));
+
 Object.defineProperty(globalThis, "crypto", {
   value: crypto,
   writable: false, // Ensure it's not writable
@@ -91,11 +93,8 @@ try {
   if (prismaClient.$Enums) {
     Object.assign(prismaClient.$Enums, ALL_ENUMS);
   }
-  if (prismaClient.Prisma && prismaClient.Prisma.TransactionIsolationLevel) {
-    prismaClient.Prisma.TransactionIsolationLevel.RepeatableRead = "RepeatableRead";
-    prismaClient.Prisma.TransactionIsolationLevel.ReadCommitted = "RepeatableRead";
-    prismaClient.Prisma.TransactionIsolationLevel.ReadUncommitted = "RepeatableRead";
-  }
+  // Intentionally no Prisma.TransactionIsolationLevel patching: only
+  // Serializable is supported by the SQLite engine and by our code.
 } catch {
   // Handled
 }

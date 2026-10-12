@@ -711,7 +711,8 @@ model WeleticReconciliationIssue {
 
 model ServiceAuthNonce {
   nonceKey  String @id
-  expiresAt Int
+  // Epoch milliseconds (~1.8e12) — must be BigInt, Int overflows 32 bits.
+  expiresAt BigInt
 
   @@index([expiresAt])
 }

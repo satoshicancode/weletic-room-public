@@ -78,10 +78,13 @@ const prismaMocks = vi.hoisted(() => {
   });
   const partnerFindUniqueOrThrow = vi.fn();
   const payoutFindMany = vi.fn();
-  const payoutUpdateMany = vi.fn();
+  const payoutUpdateMany = vi.fn().mockImplementation(async (args) => {
+    const ids = args?.where?.id?.in || [];
+    return { count: ids.length || 1 };
+  });
   const commissionFindMany = vi.fn().mockResolvedValue([]);
   const commissionUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
-  const partnerUpdate = vi.fn();
+  const partnerUpdate = vi.fn().mockResolvedValue({ id: "part_test_1" });
 
   const mock: any = {
     partner: {

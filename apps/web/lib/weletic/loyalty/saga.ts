@@ -81,6 +81,23 @@ import {
 import { assertAccountBackedReward } from "./reward-ownership";
 import { enqueueRewardRedeemedCommunication } from "./reward-redeemed-communication-producer";
 
+export class PreflightRedemptionDiscrepancyError extends Error {
+  constructor(
+    public readonly accountId: string,
+    public readonly storeId: string,
+    public readonly cachedBalance: bigint,
+    public readonly ledgerSum: bigint,
+    public readonly requiredPoints: bigint,
+    public readonly existingMeta: Record<string, unknown>,
+    public readonly quarantineReason: string,
+  ) {
+    super(
+      `Redemption rejected: loyalty account ${accountId} failed pre-flight ledger verification (cached: ${cachedBalance}, authoritative ledger: ${ledgerSum}, required: ${requiredPoints}). Account has been quarantined.`,
+    );
+    this.name = "PreflightRedemptionDiscrepancyError";
+  }
+}
+
 export interface ProvisionDiscountSagaParams {
   storeId: string;
   accountId: string;
@@ -228,7 +245,9 @@ async function provisionDiscountSagaUnlocked(
 
   const redemptionId = createWeleticId("wredemp_");
 
-  const reservation = await prisma.$transaction(async (tx) => {
+  let reservation;
+  try {
+    reservation = await prisma.$transaction(async (tx) => {
     const operationalStore = await assertShopifyStoreAcceptsOperationalWrites({
       storeId,
       action: "reward_redemption",
@@ -444,6 +463,114 @@ async function provisionDiscountSagaUnlocked(
       );
     }
 
+    // Synchronous Pre-flight Authoritative Ledger Verification & Anomaly Quarantine
+    let authoritativeLedgerSum: bigint | null = null;
+    let authoritativeLedgerCount: number | null = null;
+    let crossTenantEntriesDetected = false;
+
+    if (typeof tx.weleticPointsLedgerEntry?.aggregate === "function") {
+      const [storeLedgerAggregate, accountTotalCount] = await Promise.all([
+        tx.weleticPointsLedgerEntry.aggregate({
+          where: { accountId, storeId },
+          _sum: { pointsDelta: true },
+          _count: { id: true },
+        }),
+        typeof tx.weleticPointsLedgerEntry?.count === "function"
+          ? tx.weleticPointsLedgerEntry.count({
+              where: { accountId },
+            })
+          : null,
+      ]);
+      if (storeLedgerAggregate?._sum && storeLedgerAggregate?._count) {
+        authoritativeLedgerSum =
+          storeLedgerAggregate._sum.pointsDelta ?? BigInt(0);
+        authoritativeLedgerCount = storeLedgerAggregate._count.id;
+        if (
+          accountTotalCount !== null &&
+          accountTotalCount !== authoritativeLedgerCount
+        ) {
+          crossTenantEntriesDetected = true;
+        }
+      }
+    }
+    if (
+      authoritativeLedgerSum === null &&
+      typeof tx.weleticPointsLedgerEntry?.findMany === "function"
+    ) {
+      const allEntries = await tx.weleticPointsLedgerEntry.findMany({
+        where: { accountId },
+        select: { pointsDelta: true, storeId: true },
+      });
+      if (Array.isArray(allEntries)) {
+        const storeEntries = allEntries.filter(
+          (e) => !e.storeId || e.storeId === storeId,
+        );
+        if (storeEntries.length !== allEntries.length) {
+          crossTenantEntriesDetected = true;
+        }
+        authoritativeLedgerSum = storeEntries.reduce(
+          (sum, entry) => sum + BigInt(entry.pointsDelta),
+          BigInt(0),
+        );
+        authoritativeLedgerCount = storeEntries.length;
+      }
+    }
+
+    if (authoritativeLedgerSum !== null) {
+      const hasDiscrepancy =
+        crossTenantEntriesDetected ||
+        authoritativeLedgerSum < effectivePointsCost ||
+        authoritativeLedgerSum !== account.cachedPointsBalance ||
+        (account.ledgerVersion !== undefined &&
+          account.ledgerVersion !== null &&
+          account.ledgerVersion > 0 &&
+          authoritativeLedgerCount !== null &&
+          account.ledgerVersion !== authoritativeLedgerCount);
+
+      if (hasDiscrepancy) {
+        const existingMeta =
+          account.metadata &&
+          typeof account.metadata === "object" &&
+          !Array.isArray(account.metadata)
+            ? (account.metadata as Record<string, unknown>)
+            : {};
+
+        const quarantineReason = crossTenantEntriesDetected
+          ? `Pre-flight redemption ledger discrepancy detected: account ${accountId} contains cross-tenant entries not belonging to store ${storeId}.`
+          : `Pre-flight redemption ledger discrepancy detected: cached balance (${account.cachedPointsBalance}) does not match authoritative ledger sum (${authoritativeLedgerSum}) or is insufficient for redemption cost (${effectivePointsCost}).`;
+
+        if (typeof (tx as any).weleticLoyaltyAccount?.update === "function") {
+          await (tx as any).weleticLoyaltyAccount.update({
+            where: { id: accountId },
+            data: {
+              status: "suspended",
+              metadata: {
+                ...existingMeta,
+                quarantine: {
+                  isQuarantined: true,
+                  quarantinedAt: new Date().toISOString(),
+                  reason: quarantineReason,
+                  cachedBalance: account.cachedPointsBalance.toString(),
+                  ledgerSum: authoritativeLedgerSum.toString(),
+                  requiredPoints: effectivePointsCost.toString(),
+                },
+              } as Prisma.InputJsonValue,
+            },
+          });
+        }
+
+        throw new PreflightRedemptionDiscrepancyError(
+          accountId,
+          storeId,
+          account.cachedPointsBalance,
+          authoritativeLedgerSum,
+          effectivePointsCost,
+          existingMeta,
+          quarantineReason,
+        );
+      }
+    }
+
     const effectiveExpiresInDays =
       expiresInDays !== undefined && expiresInDays !== null
         ? expiresInDays
@@ -595,6 +722,30 @@ async function provisionDiscountSagaUnlocked(
       provisioningSnapshot,
     };
   });
+  } catch (error) {
+    if (error instanceof PreflightRedemptionDiscrepancyError) {
+      if (typeof prisma.weleticLoyaltyAccount?.update === "function") {
+        await prisma.weleticLoyaltyAccount.update({
+          where: { id: error.accountId },
+          data: {
+            status: "suspended",
+            metadata: {
+              ...error.existingMeta,
+              quarantine: {
+                isQuarantined: true,
+                quarantinedAt: new Date().toISOString(),
+                reason: error.quarantineReason,
+                cachedBalance: error.cachedBalance.toString(),
+                ledgerSum: error.ledgerSum.toString(),
+                requiredPoints: error.requiredPoints.toString(),
+              },
+            } as Prisma.InputJsonValue,
+          },
+        });
+      }
+    }
+    throw error;
+  }
 
   const effectiveRedemptionId = reservation.redemption.id;
   if (reservation.alreadyIssued) {

@@ -18,3 +18,7 @@ database_id = "weletic-d1-prod"
 [[queues.producers]]
 queue = "order-webhook-queue"
 binding = "ORDER_WEBHOOK_QUEUE"
+
+[alias]
+"server-only" = "../empty.ts"
+
