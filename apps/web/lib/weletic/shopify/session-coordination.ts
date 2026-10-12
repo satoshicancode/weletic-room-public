@@ -63,9 +63,7 @@ type CoordinationRow = {
   live: bigint | number;
 };
 
-const leaseExpiresAtClause = isMysql
-  ? Prisma.sql`TIMESTAMPADD(MICROSECOND, ${SHOPIFY_SESSION_LEASE_MS * 1000}, CURRENT_TIMESTAMP(3))`
-  : Prisma.sql`datetime('now', '+60 seconds')`;
+const leaseExpiresAtClause = Prisma.sql`TIMESTAMPADD(MICROSECOND, ${SHOPIFY_SESSION_LEASE_MS * 1000}, CURRENT_TIMESTAMP(3))`;
 
 export async function observeShopifySessionCoordination(
   tx: Prisma.TransactionClient,

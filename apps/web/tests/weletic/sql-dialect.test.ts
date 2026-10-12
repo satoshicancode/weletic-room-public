@@ -173,5 +173,144 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     expect(rewritten.strings.join("?")).toContain(`(${NOW.getTime()} + round(? / 1000))`);
     expect(rewritten.values).toEqual([deltaMs * 1000]);
   });
+
+  it("rewrites UTC_TIMESTAMP(3) similarly to CURRENT_TIMESTAMP", () => {
+    const raw = Prisma.sql`SELECT id FROM T WHERE expiresAt > UTC_TIMESTAMP(3)`;
+    const rewritten = rewriteSql(raw, NOW);
+    expect(rewritten.values).toEqual([NOW]);
+    expect(rewritten.strings.join("?")).toBe("SELECT id FROM T WHERE expiresAt > ?");
+  });
+
+  it("detects SELECT UTC_TIMESTAMP(3) AS now in matchClockOnlyQuery", () => {
+    expect(matchClockOnlyQuery("SELECT UTC_TIMESTAMP(3) AS now")).toBe("now");
+  });
+
+  it("rewrites cross-boundary JSON_CONTAINS_PATH with template path param", () => {
+    const path = "$.friendPrivacySnapshot";
+    const raw = Prisma.sql`SELECT id FROM T WHERE COALESCE(JSON_CONTAINS_PATH(metadata, 'one', ${path}), 0) = 0`;
+    const rewritten = rewriteSql(raw, NOW);
+    expect(rewritten.strings.join("?")).toContain("COALESCE((CASE WHEN json_type(metadata, ?");
+    expect(rewritten.strings.join("?")).toContain(") IS NOT NULL THEN 1 ELSE 0 END), 0) = 0");
+    expect(rewritten.values).toEqual([path]);
+  });
+
+  it("rewrites cross-boundary JSON_UNQUOTE(JSON_EXTRACT(...)) with template path param", () => {
+    const scanPath = "$.holdingPeriodDays";
+    const raw = Prisma.sql`SELECT id FROM T WHERE JSON_UNQUOTE(JSON_EXTRACT(p.metadata, ${scanPath})) <= '2026-10-12'`;
+    const rewritten = rewriteSql(raw, NOW);
+    expect(rewritten.strings.join("?")).toContain("json_extract(p.metadata, ?) <= '2026-10-12'");
+    expect(rewritten.values).toEqual([scanPath]);
+  });
+
+  it("rewrites static JSON_CONTAINS_PATH and JSON_UNQUOTE", () => {
+    const raw = Prisma.sql`SELECT id FROM T WHERE JSON_CONTAINS_PATH(metadata, 'one', '$.flag') = 1 AND JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.status')) = 'active'`;
+    const rewritten = rewriteSql(raw, NOW);
+    expect(rewritten.strings.join("")).toContain("(CASE WHEN json_type(metadata, '$.flag') IS NOT NULL THEN 1 ELSE 0 END) = 1");
+    expect(rewritten.strings.join("")).toContain("json_extract(metadata, '$.status') = 'active'");
+  });
+
+  it("normalizes JSON_TYPE comparisons for SQLite", () => {
+    const raw = Prisma.sql`SELECT id FROM T WHERE JSON_TYPE(metadata) = 'STRING' AND JSON_TYPE(JSON_EXTRACT(metadata, '$.num')) = 'INTEGER' AND JSON_TYPE(metadata) <> 'OBJECT'`;
+    const rewritten = rewriteSql(raw, NOW);
+    const sql = rewritten.strings.join("");
+    expect(sql).toContain("json_type(metadata) IN ('text', 'STRING')");
+    expect(sql).toContain("json_type(metadata, '$.num') IN ('integer', 'INTEGER')");
+    expect(sql).toContain("json_type(metadata) NOT IN ('object', 'OBJECT')");
+  });
+
+  it("rewrites LEAST to CASE WHEN expression", () => {
+    const raw = Prisma.sql`SELECT LEAST(50, SUM(score)) AS score, LEAST(15, count * 2) AS matchScore FROM T`;
+    const rewritten = rewriteSql(raw, NOW);
+    const sql = rewritten.strings.join("");
+    expect(sql).toContain("(CASE WHEN (SUM(score)) < 50 THEN (SUM(score)) ELSE 50 END) AS score");
+    expect(sql).toContain("(CASE WHEN (count * 2) < 15 THEN (count * 2) ELSE 15 END) AS matchScore");
+  });
+
+  it("strips BINARY and maps CAST(... AS BINARY) to CAST(... AS BLOB)", () => {
+    const raw = Prisma.sql`SELECT BINARY id, CAST(sku AS BINARY) FROM T WHERE BINARY col = BINARY 'val' ORDER BY BINARY id`;
+    const rewritten = rewriteSql(raw, NOW);
+    const sql = rewritten.strings.join("");
+    expect(sql).not.toMatch(/\bBINARY\b/);
+    expect(sql).toContain("CAST(sku AS BLOB)");
+    expect(sql).toContain("SELECT id, CAST(sku AS BLOB) FROM T WHERE col = 'val' ORDER BY id");
+  });
+
+  it("strips FORCE INDEX and maps STRAIGHT_JOIN to JOIN", () => {
+    const raw = Prisma.sql`SELECT a.id FROM A a FORCE INDEX (PRIMARY) STRAIGHT_JOIN B b FORCE INDEX (idx_b) ON a.id = b.aId`;
+    const rewritten = rewriteSql(raw, NOW);
+    const sql = rewritten.strings.join("");
+    expect(sql).not.toContain("FORCE INDEX");
+    expect(sql).not.toContain("STRAIGHT_JOIN");
+    expect(sql).toContain("JOIN B b");
+  });
+
+  it("maps CHAR_LENGTH to length and JSON_ARRAYAGG to json_group_array", () => {
+    const raw = Prisma.sql`SELECT JSON_ARRAYAGG(val), CHAR_LENGTH(name) FROM T`;
+    const rewritten = rewriteSql(raw, NOW);
+    const sql = rewritten.strings.join("");
+    expect(sql).toContain("json_group_array(val)");
+    expect(sql).toContain("length(name)");
+  });
+
+  it("maps ISO-8601 NOT REGEXP to length and LIKE checks", () => {
+    const raw = Prisma.sql`SELECT id FROM T WHERE COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.retainUntil')), '') NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'`;
+    const rewritten = rewriteSql(raw, NOW);
+    const sql = rewritten.strings.join("");
+    expect(sql).toContain("length(COALESCE(json_extract(metadata, '$.retainUntil'), '')) <> 24");
+    expect(sql).toContain("NOT LIKE '____-__-__T__:__:__.___Z'");
+  });
+
+  it("maps STR_TO_DATE with month concatenation to ISO timestamp concatenation", () => {
+    const raw = Prisma.sql`SELECT STR_TO_DATE(CONCAT(active.month, '-01'), '%Y-%m-%d') AS date FROM T`;
+    const rewritten = rewriteSql(raw, NOW);
+    const sql = rewritten.strings.join("");
+    expect(sql).toContain("(active.month || '-01T00:00:00.000Z')");
+  });
+
+  it("handles standalone NOW() and NOW(3) without other MySQL constructs", () => {
+    const q1 = rewriteSql(Prisma.sql`SELECT NOW()`, NOW);
+    expect(q1.values).toEqual([NOW]);
+    expect(q1.strings.join("?")).toBe("SELECT ?");
+
+    const q2 = rewriteSql(Prisma.sql`SELECT NOW(3)`, NOW);
+    expect(q2.values).toEqual([NOW]);
+    expect(q2.strings.join("?")).toBe("SELECT ?");
+  });
+
+  it("detects SELECT NOW(3) AS now in matchClockOnlyQuery", () => {
+    expect(matchClockOnlyQuery("SELECT NOW(3) AS now")).toBe("now");
+    expect(matchClockOnlyQuery("SELECT NOW() AS now")).toBe("now");
+  });
+
+  it("supports multi-argument and nested LEAST expressions", () => {
+    const multi = Prisma.sql`SELECT LEAST(1, 2, 3) AS m`;
+    const resMulti = rewriteSql(multi, NOW);
+    expect(resMulti.strings.join("")).toContain(
+      "(CASE WHEN ((CASE WHEN (3) < 2 THEN (3) ELSE 2 END)) < 1 THEN ((CASE WHEN (3) < 2 THEN (3) ELSE 2 END)) ELSE 1 END) AS m",
+    );
+
+    const nested = Prisma.sql`SELECT LEAST(10, LEAST(score, 5)) AS s`;
+    const resNested = rewriteSql(nested, NOW);
+    expect(resNested.strings.join("")).not.toContain("LEAST");
+    expect(resNested.strings.join("")).toContain(
+      "(CASE WHEN ((CASE WHEN (score) < 5 THEN (score) ELSE 5 END)) < 10 THEN ((CASE WHEN (score) < 5 THEN (score) ELSE 5 END)) ELSE 10 END) AS s",
+    );
+  });
+
+  it("normalizes COALESCE(JSON_TYPE(...), '') comparisons", () => {
+    const raw = Prisma.sql`SELECT id FROM WeleticLoyaltyEarnGrant WHERE COALESCE(JSON_TYPE(JSON_EXTRACT(calculationSnapshot, '$.holdingPeriodDays')), '') <> 'INTEGER'`;
+    const rewritten = rewriteSql(raw, NOW);
+    expect(rewritten.strings.join("")).toContain(
+      "COALESCE(json_type(calculationSnapshot, '$.holdingPeriodDays'), '') NOT IN ('integer', 'INTEGER')",
+    );
+  });
+
+  it("handles plural interval units in DATE_SUB and NOW(3)", () => {
+    const raw = Prisma.sql`SELECT id FROM T WHERE lockedAt > DATE_SUB(NOW(3), INTERVAL 5 MINUTES)`;
+    const rewritten = rewriteSql(raw, NOW);
+    expect(rewritten.values).toEqual([new Date(NOW.getTime() - 5 * 60_000)]);
+  });
 });
+
+
 

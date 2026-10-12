@@ -5,6 +5,7 @@ import {
   type LoyaltyMaintenancePermit,
 } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { isShopifyStoreAccessActive } from "@/lib/weletic/shopify/store-access-policy";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import { Prisma } from "@prisma/client";
 
 export type LoyaltyProgramRowLockMode = "lock_only" | "active";
@@ -314,17 +315,21 @@ export async function withLoyaltyProgramRowLock<T>({
   ) => Promise<T>;
   timeoutMs?: number;
 }) {
-  return prisma.$transaction(
-    async (tx) => {
-      const program = await lockLoyaltyProgramRow({
-        tx,
-        storeId,
-        mode,
-        loyaltyMaintenancePermit,
-      });
-      return operation(tx, program);
-    },
-    { maxWait: 10_000, timeout: timeoutMs },
+  return withFinancialTransactionRetry(
+    () =>
+      prisma.$transaction(
+        async (tx) => {
+          const program = await lockLoyaltyProgramRow({
+            tx,
+            storeId,
+            mode,
+            loyaltyMaintenancePermit,
+          });
+          return operation(tx, program);
+        },
+        { maxWait: 10_000, timeout: timeoutMs },
+      ),
+    { actionName: "program_row_lock" },
   );
 }
 

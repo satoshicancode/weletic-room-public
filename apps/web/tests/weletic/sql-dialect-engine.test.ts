@@ -96,4 +96,77 @@ describe("createPrismaClient SQL dialect extension (real SQLite engine)", () => 
     const expTime = row.expiresAt instanceof Date ? row.expiresAt.getTime() : Number(row.expiresAt);
     expect(expTime).toBeLessThan(Date.now());
   });
+
+  it("executes UTC_TIMESTAMP(3) query and returns Date", async () => {
+    const [clock] = await prisma.$queryRaw<Array<{ now: Date }>>`SELECT UTC_TIMESTAMP(3) AS now`;
+    expect(clock.now).toBeInstanceOf(Date);
+  });
+
+  it("executes JSON_CONTAINS_PATH and JSON_UNQUOTE against real SQLite engine", async () => {
+    await prisma.$executeRawUnsafe(
+      "CREATE TABLE doc (id TEXT PRIMARY KEY, metadata TEXT NOT NULL)",
+    );
+    await prisma.$executeRaw`INSERT INTO doc (id, metadata) VALUES ('d1', '{"status":"active","count":42}')`;
+
+    const path = "$.status";
+    const [row] = await prisma.$queryRaw<Array<{ id: string; status: string }>>`
+      SELECT id, JSON_UNQUOTE(JSON_EXTRACT(metadata, ${path})) AS status
+      FROM doc
+      WHERE COALESCE(JSON_CONTAINS_PATH(metadata, 'one', ${path}), 0) = 1
+        AND JSON_TYPE(JSON_EXTRACT(metadata, '$.status')) = 'STRING'
+        AND JSON_TYPE(JSON_EXTRACT(metadata, '$.count')) = 'INTEGER'
+        AND JSON_TYPE(metadata) <> 'OBJECT'`;
+    // Note: In SQLite, json_type(metadata) is 'object', so JSON_TYPE(metadata) <> 'OBJECT' evaluates to false
+    // Let's verify that the normalization (NOT IN ('object', 'OBJECT')) correctly treats 'object' as object:
+    expect(row).toBeUndefined();
+
+    // Now query where metadata IS object:
+    const [match] = await prisma.$queryRaw<Array<{ id: string; status: string }>>`
+      SELECT id, JSON_UNQUOTE(JSON_EXTRACT(metadata, ${path})) AS status
+      FROM doc
+      WHERE COALESCE(JSON_CONTAINS_PATH(metadata, 'one', ${path}), 0) = 1
+        AND JSON_TYPE(JSON_EXTRACT(metadata, '$.status')) = 'STRING'
+        AND JSON_TYPE(JSON_EXTRACT(metadata, '$.count')) = 'INTEGER'
+        AND JSON_TYPE(metadata) = 'OBJECT'`;
+    expect(match?.id).toBe("d1");
+    expect(match?.status).toBe("active");
+  });
+
+  it("executes LEAST, CHAR_LENGTH, and BINARY against real SQLite engine", async () => {
+    const [res] = await prisma.$queryRaw<Array<{ lowest: bigint | number; len: bigint | number }>>`
+      SELECT LEAST(50, 100) AS lowest, CHAR_LENGTH('weletic') AS len
+      FROM doc WHERE BINARY id = BINARY 'd1' ORDER BY BINARY id`;
+    expect(Number(res.lowest)).toBe(50);
+    expect(Number(res.len)).toBe(7);
+  });
+
+  it("executes standalone NOW() and NOW(3) against real SQLite engine", async () => {
+    const [row] = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM doc WHERE NOW() IS NOT NULL`;
+    expect(row?.id).toBe("d1");
+
+    const [row3] = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM doc WHERE NOW(3) IS NOT NULL`;
+    expect(row3?.id).toBe("d1");
+  });
+
+  it("executes multi-arg and nested LEAST against real SQLite engine", async () => {
+    const [res] = await prisma.$queryRaw<Array<{ val1: number | bigint; val2: number | bigint }>>`
+      SELECT LEAST(10, 5, 20) AS val1, LEAST(100, LEAST(50, 25)) AS val2 FROM doc WHERE id = 'd1'`;
+    expect(Number(res.val1)).toBe(5);
+    expect(Number(res.val2)).toBe(25);
+  });
+
+  it("executes COALESCE(JSON_TYPE(...), '') against real SQLite engine correctly distinguishing integers", async () => {
+    await prisma.$executeRaw`INSERT INTO doc (id, metadata) VALUES ('d2', '{"status":"pending","count":"not_int"}')`;
+
+    // d1 has count=42 (integer), d2 has count="not_int" (string)
+    // Querying for count <> INTEGER should only match d2:
+    const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM doc
+      WHERE COALESCE(JSON_TYPE(JSON_EXTRACT(metadata, '$.count')), '') <> 'INTEGER'
+      ORDER BY id`;
+    expect(rows.map((r) => r.id)).toEqual(["d2"]);
+  });
 });
+

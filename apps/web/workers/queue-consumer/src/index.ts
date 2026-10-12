@@ -177,7 +177,7 @@ async function markWebhookCompleted(
       ? crypto.randomUUID()
       : "whook_" + Math.random().toString(36).substring(2);
 
-  const nowMs = Date.now();
+  const nowIso = new Date().toISOString();
   if (env.DB?.prepare) {
     await env.DB.prepare(
       "INSERT INTO WeleticShopifyWebhookEvent (id, storeId, webhookId, topic, status, attempts, processedAt, updatedAt) " +
@@ -190,8 +190,8 @@ async function markWebhookCompleted(
         params.webhookId,
         params.topic,
         params.attempts,
-        nowMs,
-        nowMs,
+        nowIso,
+        nowIso,
       )
       .run();
     return;
@@ -232,7 +232,7 @@ async function recordWebhookFailure(
       ? crypto.randomUUID()
       : "whook_" + Math.random().toString(36).substring(2);
 
-  const nowMs = Date.now();
+  const nowIso = new Date().toISOString();
   if (env.DB?.prepare) {
     await env.DB.prepare(
       "INSERT INTO WeleticShopifyWebhookEvent (id, storeId, webhookId, topic, status, error, attempts, updatedAt) " +
@@ -246,7 +246,7 @@ async function recordWebhookFailure(
         params.topic,
         params.error,
         params.attempts,
-        nowMs,
+        nowIso,
       )
       .run();
     return;

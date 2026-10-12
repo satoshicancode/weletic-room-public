@@ -3,7 +3,6 @@ import { Prisma } from "@prisma/client";
 import {
   forUpdateClause,
   currentTimestampClause,
-  isMysql,
 } from "@/lib/prisma/sql-helpers";
 import { randomUUID } from "node:crypto";
 import * as z from "zod/v4";
@@ -249,7 +248,7 @@ export async function readFrozenStoreOwnedVoucherCredential(
     }>
   >(Prisma.sql`
     SELECT id, storeId, redemptionId, source, status, lockedBy, leaseVersion, expectedDiscountCodeCanonical,
-      ${isMysql ? Prisma.sql`(lockedAt > DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 5 MINUTE))` : Prisma.sql`(lockedAt > datetime('now', '-5 minutes'))`} AS live
+      (lockedAt > DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 5 MINUTE)) AS live
     FROM WeleticShopifyVoucherCleanup WHERE id = ${proof.cleanupId} LIMIT 1 ${forUpdateClause}
   `);
   if (

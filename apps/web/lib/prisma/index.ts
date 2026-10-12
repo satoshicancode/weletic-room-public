@@ -155,6 +155,17 @@ export function createPrismaClient(d1Database?: D1Database) {
     );
   }
 
+  if (
+    process.env.NODE_ENV === "production" &&
+    process.env.NEXT_PHASE !== "phase-production-build"
+  ) {
+    throw new Error(
+      "[Prisma D1 Configuration Fatal] Running in production requires valid Cloudflare D1 HTTP credentials " +
+      "(CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID, CLOUDFLARE_D1_API_TOKEN) or native D1 binding. " +
+      "Silent fallback to local SQLite container is strictly prohibited.",
+    );
+  }
+
   // Fallback to built-in SQLite engine for local Node.js / Next dev / Vitest.
   // WELETIC_D1_TX_SEMANTICS=1 strips transaction atomicity so money flows are
   // exercised under the same rules as production D1 (see ./d1-semantics.ts).

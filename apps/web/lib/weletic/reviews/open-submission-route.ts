@@ -173,11 +173,14 @@ export async function openReviewSubmissionRoute(
             throw new ReviewError("conflict", "Installation changed");
           const settings = await tx.$queryRaw<
             Array<{
-              enabled: boolean | number;
-              photoUploadsEnabled: boolean | number;
+              enabled: boolean | number | bigint;
+              photoUploadsEnabled: boolean | number | bigint;
             }>
           >`SELECT enabled, photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${store.id} ${forUpdateClause}`;
-          if (settings.length !== 1 || ![true, 1].includes(settings[0].enabled))
+          if (
+            settings.length !== 1 ||
+            ![true, 1, 1n].includes(settings[0].enabled as any)
+          )
             throw new ReviewError("disabled", "Reviews are unavailable");
           const products = await tx.$queryRaw<
             Array<{ id: string; title: string }>
@@ -187,7 +190,7 @@ export async function openReviewSubmissionRoute(
           productTitle = products[0].title;
           if (
             policy.policy.photoUploadsEnabled &&
-            [true, 1].includes(settings[0].photoUploadsEnabled)
+            [true, 1, 1n].includes(settings[0].photoUploadsEnabled as any)
           ) {
             try {
               requireReviewStorage();

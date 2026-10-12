@@ -8,6 +8,7 @@ import {
 } from "@/lib/weletic/loyalty/ledger";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { lockLoyaltyProgramRow } from "@/lib/weletic/loyalty/program-write-fence";
 import {
@@ -132,24 +133,18 @@ function isRetryableReferralTransactionError(error: unknown): boolean {
 export async function runSerializableReferralTransaction<T>(
   operation: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
-  for (let attempt = 1; attempt <= REFERRAL_TRANSACTION_RETRIES; attempt++) {
-    try {
-      return await prisma.$transaction(operation, {
+  return withFinancialTransactionRetry(
+    () =>
+      prisma.$transaction(operation, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         maxWait: 10_000,
         timeout: 30_000,
-      });
-    } catch (error) {
-      if (
-        attempt === REFERRAL_TRANSACTION_RETRIES ||
-        !isRetryableReferralTransactionError(error)
-      ) {
-        throw error;
-      }
-    }
-  }
-
-  throw new Error("Referral transaction retry budget exhausted.");
+      }),
+    {
+      actionName: "referral_transaction",
+      isRetryable: isRetryableReferralTransactionError,
+    },
+  );
 }
 
 function createDefaultReferralRule(

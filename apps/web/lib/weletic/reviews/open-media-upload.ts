@@ -105,13 +105,13 @@ export async function uploadOpenReviewPhoto({
         if (policy.revision !== data.expectedSettingsRevision)
           throw new ReviewError("conflict", "Open review policy changed");
         const settings = await tx.$queryRaw<
-          Array<{ photoUploadsEnabled: boolean | number }>
+          Array<{ photoUploadsEnabled: boolean | number | bigint }>
         >(Prisma.sql`
           SELECT photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${storeId} ${forUpdateClause}
         `);
         if (
           settings.length !== 1 ||
-          ![true, 1].includes(settings[0].photoUploadsEnabled)
+          ![true, 1, 1n].includes(settings[0].photoUploadsEnabled as any)
         )
           throw new ReviewError("disabled", "Review photos are disabled");
         const { shopperId } = await ensureOpenReviewAuthorInTransaction({

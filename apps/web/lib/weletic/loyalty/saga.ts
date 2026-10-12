@@ -9,6 +9,7 @@ import {
   type LoyaltyMaintenancePermit,
 } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import {
   enqueueOutboxJob,
   enqueueOutboxJobFromProgramTransaction,
@@ -247,7 +248,9 @@ async function provisionDiscountSagaUnlocked(
 
   let reservation;
   try {
-    reservation = await prisma.$transaction(async (tx) => {
+    reservation = await withFinancialTransactionRetry(
+      () =>
+        prisma.$transaction(async (tx) => {
     const operationalStore = await assertShopifyStoreAcceptsOperationalWrites({
       storeId,
       action: "reward_redemption",
@@ -721,8 +724,10 @@ async function provisionDiscountSagaUnlocked(
       discountMetadata,
       provisioningSnapshot,
     };
-  });
-  } catch (error) {
+  }),
+  { actionName: "redeem_reward_reservation" },
+);
+} catch (error) {
     if (error instanceof PreflightRedemptionDiscrepancyError) {
       if (typeof prisma.weleticLoyaltyAccount?.update === "function") {
         await prisma.weleticLoyaltyAccount.update({

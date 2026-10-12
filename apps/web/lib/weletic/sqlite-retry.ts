@@ -7,9 +7,12 @@ export interface TransactionRetryConfig {
   maxDelayMs?: number;
   jitter?: boolean;
   actionName?: string;
+  isRetryable?: (error: unknown) => boolean;
 }
 
-const DEFAULT_RETRY_CONFIG: Required<TransactionRetryConfig> = {
+const DEFAULT_RETRY_CONFIG: Required<Omit<TransactionRetryConfig, "isRetryable">> & {
+  isRetryable?: (error: unknown) => boolean;
+} = {
   maxRetries: 4, // 5 total attempts
   baseDelayMs: 50, // 50ms base delay
   maxDelayMs: 800, // 800ms cap
@@ -24,8 +27,12 @@ const DEFAULT_RETRY_CONFIG: Required<TransactionRetryConfig> = {
 export function isRetriableSqliteError(error: unknown): boolean {
   if (!error) return false;
 
-  // 1. Optimistic Concurrency Control from Weletic ledger
-  if (error instanceof OptimisticConcurrencyError) {
+  // 1. Optimistic Concurrency Control from Weletic ledger, programs and referrals
+  if (
+    error instanceof OptimisticConcurrencyError ||
+    (error as any)?.name === "OptimisticLockConflictError" ||
+    (error as any)?.name === "ReferralTransactionConflictError"
+  ) {
     return true;
   }
 
@@ -88,7 +95,10 @@ export async function withFinancialTransactionRetry<T>(
     try {
       return await operation();
     } catch (error) {
-      if (attempt >= config.maxRetries || !isRetriableSqliteError(error)) {
+      const retriable =
+        (config.isRetryable ? config.isRetryable(error) : false) ||
+        isRetriableSqliteError(error);
+      if (attempt >= config.maxRetries || !retriable) {
         throw error;
       }
 
