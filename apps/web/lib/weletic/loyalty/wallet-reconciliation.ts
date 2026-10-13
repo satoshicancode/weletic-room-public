@@ -190,8 +190,8 @@ export async function readStoreWalletReconciliation({
       (SELECT CAST(COUNT(*) AS CHAR)
         FROM (
           SELECT id, grossPoints, pendingPoints,
-            CASE WHEN JSON_TYPE(JSON_EXTRACT(calculationSnapshot, '$.holdingPeriodDays')) = 'INTEGER'
-              THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(calculationSnapshot, '$.holdingPeriodDays')) AS UNSIGNED)
+            CASE WHEN json_type(calculationSnapshot, '$.holdingPeriodDays') IN ('integer', 'INTEGER')
+              THEN CAST(json_extract(calculationSnapshot, '$.holdingPeriodDays') AS INTEGER)
               ELSE NULL END AS holdingDays
           FROM WeleticLoyaltyEarnGrant
           WHERE storeId = ${storeId}
@@ -215,10 +215,10 @@ export async function readStoreWalletReconciliation({
           GROUP BY grantId
         ) events ON events.grantId = grantRow.id
         WHERE grantRow.storeId = ${storeId}
-          AND COALESCE(JSON_TYPE(JSON_EXTRACT(grantRow.calculationSnapshot, '$.holdingPeriodDays')), '') <> 'INTEGER'
+          AND COALESCE(json_type(grantRow.calculationSnapshot, '$.holdingPeriodDays'), '') NOT IN ('integer', 'INTEGER')
           AND (grantRow.pendingPoints <> 0 OR COALESCE(events.eventCount, 0) <> 0
             OR (grantRow.grossPoints > 0
-              AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(grantRow.calculationSnapshot, '$.source')), '') <> 'historical_backfill'))) AS pendingHistoryUnavailable,
+              AND COALESCE(CAST(json_extract(grantRow.calculationSnapshot, '$.source') AS TEXT), '') <> 'historical_backfill'))) AS pendingHistoryUnavailable,
       (SELECT CAST(COUNT(*) AS CHAR)
         FROM WeleticPointsLedgerEntry entry
         LEFT JOIN WeleticLoyaltyEarnGrant grantRow
@@ -282,7 +282,7 @@ export async function readStoreWalletReconciliation({
               OR entry.grantId IS NULL
               OR entry.pointsDelta + entry.pendingDelta >= 0
               OR COALESCE(CAST(json_extract(entry.metadata, '$.totalClawback') AS TEXT), '')
-                <> CAST(-entry.pointsDelta - entry.pendingDelta AS CHAR)
+                <> CAST(-entry.pointsDelta - entry.pendingDelta AS TEXT)
               OR COALESCE(json_type(entry.metadata, '$.lineReversalCount'), '') NOT IN ('integer', 'INTEGER')
               OR (SELECT COUNT(*) FROM WeleticLoyaltyRefundAllocation allocation
                   WHERE allocation.storeId = entry.storeId AND allocation.ledgerEntryId = entry.id) = 0

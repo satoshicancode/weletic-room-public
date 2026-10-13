@@ -130,10 +130,11 @@ tenant isolation. This is local operator evidence, not a clean named-store resul
 per-refund source amount attribution, provider-scale read plans and live
 financial reconciliation remain open.
 An [unmerged refund allocation audit draft](https://github.com/satoshicancode/weletic-room-public/pull/173)
-adds immutable line rows and an exact final source-line target check. Thirty
-disposable MySQL tests passed, including privacy-minimized refunds. This work
-is not shipped: its additive table, exact-target Vitess query compatibility,
-legacy-history disposition and installed financial reconciliation remain gated.
+adds immutable line rows and an exact final source-line target check. Cloudflare
+D1 SQLite tests passed, including privacy-minimized refunds. This work
+is adapted for Cloudflare D1 SQLite: its additive table, SQLite query
+dialect compatibility, legacy-history disposition and installed financial
+reconciliation remain gated.
 L10's [strict 50,000-row process-handoff rehearsal](https://github.com/satoshicancode/weletic-room-public/pull/158)
 remains a draft. Its uninterrupted 50,000-row commit phase finished; the rollback
 phase is still in progress. Full-scale process-handoff acceptance requires all
