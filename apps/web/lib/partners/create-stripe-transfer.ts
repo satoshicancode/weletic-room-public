@@ -6,7 +6,6 @@ import {
 } from "@/lib/constants/payouts";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
-import { getWeleticPayoutSettlement } from "@/lib/weletic/payouts/get-settlement";
 import { sendEmail } from "@dub/email";
 import PartnerPayoutForceWithdrawal from "@dub/email/templates/partner-payout-force-withdrawal";
 import PartnerPayoutProcessed from "@dub/email/templates/partner-payout-processed";
@@ -23,6 +22,13 @@ import { PARTNER_IDS_TO_LOG_PAYOUTS_FOR } from "../constants/misc";
 import { enqueueBatchJobs } from "../cron/enqueue-batch-jobs";
 import { createPayoutsIdempotencyKey } from "../payouts/create-payouts-idempotency-key";
 import { markPayoutsAsProcessed } from "../payouts/mark-payouts-as-processed";
+import { executeTransferPreProcessingHook } from "./transfer-hooks";
+
+// D1 has no atomic transactions, so concurrent transfer runs (invoice run vs.
+// force-withdrawal) are serialized per payout with a compare-and-set claim on
+// `stripeTransferId` (`pending:<idempotencyKey>`) before money moves.
+const TRANSFER_CLAIM_PREFIX = "pending:";
+const TRANSFER_CLAIM_STALE_MS = 15 * 60 * 1000;
 
 export const createStripeTransfer = async ({
   partnerId,
@@ -46,6 +52,8 @@ export const createStripeTransfer = async ({
       payoutsEnabledAt: true,
     },
   });
+
+  const staleClaimBefore = new Date(Date.now() - TRANSFER_CLAIM_STALE_MS);
 
   // should never happen, but just in case
   if (!partner.stripeConnectId || !partner.payoutsEnabledAt) {
@@ -72,7 +80,14 @@ export const createStripeTransfer = async ({
         where: {
           partnerId: partner.id,
           status: "processed",
-          stripeTransferId: null,
+          // unsent, or claimed by a run that died before finishing (stale claim)
+          OR: [
+            { stripeTransferId: null },
+            {
+              stripeTransferId: { startsWith: TRANSFER_CLAIM_PREFIX },
+              updatedAt: { lt: staleClaimBefore },
+            },
+          ],
           method: "connect",
         },
         orderBy: {
@@ -113,29 +128,6 @@ export const createStripeTransfer = async ({
     (acc, payout) => acc + payout.amount,
     0,
   );
-  if (allPayouts.some(({ currency }) => currency.toUpperCase() !== "USD")) {
-    throw new Error(
-      "Automatic Stripe settlement currently requires USD accounting payouts.",
-    );
-  }
-  const settlements = await Promise.all(
-    allPayouts.map(({ id }) =>
-      getWeleticPayoutSettlement({
-        payoutId: id,
-        provider: "stripe_connect",
-      }),
-    ),
-  );
-  const settlementCurrencies = [
-    ...new Set(settlements.map(({ currency }) => currency.toLowerCase())),
-  ];
-  if (settlementCurrencies.length !== 1 || settlementCurrencies[0] !== "usd") {
-    throw new Error(
-      "Automatic Stripe settlement is currently limited to USD until cross-border funds flow is certified.",
-    );
-  }
-  const settlementCurrency = settlementCurrencies[0];
-
   // For force-withdrawals, if amount is less than the minimum force withdrawal amount, throw an error
   if (
     forceWithdrawal &&
@@ -173,57 +165,19 @@ export const createStripeTransfer = async ({
     }
   }
 
-  // Minus the withdrawal fee from the total amount
-  if (withdrawalFee > 0 && settlementCurrency !== "usd") {
-    throw new Error(
-      "Forced withdrawals with fees are not supported for non-USD settlement.",
-    );
-  }
-  if (withdrawalFee > 0) {
-    const feeSettlement = settlements.at(-1)!;
-    const adjustedAmount = feeSettlement.amount - BigInt(withdrawalFee);
-    if (adjustedAmount <= BigInt(0)) {
-      throw new Error("The Stripe withdrawal fee exceeds the payout amount.");
-    }
-    await prisma.$transaction(async (tx) => {
-      await tx.weleticPayoutQuote.update({
-        where: { id: feeSettlement.quoteId },
-        data: {
-          payoutAmount: adjustedAmount,
-          feeAmount: { increment: BigInt(withdrawalFee) },
-        },
-      });
-      const statement = await tx.weleticPayoutStatement.findUnique({
-        where: { payoutId: feeSettlement.payoutId },
-        select: { snapshot: true },
-      });
-      if (
-        statement?.snapshot &&
-        typeof statement.snapshot === "object" &&
-        !Array.isArray(statement.snapshot)
-      ) {
-        await tx.weleticPayoutStatement.update({
-          where: { payoutId: feeSettlement.payoutId },
-          data: {
-            snapshot: {
-              ...statement.snapshot,
-              payoutAmount: adjustedAmount.toString(),
-              feeAmount: withdrawalFee.toString(),
-            },
-          },
-        });
-      }
-    });
-    feeSettlement.amount = adjustedAmount;
-  }
-  const settlementAmount = settlements.reduce(
-    (total, settlement) => total + settlement.amount,
-    BigInt(0),
-  );
-  const finalTransferableAmount = Number(settlementAmount);
-  if (!Number.isSafeInteger(finalTransferableAmount)) {
-    throw new Error("Stripe settlement amount exceeds the safe integer range.");
-  }
+  // Pre-processing hook for settlements (e.g. multi-currency conversion, FX quote reconciliation)
+  const hookResult = await executeTransferPreProcessingHook({
+    partner,
+    allPayouts,
+    totalTransferableAmount,
+    withdrawalFee,
+    forceWithdrawal,
+  });
+
+  const finalTransferableAmount =
+    hookResult?.finalTransferableAmount ??
+    totalTransferableAmount - withdrawalFee;
+  const settlementCurrency = hookResult?.settlementCurrency ?? "usd";
 
   const allPayoutsProgramNames = [
     ...new Set(allPayouts.map((p) => p.program.name)), // deduplicate program names
@@ -271,29 +225,77 @@ export const createStripeTransfer = async ({
     payoutIds: allPayouts.map((p) => p.id),
   });
 
+  // Claim every payout (CAS) before money moves. Rows are claimable when
+  // unsent, already claimed with our own key (same-set retry), or when a
+  // previous claim went stale (run died mid-flight).
+  const claimedPayoutIds = allPayouts.map((p) => p.id);
+  const claimMarker = `${TRANSFER_CLAIM_PREFIX}${idempotencyKey}`;
+  const { count: claimedCount } = await prisma.payout.updateMany({
+    where: {
+      id: { in: claimedPayoutIds },
+      OR: [
+        { stripeTransferId: null },
+        { stripeTransferId: claimMarker },
+        {
+          stripeTransferId: { startsWith: TRANSFER_CLAIM_PREFIX },
+          updatedAt: { lt: staleClaimBefore },
+        },
+      ],
+    },
+    data: { stripeTransferId: claimMarker },
+  });
+  if (claimedCount !== claimedPayoutIds.length) {
+    await prisma.payout.updateMany({
+      where: { id: { in: claimedPayoutIds }, stripeTransferId: claimMarker },
+      data: { stripeTransferId: null },
+    });
+    throw new Error(
+      `Payouts for partner ${partner.id} are being transferred by another run (${claimedCount}/${claimedPayoutIds.length} claimable); retry later.`,
+    );
+  }
+
   // Create a transfer for the partner combined payouts and update it as sent
-  const transfer = await stripe.transfers.create(
-    {
-      amount: finalTransferableAmount,
-      currency: settlementCurrency,
-      // here, `transfer_group` technically only used to associate the transfer with the invoice
-      // (even though the transfer could technically include payouts from multiple invoices)
-      transfer_group: finalPayoutInvoiceId!,
-      destination: partner.stripeConnectId,
-      description: `Dub Partners payout transfer (${allPayoutsProgramNames.join(", ")})`,
-      // Omit `source_transaction` if prior processed payouts exist to ensure this transfer
-      // never exceeds the original charge amount.
-      ...(previouslyProcessedPayouts.length === 0 &&
-        chargeId && {
-          ...(settlementCurrency === "usd" && {
-            source_transaction: chargeId,
+  let transfer: Awaited<ReturnType<typeof stripe.transfers.create>>;
+  try {
+    transfer = await stripe.transfers.create(
+      {
+        amount: finalTransferableAmount,
+        currency: settlementCurrency,
+        // here, `transfer_group` technically only used to associate the transfer with the invoice
+        // (even though the transfer could technically include payouts from multiple invoices)
+        transfer_group: finalPayoutInvoiceId!,
+        destination: partner.stripeConnectId,
+        description: `Dub Partners payout transfer (${allPayoutsProgramNames.join(", ")})`,
+        // Omit `source_transaction` if prior processed payouts exist to ensure this transfer
+        // never exceeds the original charge amount.
+        ...(previouslyProcessedPayouts.length === 0 &&
+          chargeId && {
+            ...(settlementCurrency === "usd" && {
+              source_transaction: chargeId,
+            }),
           }),
-        }),
-    },
-    {
-      idempotencyKey,
-    },
-  );
+      },
+      {
+        idempotencyKey,
+      },
+    );
+  } catch (error) {
+    // Only release the claim when Stripe definitively rejected the request
+    // (4xx). On network/5xx errors the transfer may exist, so keep the claim
+    // (same-key retries are allowed; it also expires after the stale window).
+    const statusCode = (error as { statusCode?: number } | null)?.statusCode;
+    if (
+      typeof statusCode === "number" &&
+      statusCode >= 400 &&
+      statusCode < 500
+    ) {
+      await prisma.payout.updateMany({
+        where: { id: { in: claimedPayoutIds }, stripeTransferId: claimMarker },
+        data: { stripeTransferId: null },
+      });
+    }
+    throw error;
+  }
 
   const message = `Transfer of ${currencyFormatter(finalTransferableAmount)} (${transfer.id}) created for partner ${partner.id} for ${pluralize(
     "payout",

@@ -7,6 +7,14 @@ const names = [
   "STORAGE_PUBLIC_BUCKET",
   "STORAGE_ACCESS_KEY_ID",
   "STORAGE_SECRET_ACCESS_KEY",
+  "STORAGE_BASE_URL",
+  "AWS_ENDPOINT",
+  "AWS_S3_PRIVATE_BUCKET",
+  "AWS_S3_BUCKET",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "NEXT_PUBLIC_CDN_URL",
+  "NODE_ENV",
 ] as const;
 const original = Object.fromEntries(
   names.map((name) => [name, process.env[name]]),
@@ -18,7 +26,7 @@ afterEach(() => {
   for (const name of names) {
     const value = original[name];
     if (value === undefined) delete process.env[name];
-    else process.env[name] = value;
+    else (process.env as any)[name] = value;
   }
 });
 
@@ -240,5 +248,219 @@ describe("private storage configuration", () => {
     await expect(
       storage.delete({ key: "compliance/private.enc", bucket: "private" }),
     ).rejects.toThrow("Private storage is not fully configured");
+  });
+});
+
+describe("dual-namespace environment variable resolution", () => {
+  it("resolves storage configuration transparently from AWS_* environment variables", async () => {
+    for (const name of names) delete process.env[name];
+    process.env.AWS_ENDPOINT = `https://${"b".repeat(32)}.r2.cloudflarestorage.com`;
+    process.env.AWS_S3_PRIVATE_BUCKET = "aws-private-bucket";
+    process.env.AWS_S3_BUCKET = "aws-public-bucket";
+    process.env.AWS_ACCESS_KEY_ID = "aws-access-key";
+    process.env.AWS_SECRET_ACCESS_KEY = "aws-secret-key";
+    process.env.NEXT_PUBLIC_CDN_URL = "https://media.yamax.co";
+
+    expect(storage.endpoint).toBe(process.env.AWS_ENDPOINT);
+    expect(storage.accessKeyId).toBe("aws-access-key");
+    expect(storage.secretAccessKey).toBe("aws-secret-key");
+    expect(storage.privateBucket).toBe("aws-private-bucket");
+    expect(storage.publicBucket).toBe("aws-public-bucket");
+    expect(storage.baseUrl).toBe("https://media.yamax.co");
+
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: {
+          "content-length": "10",
+          "content-type": "image/webp",
+          "x-amz-meta-weletic-upload-proof": "cd".repeat(32),
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    const headResult = await storage.headPrivateR2Object("reviews/photo.webp");
+    expect(headResult).toEqual({
+      sizeBytes: 10,
+      contentType: "image/webp",
+      uploadProof: "cd".repeat(32),
+    });
+    const request = fetch.mock.calls[0][0] as Request;
+    expect(request.url).toBe(
+      `${process.env.AWS_ENDPOINT}/aws-private-bucket/reviews/photo.webp`,
+    );
+
+    // Upload with AWS_* fallback and NEXT_PUBLIC_CDN_URL
+    fetch.mockResolvedValue(new Response("", { status: 200 }));
+    const uploadResult = await storage.upload({
+      key: "logos/brand.png",
+      body: Buffer.from("data"),
+      bucket: "public",
+    });
+    expect(uploadResult.url).toBe("https://media.yamax.co/logos/brand.png");
+    expect(fetch.mock.calls[1][0].url).toBe(
+      `${process.env.AWS_ENDPOINT}/aws-public-bucket/logos/brand.png`,
+    );
+
+    // Delete with AWS_* fallback
+    await storage.delete({ key: "logos/brand.png", bucket: "public" });
+    expect(fetch.mock.calls[2][0].url).toBe(
+      `${process.env.AWS_ENDPOINT}/aws-public-bucket/logos/brand.png`,
+    );
+    expect(fetch.mock.calls[2][0].method).toBe("DELETE");
+
+    // Signed upload URL with AWS_* fallback
+    const signedUrl = await storage.getSignedUploadUrl({
+      key: "logos/brand.png",
+      bucket: "public",
+    });
+    expect(signedUrl).toContain(
+      `${process.env.AWS_ENDPOINT}/aws-public-bucket/logos/brand.png?`,
+    );
+  });
+
+  it("falls back to default public and private bucket names when not set in env", () => {
+    for (const name of names) delete process.env[name];
+    expect(storage.publicBucket).toBe("weletic-prod-public");
+    expect(storage.privateBucket).toBe("weletic-prod-private");
+  });
+});
+
+describe("local development and custom test endpoint validation", () => {
+  it("permits localhost, 127.0.0.1, and custom test endpoints in non-production", async () => {
+    (process.env as any).NODE_ENV = "development";
+    process.env.STORAGE_PRIVATE_BUCKET = "private-fixture";
+    process.env.STORAGE_ACCESS_KEY_ID = "fixture-key";
+    process.env.STORAGE_SECRET_ACCESS_KEY = "fixture-secret";
+
+    const fetch = vi.fn().mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: {
+          "content-length": "12",
+          "content-type": "image/webp",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    // 127.0.0.1:9002 (local SeaweedFS/S3 port)
+    process.env.STORAGE_ENDPOINT = "http://127.0.0.1:9002";
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).resolves.not.toThrow();
+    expect(fetch.mock.calls[0][0].url).toBe(
+      "http://127.0.0.1:9002/private-fixture/reviews/photo.webp",
+    );
+
+    // localhost:9000
+    process.env.STORAGE_ENDPOINT = "http://localhost:9000";
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).resolves.not.toThrow();
+    expect(fetch.mock.calls[1][0].url).toBe(
+      "http://localhost:9000/private-fixture/reviews/photo.webp",
+    );
+
+    // custom test endpoint test-storage
+    process.env.STORAGE_ENDPOINT = "http://test-storage:9002";
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).resolves.not.toThrow();
+    expect(fetch.mock.calls[2][0].url).toBe(
+      "http://test-storage:9002/private-fixture/reviews/photo.webp",
+    );
+  });
+
+  it("strictly enforces Cloudflare R2 endpoint regex and rejects local endpoints in production", async () => {
+    (process.env as any).NODE_ENV = "production";
+    process.env.STORAGE_PRIVATE_BUCKET = "private-fixture";
+    process.env.STORAGE_ACCESS_KEY_ID = "fixture-key";
+    process.env.STORAGE_SECRET_ACCESS_KEY = "fixture-secret";
+
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    // In production, loopback/localhost must be rejected
+    process.env.STORAGE_ENDPOINT = "http://127.0.0.1:9002";
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).rejects.toThrow(
+      "Direct private R2 storage is not configured for reconciliation",
+    );
+
+    process.env.STORAGE_ENDPOINT = "http://localhost:9000";
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).rejects.toThrow(
+      "Direct private R2 storage is not configured for reconciliation",
+    );
+
+    // In production, direct R2 endpoint is accepted
+    process.env.STORAGE_ENDPOINT = `https://${"c".repeat(32)}.r2.cloudflarestorage.com`;
+    fetch.mockResolvedValue(
+      new Response(null, {
+        status: 200,
+        headers: {
+          "content-length": "12",
+          "content-type": "image/webp",
+        },
+      }),
+    );
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).resolves.not.toThrow();
+  });
+});
+
+describe("zero S3 ACL invariant enforcement", () => {
+  it("never injects x-amz-acl headers or query params into uploads or signed URLs", async () => {
+    process.env.STORAGE_ENDPOINT = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
+    process.env.STORAGE_PUBLIC_BUCKET = "public-fixture";
+    process.env.STORAGE_ACCESS_KEY_ID = "fixture-key";
+    process.env.STORAGE_SECRET_ACCESS_KEY = "fixture-secret";
+
+    const fetch = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetch);
+
+    // Test upload strips any supplied x-amz-acl
+    await storage.upload({
+      key: "assets/image.png",
+      body: Buffer.from("image"),
+      bucket: "public",
+      opts: {
+        headers: {
+          "x-amz-acl": "public-read",
+          "X-Amz-Acl": "public-read",
+        },
+      },
+    });
+
+    const sentRequest = fetch.mock.calls[0][0] as Request;
+    expect(sentRequest.headers.has("x-amz-acl")).toBe(false);
+    expect(sentRequest.headers.has("X-Amz-Acl")).toBe(false);
+
+    // Test getSignedUploadUrl does not include x-amz-acl
+    const signedUploadUrl = await storage.getSignedUploadUrl({
+      key: "assets/upload.png",
+      bucket: "public",
+      contentType: "image/png",
+    });
+    expect(signedUploadUrl).not.toContain("x-amz-acl");
+    expect(signedUploadUrl).not.toContain("public-read");
+
+    // Test getSignedUrl strips any supplied x-amz-acl header
+    const signedUrlWithHeaders = await storage.getSignedUrl({
+      key: "assets/custom.png",
+      method: "PUT",
+      bucket: "public",
+      expiresIn: 300,
+      headers: {
+        "x-amz-acl": "public-read",
+      },
+    });
+    expect(signedUrlWithHeaders).not.toContain("x-amz-acl");
+    expect(signedUrlWithHeaders).not.toContain("public-read");
   });
 });

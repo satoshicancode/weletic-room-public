@@ -43,7 +43,7 @@ it("reports snapshot counts without owner identities or proofs", async () => {
     counts: { total: 3, eligible: 1, suppressed: 1, unknown: 1 },
   });
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
   });
   expect(mocks.raw.mock.calls[0][0].values).toContain("store-a");
 });

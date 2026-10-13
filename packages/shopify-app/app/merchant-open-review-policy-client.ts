@@ -2,7 +2,7 @@ import {
   openReviewPolicyReadResponseSchema,
   openReviewPolicyWriteResponseSchema,
   openReviewPolicyWriteSchema,
-} from "../../../apps/web/lib/weletic/reviews/open-policy-contract";
+} from "@weletic/contracts/reviews/open-policy-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

@@ -65,10 +65,33 @@ export const getBountyWithDetails = async ({
     });
   }
 
+  function safeParseJson<T>(value: unknown, fallback: T): T {
+    if (typeof value === "string") {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return fallback;
+      }
+    }
+    return (value as T) ?? fallback;
+  }
+
   const bounty = bounties[0];
+  const triggerConditions = safeParseJson<any[] | null>(
+    bounty.triggerConditions,
+    null,
+  );
   const performanceCondition =
-    bounty.triggerConditions?.length > 0 ? bounty.triggerConditions[0] : null;
-  const performanceScope = bounty.performanceScope;
+    Array.isArray(triggerConditions) && triggerConditions.length > 0
+      ? triggerConditions[0]
+      : null;
+  const performanceScope = safeParseJson(bounty.performanceScope, null);
+  const submissionRequirements = safeParseJson(
+    bounty.submissionRequirements,
+    null,
+  );
+  const rawGroups = safeParseJson<any[]>(bounty.groups, []);
+  const rawPartnerTags = safeParseJson<any[]>(bounty.partnerTags, []);
 
   return {
     id: bounty.id,
@@ -84,11 +107,15 @@ export const getBountyWithDetails = async ({
     maxSubmissions: bounty.maxSubmissions,
     rewardAmount: bounty.rewardAmount,
     rewardDescription: bounty.rewardDescription,
-    submissionRequirements: bounty.submissionRequirements,
+    submissionRequirements,
     socialMetricsLastSyncedAt: bounty.socialMetricsLastSyncedAt ?? null,
     performanceScope,
     performanceCondition,
-    groups: bounty.groups.filter((group) => group !== null) ?? [],
-    partnerTags: bounty.partnerTags.filter((tag) => tag !== null) ?? [],
+    groups: (Array.isArray(rawGroups) ? rawGroups : []).filter(
+      (group) => group !== null,
+    ),
+    partnerTags: (Array.isArray(rawPartnerTags) ? rawPartnerTags : []).filter(
+      (tag) => tag !== null,
+    ),
   };
 };

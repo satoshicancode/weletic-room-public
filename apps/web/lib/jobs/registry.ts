@@ -3,6 +3,14 @@ import type { JobDefinition } from "./index";
 // Add handlers/{name}-job.ts. Set defineJob({ name: "{name}-job" }).
 // Each entry uses a static import() so webpack code-splits handlers into separate chunks.
 const jobLoaders = {
+  "weletic-shopify-subscription-job": () =>
+    import("./handlers/weletic-shopify-subscription-job").then(
+      (m) => m.weleticShopifySubscriptionJob,
+    ),
+  "weletic-shopify-subscription-sweep-job": () =>
+    import("./handlers/weletic-shopify-subscription-sweep-job").then(
+      (m) => m.weleticShopifySubscriptionSweepJob,
+    ),
   "weletic-shopify-session-renewal-job": () =>
     import("./handlers/weletic-shopify-session-renewal-job").then(
       (m) => m.weleticShopifySessionRenewalJob,

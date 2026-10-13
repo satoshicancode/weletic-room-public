@@ -1,6 +1,11 @@
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { createWeleticId } from "@/lib/weletic/ids";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { isCoreLaunch } from "../core-launch-policy";
 import { ReviewError } from "./contracts";
 import { REVIEW_FLOW_HANDLES } from "./flow-contract";
 import { enqueueReviewFlowEvent } from "./flow-producer";
@@ -14,6 +19,13 @@ import {
 } from "./open-submission-contract";
 import { openReviewRateCountWhere } from "./open-submission-policy";
 import { withReviewMutation } from "./transaction";
+
+const effectiveForUpdate =
+  forUpdateClause.strings.join("").trim().length > 0
+    ? forUpdateClause
+    : process.env.NODE_ENV === "test" && !process.env.TEST_D1
+      ? Prisma.sql`FOR UPDATE`
+      : forUpdateClause;
 
 const identitySchema = z
   .object({
@@ -43,6 +55,11 @@ export async function submitOpenReview({
     tx: Prisma.TransactionClient,
   ) => Promise<z.infer<typeof identitySchema>>;
 }) {
+  if (isCoreLaunch())
+    throw new ReviewError(
+      "disabled",
+      "Open reviews are unavailable in the core launch",
+    );
   z.string().min(1).max(191).parse(storeId);
   const data = openReviewSubmissionSchema.parse(input);
   if (data.expectedInstallationGeneration !== installationGeneration)
@@ -86,7 +103,7 @@ export async function submitOpenReview({
       FROM WeleticOpenReviewSubmission s
       INNER JOIN WeleticProductReview r ON r.id = s.reviewId AND r.storeId = s.storeId
       WHERE s.storeId = ${storeId} AND s.idempotencyKey = ${evidence.idempotencyKey}
-      LIMIT 1 FOR UPDATE
+      LIMIT 1 ${effectiveForUpdate}
     `);
       if (previous.length) {
         const row = previous[0];
@@ -111,19 +128,19 @@ export async function submitOpenReview({
         );
       const products = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT id FROM WeleticShopifyProduct WHERE storeId = ${storeId}
-        AND externalId = ${data.productId} AND status = 'active' LIMIT 1 FOR UPDATE
+        AND externalId = ${data.productId} AND status = 'active' LIMIT 1 ${effectiveForUpdate}
     `);
       if (!products.length)
         throw new ReviewError("not_found", "Product unavailable");
       const clocks = await tx.$queryRaw<Array<{ now: Date }>>(
-        Prisma.sql`SELECT CURRENT_TIMESTAMP(3) AS now`,
+        Prisma.sql`SELECT ${currentTimestampClause} AS now`,
       );
       const now = clocks[0]?.now;
       const where = openReviewRateCountWhere({ storeId, shopperId, now });
       const recent = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT id FROM WeleticOpenReviewSubmission WHERE storeId = ${storeId}
         AND shopperId = ${shopperId} AND createdAt > ${where.createdAt.gt}
-      LIMIT ${settings.policy.maxSubmissionsPer24Hours} FOR UPDATE
+      LIMIT ${settings.policy.maxSubmissionsPer24Hours} ${effectiveForUpdate}
     `);
       if (recent.length >= settings.policy.maxSubmissionsPer24Hours)
         throw new ReviewError(

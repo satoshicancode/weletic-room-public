@@ -20,7 +20,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 const fixtures: string[] = [];
 let verified = false;
 const options = {
-  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   timeout: 15_000,
 };
 beforeAll(async () => {
@@ -113,7 +113,7 @@ async function seed() {
       storeAccessState: "active",
       complianceState: "active",
       installationGeneration: "g1",
-      apiVersion: "2026-07",
+      apiVersion: "2026-10",
     },
   });
   await prisma.weleticLoyaltyProgram.create({

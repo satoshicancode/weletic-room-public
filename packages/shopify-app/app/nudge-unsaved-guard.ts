@@ -1,6 +1,6 @@
 import { useBeforeUnload, useBlocker } from "@remix-run/react";
 import { useCallback, useEffect } from "react";
-import { nudgeCopy } from "../../../apps/web/ui/weletic/loyalty/nudge-copy";
+import { nudgeCopy } from "./ui/loyalty/nudge-copy";
 
 export function useNudgeUnsavedGuard({
   dirty,

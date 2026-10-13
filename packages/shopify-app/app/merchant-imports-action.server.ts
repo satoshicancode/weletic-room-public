@@ -9,8 +9,8 @@ import {
   verifyHistoricalImportPreparationResponse,
   verifyHistoricalImportReconciliationResponse,
   verifyHistoricalImportStatusResponse,
-} from "../../../apps/web/lib/weletic/loyalty/historical-import-contract";
-import { readWeleticShopifyRequestBodyBytes } from "../../../apps/web/lib/weletic/shopify/service-auth";
+} from "@weletic/contracts/loyalty/historical-import-contract";
+import { readWeleticShopifyRequestBodyBytes } from "@weletic/contracts/shopify/service-auth";
 import type { createMerchantAuthenticator } from "./merchant-authentication.server";
 import { weleticApiJson, WeleticGatewayError } from "./weletic-api.server";
 

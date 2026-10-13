@@ -37,7 +37,7 @@ export const sqlGranularityMap: Record<
     formatString: "yyyy-MM-dd HH:00",
   },
   minute: {
-    dateFormat: "%Y-%m-%d %H:%i",
+    dateFormat: "%Y-%m-%d %H:%M",
     dateIncrement: (dt) => addMinutes(dt, 1),
     startFunction: (dt) => startOfMinute(dt),
     formatString: "yyyy-MM-dd HH:mm",

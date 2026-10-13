@@ -9,7 +9,10 @@ import { NextResponse } from "next/server";
 // POST /api/admin/partners/delete-account
 export const POST = withAdmin(
   async ({ req }) => {
-    const { email, deletePartnerAccount } = await req.json();
+    const { email, deletePartnerAccount } = (await req.json()) as {
+      email: string;
+      deletePartnerAccount?: boolean;
+    };
 
     const partner = await prisma.partner.findUnique({
       where: {

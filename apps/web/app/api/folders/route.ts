@@ -105,7 +105,7 @@ export const POST = withWorkspace(
           return newFolder;
         },
         {
-          isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
           maxWait: 5000,
           timeout: 5000,
         },

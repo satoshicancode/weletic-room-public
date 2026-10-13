@@ -118,7 +118,7 @@ function expectedDomain(body: DomainCreateBody) {
       ? JSON.parse(body.appleAppSiteAssociation)
       : null,
     assetLinks: body.assetLinks ? JSON.parse(body.assetLinks) : null,
-    deepviewData: body.deepviewData ? JSON.parse(body.deepviewData) : {},
+    deepviewData: body.deepviewData ? JSON.parse(body.deepviewData) : null,
   };
 }
 

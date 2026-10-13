@@ -1,0 +1,617 @@
+[
+  {
+    "model": "ProgramApplication",
+    "field": "rejectionReason",
+    "enumName": "ProgramApplicationRejectionReason"
+  },
+  {
+    "model": "Bounty",
+    "field": "type",
+    "enumName": "BountyType"
+  },
+  {
+    "model": "Bounty",
+    "field": "startMode",
+    "enumName": "BountyStartMode"
+  },
+  {
+    "model": "Bounty",
+    "field": "submissionFrequency",
+    "enumName": "BountySubmissionFrequency"
+  },
+  {
+    "model": "Bounty",
+    "field": "performanceScope",
+    "enumName": "BountyPerformanceScope"
+  },
+  {
+    "model": "BountySubmission",
+    "field": "status",
+    "enumName": "BountySubmissionStatus"
+  },
+  {
+    "model": "BountySubmission",
+    "field": "rejectionReason",
+    "enumName": "BountySubmissionRejectionReason"
+  },
+  {
+    "model": "Campaign",
+    "field": "type",
+    "enumName": "CampaignType"
+  },
+  {
+    "model": "Campaign",
+    "field": "status",
+    "enumName": "CampaignStatus"
+  },
+  {
+    "model": "Commission",
+    "field": "type",
+    "enumName": "CommissionType"
+  },
+  {
+    "model": "Commission",
+    "field": "status",
+    "enumName": "CommissionStatus"
+  },
+  {
+    "model": "Discount",
+    "field": "type",
+    "enumName": "RewardStructure"
+  },
+  {
+    "model": "Discount",
+    "field": "provider",
+    "enumName": "DiscountProvider"
+  },
+  {
+    "model": "EmailDomain",
+    "field": "status",
+    "enumName": "EmailDomainStatus"
+  },
+  {
+    "model": "Folder",
+    "field": "type",
+    "enumName": "FolderType"
+  },
+  {
+    "model": "Folder",
+    "field": "accessLevel",
+    "enumName": "FolderAccessLevel"
+  },
+  {
+    "model": "FolderUser",
+    "field": "role",
+    "enumName": "FolderUserRole"
+  },
+  {
+    "model": "FraudRule",
+    "field": "type",
+    "enumName": "FraudRuleType"
+  },
+  {
+    "model": "FraudEventGroup",
+    "field": "type",
+    "enumName": "FraudRuleType"
+  },
+  {
+    "model": "FraudEventGroup",
+    "field": "status",
+    "enumName": "FraudEventStatus"
+  },
+  {
+    "model": "FraudAlert",
+    "field": "status",
+    "enumName": "FraudAlertStatus"
+  },
+  {
+    "model": "PartnerGroup",
+    "field": "linkStructure",
+    "enumName": "PartnerLinkStructure"
+  },
+  {
+    "model": "Invoice",
+    "field": "status",
+    "enumName": "InvoiceStatus"
+  },
+  {
+    "model": "Invoice",
+    "field": "type",
+    "enumName": "InvoiceType"
+  },
+  {
+    "model": "Invoice",
+    "field": "payoutMode",
+    "enumName": "ProgramPayoutMode"
+  },
+  {
+    "model": "Invoice",
+    "field": "paymentMethod",
+    "enumName": "PaymentMethod"
+  },
+  {
+    "model": "SubmittedLead",
+    "field": "status",
+    "enumName": "SubmittedLeadStatus"
+  },
+  {
+    "model": "Message",
+    "field": "type",
+    "enumName": "MessageType"
+  },
+  {
+    "model": "ProgramCategory",
+    "field": "category",
+    "enumName": "Category"
+  },
+  {
+    "model": "NotificationEmail",
+    "field": "type",
+    "enumName": "NotificationEmailType"
+  },
+  {
+    "model": "Partner",
+    "field": "profileType",
+    "enumName": "PartnerProfileType"
+  },
+  {
+    "model": "Partner",
+    "field": "networkStatus",
+    "enumName": "PartnerNetworkStatus"
+  },
+  {
+    "model": "Partner",
+    "field": "identityVerificationStatus",
+    "enumName": "IdentityVerificationStatus"
+  },
+  {
+    "model": "Partner",
+    "field": "defaultPayoutMethod",
+    "enumName": "PartnerPayoutMethod"
+  },
+  {
+    "model": "Partner",
+    "field": "monthlyTraffic",
+    "enumName": "MonthlyTraffic"
+  },
+  {
+    "model": "PartnerInvite",
+    "field": "role",
+    "enumName": "PartnerRole"
+  },
+  {
+    "model": "PartnerUser",
+    "field": "role",
+    "enumName": "PartnerRole"
+  },
+  {
+    "model": "PartnerIndustryInterest",
+    "field": "industryInterest",
+    "enumName": "IndustryInterest"
+  },
+  {
+    "model": "PartnerPreferredEarningStructure",
+    "field": "preferredEarningStructure",
+    "enumName": "PreferredEarningStructure"
+  },
+  {
+    "model": "PartnerSalesChannel",
+    "field": "salesChannel",
+    "enumName": "SalesChannel"
+  },
+  {
+    "model": "Payout",
+    "field": "status",
+    "enumName": "PayoutStatus"
+  },
+  {
+    "model": "Payout",
+    "field": "mode",
+    "enumName": "PayoutMode"
+  },
+  {
+    "model": "Payout",
+    "field": "method",
+    "enumName": "PartnerPayoutMethod"
+  },
+  {
+    "model": "PartnerPlatform",
+    "field": "type",
+    "enumName": "PlatformType"
+  },
+  {
+    "model": "Postback",
+    "field": "receiver",
+    "enumName": "PostbackReceiver"
+  },
+  {
+    "model": "Program",
+    "field": "primaryRewardEvent",
+    "enumName": "EventType"
+  },
+  {
+    "model": "Program",
+    "field": "payoutMode",
+    "enumName": "ProgramPayoutMode"
+  },
+  {
+    "model": "ProgramEnrollment",
+    "field": "status",
+    "enumName": "ProgramEnrollmentStatus"
+  },
+  {
+    "model": "ProgramEnrollment",
+    "field": "bannedReason",
+    "enumName": "PartnerBannedReason"
+  },
+  {
+    "model": "ProgramEnrollment",
+    "field": "reapplicationTimeframe",
+    "enumName": "ReapplicationTimeframe"
+  },
+  {
+    "model": "Reward",
+    "field": "event",
+    "enumName": "EventType"
+  },
+  {
+    "model": "Reward",
+    "field": "type",
+    "enumName": "RewardStructure"
+  },
+  {
+    "model": "Reward",
+    "field": "spendLimitInterval",
+    "enumName": "RewardSpendLimitInterval"
+  },
+  {
+    "model": "Webhook",
+    "field": "receiver",
+    "enumName": "WebhookReceiver"
+  },
+  {
+    "model": "Webhook",
+    "field": "linkScope",
+    "enumName": "LinkScope"
+  },
+  {
+    "model": "WeleticShopifyStore",
+    "field": "storeAccessState",
+    "enumName": "WeleticShopifyStoreAccessState"
+  },
+  {
+    "model": "WeleticShopifyStore",
+    "field": "syncStatus",
+    "enumName": "WeleticSyncStatus"
+  },
+  {
+    "model": "WeleticShopifyStore",
+    "field": "complianceState",
+    "enumName": "WeleticShopifyStoreComplianceState"
+  },
+  {
+    "model": "WeleticShopifyStoreAccessChange",
+    "field": "previousState",
+    "enumName": "WeleticShopifyStoreAccessState"
+  },
+  {
+    "model": "WeleticShopifyStoreAccessChange",
+    "field": "nextState",
+    "enumName": "WeleticShopifyStoreAccessState"
+  },
+  {
+    "model": "WeleticShopifyPendingInstallation",
+    "field": "state",
+    "enumName": "WeleticShopifyPendingInstallationState"
+  },
+  {
+    "model": "WeleticShopifyProduct",
+    "field": "status",
+    "enumName": "WeleticProductStatus"
+  },
+  {
+    "model": "WeleticShopifySyncRun",
+    "field": "status",
+    "enumName": "WeleticSyncStatus"
+  },
+  {
+    "model": "WeleticShopifyWebhookEvent",
+    "field": "status",
+    "enumName": "WeleticWebhookStatus"
+  },
+  {
+    "model": "WeleticCommerceOrder",
+    "field": "customerClassification",
+    "enumName": "WeleticCustomerClassification"
+  },
+  {
+    "model": "WeleticCommerceOrder",
+    "field": "status",
+    "enumName": "WeleticOrderStatus"
+  },
+  {
+    "model": "WeleticCommissionRule",
+    "field": "scope",
+    "enumName": "WeleticCommissionScope"
+  },
+  {
+    "model": "WeleticCommissionRule",
+    "field": "ruleType",
+    "enumName": "WeleticCommissionRuleType"
+  },
+  {
+    "model": "WeleticCommissionRule",
+    "field": "fixedAmountMode",
+    "enumName": "WeleticFixedAmountMode"
+  },
+  {
+    "model": "WeleticCommissionCalculation",
+    "field": "entryType",
+    "enumName": "WeleticLedgerEntryType"
+  },
+  {
+    "model": "WeleticPayoutProfile",
+    "field": "status",
+    "enumName": "WeleticPayoutProfileStatus"
+  },
+  {
+    "model": "WeleticReconciliationIssue",
+    "field": "status",
+    "enumName": "WeleticReconciliationStatus"
+  },
+  {
+    "model": "WeleticShopifyComplianceRequest",
+    "field": "requestType",
+    "enumName": "WeleticComplianceRequestType"
+  },
+  {
+    "model": "WeleticShopifyComplianceRequest",
+    "field": "status",
+    "enumName": "WeleticComplianceRequestStatus"
+  },
+  {
+    "model": "WeleticShopifyComplianceRequest",
+    "field": "subjectKind",
+    "enumName": "WeleticCustomerPrivacyIdentityKind"
+  },
+  {
+    "model": "WeleticShopifyComplianceRequest",
+    "field": "identityKind",
+    "enumName": "WeleticCustomerPrivacyIdentityKind"
+  },
+  {
+    "model": "WeleticShopifyVoucherCleanup",
+    "field": "source",
+    "enumName": "WeleticVoucherCleanupSource"
+  },
+  {
+    "model": "WeleticShopifyVoucherCleanup",
+    "field": "status",
+    "enumName": "WeleticVoucherCleanupStatus"
+  },
+  {
+    "model": "WeleticLoyaltyProgram",
+    "field": "status",
+    "enumName": "WeleticLoyaltyStatus"
+  },
+  {
+    "model": "WeleticLoyaltyProgram",
+    "field": "vipMilestoneMode",
+    "enumName": "WeleticVipMilestoneMode"
+  },
+  {
+    "model": "WeleticLoyaltyProgram",
+    "field": "vipTimeframe",
+    "enumName": "WeleticVipTimeframe"
+  },
+  {
+    "model": "WeleticLoyaltyEarningRule",
+    "field": "ruleType",
+    "enumName": "WeleticEarningRuleType"
+  },
+  {
+    "model": "WeleticLoyaltyTierHistory",
+    "field": "changeReason",
+    "enumName": "WeleticLoyaltyTierChangeReason"
+  },
+  {
+    "model": "WeleticLoyaltyAccount",
+    "field": "status",
+    "enumName": "WeleticLoyaltyAccountStatus"
+  },
+  {
+    "model": "WeleticLoyaltyEarnGrant",
+    "field": "status",
+    "enumName": "WeleticLoyaltyEarnGrantStatus"
+  },
+  {
+    "model": "WeleticPointsLedgerEntry",
+    "field": "entryType",
+    "enumName": "WeleticPointsLedgerEntryType"
+  },
+  {
+    "model": "WeleticRewardDefinition",
+    "field": "rewardType",
+    "enumName": "WeleticRewardType"
+  },
+  {
+    "model": "WeleticRewardDefinition",
+    "field": "salesChannel",
+    "enumName": "WeleticRewardSalesChannel"
+  },
+  {
+    "model": "WeleticRewardDefinition",
+    "field": "exchangeType",
+    "enumName": "WeleticRewardExchangeType"
+  },
+  {
+    "model": "WeleticRewardDefinition",
+    "field": "status",
+    "enumName": "WeleticRewardStatus"
+  },
+  {
+    "model": "WeleticRewardRedemption",
+    "field": "artifactKind",
+    "enumName": "WeleticRewardArtifactKind"
+  },
+  {
+    "model": "WeleticRewardRedemption",
+    "field": "status",
+    "enumName": "WeleticRedemptionStatus"
+  },
+  {
+    "model": "WeleticLoyaltyReferralRule",
+    "field": "advocateRewardKind",
+    "enumName": "WeleticReferralRewardKind"
+  },
+  {
+    "model": "WeleticLoyaltyReferralRule",
+    "field": "refereeRewardKind",
+    "enumName": "WeleticReferralRewardKind"
+  },
+  {
+    "model": "WeleticLoyaltyReferral",
+    "field": "status",
+    "enumName": "WeleticLoyaltyReferralStatus"
+  },
+  {
+    "model": "WeleticLoyaltyBackfillJob",
+    "field": "status",
+    "enumName": "WeleticLoyaltyBackfillJobStatus"
+  },
+  {
+    "model": "WeleticLoyaltyBackfillOrderSnapshot",
+    "field": "orderStatus",
+    "enumName": "WeleticOrderStatus"
+  },
+  {
+    "model": "WeleticLoyaltyBackfillOrderCredit",
+    "field": "status",
+    "enumName": "WeleticLoyaltyBackfillCreditStatus"
+  },
+  {
+    "model": "WeleticLoyaltyImportSource",
+    "field": "status",
+    "enumName": "WeleticLoyaltyImportStatus"
+  },
+  {
+    "model": "WeleticLoyaltyImportRowExecution",
+    "field": "status",
+    "enumName": "WeleticLoyaltyImportRowStatus"
+  },
+  {
+    "model": "WeleticLoyaltyOutboxJob",
+    "field": "jobType",
+    "enumName": "WeleticLoyaltyOutboxJobType"
+  },
+  {
+    "model": "WeleticLoyaltyOutboxJob",
+    "field": "status",
+    "enumName": "WeleticLoyaltyOutboxJobStatus"
+  },
+  {
+    "model": "WeleticReviewPrivacyBackfillAudit",
+    "field": "state",
+    "enumName": "WeleticReviewOwnerPrivacyState"
+  },
+  {
+    "model": "WeleticReviewOwnerPrivacyIdentity",
+    "field": "identityKind",
+    "enumName": "WeleticCustomerPrivacyIdentityKind"
+  },
+  {
+    "model": "WeleticReviewRequest",
+    "field": "status",
+    "enumName": "WeleticReviewRequestStatus"
+  },
+  {
+    "model": "WeleticProductReview",
+    "field": "status",
+    "enumName": "WeleticProductReviewStatus"
+  },
+  {
+    "model": "WeleticProductReview",
+    "field": "rewardStatus",
+    "enumName": "WeleticReviewRewardStatus"
+  },
+  {
+    "model": "WeleticReviewModerationAudit",
+    "field": "fromStatus",
+    "enumName": "WeleticProductReviewStatus"
+  },
+  {
+    "model": "WeleticReviewModerationAudit",
+    "field": "toStatus",
+    "enumName": "WeleticProductReviewStatus"
+  },
+  {
+    "model": "WeleticReviewMedia",
+    "field": "status",
+    "enumName": "WeleticReviewMediaStatus"
+  },
+  {
+    "model": "WeleticShopperDeliveryReservation",
+    "field": "state",
+    "enumName": "WeleticShopperDeliveryState"
+  },
+  {
+    "model": "WeleticShopperDeliveryIdentity",
+    "field": "identityKind",
+    "enumName": "WeleticCustomerPrivacyIdentityKind"
+  },
+  {
+    "model": "WeleticStoreReviewRequest",
+    "field": "status",
+    "enumName": "WeleticReviewRequestStatus"
+  },
+  {
+    "model": "WeleticStoreReview",
+    "field": "source",
+    "enumName": "WeleticStoreReviewSource"
+  },
+  {
+    "model": "WeleticStoreReview",
+    "field": "status",
+    "enumName": "WeleticStoreReviewStatus"
+  },
+  {
+    "model": "WeleticStoreReview",
+    "field": "rewardStatus",
+    "enumName": "WeleticReviewRewardStatus"
+  },
+  {
+    "model": "WeleticStoreReviewModerationAudit",
+    "field": "fromStatus",
+    "enumName": "WeleticStoreReviewStatus"
+  },
+  {
+    "model": "WeleticStoreReviewModerationAudit",
+    "field": "toStatus",
+    "enumName": "WeleticStoreReviewStatus"
+  },
+  {
+    "model": "Workflow",
+    "field": "trigger",
+    "enumName": "WorkflowTrigger"
+  },
+  {
+    "model": "Project",
+    "field": "defaultProduct",
+    "enumName": "DubProduct"
+  },
+  {
+    "model": "Project",
+    "field": "planPeriod",
+    "enumName": "PlanPeriod"
+  },
+  {
+    "model": "ProjectInvite",
+    "field": "role",
+    "enumName": "WorkspaceRole"
+  },
+  {
+    "model": "ProjectUsers",
+    "field": "role",
+    "enumName": "WorkspaceRole"
+  }
+]

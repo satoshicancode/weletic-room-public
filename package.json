@@ -13,7 +13,6 @@
     "clean": "turbo clean",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "prettier-check": "prettier --check \"**/*.{ts,tsx,md}\"",
-    "publish-cli": "turbo build --filter='@dub/cli' && cd packages/cli && npm publish && cd ../../",
     "publish-embed-core": "turbo build --filter='@dub/embed-core' && cd packages/embeds/core && npm publish && cd ../../../",
     "publish-embed-react": "turbo build --filter='@dub/embed-react' && cd packages/embeds/react && npm publish && cd ../../../",
     "publish-tw": "turbo build --filter='@dub/tailwind-config' && cd packages/tailwind-config && npm publish && cd ../../",
@@ -22,6 +21,8 @@
     "script": "echo 'Run this script in apps/web'",
     "test": "turbo run test",
     "test:unit": "turbo run test",
+    "test:pkg01": "node scripts/verify-pkg01.mjs",
+    "test:milestone1": "node scripts/verify-milestone1.mjs",
     "test:integration": "pnpm --filter web test:integration",
     "test:performance": "pnpm --filter web test:performance",
     "test:webhook": "pnpm --filter web test:webhook",
@@ -49,8 +50,12 @@
     "tsconfig": "workspace:*",
     "turbo": "^1.12.5"
   },
-  "resolutions": {
-    "chrono-node": "2.7.5"
+  "pnpm": {
+    "overrides": {
+      "chrono-node": "2.7.5",
+      "@types/react": "19.1.14",
+      "@types/react-dom": "19.1.9"
+    }
   },
   "packageManager": "pnpm@9.15.9"
 }

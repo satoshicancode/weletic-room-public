@@ -5,6 +5,11 @@ import {
   redisGlobal,
   redisGlobalWithTimeout,
 } from "@/lib/upstash";
+import {
+  evictLinkFromKv,
+  evictLinksBatchFromKv,
+  tombstoneLinkInKv,
+} from "@/lib/weletic/link-kv-cache";
 import { getCache, waitUntil } from "@vercel/functions";
 import { LRUCache } from "lru-cache";
 import { revalidateTag } from "next/cache";
@@ -44,6 +49,12 @@ class LinkCache {
       revalidateTag(`static:${link.domain.toLowerCase()}:${link.key}`);
     });
 
+    waitUntil(
+      evictLinksBatchFromKv(
+        links.map((link) => ({ domain: link.domain, key: link.key })),
+      ),
+    );
+
     return await pipeline.exec();
   }
 
@@ -65,6 +76,13 @@ class LinkCache {
         ex: REDIS_CACHE_EXPIRATION,
       }),
       this._invalidateVercelRuntimeCache(cacheKey),
+      link.disabledAt
+        ? tombstoneLinkInKv({
+            domain: link.domain,
+            key: link.key,
+            disabledAt: link.disabledAt,
+          })
+        : evictLinkFromKv({ domain: link.domain, key: link.key }),
     ]);
   }
 
@@ -135,6 +153,7 @@ class LinkCache {
   async delete({ domain, key }: Pick<LinkProps, "domain" | "key">) {
     const cacheKey = this._createKey({ domain, key });
     waitUntil(this._invalidateVercelRuntimeCache(cacheKey));
+    waitUntil(evictLinkFromKv({ domain, key }));
     return await redisGlobal.del(cacheKey);
   }
 
@@ -149,6 +168,7 @@ class LinkCache {
       pipeline.del(this._createKey({ domain, key }));
     });
 
+    waitUntil(evictLinksBatchFromKv(links));
     return await pipeline.exec();
   }
 
@@ -180,6 +200,7 @@ class LinkCache {
       revalidateTag(`static:${link.domain.toLowerCase()}`);
     }
 
+    runtimeInvalidations.push(evictLinksBatchFromKv(links));
     await Promise.all([pipeline.exec(), ...runtimeInvalidations]);
   }
 

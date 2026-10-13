@@ -197,6 +197,8 @@ async function ordersPaidUnlocked({
     customer: orderCustomer,
     checkout_token: checkoutToken,
     discount_codes: discountCodes,
+    created_at: createdAt,
+    processed_at: processedAt,
   } = orderSchema.parse(event);
 
   // Stage 2: Optional affiliate attribution dispatch
@@ -228,7 +230,7 @@ async function ordersPaidUnlocked({
 
   // Check if the order was created using a program discount code
   if (discountCodes && discountCodes.length > 0 && workspace.defaultProgramId) {
-    const programDiscountCodes = await prisma.discountCode.findMany({
+    const rawProgramDiscountCodes = await prisma.discountCode.findMany({
       where: {
         programId: workspace.defaultProgramId,
         code: {
@@ -243,16 +245,60 @@ async function ordersPaidUnlocked({
       },
     });
 
-    if (programDiscountCodes.length > 0) {
-      let link = programDiscountCodes[0].link;
+    const orderCreatedAtRaw = createdAt ?? processedAt;
+    const orderCreatedAt = orderCreatedAtRaw
+      ? new Date(orderCreatedAtRaw)
+      : null;
+    const isOrderCreatedAtValid =
+      orderCreatedAt !== null && !isNaN(orderCreatedAt.getTime());
+
+    const isTemporarilyValid = (
+      disabledAt: Date | string | null | undefined,
+    ) => {
+      // 1. If code is active (no disable timestamp), it is always valid.
+      if (!disabledAt) {
+        return true;
+      }
+
+      // 2. Parse disabled timestamp; fail closed if corrupted
+      const disabledDate =
+        disabledAt instanceof Date ? disabledAt : new Date(disabledAt);
+      if (isNaN(disabledDate.getTime())) {
+        return false;
+      }
+
+      // 3. For a disabled code, order MUST possess a verified valid timestamp (FIN-AUDIT-11)
+      if (!isOrderCreatedAtValid || !orderCreatedAt) {
+        return false;
+      }
+
+      // 4. Valid if and only if order checkout was at or before code disablement
+      return orderCreatedAt.getTime() <= disabledDate.getTime();
+    };
+
+    const programDiscountCodes = rawProgramDiscountCodes.filter((code) =>
+      isTemporarilyValid(code.disabledAt),
+    );
+
+    for (const discountCode of programDiscountCodes) {
+      let link = discountCode.link;
+      if (link && !isTemporarilyValid(link.disabledAt)) {
+        link = null;
+      }
+
       if (!link) {
         link = await prisma.link.findFirst({
           where: {
             programId: workspace.defaultProgramId,
-            partnerId: programDiscountCodes[0].partnerId,
+            partnerId: discountCode.partnerId,
+            disabledAt: null,
           },
           orderBy: { createdAt: "asc" },
         });
+
+        if (link && !isTemporarilyValid(link.disabledAt)) {
+          link = null;
+        }
       }
 
       if (link) {

@@ -13,6 +13,39 @@ interface CreateDiscountCodeArgs {
   code?: string;
 }
 
+export const DISCOUNT_CODE_OWNED_BY_OTHER_PARTNER_MESSAGE = (code: string) =>
+  `The discount code "${code}" was previously used by another partner and can't be reassigned. Please choose a different code.`;
+
+const MAX_AUTO_CODE_SUFFIX_ATTEMPTS = 50;
+
+// A code as typed and uppercased (providers store codes uppercased).
+function codeVariants(code: string) {
+  return Array.from(new Set([code, code.toUpperCase()]));
+}
+
+// Finds a code that is not taken (active or disabled) in the program, by
+// appending a numeric suffix to the base code.
+async function findFreeSuffixedCode(programId: string, baseCode: string) {
+  for (let n = 2; n < 2 + MAX_AUTO_CODE_SUFFIX_ATTEMPTS; n++) {
+    const candidate = `${baseCode}${n}`;
+    let taken: { id: string } | null = null;
+    for (const variant of codeVariants(candidate)) {
+      taken = await prisma.discountCode.findFirst({
+        where: { programId, code: variant },
+        select: { id: true },
+      });
+      if (taken) break;
+    }
+    if (!taken) return candidate;
+  }
+
+  throw new DubApiError({
+    code: "conflict",
+    message:
+      "Unable to generate a unique discount code for this partner. Please specify a custom code.",
+  });
+}
+
 export async function createDiscountCode({
   workspace,
   partner,
@@ -20,7 +53,7 @@ export async function createDiscountCode({
   discount,
   code,
 }: CreateDiscountCodeArgs) {
-  const finalCode =
+  let finalCode =
     code ||
     constructDiscountCode({
       partner,
@@ -42,14 +75,37 @@ export async function createDiscountCode({
     });
   }
 
-  // Check if a disabled code with (programId, finalCode) exists to auto-reactivate
-  const existingDisabledCode = await prisma.discountCode.findFirst({
-    where: {
-      programId: discount.programId,
-      code: finalCode,
-      disabledAt: { not: null },
-    },
-  });
+  // Check if a disabled code with (programId, finalCode) exists to auto-reactivate.
+  // Providers store codes uppercased, so also match the uppercased code.
+  let existingDisabledCode = null as Awaited<
+    ReturnType<typeof prisma.discountCode.findFirst>
+  >;
+  for (const candidate of codeVariants(finalCode)) {
+    existingDisabledCode = await prisma.discountCode.findFirst({
+      where: {
+        programId: discount.programId,
+        code: candidate,
+        disabledAt: { not: null },
+      },
+    });
+    if (existingDisabledCode) break;
+  }
+
+  // A disabled code always keeps its original partner (attribution and
+  // commission history must not move). Only the same partner may reactivate it.
+  if (existingDisabledCode && existingDisabledCode.partnerId !== partner.id) {
+    if (code) {
+      throw new DubApiError({
+        code: "conflict",
+        message: DISCOUNT_CODE_OWNED_BY_OTHER_PARTNER_MESSAGE(finalCode),
+      });
+    }
+
+    // Auto-generated code collided with another partner's disabled code:
+    // fall back to a fresh, suffixed code for this partner.
+    finalCode = await findFreeSuffixedCode(discount.programId, finalCode);
+    existingDisabledCode = null;
+  }
 
   const discountProvider = getDiscountProvider(discount.provider);
 
@@ -81,7 +137,6 @@ export async function createDiscountCode({
       },
       data: {
         disabledAt: null,
-        partnerId: partner.id,
         linkId: link.id,
         discountId: discount.id,
         updatedAt: new Date(),

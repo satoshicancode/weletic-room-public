@@ -28,6 +28,10 @@ const m = vi.hoisted(() => ({
   seal: vi.fn(),
   transport: vi.fn(),
   provider: { resend: {} as unknown },
+  proxyPath: vi.fn(),
+}));
+vi.mock("@/lib/weletic/shopify/app-proxy-route", () => ({
+  readReviewInvitationPath: m.proxyPath,
 }));
 vi.mock(
   "@/lib/weletic/merchant-settings/delivery-reservations",
@@ -152,6 +156,7 @@ beforeEach(() => {
     transportIdentity: "provider-identity",
   });
   m.seal.mockReturnValue("cipher-content");
+  m.proxyPath.mockResolvedValue("/apps/weletic-1");
   m.open.mockReturnValue({
     content,
     retryUntil: new Date(Date.now() + 3600000),
@@ -169,6 +174,10 @@ it("holds the customer lock through preparation, dispatch and exact receipt; era
     }),
   );
   expect(m.mutation.mock.calls.every((call) => call[2] === "g1")).toBe(true);
+  expect(m.proxyPath).toHaveBeenCalledExactlyOnceWith(tx, "store", "g1");
+  expect(m.prepare.mock.calls[0]?.[0].url).toMatch(
+    /^https:\/\/test\.myshopify\.com\/apps\/weletic-1\/reviews\/write\?locale=en#token=/,
+  );
   expect(m.purchase).toHaveBeenCalledWith(
     expect.objectContaining({ id: "request", status: "sent" }),
     "g1",
@@ -276,6 +285,7 @@ it("reuses saved bytes and provider identity after an ambiguous Resend attempt",
     }),
   );
   expect(m.prepare).not.toHaveBeenCalled();
+  expect(m.proxyPath).not.toHaveBeenCalled();
   expect(m.seal).not.toHaveBeenCalled();
 });
 it.each([{ attempts: 1 }, { attempts: 5, encryptedDeliverySnapshot: "old" }])(

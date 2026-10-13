@@ -222,21 +222,25 @@ describe("Shopify merchant shopper authorization adapter", () => {
   });
 });
 
+let requestCounter = 0;
 function signed(value: unknown, operation = "list", signedBody?: string) {
   const body = JSON.stringify(value);
   const path = `/api/internal/shopify/merchant/customers/${operation}`;
   const timestamp = String(Date.now());
+  const requestId = `req_shoppers_${Date.now()}_${++requestCounter}`;
   return new Request(`https://fixture.invalid${path}`, {
     method: "POST",
     body,
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "POST",
         path,
         body: signedBody ?? body,
         secret: process.env.WELETIC_SHOPIFY_SERVICE_SECRET!,
+        requestId,
       }),
     },
   });

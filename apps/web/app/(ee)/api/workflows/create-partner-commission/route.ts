@@ -654,7 +654,8 @@ async function stepRunSideEffects(
 
   const webhookPartner = constructWebhookPartner(programEnrollment, {
     totalCommissions:
-      toCentsNumber(programEnrollment.totalCommissions) + commission.earnings,
+      toCentsNumber(programEnrollment.totalCommissions) +
+      Number(commission.earnings),
   });
 
   const results = await Promise.allSettled([
@@ -700,7 +701,7 @@ async function stepRunSideEffects(
         },
         metrics: {
           current: {
-            commissions: commission.earnings,
+            commissions: Number(commission.earnings),
           },
         },
       }),
@@ -786,6 +787,6 @@ async function clampEarningsToSpendLimit({
 
   return Math.max(
     0,
-    Math.min(earnings, reward.spendLimitAmount - (totalEarnings ?? 0)),
+    Math.min(earnings, reward.spendLimitAmount - Number(totalEarnings ?? 0)),
   );
 }

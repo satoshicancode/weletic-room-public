@@ -6,6 +6,7 @@ import {
   enqueueOutboxJobFromProgramTransaction,
 } from "@/lib/weletic/loyalty/outbox";
 import type { Prisma } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
 
 export type TierReviewSweepResult = {
   programsScanned: number;
@@ -30,6 +31,7 @@ export async function scheduleTierReviewAfterQualifyingActivity({
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
   tx: Prisma.TransactionClient;
 }) {
+  if (isCoreLaunch()) return null;
   return enqueueOutboxJob({
     storeId,
     jobType: "TIER_REVIEW",
@@ -60,20 +62,32 @@ export async function enqueueTierReviewSweepJobs({
     programFailures: [],
   };
 
-  const programs = await prisma.weleticLoyaltyProgram.findMany({
-    where: {
-      status: "active",
-      killSwitchActive: false,
-      vipAutoDowngradeEnabled: true,
-      tiers: { some: {} },
-      store: { complianceState: "active" },
-    },
-    select: {
-      storeId: true,
-      vipTimeframe: true,
-    },
-    orderBy: { storeId: "asc" },
-  });
+  let programs: Array<{ storeId: string; vipTimeframe: string | null }> = [];
+  try {
+    if (!prisma.weleticLoyaltyProgram?.findMany) {
+      return result;
+    }
+    programs = await prisma.weleticLoyaltyProgram.findMany({
+      where: {
+        status: "active",
+        killSwitchActive: false,
+        vipAutoDowngradeEnabled: true,
+        tiers: { some: {} },
+        store: { complianceState: "active" },
+      },
+      select: {
+        storeId: true,
+        vipTimeframe: true,
+      },
+      orderBy: { storeId: "asc" },
+    });
+  } catch (err) {
+    console.warn(
+      "[TierReviewSweep] Failed to query active loyalty programs:",
+      err,
+    );
+    return result;
+  }
 
   let remaining = effectiveBatchSize;
   for (const program of programs) {

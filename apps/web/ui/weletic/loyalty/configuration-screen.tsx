@@ -268,13 +268,24 @@ function ConfigurationEditor({
   const [message, setMessage] = React.useState<"invalid" | "unchanged" | null>(
     null,
   );
+  const coreLaunch = data.capabilities.coreLaunch === true;
+  const visibleGroups = coreLaunch
+    ? groups
+        .filter((group) => group.key !== "vip")
+        .map((group) => ({
+          ...group,
+          fields: group.fields.filter(
+            (field) => !field.key.startsWith("pointsExpiry"),
+          ),
+        }))
+    : groups;
   const writable = data.capabilities.configure && !busy;
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!writable) return;
     const form = new FormData(event.currentTarget);
     const patch: Record<string, unknown> = {};
-    for (const group of groups) {
+    for (const group of visibleGroups) {
       if (group.owner && !data.capabilities.owner) continue;
       if (group.key === "lifecycle" && !data.program) continue;
       for (const field of group.fields) {
@@ -331,7 +342,7 @@ function ConfigurationEditor({
       {!data.capabilities.configure && <p>{text.readOnly}</p>}
       {!data.capabilities.owner && <p>{text.ownerOnly}</p>}
       {message && <p role="alert">{text[message]}</p>}
-      {groups.map((group) => (
+      {visibleGroups.map((group) => (
         <fieldset
           key={group.key}
           disabled={
@@ -341,7 +352,11 @@ function ConfigurationEditor({
           }
           className="min-w-0 space-y-4 rounded-lg border border-neutral-200 p-4"
         >
-          <legend className="px-1 font-semibold">{text[group.key]}</legend>
+          <legend className="px-1 font-semibold">
+            {coreLaunch && group.key === "general"
+              ? text.coreGeneral
+              : text[group.key]}
+          </legend>
           {group.key === "finance" && (
             <>
               <p className="text-sm">
@@ -350,7 +365,7 @@ function ConfigurationEditor({
               <p className="text-sm">{text.valuationHelp}</p>
             </>
           )}
-          {group.key === "general" && (
+          {group.key === "general" && !coreLaunch && (
             <p className="text-sm">{text.expiryHelp}</p>
           )}
           {group.key === "lifecycle" && (

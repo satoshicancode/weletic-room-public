@@ -1,11 +1,25 @@
-# Separate acceptance and production budget models — September 24, 2026
+# Separate acceptance and production budget models — September 25, 2026
 
-Status: **planning models, not complete quotes or spending approval**. These
-models separate the first Loyalty release from the later Reviews increment. No
-resource was created or upgraded. The [resource inventory](release-resource-inventory-2026-09-20.md)
-remains the account and compatibility gate.
+Status: **historical planning models, not current quotes or spending approval**.
+The September 26 scope reset combines core loyalty and verified text/photo
+reviews in the first release. Video and historical imports are deferred; no
+video-processing capacity belongs in the launch proposal. No resource was
+created or upgraded.
 
-## Read-only evidence and rate inputs
+The [approved core checklist](https://github.com/satoshicancode/weletic-room-public/blob/3a6ef735b55b8984f061dbf04bf22e04b70c80fa/docs/loyalty/core-launch-checklist.md)
+and [consolidated resource proposal](https://github.com/satoshicancode/weletic-room-public/blob/3a6ef735b55b8984f061dbf04bf22e04b70c80fa/docs/loyalty/core-launch-execution-packets.md)
+in draft PR #176 supersede the earlier module-by-module budget assumptions below.
+Those proposals also require separate spending approval. This document preserves
+the dated measurements, payload classification and arithmetic inputs for review;
+its partial subtotals are not an additional launch budget. The
+[resource inventory](release-resource-inventory-2026-09-20.md) remains the account
+and compatibility gate. Registration and paid provisioning remain deferred.
+
+## Historical read-only evidence and rate inputs
+
+Rate observations below were recorded on September 25. Recheck the selected
+account's current quote before requesting spending approval; this scope correction
+does not revalidate provider prices or select a plan.
 
 - PlanetScale CLI 0.324.0 listed one accessible organization and zero accessible
   databases on September 24. This is an inventory of the current CLI identity,
@@ -55,7 +69,10 @@ remains the account and compatibility gate.
   200 GB-hours disk included, then $0.0000025/GiB-second,
   $0.000020/vCPU-second and $0.00000007/GB-second. [Custom instance limits](https://developers.cloudflare.com/containers/platform/limits/)
   permit a 1 vCPU / 3 GiB / 4 GB web candidate. Image size must fit the selected
-  disk. Container egress, Workers requests/CPU, Durable Objects and logs are
+  disk. Container egress has a separate regional allowance: 500 GB/month then
+  $0.04/GB for the provider's "Everywhere Else" category, or 500 GB then
+  $0.05/GB for Oceania/Korea/Taiwan. Actual placement and account-wide usage
+  must be confirmed. Workers requests/CPU, Durable Objects and logs are also
   separate billable dimensions.
 - [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/)
   includes 10 million requests and 30 million CPU-ms/month, then $0.30/million
@@ -66,19 +83,45 @@ remains the account and compatibility gate.
   includes 20 million events/month, then $0.60/million; retained logs need a
   privacy and retention review.
 - [Redis pricing](https://upstash.com/pricing/redis) is $0.20/100,000 commands
-  on pay-as-you-go; [QStash pricing](https://upstash.com/pricing/qstash) is
-  $1/100,000 **delivery attempts**, with retries billed again. Each Prod Pack
-  adds $200/month and includes at-rest encryption and an SLA; whether both
-  packs are required for the selected data and workload is unresolved.
+  on pay-as-you-go, with the first 1 GB storage and 200 GB/month bandwidth
+  included; excess is $0.25/GB-month and $0.03/GB, respectively. [QStash
+  pricing](https://upstash.com/pricing/qstash) is $1/100,000 **delivery
+  attempts**, with retries billed again; 50 GB/month bandwidth is included,
+  then $0.05/GB. Up to 1,000 active schedules are included, then
+  $0.01/schedule. Each Prod Pack adds $200/month and includes at-rest
+  encryption and an SLA; whether both packs are required for the selected
+  data and workload is unresolved.
 - [R2 Standard pricing](https://developers.cloudflare.com/r2/pricing/) is
   $0.015/GB-month after 10 GB-month free, with separate Class A/B operations.
   [Resend Pro pricing](https://resend.com/pricing) is $20/month for 50,000
-  transactional emails, with paid overage above that. Resend [states that
+  transactional emails, with optional $0.90 per 1,000-email overage buckets
+  above that. Resend [states that
   message content and delivery logs are stored in the United States](https://resend.com/security/gdpr),
   regardless of the sending region; provider choice and data-transfer review
-  remain open.
+  remain open. The overage toggle and budget behavior must be checked in the
+  selected account before sending.
 
-## Candidate footprints and arithmetic
+## Redis and QStash payload boundary
+
+This source inspection is scoped to the Shopify paths on public `main`
+`c86f216e87`; it is **not** a complete inventory of older Dub routes sharing
+the same provider account.
+
+| Path                                | Observed provider data                                                                                                                                                                                                                                         | Retention/control implication                                                                                                                                                                                                                                             |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shopify order-paid attribution wait | `orders-paid.ts` writes the full Shopify order event to `privacy-cache.ts` Redis for 15 minutes, with derived checkout, store and customer index keys; the subsequent QStash job includes the checkout token, workspace/store IDs and installation generation. | Raw order data can include protected customer data. Hashed Redis keys and a short TTL do not encrypt the value. Inspect the selected Redis plan's at-rest controls, access and backup retention before real orders. Treat queue references and provider logs as linkable. |
+| Pixel and catalog debounce          | Pixel writes click ID under a derived checkout key for at most 24 hours; catalog sync uses a short Redis reservation and QStash workspace ID.                                                                                                                  | Keep keyed-identity rotation, erasure and queue-log retention in the provider test; inspect the shared account's legacy routes too.                                                                                                                                       |
+| Compliance worker                   | `compliance-ingress.ts` sends only a durable request ID in its QStash body.                                                                                                                                                                                    | The ID is pseudonymous but linkable to a privacy request in SQL. Verify queue at-rest protection, signed callback, dead-letter and log access before non-synthetic use.                                                                                                   |
+
+The Redis full-order value makes a price-only pay-as-you-go choice insufficient
+for approval. Either prove suitable provider at-rest protection on the selected
+plan, include the relevant Prod Pack, or make a separately reviewed data-flow
+change with equivalent protection. Do not silently remove the order cache or
+weaken the existing attribution, erasure or recovery contracts to fit a budget.
+QStash's narrower Weletic payloads likewise need a recorded account-specific
+security and retention decision; this table does not certify its base plan.
+
+## Historical footprints and arithmetic
 
 Both models assume 720 hours/month and **separate billing accounts**, so each
 uses its own included allowances. If acceptance and production share an account,
@@ -96,9 +139,10 @@ proposal.
 | Container CPU utilization       | 5% while continuously running                                                                           | 10% while continuously running                                                   |
 | Worker ingress                  | 100,000 requests at 10 ms CPU each                                                                      | 5 million requests at 10 ms CPU each                                             |
 | Durable Objects                 | Three objects assumed awake all month                                                                   | Five objects assumed awake all month                                             |
-| Redis / QStash                  | 1 million commands / 100,000 attempts                                                                   | 10 million commands / 1 million attempts                                         |
+| Redis / QStash                  | 1 million commands / 100,000 attempts; <=1 GB Redis storage, <=200 GB Redis and <=50 GB QStash transfer | 10 million commands / 1 million attempts; same included-volume assumptions       |
 | R2 Standard                     | 20 GB-month, below free operation limits                                                                | 100 GB-month, below free operation limits                                        |
-| Transactional email             | One provisional Resend Pro plan                                                                         | One provisional Resend Pro plan                                                  |
+| Transactional email             | One provisional Resend Pro plan; <=50,000 emails                                                        | One provisional Resend Pro plan; <=50,000 emails                                 |
+| Container egress                | <=500 GB in one regional allowance; unmeasured                                                          | <=500 GB in one regional allowance; unmeasured                                   |
 
 The container line is calculated as `$5 + max(0, GiB-hours - 25) × 3600 ×
 $0.0000025 + max(0, GB-hours - 200) × 3600 × $0.00000007 +
@@ -122,23 +166,31 @@ production scenario; request count is within the included 10 million.
 | Resend Pro                               |                20.00 |                20.00 | Provisional provider/plan, no overage                    |
 | **Partial scenario subtotal**            |           **125.39** |           **228.23** | **Illustrative only; provider admission and costs open** |
 
-The first-module production model excludes Reviews video. A later 1 vCPU /
-3 GiB / 4 GB video worker active and fully busy for 100 hours adds about
-**$10.00** in container charges before processing, storage, network, queue and
-monitoring effects. It cannot be folded into the Loyalty production approval.
-The production layout also needs actual load, failover and one-financial-writer
-proof before being selected.
+The historical layout includes no video worker. The combined core loyalty and
+photo-review release still needs measured photo storage, delivery and processing
+load, failover and one-financial-writer proof before selecting production capacity.
+
+The subtotal assumes zero overage and no Prod Packs. For sensitivity, 100 GB
+of container egress above an exhausted 500 GB "Everywhere Else" allowance
+adds **$4.00/month**; the same excess in Oceania/Korea/Taiwan adds **$5.00**.
+10,000 transactional emails above Resend Pro's included 50,000 add **$9.00**
+if pay-as-you-go is enabled. Both Upstash Prod Packs would add **$400/month
+per environment**, making the partial acceptance and production scenarios
+**$525.39** and **$628.23**, respectively, before other missing costs. These
+are conditional examples, not selected plans or spend requests. If both
+environments share provider accounts, the included allowances and pack count
+must be recalculated from those accounts rather than duplicated.
 
 ## Missing amounts that prevent approval
 
-| Item             | Evidence needed before a complete acceptance and production quote                                                                                                                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQL              | Account-owned Tokyo Vitess quote, storage growth, backup retention, restore tests, branching, transfer, compatible native/HTTP transactions and lock behavior.                                                                                             |
-| Cloudflare       | Account plan/allowance ownership, exact release-SHA builds, provider image admission, real CPU and sleep behavior, container egress region/volume, Workers/DO/log usage, registry/image retention and alert pricing.                                       |
-| Redis and QStash | Account/region, keys and payload classification, selected security plan, actual retries, schedules, storage, bandwidth, DLQ retention and budget-cap failure behavior. Selecting both $200 Prod Packs adds **$400/month** before any other missing charge. |
-| R2 and media     | Private buckets, Class A/B operations, media retention and cleanup, video processor limits and incident storage.                                                                                                                                           |
-| Email            | Approved sender/domain and recipient policy, account plan, expected transactional volume, overage cap, deliverability and US processing review.                                                                                                            |
-| Operations       | Monitoring and paging, audit-log retention, backups/restore, DNS/certificates, taxes, exchange rates, incident reserve, overlap with existing apps and any separate acceptance account base fees.                                                          |
+| Item             | Evidence needed before a complete acceptance and production quote                                                                                                                                                                                                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SQL              | Account-owned Tokyo Vitess quote, storage growth, backup retention, restore tests, branching, transfer, compatible native/HTTP transactions and lock behavior.                                                                                                                                                                                                      |
+| Cloudflare       | Account plan/allowance ownership, exact release-SHA builds, provider image admission, real CPU and sleep behavior, container egress region/volume, Workers/DO/log usage, registry/image retention and alert pricing.                                                                                                                                                |
+| Redis and QStash | Account/region, complete shared-account payload/log inventory, at-rest protection for the full order cache and queue references, selected security plan, actual retries, schedules, storage, bandwidth, DLQ retention and budget-cap failure behavior. Selecting both $200 Prod Packs adds **$400/month per separate environment** before any other missing charge. |
+| R2 and media     | Private photo buckets, Class A/B operations, photo retention and cleanup, and incident storage. Video processing is outside launch scope.                                                                                                                                                                                                                           |
+| Email            | Approved sender/domain and recipient policy, account plan, expected transactional volume, overage cap, deliverability and US processing review.                                                                                                                                                                                                                     |
+| Operations       | Monitoring and paging, audit-log retention, backups/restore, DNS/certificates, taxes, exchange rates, incident reserve, overlap with existing apps and any separate acceptance account base fees.                                                                                                                                                                   |
 
 The earlier proposed **$300/month acceptance ceiling is still unapproved and
 incomplete**. The partial acceptance subtotal is not a request to spend $125.39;

@@ -7,6 +7,7 @@ import { LoyaltyRedemptionProvisioningSnapshotSchema } from "@/lib/weletic/loyal
 import type { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { assertCoreLaunchReviewAward } from "../core-launch-policy";
 import { ReviewError } from "./contracts";
 import { reviewCouponDisclosure } from "./coupon-disclosure";
 import { withReviewMutation } from "./transaction";
@@ -147,6 +148,7 @@ export async function createReviewIncentivePolicyRevision(
   },
 ) {
   const draft = reviewIncentivePolicyDraftSchema.parse(input);
+  assertCoreLaunchReviewAward(draft);
   const authorize = async (
     tx: Prisma.TransactionClient,
     phase: "preflight" | "commit",

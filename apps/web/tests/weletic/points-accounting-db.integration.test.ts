@@ -143,7 +143,7 @@ async function seed(holdingPeriodDays = 0, signup = BigInt("0")) {
       shopDomain: `${id}.myshopify.com`,
       shopCurrency: "USD",
       currencyVerifiedAt: epoch,
-      apiVersion: "2026-07",
+      apiVersion: "2026-10",
       storeAccessState: "active",
       complianceState: "active",
       installationGeneration: "g1",
@@ -390,7 +390,7 @@ it("read-only store audit detects cached-wallet drift and ledger-chain corruptio
   const audit = () =>
     prisma.$transaction(
       (tx) => readStoreWalletReconciliation({ tx, storeId: f.id }),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
   expect(await audit()).toMatchObject({
     accounts: "1",

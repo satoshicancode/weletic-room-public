@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import { Prisma } from "@prisma/client";
 
 export async function withActiveStoreLoyaltyMutation<T>({
@@ -20,18 +21,22 @@ export async function withActiveStoreLoyaltyMutation<T>({
     installationGeneration: string | null,
   ) => Promise<T>;
 }): Promise<T> {
-  return prisma.$transaction(
-    async (tx) => {
-      const store = await assertShopifyStoreAcceptsOperationalWrites({
-        storeId,
-        action,
-        expectedInstallationGeneration,
-        loyaltyMaintenancePermit,
-        tx,
-      });
-      return operation(tx, store?.installationGeneration ?? null);
-    },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+  return withFinancialTransactionRetry(
+    () =>
+      prisma.$transaction(
+        async (tx) => {
+          const store = await assertShopifyStoreAcceptsOperationalWrites({
+            storeId,
+            action,
+            expectedInstallationGeneration,
+            loyaltyMaintenancePermit,
+            tx,
+          });
+          return operation(tx, store?.installationGeneration ?? null);
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      ),
+    { actionName: `loyalty_mutation:${action}` },
   );
 }
 

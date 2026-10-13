@@ -130,7 +130,7 @@ it("composes every row mutation in one owned transaction and captures post-ledge
   const result = await run();
   expect(result.replayed).toBe(false);
   expect(mocks.transaction.mock.calls[0][1]).toEqual({
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
     timeout: 30000,
   });
   for (const method of [mocks.lease, mocks.enroll, mocks.fields, mocks.post])

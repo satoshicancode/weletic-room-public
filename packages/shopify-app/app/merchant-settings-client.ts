@@ -1,23 +1,23 @@
 import {
   loyaltyModuleToggleSchema,
   type LoyaltyModuleToggle,
-} from "../../../apps/web/lib/weletic/loyalty/module-contract";
+} from "@weletic/contracts/loyalty/module-contract";
 import {
   merchantAppearanceUpdateSchema,
   type MerchantAppearanceUpdate,
   type MerchantSettingsUpdate,
-} from "../../../apps/web/lib/weletic/merchant-settings/contracts";
+} from "@weletic/contracts/merchant-settings/contracts";
 import {
   loyaltyModuleResponseSchema,
   merchantAppearanceResponseSchema,
   merchantSettingsResponseSchema,
   reviewModuleResponseSchema,
   shopifyMerchantSettingsInputSchema,
-} from "../../../apps/web/lib/weletic/merchant-settings/merchant-contract";
+} from "@weletic/contracts/merchant-settings/merchant-contract";
 import {
   reviewModuleToggleSchema,
   type ReviewModuleToggle,
-} from "../../../apps/web/lib/weletic/reviews/module-contract";
+} from "@weletic/contracts/reviews/module-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

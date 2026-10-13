@@ -2,39 +2,39 @@ import { json } from "@remix-run/node";
 import {
   reviewCollectionReadInputSchema,
   reviewCollectionWriteInputSchema,
-} from "../../../apps/web/lib/weletic/reviews/collection-contract";
+} from "@weletic/contracts/reviews/collection-contract";
 import {
   merchantReviewCouponListInputSchema,
   merchantReviewIncentiveActivationInputSchema,
   merchantReviewIncentiveDraftInputSchema,
   merchantReviewIncentiveReadInputSchema,
-} from "../../../apps/web/lib/weletic/reviews/incentive-merchant-contract";
-import { merchantReviewListInputSchema } from "../../../apps/web/lib/weletic/reviews/merchant-contract";
-import { auditedReviewModerationInputSchema } from "../../../apps/web/lib/weletic/reviews/moderation-contract";
+} from "@weletic/contracts/reviews/incentive-merchant-contract";
+import { merchantReviewListInputSchema } from "@weletic/contracts/reviews/merchant-contract";
+import { auditedReviewModerationInputSchema } from "@weletic/contracts/reviews/moderation-contract";
 import {
   openReviewPolicyReadSchema,
   openReviewPolicyWriteSchema,
-} from "../../../apps/web/lib/weletic/reviews/open-policy-contract";
-import { storeMerchantListInputSchema } from "../../../apps/web/lib/weletic/reviews/store-merchant-contract";
+} from "@weletic/contracts/reviews/open-policy-contract";
+import { storeMerchantListInputSchema } from "@weletic/contracts/reviews/store-merchant-contract";
 import {
   storeReviewSettingsReadInputSchema,
   storeReviewSettingsWriteInputSchema,
-} from "../../../apps/web/lib/weletic/reviews/store-settings-contract";
+} from "@weletic/contracts/reviews/store-settings-contract";
 import {
   manualReviewTranslationInputSchema,
   manualReviewTranslationReadInputSchema,
-} from "../../../apps/web/lib/weletic/reviews/translation-contract";
-import { readWeleticShopifyRequestBodyBytes } from "../../../apps/web/lib/weletic/shopify/service-auth";
+} from "@weletic/contracts/reviews/translation-contract";
+import { readWeleticShopifyRequestBodyBytes } from "@weletic/contracts/shopify/service-auth";
 import {
   listShopifyStaffGrantsSchema,
   replaceShopifyStaffGrantSchema,
   shopifyMerchantOverviewInputSchema,
   shopifyStaffExportInputSchema,
-} from "../../../apps/web/lib/weletic/shopify/staff-contract";
+} from "@weletic/contracts/shopify/staff-contract";
 import {
   merchantShopperListInputSchema,
   merchantShopperProfileInputSchema,
-} from "../../../apps/web/lib/weletic/shoppers/merchant-contract";
+} from "@weletic/contracts/shoppers/merchant-contract";
 import type { createMerchantAuthenticator } from "./merchant-authentication.server";
 import { weleticApiJson, WeleticGatewayError } from "./weletic-api.server";
 

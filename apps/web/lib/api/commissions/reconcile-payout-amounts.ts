@@ -25,7 +25,7 @@ export async function reconcilePayoutAmounts(payoutIds: string[]) {
       });
 
       const sumByPayoutId = new Map(
-        aggregates.map((a) => [a.payoutId!, a._sum.earnings ?? 0]),
+        aggregates.map((a) => [a.payoutId!, Number(a._sum.earnings ?? 0)]),
       );
 
       const toDelete: string[] = [];
@@ -34,7 +34,7 @@ export async function reconcilePayoutAmounts(payoutIds: string[]) {
       for (const id of payoutIdChunk) {
         const newPayoutAmount = sumByPayoutId.get(id) ?? 0;
 
-        if (newPayoutAmount === 0) {
+        if (newPayoutAmount <= 0) {
           toDelete.push(id);
         } else {
           toUpdate.push({ id, amount: newPayoutAmount });
@@ -42,6 +42,20 @@ export async function reconcilePayoutAmounts(payoutIds: string[]) {
       }
 
       if (toDelete.length > 0) {
+        // Unassign affected commissions back to rollover pool so negative balance
+        // is preserved and will roll over to deduct from future earnings
+        await tx.commission.updateMany({
+          where: {
+            payoutId: {
+              in: toDelete,
+            },
+          },
+          data: {
+            payoutId: null,
+            status: "pending",
+          },
+        });
+
         await tx.payout.deleteMany({
           where: {
             id: {
@@ -72,7 +86,7 @@ export async function reconcilePayoutAmounts(payoutIds: string[]) {
 
       for (const id of toDelete) {
         console.log(
-          `[reconcilePayoutAmount] Deleted payout ${id} because it has no commissions.`,
+          `[reconcilePayoutAmount] Deleted payout ${id} because it has non-positive amount or no commissions.`,
         );
       }
 

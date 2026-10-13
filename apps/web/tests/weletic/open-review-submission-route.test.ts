@@ -77,6 +77,7 @@ const photoInput = {
   contentType: "image/png",
   base64: Buffer.from("synthetic-image-bytes").toString("base64"),
 };
+let requestCounter = 0;
 function request(
   value: unknown = input,
   params = query,
@@ -86,12 +87,14 @@ function request(
   const body = JSON.stringify(value);
   const path = `/api/internal/shopify/reviews/${action}?${params}`;
   const timestamp = String(Date.now());
+  const requestId = `req_test_${Date.now()}_${++requestCounter}`;
   return new Request(`https://backend.example.test${path}`, {
     method: "POST",
     body,
     headers: {
       "content-type": "application/json",
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signed
         ? signWeleticShopifyRequest({
             timestamp,
@@ -99,6 +102,7 @@ function request(
             path,
             body,
             secret,
+            requestId,
           })
         : "invalid",
     },

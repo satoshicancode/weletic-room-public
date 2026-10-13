@@ -2,7 +2,7 @@ import {
   loyaltyAppearanceRequestSchema,
   verifyLoyaltyAppearanceResponse,
   type LoyaltyAppearanceRequest,
-} from "../../../apps/web/lib/weletic/loyalty/appearance-contract";
+} from "@weletic/contracts/loyalty/appearance-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

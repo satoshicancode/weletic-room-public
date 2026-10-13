@@ -1,4 +1,5 @@
 import { decryptOrPassthrough } from "@/lib/encryption";
+import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { prisma } from "@/lib/prisma";
 import { decimalToMinorUnits, minorUnitsToDecimal } from "@/lib/weletic/money";
 import { ShopifyCredentialUnavailableError } from "@/lib/weletic/shopify/credential-errors";
@@ -20,8 +21,7 @@ import {
   readLoyaltyPurchasePolicy,
 } from "./purchase-policy";
 
-export const SHOPIFY_DISCOUNT_API_VERSION =
-  process.env.SHOPIFY_ADMIN_API_VERSION || "2026-07";
+export const SHOPIFY_DISCOUNT_API_VERSION = SHOPIFY_ADMIN_API_VERSION;
 export const SHOPIFY_ADMIN_GRAPHQL_REQUEST_TIMEOUT_MS = 15_000;
 export const WELETIC_FREE_PRODUCT_FUNCTION_HANDLE = "weletic-free-product";
 export const WELETIC_FREE_PRODUCT_METAFIELD_NAMESPACE = "weletic";

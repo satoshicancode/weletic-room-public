@@ -1,0 +1,24 @@
+name = "weletic-cron-scheduler"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = [
+  "*/5 * * * *",
+  "0 * * * *",
+  "0 2 * * *"
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "weletic-production"
+database_id = "weletic-d1-prod"
+
+[[queues.producers]]
+queue = "order-webhook-queue"
+binding = "ORDER_WEBHOOK_QUEUE"
+
+[alias]
+"server-only" = "../empty.ts"
+

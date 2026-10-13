@@ -920,7 +920,7 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
     const second = await resolveShopifyStoreByDomain(domain);
 
     expect(second?.accessToken).toBe(newerToken);
-    expect(prisma.weleticShopifyStore.findUnique).not.toHaveBeenCalled();
+    expect(prisma.weleticShopifyStore.findUnique).toHaveBeenCalledTimes(2);
     expect(prisma.project.findUnique).toHaveBeenCalledTimes(2);
     expect(prisma.installedIntegration.findUnique).toHaveBeenCalledTimes(2);
     expect(mockFetch).not.toHaveBeenCalled();

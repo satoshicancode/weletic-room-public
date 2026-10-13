@@ -1,5 +1,6 @@
 import { decryptOrPassthrough } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { ShopifyCredentialUnavailableError } from "@/lib/weletic/shopify/credential-errors";
 import { readShopifyCredentialSource } from "@/lib/weletic/shopify/credential-source";
 import {
@@ -346,7 +347,7 @@ function createShopifyDiscountProvider() {
             }>
           >(Prisma.sql`
           SELECT id, projectId, shopDomain, installationGeneration, complianceState, storeAccessState
-          FROM WeleticShopifyStore WHERE id = ${nativeStore.id} LIMIT 1 FOR UPDATE
+          FROM WeleticShopifyStore WHERE id = ${nativeStore.id} LIMIT 1 ${forUpdateClause}
         `);
           const store = rows[0];
           if (

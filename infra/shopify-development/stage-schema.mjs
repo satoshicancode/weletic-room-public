@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { databaseName, hasRetainedEnvironment } from "./init.mjs";
+import { readLocalServicePorts } from "./service-ports.mjs";
 import { isLocalServiceTarget } from "./verify.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -33,7 +34,8 @@ try {
     throw new Error("Unsafe invocation");
   }
   const web = parse(join(root, "apps/web/.env.loyalty.local"));
-  if (!isLocalServiceTarget(web)) throw new Error("Unsafe target");
+  if (!isLocalServiceTarget(web, readLocalServicePorts(root)))
+    throw new Error("Unsafe target");
   // This repeats the actual ownership, permission and proxy-target checks.
   run(
     process.execPath,

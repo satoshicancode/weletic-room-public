@@ -1,4 +1,4 @@
-import { prisma, sanitizeFullTextSearch } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { getCustomersQuerySchemaExtended } from "@/lib/zod/schemas/customers";
 import * as z from "zod/v4";
 import { DubApiError } from "../../api/errors";
@@ -70,8 +70,10 @@ export async function getCustomers(filters: GetCustomersInput) {
             ? search.includes("@")
               ? { email: search }
               : {
-                  email: { search: sanitizeFullTextSearch(search) },
-                  name: { search: sanitizeFullTextSearch(search) },
+                  OR: [
+                    { email: { contains: search } },
+                    { name: { contains: search } },
+                  ],
                 }
             : {}),
       ...(country && {

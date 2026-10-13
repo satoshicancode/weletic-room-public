@@ -2,7 +2,7 @@ import {
   storeReviewSettingsReadResponseSchema,
   storeReviewSettingsWriteInputSchema,
   type StoreReviewSettingsWriteInput,
-} from "../../../apps/web/lib/weletic/reviews/store-settings-contract";
+} from "@weletic/contracts/reviews/store-settings-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

@@ -124,7 +124,7 @@ async function main() {
 
   for (const payoutId of Object.keys(groupedByPayoutId)) {
     const paidCommissionsTotal = groupedByPayoutId[payoutId].reduce(
-      (acc, commission) => acc + commission.earnings,
+      (acc, commission) => acc + Number(commission.earnings),
       0,
     );
     console.log(

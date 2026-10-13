@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
   shopifyAdminGraphql: mocks.graphql,
+  SHOPIFY_ADMIN_API_VERSION: "2026-10",
 }));
 vi.mock("@/lib/upstash", () => ({ redis: mocks.redis }));
 vi.mock("@/lib/prisma", () => ({

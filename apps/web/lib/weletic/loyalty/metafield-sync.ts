@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { isCoreLaunch } from "@/lib/weletic/core-launch-policy";
 import {
   isLoyaltyMaintenanceBlockedError,
   type LoyaltyMaintenancePermit,
@@ -203,7 +204,12 @@ export function buildCustomerMetafieldUpdates(
     }
   }
 
-  return metafields;
+  // Shopify rejects the entire atomic set when a text value is blank.
+  // Missing optional values are omitted; this is not a remote deletion API.
+  return metafields.filter(
+    (field) =>
+      field.type !== "single_line_text_field" || field.value.trim() !== "",
+  );
 }
 
 export const SHOPIFY_METAFIELDS_SET_MUTATION = `
@@ -288,26 +294,34 @@ export async function syncCustomerMetafields(
 
   // Determine status (including active grace period state)
   let status: string = account.status;
-  if (account.tierExpiresAt && new Date(account.tierExpiresAt) > new Date()) {
+  const coreLaunch = isCoreLaunch();
+  if (
+    !coreLaunch &&
+    account.tierExpiresAt &&
+    new Date(account.tierExpiresAt) > new Date()
+  ) {
     status = "in_grace_period";
   }
 
   const tierOrder = account.currentTier?.tierOrder ?? 1;
 
-  // 2. Build 9-key PII-sanitized metafields payload
+  // 2. Project active capabilities only; core launch does not advertise VIP
+  // or referrals, including legacy state retained on an existing account.
   const metafields = buildCustomerMetafieldUpdates({
     ownerId: normalizedGid,
-    vipTierName: account.currentTier?.name ?? "Bronze",
-    vipTierOrder: tierOrder,
     pointsBalance: account.cachedPointsBalance,
     pendingPoints: account.cachedPendingPoints,
     lifetimePoints: account.lifetimePointsEarned,
-    referralCode: account.referralCode,
-    referralLink,
-    tierMultiplier: account.currentTier
-      ? Number(account.currentTier.pointsMultiplier)
-      : 1.0,
     memberStatus: status,
+    ...(!coreLaunch && {
+      vipTierName: account.currentTier?.name ?? "Bronze",
+      vipTierOrder: tierOrder,
+      referralCode: account.referralCode,
+      referralLink,
+      tierMultiplier: account.currentTier
+        ? Number(account.currentTier.pointsMultiplier)
+        : 1.0,
+    }),
   });
 
   const syncedKeys = metafields.map((m) => m.key);

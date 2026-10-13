@@ -16,6 +16,9 @@ import {
 // Local-only evidence. Never forward host application environment to Docker.
 export function smokeEnvironment() {
   return {
+    SHOPIFY_APP_HANDLE: "weletic-room",
+    WELETIC_SUPPORT_EMAIL: "support@example.test",
+    WELETIC_FEATURE_PROFILE: "core-v1",
     SHOPIFY_API_KEY: PUBLIC_LOYALTY_CLIENT_ID,
     SHOPIFY_API_SECRET: "synthetic-release-smoke-shopify-not-a-secret",
     WELETIC_SHOPIFY_SERVICE_SECRET:

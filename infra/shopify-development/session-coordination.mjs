@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { databaseName, hasRetainedEnvironment } from "./init.mjs";
+import { readLocalServicePorts } from "./service-ports.mjs";
 import { isLocalServiceTarget, privateCredentialFiles } from "./verify.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -42,7 +43,8 @@ try {
   )
     throw new Error("Unsafe invocation");
   const web = parse(join(webRoot, ".env.loyalty.local"));
-  if (!isLocalServiceTarget(web)) throw new Error("Unsafe target");
+  if (!isLocalServiceTarget(web, readLocalServicePorts(root)))
+    throw new Error("Unsafe target");
   const [container] = JSON.parse(
     execFileSync("docker", ["inspect", "weletic-loyalty-dev-mysql-1"], {
       env: cleanEnvironment,
@@ -57,7 +59,7 @@ try {
     container.Config.Labels["com.docker.compose.service"] !== "mysql" ||
     bindings.length !== 1 ||
     bindings[0].HostIp !== "127.0.0.1" ||
-    bindings[0].HostPort !== "3307" ||
+    bindings[0].HostPort !== readLocalServicePorts(root).mysql ||
     !container.Mounts.some(
       (mount) =>
         mount.Destination === "/var/lib/mysql" &&

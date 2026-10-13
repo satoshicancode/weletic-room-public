@@ -147,7 +147,7 @@ describe("company bootstrap on fresh full-schema MySQL", () => {
     };
     const transport: typeof fetch = async (url, init) => {
       expect(String(url)).toBe(
-        `https://${shop}/admin/api/2026-07/graphql.json`,
+        `https://${shop}/admin/api/2026-10/graphql.json`,
       );
       expect(init?.redirect).toBe("error");
       return new Response(

@@ -35,13 +35,13 @@ export async function attachOpenReviewPhotos({
     throw new ReviewError("bad_request", "Invalid photos");
   const { storeId, shopperId, installationGeneration } = scope;
   const settings = await tx.$queryRaw<
-    Array<{ photoUploadsEnabled: boolean | number }>
+    Array<{ photoUploadsEnabled: boolean | number | bigint }>
   >(Prisma.sql`
     SELECT photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${storeId} FOR UPDATE
   `);
   if (
     settings.length !== 1 ||
-    ![true, 1].includes(settings[0].photoUploadsEnabled)
+    ![true, 1, BigInt(1)].includes(settings[0].photoUploadsEnabled as any)
   )
     throw new ReviewError("disabled", "Review photos are disabled");
   // Lock media before ownership, matching storage claims and cleanup. Use current

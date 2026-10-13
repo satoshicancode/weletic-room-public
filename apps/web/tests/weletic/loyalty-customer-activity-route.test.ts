@@ -1,5 +1,6 @@
 import {
   signWeleticShopifyRequest,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
 } from "@/lib/weletic/shopify/service-auth";
@@ -34,10 +35,12 @@ vi.mock("@/lib/weletic/shopify/store-resolver", () => ({
 }));
 
 const secret = "test-shopify-service-secret-with-32-characters";
+let requestCounter = 0;
 
 function signedRequest(body: Record<string, unknown>, signature = true) {
   const bodyText = JSON.stringify(body);
   const timestamp = String(Date.now());
+  const requestId = `req_test_${Date.now()}_${++requestCounter}`;
   const path =
     "/api/internal/shopify/loyalty/customer/activity/claim?shop=test-shop.myshopify.com";
   return new Request(`https://app.weletic.com${path}`, {
@@ -45,6 +48,7 @@ function signedRequest(body: Record<string, unknown>, signature = true) {
     headers: {
       "content-type": "application/json",
       [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
+      [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
       [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature
         ? signWeleticShopifyRequest({
             timestamp,
@@ -52,6 +56,7 @@ function signedRequest(body: Record<string, unknown>, signature = true) {
             path,
             body: bodyText,
             secret,
+            requestId,
           })
         : "0".repeat(64),
     },

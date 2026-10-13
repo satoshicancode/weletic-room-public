@@ -75,7 +75,7 @@ export async function processHistoricalImportCommitBatch({
         };
       },
       {
-        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         timeout: 30_000,
       },
     );

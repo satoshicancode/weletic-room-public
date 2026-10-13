@@ -47,6 +47,9 @@ export async function handlePendingInstallationPrivacy(
     return { disposition: "no_customer_data" as const };
   }
   if (pending?.state === "redacted") {
+    await tx.weleticShopifySubscriptionSnapshot.deleteMany({
+      where: { appId: scope.appId, pendingInstallationId: pending.id },
+    });
     // ensure above may have recreated an erased coordinator just to serialize
     // this request. A replay must not commit that raw-domain identity again.
     await tx.weleticShopifySessionCoordination.deleteMany({
@@ -104,6 +107,10 @@ export async function handlePendingInstallationPrivacy(
         uninstalledAt: triggeredAt,
       };
   if (pending) {
+    if (redacting)
+      await tx.weleticShopifySubscriptionSnapshot.deleteMany({
+        where: { appId: scope.appId, pendingInstallationId: pending.id },
+      });
     if (redacting)
       await tx.weleticShopifyPendingInstallationChange.deleteMany({
         where: { pendingInstallationId: pending.id },

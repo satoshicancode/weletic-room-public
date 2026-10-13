@@ -34,17 +34,20 @@ function request(
   signedPayload = payload,
   signedPath = path,
   timestamp = String(Date.now()),
+  requestId = "req_" + Math.random().toString(36).slice(2),
 ) {
   return new Request(`https://local.test${path}`, {
     method: "POST",
     body: payload,
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "POST",
         path: signedPath,
         body: signedPayload,
+        requestId,
         secret,
       }),
     },

@@ -125,18 +125,37 @@ async function main() {
   }
 
   // Find target stores
-  const stores = await prisma.weleticShopifyStore.findMany({
+  const rawStores = await prisma.weleticShopifyStore.findMany({
     where: {
       ...(args.workspaceId && {
         OR: [{ projectId: args.workspaceId }, { id: args.workspaceId }],
       }),
       syncStatus: "succeeded",
     },
-    include: {
-      project: { select: { id: true, name: true, slug: true } },
-      program: { select: { id: true, name: true } },
-    },
   });
+
+  const projectIds = Array.from(new Set(rawStores.map((s) => s.projectId)));
+  const programIds = Array.from(new Set(rawStores.map((s) => s.programId)));
+  const projects = projectIds.length
+    ? await prisma.project.findMany({
+        where: { id: { in: projectIds } },
+        select: { id: true, name: true, slug: true },
+      })
+    : [];
+  const programs = programIds.length
+    ? await prisma.program.findMany({
+        where: { id: { in: programIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const projectMap = new Map(projects.map((p) => [p.id, p]));
+  const programMap = new Map(programs.map((p) => [p.id, p]));
+
+  const stores = rawStores.map((store) => ({
+    ...store,
+    project: projectMap.get(store.projectId) || null,
+    program: programMap.get(store.programId) || null,
+  }));
 
   if (stores.length === 0) {
     if (args.json) {

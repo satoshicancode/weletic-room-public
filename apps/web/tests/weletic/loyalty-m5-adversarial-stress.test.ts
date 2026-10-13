@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   calculateBirthdayLockout,
   validateCustomerSessionClaims,
@@ -14,9 +14,16 @@ import {
   signWeleticShopifyRequest,
   verifyWeleticShopifyRequest,
   WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
 } from "../../lib/weletic/shopify/service-auth";
+
+vi.mock("@/lib/upstash/redis", () => ({
+  redis: {
+    set: vi.fn().mockResolvedValue("OK"),
+  },
+}));
 
 function extractAllJsonKeysAndPlaceholders(
   obj: Record<string, any>,
@@ -314,12 +321,13 @@ describe("Milestone 5 Adversarial Stress & Privacy Verification Suite", () => {
       expect(largeSub.customerId).toBe("900719925474099999");
     });
 
-    it("verifies HMAC signature verification defense against payload tampering and replay attacks", () => {
+    it("verifies HMAC signature verification defense against payload tampering and replay attacks", async () => {
       const secret = "a".repeat(32);
       process.env.WELETIC_SHOPIFY_SERVICE_SECRET = secret;
 
       const now = Date.now();
       const timestamp = String(now);
+      const requestId = crypto.randomUUID();
       const method = "POST";
       const pathUrl =
         "/api/internal/shopify/loyalty/customer/redeem?shop=store.myshopify.com";
@@ -334,6 +342,7 @@ describe("Milestone 5 Adversarial Stress & Privacy Verification Suite", () => {
         method,
         path: pathUrl,
         body: validBody,
+        requestId,
         secret,
       });
 
@@ -343,10 +352,11 @@ describe("Milestone 5 Adversarial Stress & Privacy Verification Suite", () => {
         headers: {
           [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
           [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+          [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
         },
       });
       expect(
-        verifyWeleticShopifyRequest({
+        await verifyWeleticShopifyRequest({
           request: validReq,
           body: validBody,
           now,
@@ -360,7 +370,7 @@ describe("Milestone 5 Adversarial Stress & Privacy Verification Suite", () => {
         rewardDefinitionId: "rew_1",
       });
       expect(
-        verifyWeleticShopifyRequest({
+        await verifyWeleticShopifyRequest({
           request: validReq,
           body: tamperedBody,
           now,
@@ -386,7 +396,7 @@ describe("Milestone 5 Adversarial Stress & Privacy Verification Suite", () => {
         },
       });
       expect(
-        verifyWeleticShopifyRequest({
+        await verifyWeleticShopifyRequest({
           request: expiredReq,
           body: validBody,
           now,
@@ -412,7 +422,7 @@ describe("Milestone 5 Adversarial Stress & Privacy Verification Suite", () => {
         },
       });
       expect(
-        verifyWeleticShopifyRequest({
+        await verifyWeleticShopifyRequest({
           request: futureReq,
           body: validBody,
           now,
@@ -431,7 +441,7 @@ describe("Milestone 5 Adversarial Stress & Privacy Verification Suite", () => {
         },
       );
       expect(
-        verifyWeleticShopifyRequest({
+        await verifyWeleticShopifyRequest({
           request: alteredPathReq,
           body: validBody,
           now,

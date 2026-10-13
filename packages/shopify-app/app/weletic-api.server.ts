@@ -155,12 +155,14 @@ function signRequest({
   method,
   path,
   body,
+  requestId,
   secret = requireEnv("WELETIC_SHOPIFY_SERVICE_SECRET"),
 }: {
   timestamp: string;
   method: string;
   path: string;
   body: string;
+  requestId?: string;
   secret?: string;
 }) {
   if (secret.length < 32) {
@@ -169,10 +171,39 @@ function signRequest({
     );
   }
 
-  return crypto
-    .createHmac("sha256", secret)
-    .update(`${timestamp}\n${method.toUpperCase()}\n${path}\n${body}`)
-    .digest("hex");
+  const canonical =
+    requestId !== undefined && requestId !== ""
+      ? `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}\n${requestId}`
+      : `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}`;
+
+  return crypto.createHmac("sha256", secret).update(canonical).digest("hex");
+}
+
+export const WELETIC_INTERNAL_NONCE_TTL_SECONDS = 720;
+const internalNonceCache = new Map<string, number>();
+
+export function clearInternalNonceCacheForTest(): void {
+  internalNonceCache.clear();
+}
+
+export function recordInternalNonce(
+  requestId: string,
+  now: number = Date.now(),
+  ttlSeconds: number = WELETIC_INTERNAL_NONCE_TTL_SECONDS,
+): boolean {
+  for (const [id, expiresAt] of internalNonceCache.entries()) {
+    if (expiresAt <= now) {
+      internalNonceCache.delete(id);
+    }
+  }
+
+  const existingExpiresAt = internalNonceCache.get(requestId);
+  if (existingExpiresAt && existingExpiresAt > now) {
+    return false;
+  }
+
+  internalNonceCache.set(requestId, now + ttlSeconds * 1000);
+  return true;
 }
 
 export function verifyWeleticInternalRequest({
@@ -180,11 +211,15 @@ export function verifyWeleticInternalRequest({
   body = "",
   now = Date.now(),
   secret = requireEnv("WELETIC_SHOPIFY_SERVICE_SECRET"),
+  requireRequestId = false,
+  ttlSeconds = WELETIC_INTERNAL_NONCE_TTL_SECONDS,
 }: {
   request: Request;
   body?: string;
   now?: number;
   secret?: string;
+  requireRequestId?: boolean;
+  ttlSeconds?: number;
 }) {
   if (secret.length < 32) {
     throw new Error(
@@ -194,7 +229,20 @@ export function verifyWeleticInternalRequest({
 
   const timestamp = request.headers.get(WELETIC_INTERNAL_TIMESTAMP_HEADER);
   const signature = request.headers.get(WELETIC_INTERNAL_SIGNATURE_HEADER);
+  const requestId = request.headers.get(WELETIC_REQUEST_ID_HEADER);
   if (!timestamp || !signature || !/^[a-f0-9]{64}$/.test(signature)) {
+    return false;
+  }
+
+  const isStrict =
+    requireRequestId ||
+    process.env.WELETIC_SERVICE_AUTH_REQUIRE_REQUEST_ID !== "false";
+
+  if (!requestId) {
+    if (isStrict) {
+      return false;
+    }
+  } else if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) {
     return false;
   }
 
@@ -212,13 +260,27 @@ export function verifyWeleticInternalRequest({
     method: request.method,
     path: `${url.pathname}${url.search}`,
     body,
+    requestId: requestId || undefined,
     secret,
   });
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature, "hex"),
-    Buffer.from(expected, "hex"),
-  );
+  const signatureBuffer = Buffer.from(signature, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  if (
+    signatureBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+  ) {
+    return false;
+  }
+
+  if (requestId) {
+    const isUnique = recordInternalNonce(requestId, now, ttlSeconds);
+    if (!isUnique) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export async function weleticApiRequest(
@@ -238,8 +300,21 @@ export async function weleticApiRequest(
   const method = (init.method || "GET").toUpperCase();
   const body = init.body || "";
   const timestamp = String(Date.now());
+  const customRequestId =
+    init.headers instanceof Headers
+      ? init.headers.get(WELETIC_REQUEST_ID_HEADER)
+      : (init.headers as Record<string, string> | undefined)?.[
+          WELETIC_REQUEST_ID_HEADER
+        ];
+  const requestId = customRequestId || crypto.randomUUID();
   const signedPath = `${url.pathname}${url.search}`;
-  const signature = signRequest({ timestamp, method, path: signedPath, body });
+  const signature = signRequest({
+    timestamp,
+    method,
+    path: signedPath,
+    body,
+    requestId,
+  });
   const controller = new AbortController();
   let didTimeout = false;
   const abortFromCaller = () => controller.abort(init.signal?.reason);
@@ -270,6 +345,7 @@ export async function weleticApiRequest(
         ...init.headers,
         [WELETIC_INTERNAL_TIMESTAMP_HEADER]: timestamp,
         [WELETIC_INTERNAL_SIGNATURE_HEADER]: signature,
+        [WELETIC_REQUEST_ID_HEADER]: requestId,
       },
     });
     // Keep the read deadline active until the full response arrives. A server

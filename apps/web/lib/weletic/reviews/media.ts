@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { storage } from "@/lib/storage";
 import { createWeleticId } from "@/lib/weletic/ids";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
@@ -263,7 +264,7 @@ export async function cleanupReviewPhoto(storeId: string, mediaId: string) {
 async function cleanupReviewPhotoLocked(storeId: string, mediaId: string) {
   const media = await prisma.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<WeleticReviewMedia[]>(Prisma.sql`
-      SELECT * FROM WeleticReviewMedia WHERE id = ${mediaId} AND storeId = ${storeId} FOR UPDATE
+      SELECT * FROM WeleticReviewMedia WHERE id = ${mediaId} AND storeId = ${storeId} ${forUpdateClause}
     `);
     const current = rows[0];
     if (!current) return null;
@@ -347,7 +348,7 @@ export async function getPublicReviewPhoto(storeId: string, mediaId: string) {
         throw new ReviewError("not_found", "Photo unavailable");
       return media.objectKey;
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
   requireReviewStorage();
   return {

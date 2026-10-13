@@ -10,6 +10,7 @@ import {
 import { LoyaltySettingsWriteError } from "@/lib/weletic/loyalty/settings-writer";
 import { normalizeCurrency } from "@/lib/weletic/money";
 import type { Prisma } from "@prisma/client";
+import { isCoreLaunch } from "../core-launch-policy";
 import { readSettingsCapabilities } from "./settings-capabilities";
 import {
   authorizeShopifyMerchantInTransaction,
@@ -57,13 +58,22 @@ export async function manageShopifyLoyaltyConfigurationInTransaction({
     where: { id: actor.storeId },
     select: {
       projectId: true,
-      program: { select: { accountingCurrency: true } },
+      programId: true,
+      shopCurrency: true,
     },
   });
   if (!store || store.projectId !== actor.projectId)
     throw new ShopifyStaffAuthorizationError("invalid_actor");
+  const dubProgram =
+    (store as any).program ??
+    (store.programId && typeof tx?.program?.findUnique === "function"
+      ? await tx.program.findUnique({
+          where: { id: store.programId },
+          select: { accountingCurrency: true },
+        })
+      : null);
   const accountingCurrency = normalizeCurrency(
-    store.program.accountingCurrency,
+    dubProgram?.accountingCurrency || store.shopCurrency,
   );
   const configuration =
     data.operation === "update"
@@ -80,6 +90,10 @@ export async function manageShopifyLoyaltyConfigurationInTransaction({
     installationGeneration: actor.installationGeneration,
     accountingCurrency,
     ...configuration,
-    capabilities: { configure: capabilities.loyalty, owner: actor.owner },
+    capabilities: {
+      configure: capabilities.loyalty,
+      owner: actor.owner,
+      coreLaunch: isCoreLaunch(),
+    },
   });
 }

@@ -1,3 +1,7 @@
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { Prisma } from "@prisma/client";
 import { deriveAllShopifyShopPrivacyIdentities } from "./privacy-identity";
 
@@ -24,11 +28,11 @@ export async function lockShopifySessionLifecycle({
   const rows = storeId
     ? await tx.$queryRaw<LockedShopifySessionStore[]>(Prisma.sql`
         SELECT id, projectId, shopDomain, complianceState, installationGeneration
-        FROM WeleticShopifyStore WHERE id = ${storeId} LIMIT 1 FOR UPDATE
+        FROM WeleticShopifyStore WHERE id = ${storeId} LIMIT 1 ${forUpdateClause}
       `)
     : await tx.$queryRaw<LockedShopifySessionStore[]>(Prisma.sql`
         SELECT id, projectId, shopDomain, complianceState, installationGeneration
-        FROM WeleticShopifyStore WHERE shopDomain = ${shop} LIMIT 1 FOR UPDATE
+        FROM WeleticShopifyStore WHERE shopDomain = ${shop} LIMIT 1 ${forUpdateClause}
       `);
   const store = rows[0];
   const identities = deriveAllShopifyShopPrivacyIdentities({
@@ -41,8 +45,8 @@ export async function lockShopifySessionLifecycle({
   const tombstones = predicates.length
     ? await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id FROM WeleticShopifyShopPrivacyTombstone
-        WHERE expiresAt > CURRENT_TIMESTAMP(3) AND (${Prisma.join(predicates, " OR ")})
-        LIMIT 1 FOR UPDATE
+        WHERE expiresAt > ${currentTimestampClause} AND (${Prisma.join(predicates, " OR ")})
+        LIMIT 1 ${forUpdateClause}
       `)
     : [];
   if (tombstones.length) {

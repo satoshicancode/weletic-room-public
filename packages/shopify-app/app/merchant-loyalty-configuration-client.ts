@@ -2,7 +2,7 @@ import {
   loyaltyConfigurationResponseSchema,
   shopifyLoyaltyConfigurationInputSchema,
   type LoyaltyConfigurationUpdate,
-} from "../../../apps/web/lib/weletic/loyalty/configuration-contract";
+} from "@weletic/contracts/loyalty/configuration-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

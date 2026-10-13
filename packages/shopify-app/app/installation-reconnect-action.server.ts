@@ -1,6 +1,6 @@
 import { json } from "@remix-run/node";
-import { installationAdmissionStatusSchema } from "../../../apps/web/lib/weletic/shopify/installation-admission-contract";
-import { readWeleticShopifyRequestBodyBytes } from "../../../apps/web/lib/weletic/shopify/service-auth";
+import { installationAdmissionStatusSchema } from "@weletic/contracts/shopify/installation-admission-contract";
+import { readWeleticShopifyRequestBodyBytes } from "@weletic/contracts/shopify/service-auth";
 import type { verifyShopifyMerchantIdentity } from "./merchant-identity.server";
 import {
   requireEnv,

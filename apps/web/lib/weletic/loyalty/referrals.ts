@@ -36,6 +36,7 @@ import {
   assertShopifyStoreAcceptsOperationalWrites,
   assertShopifyStoreMatchesInstallationGeneration,
 } from "@/lib/weletic/shopify/store-compliance-state";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import { nanoid } from "@dub/utils";
 import {
   Prisma,
@@ -132,24 +133,18 @@ function isRetryableReferralTransactionError(error: unknown): boolean {
 export async function runSerializableReferralTransaction<T>(
   operation: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
-  for (let attempt = 1; attempt <= REFERRAL_TRANSACTION_RETRIES; attempt++) {
-    try {
-      return await prisma.$transaction(operation, {
+  return withFinancialTransactionRetry(
+    () =>
+      prisma.$transaction(operation, {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         maxWait: 10_000,
         timeout: 30_000,
-      });
-    } catch (error) {
-      if (
-        attempt === REFERRAL_TRANSACTION_RETRIES ||
-        !isRetryableReferralTransactionError(error)
-      ) {
-        throw error;
-      }
-    }
-  }
-
-  throw new Error("Referral transaction retry budget exhausted.");
+      }),
+    {
+      actionName: "referral_transaction",
+      isRetryable: isRetryableReferralTransactionError,
+    },
+  );
 }
 
 function createDefaultReferralRule(
@@ -519,18 +514,7 @@ async function ensureAccountReferralLinkUnlocked(params: {
     where: { id: params.accountId },
     include: {
       shopper: true,
-      store: {
-        include: {
-          project: {
-            include: {
-              domains: {
-                where: { primary: true, verified: true, archived: false },
-                take: 1,
-              },
-            },
-          },
-        },
-      },
+      store: true,
       program: true,
     },
   });
@@ -553,8 +537,22 @@ async function ensureAccountReferralLinkUnlocked(params: {
       params.loyaltyMaintenancePermit,
     ));
 
+  const project =
+    (account.store as any).project ??
+    (account.store.projectId && typeof prisma.project?.findUnique === "function"
+      ? await prisma.project.findUnique({
+          where: { id: account.store.projectId },
+          include: {
+            domains: {
+              where: { primary: true, verified: true, archived: false },
+              take: 1,
+            },
+          },
+        })
+      : null);
+
   const destinationUrl = `https://${account.store.shopDomain}?ref=${encodeURIComponent(referralCode)}`;
-  const primaryDomain = account.store.project?.domains?.[0]?.slug;
+  const primaryDomain = project?.domains?.[0]?.slug;
 
   if (!primaryDomain) {
     return {
@@ -1189,6 +1187,33 @@ export async function evaluateReferralQualification(
         };
       }
 
+      if (typeof (tx as any).weleticCommerceOrder?.findUnique === "function") {
+        const qualifyingOrder = await (
+          tx as any
+        ).weleticCommerceOrder.findUnique({
+          where: { id: input.orderId },
+        });
+        if (qualifyingOrder) {
+          if (qualifyingOrder.storeId !== input.storeId) {
+            return {
+              qualified: false as const,
+              reason: "Qualifying order belongs to another Shopify store",
+              advocatePointsAwarded: BigInt(0),
+              refereePointsAwarded: BigInt(0),
+            };
+          }
+          const orderStatus = (qualifyingOrder.status || "").toLowerCase();
+          if (orderStatus !== "paid") {
+            return {
+              qualified: false as const,
+              reason: `Qualifying order is not paid (current status: ${qualifyingOrder.status})`,
+              advocatePointsAwarded: BigInt(0),
+              refereePointsAwarded: BigInt(0),
+            };
+          }
+        }
+      }
+
       if (heldReferralSubscriptionOrderId(referralMetadata)) {
         return {
           qualified: false as const,
@@ -1674,38 +1699,55 @@ export async function evaluateReferralQualification(
         throw new ReferralLimitReachedError();
       }
 
+      const holdingPeriodDays = Number(lockedProgram.holdingPeriodDays || 0);
+      const isAdvocateHeld = holdingPeriodDays > 0;
+
       if (advocateAwarded > BigInt(0)) {
         const advocateLedgerEntry = await appendPointsLedgerEntry({
           storeId: input.storeId,
           accountId: referral.advocateAccountId,
           entryType: WeleticPointsLedgerEntryType.EARN_REFERRAL,
-          pointsDelta: advocateAwarded,
+          pointsDelta: isAdvocateHeld ? BigInt(0) : advocateAwarded,
+          pendingDelta: isAdvocateHeld ? advocateAwarded : BigInt(0),
           referenceType: "referral",
           referenceId: referral.id,
           idempotencyKey: advocateLedgerKey,
-          reason: `Referral reward for inviting friend (${input.orderId})`,
+          reason: isAdvocateHeld
+            ? `Referral reward for inviting friend (${input.orderId}) [Holding period: ${holdingPeriodDays}d]`
+            : `Referral reward for inviting friend (${input.orderId})`,
           metadata: {
             referralId: referral.id,
             qualificationOrderId: input.orderId,
             refereeAccountId: refereeAccount.id,
             orderId: input.orderId,
+            ...(isAdvocateHeld
+              ? {
+                  holdingPeriodDays,
+                  heldUntil: new Date(
+                    qualifiedAt.getTime() +
+                      holdingPeriodDays * 24 * 60 * 60 * 1000,
+                  ).toISOString(),
+                }
+              : {}),
           },
           tx,
         });
-        await enqueueFlowTriggerJob({
-          storeId: input.storeId,
-          eventId: advocateLedgerEntry.id,
-          payload: {
-            accountId: referral.advocateAccountId,
-            handle: "weletic-points-earned",
-            pointsDelta: advocateAwarded.toString(),
-            pointsBalance: advocateLedgerEntry.balanceAfter.toString(),
-            reason: "referral_advocate_reward",
-            orderId: input.orderId,
-          },
-          loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
-          tx,
-        });
+        if (!isAdvocateHeld) {
+          await enqueueFlowTriggerJob({
+            storeId: input.storeId,
+            eventId: advocateLedgerEntry.id,
+            payload: {
+              accountId: referral.advocateAccountId,
+              handle: "weletic-points-earned",
+              pointsDelta: advocateAwarded.toString(),
+              pointsBalance: advocateLedgerEntry.balanceAfter.toString(),
+              reason: "referral_advocate_reward",
+              orderId: input.orderId,
+            },
+            loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
+            tx,
+          });
+        }
         if (operationalStore.installationGeneration !== null)
           await enqueueReferralBenefitCommunication({
             tx,
@@ -1782,14 +1824,37 @@ export async function evaluateReferralQualification(
       }
 
       if (advocateAwarded > BigInt(0)) {
-        await scheduleTierReviewAfterQualifyingActivity({
-          storeId: input.storeId,
-          accountId: referral.advocateAccountId,
-          activityKey: advocateLedgerKey,
-          reason: "referral_advocate_points_earned",
-          loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
-          tx,
-        });
+        if (!isAdvocateHeld) {
+          await scheduleTierReviewAfterQualifyingActivity({
+            storeId: input.storeId,
+            accountId: referral.advocateAccountId,
+            activityKey: advocateLedgerKey,
+            reason: "referral_advocate_points_earned",
+            loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
+            tx,
+          });
+        } else {
+          const availableAt = new Date(
+            qualifiedAt.getTime() + holdingPeriodDays * 24 * 60 * 60 * 1000,
+          );
+          await enqueueOutboxJob({
+            storeId: input.storeId,
+            jobType: "HOLDING_PERIOD_RELEASE",
+            payload: {
+              orderId: input.orderId,
+              accountId: referral.advocateAccountId,
+              shopperId: refereeAccount.shopperId || "",
+              pendingPoints: advocateAwarded.toString(),
+              holdingPeriodDays,
+              availableAt: availableAt.toISOString(),
+              referralId: referral.id,
+            },
+            scheduledFor: availableAt,
+            idempotencyKey: `referral_holding_release_job:${referral.id}:${input.orderId}`,
+            loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
+            tx,
+          });
+        }
       }
       if (refereeAwarded > BigInt(0)) {
         await scheduleTierReviewAfterQualifyingActivity({
@@ -1820,6 +1885,13 @@ export async function evaluateReferralQualification(
       }
 
       for (const [index, couponJob] of couponJobs.entries()) {
+        const isJobAdvocateHeld =
+          couponJob.side === "advocate" && isAdvocateHeld;
+        const scheduledFor = isJobAdvocateHeld
+          ? new Date(
+              qualifiedAt.getTime() + holdingPeriodDays * 24 * 60 * 60 * 1000,
+            )
+          : undefined;
         await enqueueOutboxJob({
           storeId: input.storeId,
           jobType: "REFERRAL_REWARD_PROVISION",
@@ -1831,6 +1903,7 @@ export async function evaluateReferralQualification(
             qualificationOrderId: input.orderId,
             rewardSnapshot: couponJob.rewardSnapshot,
           },
+          ...(scheduledFor ? { scheduledFor } : {}),
           idempotencyKey: couponOutboxKeys[index],
           loyaltyMaintenancePermit: input.loyaltyMaintenancePermit,
           tx,

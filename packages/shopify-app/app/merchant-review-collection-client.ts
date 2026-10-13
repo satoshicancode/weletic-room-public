@@ -2,7 +2,7 @@ import {
   reviewCollectionReadResponseSchema,
   reviewCollectionWriteInputSchema,
   type ReviewCollectionWriteInput,
-} from "../../../apps/web/lib/weletic/reviews/collection-contract";
+} from "@weletic/contracts/reviews/collection-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

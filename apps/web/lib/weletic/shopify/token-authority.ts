@@ -1,8 +1,10 @@
 import {
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   WELETIC_SHOPIFY_SIGNATURE_HEADER,
   WELETIC_SHOPIFY_TIMESTAMP_HEADER,
   signWeleticShopifyRequest,
 } from "@/lib/weletic/shopify/service-auth";
+import crypto from "node:crypto";
 import { readBoundedShopifyJson } from "./read-bounded-json";
 
 const SHOP_DOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*\.myshopify\.com$/;
@@ -118,11 +120,13 @@ export async function fetchShopifyTokenAuthorityCredential({
     url.searchParams.set("generation", installationGeneration);
   const path = `${url.pathname}${url.search}`;
   const timestamp = String(Date.now());
+  const requestId = crypto.randomUUID();
   const signature = signWeleticShopifyRequest({
     timestamp,
     method: "GET",
     path,
     body: "",
+    requestId,
     secret: config.secret,
   });
   const fetchFn = customFetch || fetch;
@@ -138,6 +142,7 @@ export async function fetchShopifyTokenAuthorityCredential({
         Accept: "application/json",
         [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
         [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signature,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
       },
       signal,
     });

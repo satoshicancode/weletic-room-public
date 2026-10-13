@@ -74,7 +74,7 @@ function financialArtifactKind(rewardType: FinancialRewardType) {
     : WeleticRewardArtifactKind.store_credit;
 }
 
-function hasRemoteProvisionAttempt(metadata: unknown) {
+export function hasRemoteProvisionAttempt(metadata: unknown) {
   return Boolean(
     metadata &&
       typeof metadata === "object" &&
@@ -233,9 +233,36 @@ export async function provisionFinancialRewardReservation({
   const amountMinor = BigInt(snapshot.discountValue);
   const customerId = reservation.account.shopper.shopifyCustomerId;
   const note = `Weletic loyalty redemption ${reservation.redemption.id}`;
+  const storeCreditNote = `Weletic Redemption [${reservation.redemption.id}]`;
   const priorAttempt = hasRemoteProvisionAttempt(
     reservation.redemption.metadata,
   );
+  const rawStatus = (reservation.redemption as any).status;
+  const metadataStatus = (
+    reservation.redemption.metadata as Record<string, unknown> | null
+  )?.status;
+  const metadataState = (
+    reservation.redemption.metadata as Record<string, unknown> | null
+  )?.state;
+  const isPendingRemoteConfirmation =
+    rawStatus === "PENDING_REMOTE_CONFIRMATION" ||
+    metadataStatus === "PENDING_REMOTE_CONFIRMATION" ||
+    metadataState === "PENDING_REMOTE_CONFIRMATION";
+
+  // Feature 11 & 12: When status is PENDING_REMOTE_CONFIRMATION, handle repeated requests gracefully
+  // (idempotent status return rather than throwing an unhandled hard crash).
+  if (rewardType === "store_credit" && isPendingRemoteConfirmation) {
+    return {
+      success: true,
+      redemptionId: reservation.redemption.id,
+      discountCode: reservation.redemption.shopifyDiscountCode,
+      shopifyDiscountId: reservation.redemption.shopifyStoreCreditTransactionId,
+      status: WeleticRedemptionStatus.provisioning,
+      pointsSpent: reservation.effectivePointsCost,
+      balanceAfter: reservation.balanceAfter,
+    };
+  }
+
   if (rewardType === "store_credit" && priorAttempt) {
     throw new ShopifyFinancialRewardError(
       "REMOTE_OUTCOME_UNKNOWN",
@@ -363,6 +390,8 @@ export async function provisionFinancialRewardReservation({
             currencyCode: snapshot.shopCurrency,
             expiresAt: reservation.expiresAt,
             notify: notifyStoreCreditOwner,
+            note: storeCreditNote,
+            redemptionId: reservation.redemption.id,
             customFetch,
           });
           storeCreditTransactionId = created.transactionId;

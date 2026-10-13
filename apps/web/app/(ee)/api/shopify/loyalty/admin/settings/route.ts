@@ -50,7 +50,6 @@ export const GET = withWorkspace(
   async ({ workspace }) => {
     const store = await prisma.weleticShopifyStore.findUnique({
       where: { projectId: workspace.id },
-      include: { program: { select: { accountingCurrency: true } } },
     });
 
     if (!store) {
@@ -124,10 +123,20 @@ export const GET = withWorkspace(
       });
     }
 
+    const dubProgram =
+      (store as any).program ??
+      (store.programId && typeof prisma?.program?.findUnique === "function"
+        ? await prisma.program.findUnique({
+            where: { id: store.programId },
+            select: { accountingCurrency: true },
+          })
+        : null);
+
     return loyaltySuccessResponse(
       {
         ...program,
-        accountingCurrency: store.program.accountingCurrency,
+        accountingCurrency:
+          dubProgram?.accountingCurrency || store.shopCurrency,
       },
       {
         headers: COMMON_CORS_HEADERS,
@@ -144,7 +153,6 @@ export const POST = withWorkspace(
   async ({ workspace, req }) => {
     const store = await prisma.weleticShopifyStore.findUnique({
       where: { projectId: workspace.id },
-      include: { program: { select: { accountingCurrency: true } } },
     });
 
     if (!store) {
@@ -276,8 +284,16 @@ export const POST = withWorkspace(
           message: "liabilityValuationCurrency must be a valid ISO 4217 code.",
         });
       }
+      const dubProgram =
+        (store as any).program ??
+        (store.programId && typeof prisma?.program?.findUnique === "function"
+          ? await prisma.program.findUnique({
+              where: { id: store.programId },
+              select: { accountingCurrency: true },
+            })
+          : null);
       const accountingCurrency = normalizeCurrency(
-        store.program.accountingCurrency,
+        dubProgram?.accountingCurrency || store.shopCurrency,
       );
       if (normalizedValuationCurrency !== accountingCurrency) {
         throw new DubApiError({

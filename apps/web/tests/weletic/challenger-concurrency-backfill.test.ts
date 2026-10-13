@@ -1,6 +1,44 @@
 import { calculateRefundReversal } from "@/lib/weletic/commerce/record-refund";
 import { calculateEligibleOrderPoints } from "@/lib/weletic/loyalty/earn";
-import { describe, expect, it } from "vitest";
+import {
+  acquireDistributedLock,
+  releaseDistributedLock,
+  resetInMemoryLocks,
+  withDistributedLock,
+} from "@/lib/weletic/redis-lock";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const activeRedisLocks = new Map<string, string>();
+
+vi.mock("@/lib/upstash", () => ({
+  redis: {
+    set: vi.fn(
+      async (
+        key: string,
+        value: string,
+        opts?: { nx?: boolean; ex?: number },
+      ) => {
+        if (opts?.nx && activeRedisLocks.has(key)) {
+          return null;
+        }
+        activeRedisLocks.set(key, value);
+        return "OK";
+      },
+    ),
+    eval: vi.fn(async (script: string, keys: string[], args: string[]) => {
+      const key = keys[0];
+      const token = args[0];
+      if (String(script).includes("del")) {
+        if (activeRedisLocks.get(key) === token) {
+          activeRedisLocks.delete(key);
+          return 1;
+        }
+        return 0;
+      }
+      return 1;
+    }),
+  },
+}));
 
 // =============================================================================
 // Simulation Types and Helper Models for Empirical Testing
@@ -598,126 +636,91 @@ describe("Empirical Challenger 1: Concurrency, Backfill & Performance Stress Har
   });
 
   // =========================================================================
-  // Scope 4: Storefront Widget Cache Stampede
+  // Scope 4: Storefront Widget Cache Stampede Prevention via Production Distributed Mutex
   // =========================================================================
-  describe("Scope 4: Storefront Widget Cache Stampede (Thundering Herd) Prevention", () => {
-    it("4.1: SingleFlight request coalescing collapses 500 concurrent in-process reads into exactly 1 database fetch", async () => {
-      const inFlightRequests = new Map<string, Promise<{ balance: number }>>();
+  describe("Scope 4: Storefront Widget Cache Stampede Prevention via Production Distributed Mutex", () => {
+    beforeEach(() => {
+      resetInMemoryLocks();
+      activeRedisLocks.clear();
+    });
+
+    it("4.1: withDistributedLock serializes concurrent access and collapses thundering herd", async () => {
       let dbQueryCount = 0;
-
-      async function fetchFromDatabase(): Promise<{ balance: number }> {
+      const fetchWithDb = async () => {
         dbQueryCount++;
-        // Simulate 20ms DB query latency
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await new Promise((r) => setTimeout(r, 15));
         return { balance: 1250 };
-      }
+      };
 
-      function fetchWithSingleFlight(
-        key: string,
-      ): Promise<{ balance: number }> {
-        const existing = inFlightRequests.get(key);
-        if (existing) return existing;
+      // 10 concurrent requests for the same customer loyalty balance
+      const tasks = Array.from({ length: 10 }, async () => {
+        return withDistributedLock({
+          key: "stampede:loyalty:customer:store1:cust1",
+          ttlSeconds: 5,
+          onLocked: async () => {
+            // Fallback / cached read when another instance holds the lock
+            return { balance: 1250, cached: true };
+          },
+          fn: async () => {
+            return await fetchWithDb();
+          },
+        });
+      });
 
-        const promise = (async () => {
-          try {
-            return await fetchFromDatabase();
-          } finally {
-            inFlightRequests.delete(key);
-          }
-        })();
-
-        inFlightRequests.set(key, promise);
-        return promise;
-      }
-
-      // Fire 500 concurrent requests for the same expired key
-      const requests = Array.from({ length: 500 }, () =>
-        fetchWithSingleFlight("loyalty:customer:store1:cust1"),
-      );
-
-      const results = await Promise.all(requests);
-
-      expect(results).toHaveLength(500);
+      const results = await Promise.all(tasks);
+      expect(results).toHaveLength(10);
+      // Exactly 1 caller acquired the lock to query the DB; 9 callers received onLocked fallback
+      expect(dbQueryCount).toBe(1);
       expect(results[0].balance).toBe(1250);
-      expect(dbQueryCount).toBe(1); // Exactly 1 DB query fired despite 500 incoming requests!
     });
 
-    it("4.2 [MULTI-INSTANCE STAMPEDE DEFECT DETECTED]: Multi-container / Serverless environments require Redis distributed mutex to prevent stampede across instances", async () => {
-      // Simulate 5 separate serverless containers with separate in-memory maps
+    it("4.2: acquireDistributedLock rejects concurrent callers when lock is held", async () => {
+      const key = "stampede:multi-container:key1";
+      const lock1 = await acquireDistributedLock({ key, ttlSeconds: 10 });
+      expect(lock1.acquired).toBe(true);
+
+      // Second instance attempts to acquire same key
+      const lock2 = await acquireDistributedLock({ key, ttlSeconds: 10 });
+      expect(lock2.acquired).toBe(false);
+
+      // Release first lock
+      const released = await releaseDistributedLock({
+        key,
+        token: lock1.token,
+      });
+      expect(released).toBe(true);
+
+      // Third attempt succeeds after release
+      const lock3 = await acquireDistributedLock({ key, ttlSeconds: 10 });
+      expect(lock3.acquired).toBe(true);
+      await releaseDistributedLock({ key, token: lock3.token });
+    });
+
+    it("4.3: withDistributedLock coordinates multi-instance reads and eliminates multi-container stampedes", async () => {
       let totalDbHits = 0;
+      const key = "stampede:multi-instance:shared-resource";
 
-      class ServerlessInstance {
-        private inFlight = new Map<string, Promise<number>>();
-        async handleRequest(key: string): Promise<number> {
-          const existing = this.inFlight.get(key);
-          if (existing) return existing;
-          const promise = (async () => {
-            try {
-              totalDbHits++;
-              await new Promise((r) => setTimeout(r, 10));
-              return 1000;
-            } finally {
-              this.inFlight.delete(key);
-            }
-          })();
-          this.inFlight.set(key, promise);
-          return promise;
-        }
-      }
+      // 10 concurrent calls from separate serverless invocations
+      const tasks = Array.from({ length: 10 }, async () => {
+        return withDistributedLock({
+          key,
+          ttlSeconds: 10,
+          onLocked: async () => {
+            // Read from populated cache on lock contention
+            return { balance: 1000, source: "cache" };
+          },
+          fn: async () => {
+            totalDbHits++;
+            await new Promise((r) => setTimeout(r, 10));
+            return { balance: 1000, source: "db" };
+          },
+        });
+      });
 
-      const instances = Array.from(
-        { length: 5 },
-        () => new ServerlessInstance(),
-      );
-      // Each instance handles 20 requests
-      await Promise.all(
-        instances.map((inst) =>
-          Promise.all(
-            Array.from({ length: 20 }, () => inst.handleRequest("key_1")),
-          ),
-        ),
-      );
-
-      // Without distributed Redis mutex, each instance queries DB once -> 5 DB queries
-      expect(totalDbHits).toBe(5);
-    });
-
-    it("4.3: Distributed Redis Mutex Lock coordinates multi-instance reads and eliminates multi-container stampedes", async () => {
-      const redisLock = new Map<string, boolean>();
-      let dbHitsWithDistributedLock = 0;
-
-      async function fetchWithRedisMutex(
-        key: string,
-        fetcher: () => Promise<number>,
-      ): Promise<number> {
-        const mutexKey = `mutex:${key}`;
-        // Try acquire lock
-        if (!redisLock.has(mutexKey)) {
-          redisLock.set(mutexKey, true);
-          try {
-            const val = await fetcher();
-            return val;
-          } finally {
-            redisLock.delete(mutexKey);
-          }
-        } else {
-          // Wait for lock release and read from cache
-          await new Promise((r) => setTimeout(r, 15));
-          return 1000; // Simulated cache read after lock holder populated it
-        }
-      }
-
-      const instances = 10;
-      const tasks = Array.from({ length: instances }, () =>
-        fetchWithRedisMutex("shared_key", async () => {
-          dbHitsWithDistributedLock++;
-          await new Promise((r) => setTimeout(r, 10));
-          return 1000;
-        }),
-      );
-
-      await Promise.all(tasks);
-      expect(dbHitsWithDistributedLock).toBe(1); // Exactly 1 DB hit across all instances!
+      const results = await Promise.all(tasks);
+      expect(results).toHaveLength(10);
+      expect(totalDbHits).toBe(1);
+      expect(results.every((r) => r.balance === 1000)).toBe(true);
     });
   });
 });

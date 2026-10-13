@@ -28,22 +28,26 @@ const actor = {
 };
 const input = { actor, request: { operation: "read" } };
 const tx = { fixture: true };
+let requestCounter = 0;
 function request(
   body: string,
   signedBody = body,
   timestamp = String(Date.now()),
 ) {
+  const requestId = `req_app_${Date.now()}_${++requestCounter}`;
   return new Request(`https://backend.example${path}`, {
     method: "POST",
     body,
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "POST",
         path,
         body: signedBody,
         secret,
+        requestId,
       }),
     },
   });
@@ -64,7 +68,7 @@ it("verifies a real body signature before passing the strict actor to one transa
   expect(mocks.transaction).toHaveBeenCalledExactlyOnceWith(
     expect.any(Function),
     {
-      isolationLevel: "RepeatableRead",
+      isolationLevel: "Serializable",
     },
   );
   expect(mocks.manage).toHaveBeenCalledExactlyOnceWith({

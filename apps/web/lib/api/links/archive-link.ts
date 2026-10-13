@@ -1,4 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { evictLinkFromKv } from "@/lib/weletic/link-kv-cache";
+import { waitUntil } from "@vercel/functions";
+import { linkCache } from "./cache";
 
 export async function archiveLink({
   linkId,
@@ -7,7 +10,7 @@ export async function archiveLink({
   linkId: string;
   archived: boolean;
 }) {
-  return await prisma.link.update({
+  const link = await prisma.link.update({
     where: {
       id: linkId,
     },
@@ -15,4 +18,19 @@ export async function archiveLink({
       archived,
     },
   });
+
+  if (link) {
+    const invalidations = Promise.allSettled([
+      linkCache.invalidateMany([{ domain: link.domain, key: link.key }]),
+      evictLinkFromKv({ domain: link.domain, key: link.key }),
+    ]);
+
+    try {
+      waitUntil(invalidations);
+    } catch {
+      await invalidations;
+    }
+  }
+
+  return link;
 }

@@ -1,63 +1,79 @@
-# Company-store public app — reviewer packet draft
+# Core loyalty and reviews public app — reviewer packet draft
 
-September 20, 2026. **Not submission-ready; not submitted.**
-This prepares S06, not Shopify approval or production activation.
+Updated September 27, 2026. **Not submission-ready; not submitted.**
+The [core launch checklist](core-launch-checklist.md) and [ADR 0045](../adr/0045-core-loyalty-reviews-launch.md)
+supersede this packet's September 20 company-only/free policy. This draft prepares
+review instructions; it establishes neither Shopify approval nor production activation.
 
 ## Distribution and claims
 
-Proposed listing description, usable only after enabled-module acceptance:
+Proposed listing description, usable only after core journey acceptance:
 
-> Manage loyalty and customer reviews for approved Weletic company stores from
-> Shopify Admin. Enable each module independently. Store approval is required;
-> this app is not a self-service service for unrelated merchants.
+> Purchase points, fixed-value rewards and verified product reviews for Shopify.
+> Includes customer wallet/history, optional photo reviews, merchant moderation
+> and Shopify Flow integration. US$500/month; no trial. Private company plans are
+> assigned individually. Basic support is available through the listed contact.
 
-Pricing: free; no app billing, pricing tiers or external-merchant onboarding.
-Choose limited visibility explicitly. A direct listing URL does not restrict who
-can attempt installation; backend admission remains necessary. Limited visibility
-does not exempt the app from review or quality requirements.
+Approved commercial policy: one Shopify-hosted US$500 monthly public plan and one
+private free company plan; no public trial, annual tier or usage pricing. Outside
+merchants who subscribe receive the same launched features and basic support.
+The price discourages installation but does not prevent it. Choose limited
+visibility explicitly; it does not exempt the app from review or quality requirements.
 [Shopify visibility](https://shopify.dev/docs/apps/launch/distribution/visibility),
 [review process](https://shopify.dev/docs/apps/launch/app-store-review/review-process).
 
-Do not advertise all plan capabilities as available. The exact submitted build
-must have a frozen list of enabled modules, rewards, extensions and workflows,
-each linked to named live evidence. Omit pending video/Q&A/import/subscription
-claims until accepted. Explain plan-ineligible surfaces; do not imply public
-distribution unlocks Plus-only checkout UI. Incentives concern store/product
-feedback, never App Store reviews, and must not depend on rating/publication.
+Freeze the exact core profile, reward types, extensions and workflows against
+named installed evidence. Purchase earning is for eligible one-time merchandise;
+redemption uses fixed-value native discounts. Reviews are verified product text
+and optional photos, with one disclosed participation-points award per order,
+independent of rating or publication. Manual publication, seven-day invitations,
+thirty-day validity and no reminders are the initial defaults. No historical
+imports or invitation sends are included.
 
-## Reviewer access — audited, no authentication bypass
+Do not advertise VIP, referrals, campaigns, subscription earning, store reviews,
+open submissions, review coupons or photo bonuses, video, Q&A, imports, POS or
+Plus-only checkout extensions. The required theme/account and Flow bundle has
+its own publication gate. Product review incentives never concern App Store reviews.
 
-Before submission designate a monitored support contact and approved reviewer
-access procedure. Neither contact URL nor response SLA is verified in this draft.
+## Reviewer access — verified installation and subscription
 
-1. Reviewer installs the existing public registration through the provided
-   Shopify listing/install flow and opens it inside authenticated Shopify Admin.
-2. An unknown store remains `pending_approval`. It may authenticate and perform
-   mandatory privacy handling, but must not sync customers or run module writers.
-3. Verify the review request through Shopify's review channel. Obtain an explicit
-   temporary reviewer-store admission approval bound to the exact app, canonical
-   shop and current installation generation. Do not approve arbitrary owners
-   merely because they can install the app.
-4. Operator privately previews `bootstrap-company-shopify-store.ts` using its
-   strict app/shop/pending/generation/revision/operator/reason inputs. If mapping
-   is absent, apply only the approved exact preview digest. Never adopt existing
-   orphan records or create a fictitious Weletic user.
-5. Complete fresh native Shopify authentication after mapping. Then preview
-   `set-shopify-store-access.ts` with exact store/domain/generation/revision and
-   audited operator/reason; apply `active` only under the approved reviewer-store
-   packet. This is a trusted operator action, not a merchant API or reviewer shell
-   instruction. Do not expose database credentials or tokens to the reviewer.
-6. Demonstrate independent module controls using approved disposable fixtures.
-   Reinstall creates fresh generation authority; rerun admission as required.
-   Never modify auth rules or synthesize a staff session to keep a demo working.
-7. At review completion, audit and suspend temporary access under the approved
-   cleanup packet. Preserve financial/import/audit history; do not delete real
-   customer records or uninstall old apps as implicit cleanup.
+Before submission designate a monitored support contact and a tested reviewer
+access procedure. Neither the hosted contact URL nor response SLA is verified
+in this draft. Hosted pricing setup remains inaccessible in the observed
+unregistered account; Hiro has deferred registration and its fee. Local
+synthetic snapshots are test fixtures, never reviewer access credentials.
 
-Both operator scripts exist on public main. Their existence does not prove this
-complete reviewer journey live. Freeze private runtime instructions, exact
-identifiers and operator availability before submission; do not paste private
-preview output into this public document.
+1. Reviewer installs the public app and opens it inside authenticated Shopify
+   Admin. Verify the immutable app/shop identity and installation generation.
+   Installation or a pricing redirect alone grants no benefit access.
+2. Exercise Shopify-hosted plan selection and return through the actual approved
+   review/test billing path. Record the configured plan handles and any exact
+   store assignment privately. Do not require an unapproved real charge merely
+   to demonstrate the app, or invent a private entitlement in SQL.
+3. The server confirms Partner `activeSubscription` and persists app/shop/generation
+   authority. Verified eligible subscriptions can provision access without manual
+   company approval. Private-free company access must match the configured plan;
+   development no-charge access also requires authenticated development-store status.
+4. Show pending/unverified, declined selection, forged return, API-unavailable,
+   cancellation and expired-verification states. New benefits pause when authority
+   expires. Existing refunds, settlements and privacy processing continue under
+   their existing authorization and installation fences.
+5. Authenticate owner and restricted staff normally. Explicit suspension, privacy
+   restrictions and reinstall fencing remain authoritative even with a valid plan.
+   Reinstall requires fresh generation-bound verification; never synthesize a
+   staff session, manually override a subscription, or expose credentials.
+6. Demonstrate only enabled core journeys using approved disposable fixtures.
+   Record cancellation guidance, support and billing status alongside recovery
+   states. No separate SaaS registration or Stripe checkout belongs in this path.
+7. At completion, execute only the approved exact fixture/access cleanup packet.
+   Preserve financial/audit history and prior apps; no blanket deletion or app
+   retirement is implied by review completion.
+
+Legacy company-store operator scripts remain recovery/administrative tools;
+they are not the normal subscriber or reviewer onboarding path. Source tests and
+local fixtures do not prove this installed journey. Freeze private runtime
+instructions, exact identities, billing path and operator availability before
+submission, without publishing secrets in this document.
 
 ## Reproducible reviewer journey
 
@@ -67,17 +83,21 @@ and cleanup owner. Use a persistent reviewed environment, not a laptop tunnel
 whose lifetime is unknown. Complete these journeys before offering them:
 
 - Install/open/reopen/reinstall; owner and restricted staff; multi-tab recovery;
-  pending/suspended store; no separate SaaS registration or billing requirement.
-- Loyalty: approved test purchase → points → native reward → checkout use →
-  refund; exact balance/history evidence, duplicate handling and clear unsupported
+  pending/suspended store; verified hosted pricing, cancellation/freeze, unavailable
+  Partner API, cross-store isolation and reinstall. No separate SaaS account.
+- Loyalty: approved one-time test purchase → points → fixed-value native coupon →
+  checkout use → partial/full refund; exact balance/history evidence, duplicate handling and clear unsupported
   capabilities. No page-render points and no fabricated order/renewal proof.
 - Reviews: approved invitation → real inbox → scoped single-use submission →
   moderation/reply → widget, including a genuine low rating. Disclose an optional
-  saved points-or-coupon incentive before submission; no automatic enrollment.
+  saved participation-points incentive before submission, at most once per order;
+  no automatic enrollment. Include private-photo deletion and token expiry/reuse.
 - EN/JA/VI, mobile/keyboard, expired session and loading/error/permission states
-  for each enabled surface. List actual theme/account/post-checkout placements.
-- Real Flow workflows for each advertised trigger/action, with event/run
-  identity and no duplicate built-in incentive. Do not advertise draft manifests.
+  for each enabled surface. List the actual required theme/account placements.
+- Real Flow receipts for points earned, reward redeemed, review submitted and
+  review published, plus the owner-authorized bounded points action. Include
+  duplicate/revoked/disabled/stale-generation behavior and no recursive awards.
+  Built-in review rewards remain the sole automatic participation-award writer.
 - Privacy/support: reachable policy/contact links, data access/erasure evidence,
   revoked authority, uninstall containment and no private identifiers in UI/logs.
 
@@ -116,7 +136,7 @@ applies the same app requirements to limited-visibility listings.
 | Gate                | Required evidence                                                                                       | Current disposition                                                 |
 | ------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | Persistent release  | Isolated providers, production manifests, HTTPS origins, backup/restore, monitoring                     | Open; see resource inventory                                        |
-| Reviewer admission  | Exact audited install/bootstrap/auth/approval/reinstall journey                                         | Not executed by this packet                                         |
+| Reviewer admission  | Exact authenticated install/hosted-pricing/verification/reinstall journey                               | Not executed by this packet                                         |
 | Enabled modules     | Named live matrix per submitted capability, including failure/privacy paths                             | Incomplete; bounded loyalty evidence is not whole-module acceptance |
 | Shopify permissions | Least-privilege manifest/runtime agreement, extension ownership, protected-data/network approvals       | Not certified here                                                  |
 | Protected data      | Exact approved fields, data-protection controls and redaction/error journey on the submitted public app | Dashboard grants and release-environment controls unverified        |

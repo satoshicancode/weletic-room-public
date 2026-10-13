@@ -38,17 +38,20 @@ function request(
   signedBody = body,
   signedPath = path,
   timestamp = String(Date.now()),
+  requestId = "req_" + Math.random().toString(36).slice(2),
 ) {
   return new Request(`https://backend.invalid${path}`, {
     method: "POST",
     body,
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "POST",
         path: signedPath,
         body: signedBody,
+        requestId,
         secret,
       }),
     },

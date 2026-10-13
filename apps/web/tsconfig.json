@@ -6,12 +6,16 @@
     "allowJs": true,
     "skipLibCheck": true,
     "baseUrl": ".",
+    "types": ["node"],
     "paths": {
       "@/pages/*": ["pages/*"],
       "@/styles/*": ["styles/*"],
       "@/ui/*": ["ui/*"],
       "@/lib/*": ["lib/*"],
-      "@/components/*": ["components/*"]
+      "@/components/*": ["components/*"],
+      "@weletic/contracts": ["../../packages/contracts/src/index.ts"],
+      "@weletic/contracts/*": ["../../packages/contracts/src/*"],
+      "~/*": ["../../packages/shopify-app/app/*"]
     },
     "downlevelIteration": true,
     "forceConsistentCasingInFileNames": true,
@@ -40,5 +44,5 @@
     "../../packages/blocks/src/event-list.tsx",
     "../../packages/ui/src/hooks/use-pagination.ts"
   ],
-  "exclude": ["node_modules", "playwright"]
+  "exclude": ["node_modules", "playwright", "workers"]
 }

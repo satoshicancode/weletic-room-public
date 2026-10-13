@@ -46,7 +46,7 @@ export async function executeHistoricalImportRollbackJob({
           claim,
         }),
       {
-        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         timeout: 30_000,
       },
     );

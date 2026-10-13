@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({ graphql: vi.fn() }));
 
 vi.mock("@/lib/integrations/shopify/admin-graphql", () => ({
   shopifyAdminGraphql: mocks.graphql,
+  SHOPIFY_ADMIN_API_VERSION: "2026-10",
 }));
 vi.mock("@/lib/weletic/shopify/get-installation", () => ({
   getWeleticShopifyInstallation: vi.fn().mockResolvedValue({

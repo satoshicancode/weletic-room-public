@@ -38,6 +38,9 @@ function fixture(stores: unknown[] = []) {
       $queryRaw: query,
       weleticShopifyAppSession: { deleteMany: removeSessions },
       weleticShopifySessionCoordination: { deleteMany: removeCoordinator },
+      weleticShopifySubscriptionSnapshot: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
       weleticShopifyPendingInstallationChange: { deleteMany: removeAudit },
       weleticShopifyPendingInstallation: { update, create },
     } as unknown as Prisma.TransactionClient,

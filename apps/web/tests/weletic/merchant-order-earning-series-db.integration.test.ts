@@ -145,7 +145,7 @@ beforeAll(async () => {
         programId: programIds[index],
         shopDomain: `order-rate-${index}-${suffix}.myshopify.com`,
         shopCurrency: "USD",
-        apiVersion: "2026-07",
+        apiVersion: "2026-10",
       },
     });
     await database.weleticLoyaltyProgram.create({

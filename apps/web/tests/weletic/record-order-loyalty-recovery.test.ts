@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type TestOrder = {
   id: string;
@@ -259,6 +259,18 @@ async function replayOrder() {
 }
 
 describe("recordWeleticOrder duplicate loyalty recovery", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("recovers core purchase points without invoking deferred referral or tier hooks", async () => {
+    vi.stubEnv("WELETIC_FEATURE_PROFILE", "core-v1");
+    await expect(replayOrder()).resolves.toMatchObject({
+      loyaltyLedgerEntryId: "grant_recovered",
+      duplicate: true,
+    });
+    await replayOrder();
+    expect(state.earnEffects).toBe(1);
+    expect(mocks.evaluateReferralQualification).not.toHaveBeenCalled();
+    expect(mocks.evaluateAccountTier).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     state.order = existingOrder("shopper_1");

@@ -90,7 +90,7 @@ export async function chargeRefunded({
           id: payout.id,
         },
         data: {
-          amount: payout.amount - commission.earnings,
+          amount: payout.amount - Number(commission.earnings),
         },
       });
     }

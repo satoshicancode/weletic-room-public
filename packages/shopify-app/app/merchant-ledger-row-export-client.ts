@@ -2,7 +2,7 @@ import {
   merchantLedgerRowExportRequestSchema,
   verifyMerchantLedgerRowExportResponse,
   type MerchantLedgerRowExportRequest,
-} from "../../../apps/web/lib/weletic/loyalty/ledger-row-export-contract";
+} from "@weletic/contracts/loyalty/ledger-row-export-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

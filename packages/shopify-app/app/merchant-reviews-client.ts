@@ -2,7 +2,7 @@ import {
   merchantReviewListInputSchema,
   merchantReviewListResponseSchema,
   type MerchantReviewListInput,
-} from "../../../apps/web/lib/weletic/reviews/merchant-contract";
+} from "@weletic/contracts/reviews/merchant-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

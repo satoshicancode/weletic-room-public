@@ -27,6 +27,7 @@ import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  storeFindUnique: vi.fn(),
   accountFindFirst: vi.fn(),
   accountFindUnique: vi.fn(),
   accountUpdateMany: vi.fn(),
@@ -51,6 +52,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 const txClient = {
+  weleticShopifyStore: { findUnique: mocks.storeFindUnique },
   weleticLoyaltyAccount: {
     findFirst: mocks.accountFindFirst,
     findUnique: mocks.accountFindUnique,
@@ -212,6 +214,9 @@ function createReviewFixture(
 describe("Loyalty Earning Actions, Birthday & Judge.me Review Matrix Suite (Requirement R1 / Item 9)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.storeFindUnique.mockResolvedValue({
+      shopDomain: "brand.myshopify.com",
+    });
     mocks.accountFindFirst.mockResolvedValue(createAccountFixture());
     mocks.accountFindUnique.mockResolvedValue(createAccountFixture());
     mocks.accountUpdateMany.mockResolvedValue({ count: 1 });

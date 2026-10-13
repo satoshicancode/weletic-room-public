@@ -9,7 +9,7 @@ import {
   type MerchantReviewCouponListInput,
   type MerchantReviewIncentiveActivationInput,
   type MerchantReviewIncentiveDraftInput,
-} from "../../../apps/web/lib/weletic/reviews/incentive-merchant-contract";
+} from "@weletic/contracts/reviews/incentive-merchant-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

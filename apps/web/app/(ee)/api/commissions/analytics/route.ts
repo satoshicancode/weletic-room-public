@@ -253,7 +253,7 @@ async function byType({
     .map((r) => ({
       key: r.type!,
       label: capitalize(r.type!) ?? r.type!,
-      earnings: r._sum.earnings ?? 0,
+      earnings: Number(r._sum.earnings ?? 0),
       count: r._count._all,
     }));
 
@@ -565,7 +565,7 @@ async function byPartnerId({
         name: partner.name,
         image: partner.image ?? null,
         country: partner.country ?? null,
-        earnings: g._sum.earnings ?? 0,
+        earnings: Number(g._sum.earnings ?? 0),
         commissionCount: g._count._all,
       },
     ];

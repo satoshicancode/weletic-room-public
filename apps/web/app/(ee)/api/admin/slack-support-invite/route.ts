@@ -13,7 +13,12 @@ export const POST = withAdmin(async ({ req }) => {
     emails: emailsBody,
     workspaceSlug,
     channelId,
-  } = await req.json();
+  } = (await req.json()) as {
+    email?: string;
+    emails?: string[];
+    workspaceSlug?: string;
+    channelId?: string;
+  };
 
   const emails =
     Array.isArray(emailsBody) && emailsBody.length > 0
@@ -38,7 +43,7 @@ export const POST = withAdmin(async ({ req }) => {
   if (nameTaken) {
     return NextResponse.json(
       {
-        error: `Channel #${sharedSupportChannelName(workspaceSlug)} already exists. Provide its Slack channel ID (C…) to send the invite.`,
+        error: `Channel #${sharedSupportChannelName({ workspaceSlug })} already exists. Provide its Slack channel ID (C…) to send the invite.`,
         nameTaken: true,
       },
       { status: 409 },

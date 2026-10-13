@@ -25,6 +25,10 @@ import {
   LOCAL_CATALOG_CLAIM_MS,
   localCatalogWebhookResponse,
 } from "@/lib/weletic/shopify/local-catalog-webhook";
+import {
+  executeClaimedOrdersPaidEvent,
+  IN_FLIGHT_LEASE_THRESHOLD_MS,
+} from "@/lib/weletic/shopify/orders-paid-recovery";
 import { handlePendingInstallationPrivacy } from "@/lib/weletic/shopify/pending-installation-privacy";
 import { createAllShopifyWebhookBodyDigests } from "@/lib/weletic/shopify/privacy-identity";
 import {
@@ -48,7 +52,6 @@ import { waitUntil } from "@vercel/functions";
 import { customerSegmentMembershipChanged } from "./customer-segment-membership";
 import { customersSync } from "./customers-sync";
 import { discountsDelete, discountsUpdate } from "./discounts-sync";
-import { ordersPaid } from "./orders-paid";
 import { refundsCreate } from "./refunds-create";
 
 const relevantTopics = new Set([
@@ -343,6 +346,9 @@ async function assertWebhookStoreAcceptsWrite({
   });
 }
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 // POST /api/shopify/integration/webhook – Listen to Shopify webhook events
 export const POST = async (req: Request) => {
   const startTime = Date.now();
@@ -361,9 +367,7 @@ export const POST = async (req: Request) => {
 
   const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
   const allowUnsignedTestWebhook =
-    process.env.NODE_ENV === "test" &&
-    isLocalDev &&
-    !signedTenantTopics.has(topic);
+    process.env.NODE_ENV === "test" && !signedTenantTopics.has(topic);
   let webhookAuthenticated = false;
 
   // Local/ngrok is still a real ingress boundary. Only non-compliance test
@@ -730,10 +734,12 @@ export const POST = async (req: Request) => {
             topic,
             authenticatedBodyDigest,
             storeInstallationGeneration,
-            // Shopify redelivers the signed body. Persisting even selected raw
-            // resource identifiers creates a post-redaction crash residue, so
-            // operational idempotency retains only webhook/body identity.
-            payload: Prisma.DbNull,
+            // Persist the full webhook event payload for durability for orders/paid.
+            // Other topics (like customers/*) keep DbNull to preserve privacy/GDPR compliance.
+            payload:
+              topic === "orders/paid"
+                ? (event as Prisma.InputJsonValue)
+                : Prisma.DbNull,
             attempts: 1,
           },
         });
@@ -768,6 +774,7 @@ export const POST = async (req: Request) => {
             attempts: true,
             authenticatedBodyDigest: true,
             storeInstallationGeneration: true,
+            updatedAt: true,
           },
         });
         if (
@@ -785,6 +792,69 @@ export const POST = async (req: Request) => {
             ),
           } as const;
         }
+
+        if (topic === "orders/paid") {
+          if (existing.status === "processed") {
+            return {
+              kind: "response",
+              response: new Response(
+                JSON.stringify({
+                  received: true,
+                  duplicate: true,
+                  webhookId,
+                  status: "processed",
+                }),
+                {
+                  status: 200,
+                  headers: { "content-type": "application/json" },
+                },
+              ),
+            } as const;
+          }
+
+          const isFresh =
+            existing.updatedAt &&
+            Date.now() - existing.updatedAt.getTime() <
+              IN_FLIGHT_LEASE_THRESHOLD_MS;
+          if (existing.status === "received" && isFresh) {
+            return {
+              kind: "response",
+              response: new Response(
+                JSON.stringify({
+                  received: true,
+                  duplicate: true,
+                  webhookId,
+                  status: "received",
+                }),
+                {
+                  status: 200,
+                  headers: { "content-type": "application/json" },
+                },
+              ),
+            } as const;
+          }
+
+          if (existing.attempts >= 5) {
+            return {
+              kind: "response",
+              response: new Response(
+                JSON.stringify({
+                  received: true,
+                  duplicate: true,
+                  webhookId,
+                  status: existing.status,
+                  error:
+                    "[TERMINAL_ERROR_AUDIT] Maximum retry attempts (5) exceeded. Manual intervention required.",
+                }),
+                {
+                  status: 200,
+                  headers: { "content-type": "application/json" },
+                },
+              ),
+            } as const;
+          }
+        }
+
         const generationMatches = sameInstallationGeneration(
           existing.storeInstallationGeneration,
           storeInstallationGeneration,
@@ -839,7 +909,10 @@ export const POST = async (req: Request) => {
             status: "received",
             attempts: { increment: 1 },
             error: null,
-            payload: Prisma.DbNull,
+            payload:
+              topic === "orders/paid"
+                ? (event as Prisma.InputJsonValue)
+                : Prisma.DbNull,
           },
         });
         if (claimed.count === 0) {
@@ -871,6 +944,26 @@ export const POST = async (req: Request) => {
               response: new Response(
                 "[Shopify] Webhook identifier belongs to a different tenant or topic.",
                 { status: 409 },
+              ),
+            } as const;
+          }
+          if (
+            topic === "orders/paid" &&
+            (current.status === "received" || current.status === "processed")
+          ) {
+            return {
+              kind: "response",
+              response: new Response(
+                JSON.stringify({
+                  received: true,
+                  duplicate: true,
+                  webhookId,
+                  status: current.status,
+                }),
+                {
+                  status: 200,
+                  headers: { "content-type": "application/json" },
+                },
               ),
             } as const;
           }
@@ -955,6 +1048,39 @@ export const POST = async (req: Request) => {
 
   const localCatalog = isLocalDev && catalogWebhookTopics.has(topic);
   const processClaim = async () => {
+    if (topic === "orders/paid") {
+      const execResult = await executeClaimedOrdersPaidEvent({
+        claim: {
+          id: eventClaim.id,
+          storeId: eventClaim.storeId,
+          attempt: eventClaim.attempt,
+          storeInstallationGeneration: eventClaim.storeInstallationGeneration,
+          dispatchInstallationGeneration:
+            eventClaim.dispatchInstallationGeneration,
+          privacyMinimizedFinancialSettlement:
+            eventClaim.privacyMinimizedFinancialSettlement,
+        },
+        event,
+        workspace,
+        loyaltyMaintenancePermit,
+        startTime,
+        requestLog,
+      });
+      if (execResult.status === "conflict") {
+        return new Response(
+          execResult.error ??
+            "[Shopify] Webhook lease was reclaimed; stale completion was discarded.",
+          { status: 409 },
+        );
+      }
+      if (execResult.status === "failed") {
+        return new Response(`[Shopify] Webhook handler failed. View logs`, {
+          status: 500,
+        });
+      }
+      return new Response(execResult.response ?? "OK");
+    }
+
     let response = "OK";
 
     try {
@@ -984,18 +1110,6 @@ export const POST = async (req: Request) => {
           response = "[Shopify] Review order lifecycle processed.";
           break;
         }
-        case "orders/paid":
-          response = await ordersPaid({
-            event,
-            workspace,
-            storeId: eventClaim.storeId,
-            expectedInstallationGeneration:
-              eventClaim.dispatchInstallationGeneration,
-            privacyMinimizedFinancialSettlement:
-              eventClaim.privacyMinimizedFinancialSettlement,
-            loyaltyMaintenancePermit,
-          });
-          break;
         case "refunds/create":
           response = await refundsCreate({
             event,
@@ -1091,7 +1205,7 @@ export const POST = async (req: Request) => {
         data: {
           status: "failed",
           error: error instanceof Error ? error.message : String(error),
-          payload: Prisma.DbNull,
+          ...(topic !== "orders/paid" ? { payload: Prisma.DbNull } : {}),
         },
       });
       if (failed.count !== 1) {
@@ -1115,7 +1229,7 @@ export const POST = async (req: Request) => {
         { status: 500 },
       );
 
-      if (!localCatalog)
+      if (!localCatalog && topic !== "orders/paid")
         waitUntil(
           captureWebhookLog({
             ...requestLog,
@@ -1153,7 +1267,7 @@ export const POST = async (req: Request) => {
           data: {
             status: "processed",
             processedAt: new Date(),
-            payload: Prisma.DbNull,
+            ...(topic !== "orders/paid" ? { payload: Prisma.DbNull } : {}),
           },
         });
       });
@@ -1161,7 +1275,29 @@ export const POST = async (req: Request) => {
       if (isLoyaltyMaintenanceBlockedError(error)) {
         return loyaltyMaintenanceRetryResponse();
       }
-      throw error;
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await prisma.weleticShopifyWebhookEvent
+        .updateMany({
+          where: {
+            id: eventClaim.id,
+            storeId: eventClaim.storeId,
+            topic,
+            status: "received",
+          },
+          data: {
+            status: "failed",
+            error: errorMessage,
+          },
+        })
+        .catch(() => {});
+      await log({
+        message: `Shopify webhook completion failed. Error: ${errorMessage}`,
+        type: "errors",
+      }).catch(() => {});
+      return new Response(`[Shopify] Webhook completion failed.`, {
+        status: 500,
+      });
     }
     if (completed.count !== 1) {
       return new Response(
@@ -1170,7 +1306,7 @@ export const POST = async (req: Request) => {
       );
     }
 
-    if (!localCatalog)
+    if (!localCatalog && topic !== "orders/paid")
       waitUntil(
         captureWebhookLog({
           ...requestLog,
@@ -1183,6 +1319,49 @@ export const POST = async (req: Request) => {
     return new Response(response);
   };
   const processing = processClaim();
+  if (topic === "orders/paid") {
+    waitUntil(
+      processing.catch((error) => {
+        console.error(
+          `[Shopify Webhook Background] Unhandled error processing orders/paid webhook ${webhookId}:`,
+          error,
+        );
+      }),
+    );
+    // If the lease was immediately observed as reclaimed or failed before unblocking (e.g. 409 conflict),
+    // return that conflict response. Otherwise, return 200 immediately (< 20ms) to unblock Shopify ingress.
+    const earlyResponse = await Promise.race([
+      processing
+        .then((res) => (res.status === 409 ? res : null))
+        .catch(() => null),
+      new Promise<null>((resolve) => {
+        if (typeof setImmediate !== "undefined") {
+          setImmediate(() => resolve(null));
+        } else {
+          setTimeout(() => resolve(null), 0);
+        }
+      }),
+    ]);
+    if (earlyResponse) {
+      return earlyResponse;
+    }
+    const response = new Response(
+      JSON.stringify({ received: true, queued: true, webhookId }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
+    waitUntil(
+      captureWebhookLog({
+        ...requestLog,
+        statusCode: 200,
+        duration: Date.now() - startTime,
+        responseBody: response.clone(),
+      }),
+    );
+    return response;
+  }
   if (!localCatalog) return processing;
   const localResponse = await localCatalogWebhookResponse(
     processing,

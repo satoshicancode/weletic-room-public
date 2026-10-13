@@ -2,7 +2,7 @@ import {
   merchantTierHistoryExportRequestSchema,
   verifyMerchantTierHistoryExportResponse,
   type MerchantTierHistoryExportRequest,
-} from "../../../apps/web/lib/weletic/loyalty/tier-history-export-contract";
+} from "@weletic/contracts/loyalty/tier-history-export-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

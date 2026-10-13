@@ -53,6 +53,7 @@ export const HoldingPeriodReleasePayloadSchema = z.object({
   holdingPeriodDays: z.number().int().nonnegative(),
   availableAt: z.string(), // ISO timestamp
   grantId: z.string().optional(),
+  referralId: z.string().optional(),
   sourceOrderExternalId: z.string().optional(),
   installationGeneration: z.string().min(1).max(64).nullable().optional(),
 });

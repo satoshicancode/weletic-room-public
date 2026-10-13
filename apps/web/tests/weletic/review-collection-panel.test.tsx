@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { defaultReviewCollectionPolicy } from "@/lib/weletic/reviews/collection-contract";
+import { CoreLaunchContext } from "@/ui/weletic/core-launch-context";
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -34,11 +35,13 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
 });
-async function render(locale: Props["locale"] = "en") {
+async function render(locale: Props["locale"] = "en", coreLaunch = false) {
   await act(async () =>
     root.render(
       <React.StrictMode>
-        <ReviewCollectionPanel client={client} locale={locale} />
+        <CoreLaunchContext.Provider value={coreLaunch}>
+          <ReviewCollectionPanel client={client} locale={locale} />
+        </CoreLaunchContext.Provider>
       </React.StrictMode>,
     ),
   );
@@ -200,3 +203,25 @@ it("preserves a loaded draft and confirmation on locale-only changes", async () 
   expect(client.write).toHaveBeenCalledOnce();
   expect(client.read).toHaveBeenCalledOnce();
 });
+
+it.each(["en", "ja", "vi"] as const)(
+  "core collection makes manual publication and no reminders explicit in %s",
+  async (locale) => {
+    client.read.mockResolvedValue({
+      ...settings,
+      policy: { ...settings.policy, autoPublish: true, reminderAfterDays: [3] },
+    });
+    await render(locale, true);
+    await click(copy[locale].load);
+    expect(container.querySelector('input[id$="-reminders"]')).toBeNull();
+    expect(container.querySelector('input[id$="-publish"]')).toBeNull();
+    expect(container.textContent).toContain(copy[locale].coreNote);
+    await confirm();
+    await submit();
+    expect(client.write).toHaveBeenCalledExactlyOnceWith({
+      expectedRevision: 2,
+      expectedInstallationGeneration: "g1",
+      policy: { ...settings.policy, autoPublish: false, reminderAfterDays: [] },
+    });
+  },
+);

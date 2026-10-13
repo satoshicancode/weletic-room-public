@@ -6,6 +6,7 @@ export const loyaltyRoutes = Object.freeze([
   ...[
     "catalog",
     "installation/status",
+    "installation/billing",
     "installation/reconnect",
     "sessions",
     "sessions/coordinated",
@@ -58,6 +59,9 @@ export const loyaltyRoutes = Object.freeze([
   "/api/cron/weletic/loyalty/outbox",
   "/api/cron/weletic/shopify/compliance",
   "/api/cron/weletic/shopify/session-renewal",
+  "/api/cron/weletic/shopify/subscriptions",
+  "/api/jobs/process/weletic-shopify-subscription-job",
+  "/api/jobs/process/weletic-shopify-subscription-sweep-job",
   "/api/cron/weletic/shopify/sync",
   "/api/cron/fx-rates",
   "/api/cron/queue/retry",
@@ -107,9 +111,45 @@ const reviewReadPaths = new Set(
     (action) => internal + "reviews/" + action,
   ),
 );
+const coreDeferredPaths = new Set(
+  [
+    "loyalty/customer/birthday",
+    "loyalty/customer/nudge-collections",
+    "loyalty/customer/activity/claim",
+    "loyalty/customer/referral/bind",
+    "loyalty/referral/claim",
+    "loyalty/checkout/reserve",
+    "merchant/imports",
+    "merchant/vip-campaigns",
+    "merchant/referral-configuration",
+    "merchant/loyalty-nudges",
+    "merchant/analytics",
+    "merchant/analytics/tier-history",
+    "reviews/open-submit",
+    "reviews/open-prepare",
+    "reviews/open-upload",
+    "reviews/store-list",
+    "reviews/store-submit",
+    "reviews/store-invitations",
+    "merchant/reviews/incentives/coupons",
+    "merchant/reviews/translations/read",
+    "merchant/reviews/translations/write",
+    "merchant/reviews/open-policy/read",
+    "merchant/reviews/open-policy/write",
+    "merchant/reviews/store/list",
+    "merchant/reviews/store/moderate",
+    "merchant/reviews/store/settings/read",
+    "merchant/reviews/store/settings/write",
+  ].map((path) => internal + path),
+);
+for (const path of ["customer/referral/bind", "checkout/reserve"])
+  coreDeferredPaths.add("/api/shopify/loyalty/" + path);
 const host = new URL(PUBLIC_LOYALTY_API_ORIGIN).host;
 
-export function admitsLoyaltyRequest(request, { reviewsEnabled = false } = {}) {
+export function admitsLoyaltyRequest(
+  request,
+  { reviewsEnabled = false, coreLaunch = false } = {},
+) {
   if (!request || request.headers?.host !== host) return false;
   if (!/^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS)$/.test(request.method ?? ""))
     return false;
@@ -123,6 +163,7 @@ export function admitsLoyaltyRequest(request, { reviewsEnabled = false } = {}) {
   )
     return false;
   const path = raw.split("?")[0];
+  if (coreLaunch && coreDeferredPaths.has(path)) return false;
   if (
     path.includes("%") ||
     path.includes("//") ||

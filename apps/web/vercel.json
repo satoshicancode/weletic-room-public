@@ -95,6 +95,10 @@
     {
       "path": "/api/cron/weletic/loyalty/outbox",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/weletic/shopify/orders-paid-recovery",
+      "schedule": "*/5 * * * *"
     }
   ],
   "functions": {

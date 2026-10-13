@@ -3,6 +3,7 @@ import { DubApiError } from "@/lib/api/errors";
 import { parseRequestBody } from "@/lib/api/utils";
 import { withWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isCoreLaunch } from "@/lib/weletic/core-launch-policy";
 import { appendPointsLedgerEntry } from "@/lib/weletic/loyalty/ledger";
 import { validateManualAdjustmentInput } from "@/lib/weletic/loyalty/manual-adjustment-input";
 import {
@@ -11,6 +12,7 @@ import {
 } from "@/lib/weletic/loyalty/merchant-write-fence";
 import { loyaltySuccessResponse } from "@/lib/weletic/loyalty/response";
 import { evaluateTierMaintenanceCycle } from "@/lib/weletic/loyalty/tier-lifecycle";
+import { assertStoreSubscriptionForNewBenefit } from "@/lib/weletic/shopify/app-pricing-service";
 import { WeleticPointsLedgerEntryType } from "@prisma/client";
 
 // GET /api/shopify/loyalty/admin/accounts - Search shopper accounts with pagination and filters
@@ -284,6 +286,7 @@ export const POST = withWorkspace(
       shopperId,
       shopifyCustomerId,
       pointsDelta,
+      reason,
     });
 
     // Resolve target loyalty account
@@ -345,6 +348,32 @@ export const POST = withWorkspace(
           storeId,
           accountId: targetAccountId,
         });
+
+        if (typeof (tx as any).weleticPointsLedgerEntry?.count === "function") {
+          const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const dailyCount = await (tx as any).weleticPointsLedgerEntry.count({
+            where: {
+              storeId,
+              entryType: WeleticPointsLedgerEntryType.MANUAL_ADJUSTMENT,
+              createdAt: { gte: oneDayAgo },
+            },
+          });
+          if (typeof dailyCount === "number" && dailyCount >= 1000) {
+            throw new DubApiError({
+              code: "bad_request",
+              message:
+                "Daily manual points adjustment limit reached (max 1,000 adjustments per 24 hours).",
+            });
+          }
+        }
+
+        if (isCoreLaunch() && BigInt(pointsDelta) > BigInt(0)) {
+          const existing = await tx.weleticPointsLedgerEntry.findUnique({
+            where: { storeId_idempotencyKey: { storeId, idempotencyKey: key } },
+          });
+          if (!existing)
+            await assertStoreSubscriptionForNewBenefit(tx, storeId);
+        }
         const entry = await appendPointsLedgerEntry({
           storeId,
           accountId: targetAccountId,
@@ -359,12 +388,13 @@ export const POST = withWorkspace(
           },
           tx,
         });
-        await evaluateTierMaintenanceCycle({
-          storeId,
-          accountId: targetAccountId,
-          expectedInstallationGeneration: installationGeneration,
-          tx,
-        });
+        if (!isCoreLaunch())
+          await evaluateTierMaintenanceCycle({
+            storeId,
+            accountId: targetAccountId,
+            expectedInstallationGeneration: installationGeneration,
+            tx,
+          });
         return entry;
       },
     });

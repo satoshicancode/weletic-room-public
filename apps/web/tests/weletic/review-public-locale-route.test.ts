@@ -48,14 +48,17 @@ it.each(["en", "ja", "vi"])(
       locale +
       "&storeId=attacker";
     const timestamp = String(Date.now());
+    const requestId = "req_" + Math.random().toString(36).slice(2);
     const request = new Request("https://backend.example" + path, {
       headers: {
         "x-weletic-timestamp": timestamp,
+        "x-weletic-request-id": requestId,
         "x-weletic-signature": signWeleticShopifyRequest({
           timestamp,
           method: "GET",
           path,
           body: "",
+          requestId,
           secret,
         }),
       },
@@ -75,14 +78,17 @@ it("resolves signed store-review reads to the verified store and bounded query",
   const path =
     "/api/internal/shopify/reviews/store-list?shop=verified.myshopify.com&rating=4&limit=10&storeId=attacker&productId=other";
   const timestamp = String(Date.now());
+  const requestId = "req_" + Math.random().toString(36).slice(2);
   const request = new Request("https://backend.example" + path, {
     headers: {
       "x-weletic-timestamp": timestamp,
+      "x-weletic-request-id": requestId,
       "x-weletic-signature": signWeleticShopifyRequest({
         timestamp,
         method: "GET",
         path,
         body: "",
+        requestId,
         secret,
       }),
     },

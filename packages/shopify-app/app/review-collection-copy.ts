@@ -1,5 +1,7 @@
 export const reviewCollectionCopy = {
   en: {
+    coreNote:
+      "Reviews require manual publication. Saving these settings turns off automatic publication and reminders.",
     title: "Review collection",
     load: "Load collection settings",
     reload: "Discard draft and reload",
@@ -26,6 +28,8 @@ export const reviewCollectionCopy = {
     save: "Save collection settings",
   },
   ja: {
+    coreNote:
+      "レビューは手動で公開します。この設定を保存すると自動公開とリマインダーは無効になります。",
     title: "レビュー収集",
     load: "収集設定を読み込む",
     reload: "下書きを破棄して再読み込み",
@@ -53,6 +57,8 @@ export const reviewCollectionCopy = {
     save: "収集設定を保存",
   },
   vi: {
+    coreNote:
+      "Đánh giá cần được đăng công khai thủ công. Lưu các cài đặt này sẽ tắt tự động đăng và email nhắc.",
     title: "Thu thập đánh giá",
     load: "Tải cài đặt thu thập",
     reload: "Bỏ bản nháp và tải lại",

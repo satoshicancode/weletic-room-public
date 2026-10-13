@@ -1,6 +1,6 @@
 import { DubApiError } from "@/lib/api/errors";
 import { withWorkspace } from "@/lib/auth";
-import { DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES } from "@/lib/dynadot/constants";
+import { isWorkspaceEligibleForDomainRegistration } from "@/lib/dynadot/constants";
 import { searchDomainsAvailability } from "@/lib/dynadot/search-domains";
 import { prisma } from "@/lib/prisma";
 import {
@@ -23,7 +23,10 @@ export const GET = withWorkspace(
       });
     }
 
-    if (!DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(workspace.id)) {
+    if (
+      !isWorkspaceEligibleForDomainRegistration(workspace) ||
+      !process.env.DYNADOT_API_KEY
+    ) {
       throw new DubApiError({
         code: "forbidden",
         message:

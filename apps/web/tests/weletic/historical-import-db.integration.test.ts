@@ -69,7 +69,7 @@ async function seed() {
       shopDomain: `${storeId}.myshopify.com`,
       shopCurrency: "JPY",
       currencyVerifiedAt: new Date(),
-      apiVersion: "2026-07",
+      apiVersion: "2026-10",
       installationGeneration: "g1",
     },
   });
@@ -101,7 +101,7 @@ async function seed() {
   };
 }
 const options = {
-  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   timeout: 20_000,
 };
 

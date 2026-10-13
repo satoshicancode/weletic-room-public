@@ -1,8 +1,8 @@
-import { shopifyStaffExportInputSchema } from "../../../apps/web/lib/weletic/shopify/staff-contract";
+import { shopifyStaffExportInputSchema } from "@weletic/contracts/shopify/staff-contract";
 import {
   shopifyStaffExportResponseSchema,
   type ShopifyStaffExportPage,
-} from "../../../apps/web/lib/weletic/shopify/staff-export-contract";
+} from "@weletic/contracts/shopify/staff-export-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

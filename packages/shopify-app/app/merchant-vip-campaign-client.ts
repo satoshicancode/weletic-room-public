@@ -1,8 +1,8 @@
-import { verifyVipCampaignAcknowledgement } from "../../../apps/web/lib/weletic/loyalty/vip-campaign-acknowledgement";
+import { verifyVipCampaignAcknowledgement } from "@weletic/contracts/loyalty/vip-campaign-acknowledgement";
 import {
   vipCampaignRequestSchema,
   type VipCampaignRequest,
-} from "../../../apps/web/lib/weletic/loyalty/vip-campaign-contract";
+} from "@weletic/contracts/loyalty/vip-campaign-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

@@ -195,11 +195,44 @@ mutation WeleticStoreCreditDebit(
   }
 }`;
 
+const CUSTOMER_STORE_CREDIT_AUDIT_QUERY = `
+query WeleticCustomerStoreCreditAudit($id: ID!) {
+  customer(id: $id) {
+    id
+    storeCreditAccounts(first: 5) {
+      edges {
+        node {
+          id
+          balance {
+            amount
+            currencyCode
+          }
+          transactions(first: 20, reverse: true) {
+            edges {
+              node {
+                id
+                amount {
+                  amount
+                  currencyCode
+                }
+                createdAt
+                ... on StoreCreditAccountCreditTransaction {
+                  expiresAt
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}`;
+
 function normalizeDate(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : null;
 }
 
-function sameMoney(left: string, right: string) {
+export function sameMoney(left: string, right: string) {
   // Remote Decimal values must match exactly, without floating-point rounding.
   const canonical = (value: string) => {
     if (!/^-?\d+(?:\.\d+)?$/.test(value)) return null;
@@ -485,6 +518,8 @@ export async function createShopifyStoreCredit({
   currencyCode,
   expiresAt,
   notify,
+  note,
+  redemptionId,
   customFetch,
 }: {
   credentials: ResolvedShopifyCredentials;
@@ -493,10 +528,15 @@ export async function createShopifyStoreCredit({
   currencyCode: string;
   expiresAt: Date | null;
   notify: boolean;
+  note?: string | null;
+  redemptionId?: string | null;
   customFetch?: typeof fetch;
 }): Promise<ShopifyStoreCreditResult> {
   assertFinancialRewardScope({ credentials, rewardType: "store_credit" });
   try {
+    const effectiveNote =
+      note ?? (redemptionId ? `Weletic Redemption [${redemptionId}]` : null);
+
     const data = await shopifyAdminGraphqlRequest<{
       storeCreditAccountCredit: {
         storeCreditAccountTransaction: {
@@ -523,6 +563,7 @@ export async function createShopifyStoreCredit({
           },
           expiresAt: expiresAt?.toISOString() ?? null,
           notify,
+          ...(effectiveNote ? { note: effectiveNote } : {}),
         },
       },
       customFetch,
@@ -611,12 +652,16 @@ export async function debitShopifyStoreCredit({
   amountMinor,
   currencyCode,
   customFetch,
+  availableBalanceMinor,
+  capAtAvailableBalance = false,
 }: {
   credentials: ResolvedShopifyCredentials;
   accountId: string;
   amountMinor: bigint;
   currencyCode: string;
   customFetch?: typeof fetch;
+  availableBalanceMinor?: bigint | null;
+  capAtAvailableBalance?: boolean;
 }): Promise<ShopifyStoreCreditDebitResult> {
   assertFinancialRewardScope({ credentials, rewardType: "store_credit" });
   if (amountMinor <= BigInt(0)) {
@@ -625,7 +670,32 @@ export async function debitShopifyStoreCredit({
       "Store Credit debit amount must be positive.",
     );
   }
-  const expectedAmount = minorUnitsToDecimal(amountMinor, currencyCode);
+
+  // Solvency guard: prevent negative store credit balances where applicable
+  let effectiveAmountMinor = amountMinor;
+  if (availableBalanceMinor !== undefined && availableBalanceMinor !== null) {
+    if (effectiveAmountMinor > availableBalanceMinor) {
+      if (capAtAvailableBalance) {
+        if (availableBalanceMinor <= BigInt(0)) {
+          throw new ShopifyFinancialRewardError(
+            "INVALID_REQUEST",
+            "Cannot debit store credit from an account with zero or negative balance.",
+          );
+        }
+        effectiveAmountMinor = availableBalanceMinor;
+      } else {
+        throw new ShopifyFinancialRewardError(
+          "INVALID_REQUEST",
+          "Store Credit debit amount cannot exceed available balance.",
+        );
+      }
+    }
+  }
+
+  const expectedAmount = minorUnitsToDecimal(
+    effectiveAmountMinor,
+    currencyCode,
+  );
   try {
     const data = await shopifyAdminGraphqlRequest<{
       storeCreditAccountDebit: {
@@ -696,4 +766,98 @@ export async function debitShopifyStoreCredit({
   } catch (error) {
     return mapTransportError(error);
   }
+}
+
+export type ShopifyCustomerStoreCreditTransaction = {
+  id: string;
+  accountId: string;
+  amount: string;
+  currencyCode: string;
+  createdAt: Date;
+  expiresAt: Date | null;
+  note?: string | null;
+  balanceTransaction?: {
+    note?: string | null;
+    amount?: {
+      amount: string;
+      currencyCode: string;
+    };
+  } | null;
+};
+
+export async function auditShopifyCustomerStoreCreditTransactions({
+  credentials,
+  customerId,
+  customFetch,
+}: {
+  credentials: ResolvedShopifyCredentials;
+  customerId: string;
+  customFetch?: typeof fetch;
+}): Promise<ShopifyCustomerStoreCreditTransaction[]> {
+  assertFinancialRewardScope({ credentials, rewardType: "store_credit" });
+  const data = await shopifyAdminGraphqlRequest<{
+    customer: {
+      id: string;
+      storeCreditAccounts: {
+        edges: Array<{
+          node: {
+            id: string;
+            balance: { amount: string; currencyCode: string };
+            transactions: {
+              edges: Array<{
+                node: {
+                  id: string;
+                  amount: { amount: string; currencyCode: string };
+                  createdAt: string;
+                  expiresAt?: string | null;
+                };
+              }>;
+            };
+          };
+        }>;
+      } | null;
+    } | null;
+  }>({
+    shopDomain: credentials.shopDomain,
+    accessToken: credentials.accessToken,
+    query: CUSTOMER_STORE_CREDIT_AUDIT_QUERY,
+    variables: { id: formatShopifyGid("Customer", customerId) },
+    customFetch,
+    maxRetries: 1,
+  });
+
+  const transactions: ShopifyCustomerStoreCreditTransaction[] = [];
+  const accounts = data.customer?.storeCreditAccounts?.edges ?? [];
+  for (const accEdge of accounts) {
+    const acc = accEdge.node;
+    for (const txEdge of acc.transactions.edges) {
+      const rawNode = txEdge.node as any;
+      const rawNote = rawNode.note ?? rawNode.balanceTransaction?.note ?? null;
+      const txItem: ShopifyCustomerStoreCreditTransaction = {
+        id: txEdge.node.id,
+        accountId: acc.id,
+        amount: txEdge.node.amount.amount,
+        currencyCode: txEdge.node.amount.currencyCode,
+        createdAt: new Date(txEdge.node.createdAt),
+        expiresAt: txEdge.node.expiresAt
+          ? new Date(txEdge.node.expiresAt)
+          : null,
+      };
+      if (rawNote !== null && rawNote !== undefined) {
+        txItem.note = rawNote;
+        txItem.balanceTransaction = {
+          note: rawNote,
+          amount: {
+            amount: txEdge.node.amount.amount,
+            currencyCode: txEdge.node.amount.currencyCode,
+          },
+        };
+      } else if (rawNode.balanceTransaction) {
+        txItem.balanceTransaction = rawNode.balanceTransaction;
+      }
+      transactions.push(txItem);
+    }
+  }
+
+  return transactions;
 }

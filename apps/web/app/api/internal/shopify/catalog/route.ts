@@ -25,21 +25,30 @@ async function getWorkspace(shop: string) {
   const resolution = await resolveShopifyStoreByDomain(shop);
   if (!resolution) return null;
 
-  return prisma.project.findUnique({
-    where: { id: resolution.workspaceId },
-    select: {
-      id: true,
-      defaultProgramId: true,
-      weleticShopifyStore: {
-        select: {
-          syncStatus: true,
-          lastFullSyncAt: true,
-          markets: { select: { id: true } },
-          _count: { select: { products: true } },
-        },
+  const [workspace, store] = await Promise.all([
+    prisma.project.findUnique({
+      where: { id: resolution.workspaceId },
+      select: {
+        id: true,
+        defaultProgramId: true,
       },
-    },
-  });
+    }),
+    prisma.weleticShopifyStore.findUnique({
+      where: { projectId: resolution.workspaceId },
+      select: {
+        syncStatus: true,
+        lastFullSyncAt: true,
+        markets: { select: { id: true } },
+        _count: { select: { products: true } },
+      },
+    }),
+  ]);
+
+  if (!workspace) return null;
+  return {
+    ...workspace,
+    weleticShopifyStore: store,
+  };
 }
 
 function parseShop(request: Request) {
@@ -47,7 +56,7 @@ function parseShop(request: Request) {
 }
 
 export async function GET(request: Request) {
-  if (!verifyWeleticShopifyRequest({ request, body: "" })) {
+  if (!(await verifyWeleticShopifyRequest({ request, body: "" }))) {
     return unauthorized();
   }
 
@@ -76,7 +85,7 @@ export async function POST(request: Request) {
       { status: 413 },
     );
   }
-  if (!verifyWeleticShopifyRequest({ request, body: rawBody })) {
+  if (!(await verifyWeleticShopifyRequest({ request, body: rawBody }))) {
     return unauthorized();
   }
 

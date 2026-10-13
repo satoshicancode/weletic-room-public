@@ -8,7 +8,7 @@ import {
   LARGE_PROGRAM_MIN_TOTAL_COMMISSIONS_CENTS,
 } from "@/lib/constants/partner-profile";
 import { generateRandomName } from "@/lib/names";
-import { prisma, sanitizeFullTextSearch } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import {
   PartnerProfileCustomerSchema,
   getPartnerCustomersQuerySchema,
@@ -65,8 +65,10 @@ export const GET = withPartnerProfile(
           ? search.includes("@")
             ? { email: search }
             : {
-                email: { search: sanitizeFullTextSearch(search) },
-                name: { search: sanitizeFullTextSearch(search) },
+                OR: [
+                  { email: { contains: search } },
+                  { name: { contains: search } },
+                ],
               }
           : {}),
       },

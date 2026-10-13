@@ -1,7 +1,7 @@
 const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
 
 const LOCAL_URL_HINT =
-  "Use the local docker URLs from .env.example: mysql://root:@localhost:3306/planetscale and http://root:unused@localhost:3900/planetscale";
+  "Use a local SQLite file, e.g. DATABASE_URL=file:/tmp/weletic-e2e.db (see .env.example)";
 
 function hostnameFromDatabaseUrl(url: string): string {
   const hostname = new URL(url).hostname.replace(/^\[|\]$/g, "");
@@ -21,6 +21,10 @@ function assertUrl(
     }
     return;
   }
+
+  // SQLite (the D1-compatible local database) is addressed by a file path and
+  // is local by definition.
+  if (/^file:/i.test(value)) return;
 
   let hostname: string;
   try {

@@ -77,7 +77,7 @@ export async function POST(request: Request) {
     });
     if (bytes === null) return reply({ error: "invalid_request" }, 400);
     const body = new TextDecoder().decode(bytes);
-    if (!verifyWeleticShopifyRequest({ request, body }))
+    if (!(await verifyWeleticShopifyRequest({ request, body })))
       return reply({ error: "unauthorized" }, 401);
     let value: unknown;
     try {
@@ -129,7 +129,7 @@ export async function POST(request: Request) {
                     envelope: parsed.data.actor,
                   }),
         {
-          isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
           ...(parsed.data.request.operation === "reconcile"
             ? { timeout: HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS }
             : {}),
@@ -155,7 +155,7 @@ export async function POST(request: Request) {
           bytes: upload,
         }),
       {
-        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         timeout: HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS,
       },
     );

@@ -2,7 +2,7 @@ import {
   loyaltyCommunicationsRequestSchema,
   verifyLoyaltyCommunicationsResponse,
   type LoyaltyCommunicationsRequest,
-} from "../../../apps/web/lib/weletic/loyalty/communications-contract";
+} from "@weletic/contracts/loyalty/communications-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

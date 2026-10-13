@@ -19,6 +19,10 @@ interface WithAdminHandler {
 }
 
 export const getDubAdminRole = async (userId: string) => {
+  if (!userId || !DUB_WORKSPACE_ID || DUB_WORKSPACE_ID.trim() === "") {
+    return null;
+  }
+
   const response = await prisma.projectUsers.findUnique({
     where: {
       userId_projectId: {

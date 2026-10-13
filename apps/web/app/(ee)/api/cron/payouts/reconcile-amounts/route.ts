@@ -73,7 +73,7 @@ export const GET = withCron(async () => {
         });
 
         const commissionSumByPayoutId = new Map(
-          aggregates.map((a) => [a.payoutId!, a._sum.earnings ?? 0]),
+          aggregates.map((a) => [a.payoutId!, Number(a._sum.earnings ?? 0)]),
         );
 
         const mismatches: {

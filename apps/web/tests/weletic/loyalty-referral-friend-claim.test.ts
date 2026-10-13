@@ -459,6 +459,8 @@ function installStatefulReferralMocks() {
 describe("Smile-compatible anonymous referral friend claims", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.WELETIC_TRANSACTIONAL_EMAIL_FROM;
+    delete process.env.WELETIC_TRANSACTIONAL_EMAIL_REPLY_TO;
     state.referral = null;
     state.inTransaction = false;
     compliance.assertWrites.mockResolvedValue({

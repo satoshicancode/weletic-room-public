@@ -1,19 +1,14 @@
-enum PostbackReceiver {
-  custom
-  slack
-}
-
 model Postback {
-  id         String           @id
+  id         String    @id
   partnerId  String
   name       String
-  url        String           @db.LongText
+  url        String
   secret     String
   triggers   Json
-  receiver   PostbackReceiver
+  receiver   String
   disabledAt DateTime?
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 

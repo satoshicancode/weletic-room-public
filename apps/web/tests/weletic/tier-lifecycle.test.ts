@@ -434,13 +434,13 @@ describe("VIP Tier Lifecycle Maintenance & Grace Period Engine (Milestone 2)", (
         }),
       );
 
-      // Verifies account updated to Gold and grace period cleared
+      // Verifies account updated to Gold and expiration scheduled
       expect(prisma.weleticLoyaltyAccount.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: accountId },
           data: expect.objectContaining({
             currentTierId: "tier_gold",
-            tierExpiresAt: null,
+            tierExpiresAt: expect.any(Date),
           }),
         }),
       );

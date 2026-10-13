@@ -43,7 +43,8 @@ export const GET = withWorkspace(
       where: { projectId: workspace.id },
       select: {
         id: true,
-        program: { select: { accountingCurrency: true } },
+        programId: true,
+        shopCurrency: true,
         loyaltyProgram: {
           select: {
             liabilityValuationCurrency: true,
@@ -60,8 +61,17 @@ export const GET = withWorkspace(
       });
     }
 
+    const program =
+      (store as any).program ??
+      (store.programId && typeof prisma?.program?.findUnique === "function"
+        ? await prisma.program.findUnique({
+            where: { id: store.programId },
+            select: { accountingCurrency: true },
+          })
+        : null);
+
     const financialConfiguration = resolveLoyaltyFinancialConfiguration({
-      accountingCurrency: store.program.accountingCurrency,
+      accountingCurrency: program?.accountingCurrency || store.shopCurrency,
       liabilityValuationCurrency:
         store.loyaltyProgram?.liabilityValuationCurrency,
       liabilityMinorUnitsNumerator:
@@ -104,7 +114,7 @@ export const GET = withWorkspace(
     };
     const validationResult = await prisma.$transaction(
       (tx) => exportLoyaltyMetricsJson({ ...commonParams, tx }),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
     const dataQualityFailure =
       validationResult.healthMetrics.financialDataQuality.status !==

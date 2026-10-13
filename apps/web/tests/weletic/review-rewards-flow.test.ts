@@ -3,8 +3,9 @@ import {
   reverseReviewPoints,
   type ReviewProvider,
 } from "@/lib/weletic/loyalty/review-rewards";
+import * as pricing from "@/lib/weletic/shopify/app-pricing-service";
 import type { Prisma } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   append: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   account: vi.fn(),
   ledger: vi.fn(),
   count: vi.fn(),
+  store: vi.fn(),
 }));
 vi.mock("@/lib/weletic/loyalty/ledger", () => ({
   appendPointsLedgerEntry: mocks.append,
@@ -25,6 +27,7 @@ vi.mock("@/lib/weletic/loyalty/tier-review-scheduling", () => ({
 }));
 
 const tx = {
+  weleticShopifyStore: { findUnique: mocks.store },
   weleticLoyaltyAccount: { findFirst: mocks.account },
   weleticPointsLedgerEntry: { findUnique: mocks.ledger, count: mocks.count },
 } as unknown as Prisma.TransactionClient;
@@ -51,9 +54,11 @@ function award(provider: ReviewProvider) {
 }
 
 describe("provider-neutral review rewards and durable Flow boundary", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.resetAllMocks();
     mocks.ledger.mockResolvedValue(null);
+    mocks.store.mockResolvedValue({ shopDomain: "unrelated.myshopify.com" });
     mocks.count.mockResolvedValue(0);
     mocks.account.mockResolvedValue({
       id: "account-1",
@@ -125,6 +130,23 @@ describe("provider-neutral review rewards and durable Flow boundary", () => {
     },
   );
 
+  it.each(["native", "judgeme"] as const)(
+    "blocks first-time %s awards in setup-only mode but preserves replay",
+    async (provider) => {
+      vi.stubEnv("WELETIC_SETUP_ONLY", "1");
+      await expect(award(provider)).rejects.toThrow(
+        "subscription verification",
+      );
+      expect(mocks.account).not.toHaveBeenCalled();
+      expect(mocks.append).not.toHaveBeenCalled();
+      expect(mocks.enqueue).not.toHaveBeenCalled();
+      mocks.ledger.mockResolvedValue({ id: "existing-award" });
+      await expect(award(provider)).resolves.toMatchObject({
+        status: "duplicate",
+      });
+    },
+  );
+
   it("does not emit for an unavailable account or a review velocity limit", async () => {
     mocks.account.mockResolvedValueOnce(null);
     await expect(award("native")).resolves.toMatchObject({ status: "ignored" });
@@ -145,6 +167,7 @@ describe("provider-neutral review rewards and durable Flow boundary", () => {
   it.each(["native", "judgeme"] as const)(
     "never labels an append-only %s clawback as points earned",
     async (provider) => {
+      vi.stubEnv("WELETIC_SETUP_ONLY", "1");
       mocks.ledger.mockResolvedValueOnce(null).mockResolvedValueOnce({
         id: "award-ledger-1",
         accountId: "account-1",
@@ -166,4 +189,39 @@ describe("provider-neutral review rewards and durable Flow boundary", () => {
       expect(mocks.enqueue).not.toHaveBeenCalled();
     },
   );
+});
+
+it("requires current store-bound restricted access for first awards but preserves replay", async () => {
+  for (const [key, value] of Object.entries({
+    NODE_ENV: "development",
+    WELETIC_FEATURE_PROFILE: "core-v1",
+    WELETIC_ISOLATED_DEVELOPMENT: "1",
+    WELETIC_RESTRICTED_DEVELOPMENT: "yamaxdev-v1",
+    WELETIC_RESTRICTED_DEVELOPMENT_GENERATION:
+      "11111111-1111-4111-8111-111111111111",
+    SHOPIFY_API_KEY: "c7d49cebb06e445db345bb200f966a03",
+    SHOPIFY_PARTNER_APP_ID: "gid://shopify/App/419628580865",
+    DATABASE_URL: "mysql://synthetic@127.0.0.1/test",
+    PLANETSCALE_DATABASE_URL: "http://127.0.0.1:65367/test",
+    UPSTASH_REDIS_REST_URL: "http://127.0.0.1:8079",
+    STORAGE_ENDPOINT: "http://127.0.0.1:9002",
+  }))
+    vi.stubEnv(key, value);
+  vi.stubEnv("WELETIC_SETUP_ONLY", undefined);
+  const gate = vi
+    .spyOn(pricing, "assertReviewAwardTestingAuthority")
+    .mockRejectedValue(new Error("foreign or expired testing authority"));
+  try {
+    mocks.ledger.mockResolvedValue(null);
+    mocks.store.mockResolvedValue({ shopDomain: "unrelated.myshopify.com" });
+    await expect(award("native")).rejects.toThrow("foreign or expired");
+    expect(gate).toHaveBeenCalledWith(tx, "store-1");
+    gate.mockClear();
+    mocks.ledger.mockResolvedValue({ id: "prior-award" });
+    expect(await award("native")).toMatchObject({ status: "duplicate" });
+    expect(gate).not.toHaveBeenCalled();
+  } finally {
+    gate.mockRestore();
+    vi.unstubAllEnvs();
+  }
 });

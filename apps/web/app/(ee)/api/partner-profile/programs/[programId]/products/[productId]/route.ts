@@ -6,6 +6,7 @@ import {
   selectCommissionRule,
   serializeGroupRewardCommission,
 } from "@/lib/weletic/commissions/rules";
+import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import { WeleticLocale } from "@/lib/weletic/localization";
 import { NextResponse } from "next/server";
 
@@ -26,7 +27,9 @@ export const GET = withPartnerProfile(
         links: {
           where: { disabledAt: null },
           include: {
-            discountCode: true,
+            discountCode: {
+              where: { disabledAt: null },
+            },
           },
         },
         partnerGroup: {
@@ -162,8 +165,9 @@ export const GET = withPartnerProfile(
         externalId: product.externalId,
         handle: product.handle,
         title: translation?.title ?? product.title,
-        descriptionHtml:
+        descriptionHtml: sanitizeProductDescriptionHtml(
           translation?.descriptionHtml ?? product.descriptionHtml,
+        ),
         imageUrl: product.featuredImageUrl,
         vendor: product.vendor,
         productType: product.productType,
@@ -185,8 +189,9 @@ export const GET = withPartnerProfile(
         customerDiscount: resolveProductCustomerDiscount({
           discount: enrollment.partnerGroup?.discount,
           partnerCode:
-            enrollment.links?.find((l) => l.discountCode?.code)?.discountCode
-              ?.code ?? null,
+            enrollment.links?.find(
+              (l) => l.discountCode?.code && !l.discountCode.disabledAt,
+            )?.discountCode?.code ?? null,
           currency: enrollment.program.accountingCurrency,
           productContext: {
             productId: product.id,

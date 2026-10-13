@@ -1,4 +1,4 @@
-const configuredApiVersion = process.env.SHOPIFY_ADMIN_API_VERSION || "2026-07";
+const configuredApiVersion = process.env.SHOPIFY_ADMIN_API_VERSION || "2026-10";
 if (!/^\d{4}-(01|04|07|10)$/.test(configuredApiVersion)) {
   throw new Error("SHOPIFY_ADMIN_API_VERSION must be a stable YYYY-MM release");
 }

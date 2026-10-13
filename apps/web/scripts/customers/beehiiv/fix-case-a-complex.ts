@@ -47,22 +47,22 @@ async function main() {
     projectId: link.projectId,
     processedCommissions: link.commissions
       .filter((commission) => commission.status === "processed")
-      .reduce((acc, commission) => acc + commission.earnings, 0),
+      .reduce((acc, commission) => acc + Number(commission.earnings), 0),
     paidCommissions: link.commissions
       .filter((commission) => commission.status === "paid")
-      .reduce((acc, commission) => acc + commission.earnings, 0),
+      .reduce((acc, commission) => acc + Number(commission.earnings), 0),
     paidCommissionsViaDub: link.commissions
       .filter(
         (commission) =>
           commission.status === "paid" && commission.payoutId !== null,
       )
-      .reduce((acc, commission) => acc + commission.earnings, 0),
+      .reduce((acc, commission) => acc + Number(commission.earnings), 0),
     paidCommissionsImported: link.commissions
       .filter(
         (commission) =>
           commission.status === "paid" && commission.payoutId === null,
       )
-      .reduce((acc, commission) => acc + commission.earnings, 0),
+      .reduce((acc, commission) => acc + Number(commission.earnings), 0),
   }));
 
   const complexTransfer = data.filter((link) => link.paidCommissionsViaDub > 0);
@@ -178,7 +178,7 @@ async function main() {
 
     for (const payoutId of Object.keys(groupedByPayoutId)) {
       const paidCommissionsTotal = groupedByPayoutId[payoutId].reduce(
-        (acc, commission) => acc + commission.earnings,
+        (acc, commission) => acc + Number(commission.earnings),
         0,
       );
       console.log(

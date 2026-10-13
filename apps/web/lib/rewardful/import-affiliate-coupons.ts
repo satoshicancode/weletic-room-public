@@ -76,15 +76,24 @@ export async function importAffiliateCoupons(payload: RewardfulImportPayload) {
     const existingDiscountCodes = await prisma.discountCode.findMany({
       where: {
         programId,
+        disabledAt: null,
         code: {
           in: filteredCoupons.map((coupon) => coupon.token),
         },
       },
     });
 
-    const couponCodesToImport = filteredCoupons.filter(
-      (coupon) => !existingDiscountCodes.some((dc) => dc.code === coupon.token),
-    );
+    const seenTokens = new Set<string>();
+    const couponCodesToImport = filteredCoupons
+      .filter(
+        (coupon) =>
+          !existingDiscountCodes.some((dc) => dc.code === coupon.token),
+      )
+      .filter((coupon) => {
+        if (seenTokens.has(coupon.token)) return false;
+        seenTokens.add(coupon.token);
+        return true;
+      });
 
     const affiliateIdToCouponsMap = couponCodesToImport.reduce(
       (acc, coupon) => {
@@ -134,6 +143,17 @@ export async function importAffiliateCoupons(payload: RewardfulImportPayload) {
       });
       console.log(`Created ${createdLinks.length} links`);
 
+      // Auto-purge any soft-deleted records for re-imported codes to avoid unique constraint collisions (Invariant 2.3)
+      await prisma.discountCode.deleteMany({
+        where: {
+          programId,
+          disabledAt: { not: null },
+          code: {
+            in: couponCodesToImport.map((coupon) => coupon.token),
+          },
+        },
+      });
+
       const createdDiscountCodes = await prisma.discountCode.createMany({
         data: couponCodesToImport
           .map((coupon) => {
@@ -162,7 +182,6 @@ export async function importAffiliateCoupons(payload: RewardfulImportPayload) {
             };
           })
           .filter((code): code is NonNullable<typeof code> => code !== null),
-        skipDuplicates: true,
       });
 
       console.log(`Created ${createdDiscountCodes.count} discount codes`);

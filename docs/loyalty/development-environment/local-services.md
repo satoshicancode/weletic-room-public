@@ -52,6 +52,40 @@ does not rotate, copy, overwrite or start anything. Configuration files are
 0600 and the secret directory is 0700, all ignored by Git. Preserve these files
 alongside their corresponding Docker volumes; regenerating them is not recovery.
 
+### Occupied SQL host ports
+
+For a **new** isolated configuration, select both SQL host ports explicitly:
+
+```sh
+node infra/shopify-development/init.mjs --confirm-local-provisioning --mysql-port=13307 --sql-http-port=13902
+docker compose -p weletic-loyalty-dev -f infra/shopify-development/compose.yaml -f .env.loyalty-secrets.local/compose-ports.yaml config --quiet
+docker compose -p weletic-loyalty-dev -f infra/shopify-development/compose.yaml -f .env.loyalty-secrets.local/compose-ports.yaml up -d
+node infra/shopify-development/verify.mjs --confirm-local-probes
+```
+
+Compose 2.24.4+ is required. The generated `!override` replaces each original
+binding; it must not append a second published port. See
+[Docker's port replacement rules](https://docs.docker.com/reference/compose-file/merge/#replace-value).
+Use both `-f` arguments for subsequent Compose operations on this configuration.
+No environment-variable port override is accepted by the runtime.
+
+The private `service-ports.json` pins the expected MySQL and SQL HTTP host ports.
+The runtime, preview, service verifier and local schema tools all require the
+configured URLs and actual Docker bindings to agree with this file. The Docker
+project, database name, principal, volumes, internal ports and loopback address
+remain fixed. Missing configuration retains the original 3307/3902 defaults;
+malformed, symlinked or nonprivate files fail closed. Ports must be distinct and
+cannot overlap the fixed runtime, cache or media ports.
+
+For an **existing** environment, do not rerun initialization or regenerate
+credentials. A port move requires a separate local maintenance step preserving
+its credentials, Docker volumes and mount ownership: update only both SQL URLs,
+the private port declaration and the corresponding Compose override together,
+then recreate the affected SQL containers and rerun verification. Do not stop
+unrelated listeners or point these tools at an arbitrary existing SQL server.
+Moving a checkout also requires explicit mount-path handling; changing ports
+does not relax that ownership check.
+
 Verification is **not read-only**: it writes unique synthetic Redis/media probes,
 removes them, and may initialize the public bucket's anonymous GetObject-only
 policy when absent. It refuses a different existing policy. Anonymous writes and

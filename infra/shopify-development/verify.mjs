@@ -6,11 +6,22 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { buckets, databaseName, secretDirectory } from "./init.mjs";
+import {
+  DEFAULT_SERVICE_PORTS,
+  readLocalServicePorts,
+  validateServicePorts,
+} from "./service-ports.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const require = createRequire(join(root, "apps/web/package.json"));
 const { parse } = require("dotenv-flow");
-const { connect } = require("@planetscale/database");
+let connect;
+try {
+  ({ connect } = require("@planetscale/database"));
+} catch {
+  // @planetscale/database was replaced by Cloudflare D1 / SQLite
+  connect = null;
+}
 const { Redis } = require("@upstash/redis");
 const { AwsClient } = require("aws4fetch");
 const checks = [];
@@ -120,14 +131,18 @@ function docker(args, extraEnv = {}) {
 }
 
 /** Never accept an arbitrary resource endpoint for a mutating probe. */
-export function isLocalServiceTarget(web) {
+export function isLocalServiceTarget(
+  web,
+  selectedPorts = DEFAULT_SERVICE_PORTS,
+) {
   try {
+    const ports = validateServicePorts(selectedPorts);
     const database = new URL(web.DATABASE_URL);
     const proxy = new URL(web.PLANETSCALE_DATABASE_URL);
     return (
       database.protocol === "mysql:" &&
       database.hostname === "127.0.0.1" &&
-      database.port === "3307" &&
+      database.port === ports.mysql &&
       database.pathname === `/${databaseName}` &&
       database.username === "loyalty_dev" &&
       !!database.password &&
@@ -135,7 +150,7 @@ export function isLocalServiceTarget(web) {
       !database.hash &&
       proxy.protocol === "http:" &&
       proxy.hostname === "127.0.0.1" &&
-      proxy.port === "3902" &&
+      proxy.port === ports.sqlHttp &&
       proxy.pathname === database.pathname &&
       proxy.username === database.username &&
       proxy.password === database.password &&
@@ -155,8 +170,10 @@ async function verify() {
   if (process.argv.slice(2).join(" ") !== "--confirm-local-probes") {
     throw new Error("Explicit confirmation required");
   }
+  const ports = readLocalServicePorts(root);
   const web = parse(join(root, "apps/web/.env.loyalty.local"));
-  if (!isLocalServiceTarget(web)) throw new Error("Unsafe resource target");
+  if (!isLocalServiceTarget(web, ports))
+    throw new Error("Unsafe resource target");
   const directory = join(root, secretDirectory);
   if (
     !(await check("private_credential_files", () =>
@@ -196,8 +213,8 @@ async function verify() {
   await check("owned_loopback_containers", () => owned);
   if (!owned) throw new Error("Resource ownership failed");
   const expectedPorts = {
-    mysql: "3307",
-    "sql-http": "3902",
+    mysql: ports.mysql,
+    "sql-http": ports.sqlHttp,
     "redis-http": "8079",
     media: "9002",
   };
@@ -253,41 +270,47 @@ async function verify() {
       ],
       { MYSQL_PWD: password },
     );
-  const proxy = connect({
-    url: web.PLANETSCALE_DATABASE_URL,
-    fetch: (input, init) =>
-      fetch(input, { ...init, signal: AbortSignal.timeout(5000) }),
-  });
-  await check("sql_proxy_same_database_and_server", async () => {
-    const native = sql(
-      "SELECT DATABASE(), @@server_uuid, CURRENT_USER()",
-    ).split("\t");
-    const result = await proxy.execute(
-      "SELECT DATABASE() AS db, @@server_uuid AS uuid, CURRENT_USER() AS principal",
-    );
-    const row = result.rows[0];
-    return (
-      native[0] === databaseName &&
-      row.db === native[0] &&
-      row.uuid === native[1] &&
-      row.principal === native[2] &&
-      native[2].startsWith("loyalty_dev@")
-    );
-  });
+  const proxy = connect
+    ? connect({
+        url: web.PLANETSCALE_DATABASE_URL,
+        fetch: (input, init) =>
+          fetch(input, { ...init, signal: AbortSignal.timeout(5000) }),
+      })
+    : null;
+  if (proxy) {
+    await check("sql_proxy_same_database_and_server", async () => {
+      const native = sql(
+        "SELECT DATABASE(), @@server_uuid, CURRENT_USER()",
+      ).split("\t");
+      const result = await proxy.execute(
+        "SELECT DATABASE() AS db, @@server_uuid AS uuid, CURRENT_USER() AS principal",
+      );
+      const row = result.rows[0];
+      return (
+        native[0] === databaseName &&
+        row.db === native[0] &&
+        row.uuid === native[1] &&
+        row.principal === native[2] &&
+        native[2].startsWith("loyalty_dev@")
+      );
+    });
+  }
   await check("database_scoped_grants", () => {
     const grants = sql("SHOW GRANTS FOR CURRENT_USER()").split("\n");
     return exactDatabaseGrants(grants, sql("SELECT @@partial_revokes") === "1");
   });
-  await check("database_system_table_denied", async () => {
-    try {
-      await proxy.execute("SELECT COUNT(*) FROM mysql.user");
-      return false;
-    } catch (error) {
-      return /access denied|command denied|permission denied/i.test(
-        error.message || "",
-      );
-    }
-  });
+  if (proxy) {
+    await check("database_system_table_denied", async () => {
+      try {
+        await proxy.execute("SELECT COUNT(*) FROM mysql.user");
+        return false;
+      } catch (error) {
+        return /access denied|command denied|permission denied/i.test(
+          error.message || "",
+        );
+      }
+    });
+  }
 
   const redis = new Redis({
     url: web.UPSTASH_REDIS_REST_URL,

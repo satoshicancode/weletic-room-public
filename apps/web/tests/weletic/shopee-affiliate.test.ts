@@ -145,8 +145,15 @@ describe("Shopee Affiliate Style Product Offers & Commission Contracts", () => {
   });
 
   it("verifies product catalog contains base price, variant prices, and vendor metadata", async () => {
+    const program = await prisma.program.findFirst({
+      where: { slug: "we" },
+      select: { id: true },
+    });
     const products = await prisma.weleticShopifyProduct.findMany({
-      where: { program: { slug: "we" }, status: "active" },
+      where: {
+        ...(program ? { programId: program.id } : {}),
+        status: "active",
+      },
       include: { variants: true },
       take: 10,
     });
@@ -160,8 +167,15 @@ describe("Shopee Affiliate Style Product Offers & Commission Contracts", () => {
   });
 
   it("verifies single product details page query resolves product and commission structure correctly", async () => {
+    const program = await prisma.program.findFirst({
+      where: { slug: "we" },
+      select: { id: true },
+    });
     const product = await prisma.weleticShopifyProduct.findFirst({
-      where: { program: { slug: "we" }, status: "active" },
+      where: {
+        ...(program ? { programId: program.id } : {}),
+        status: "active",
+      },
       include: {
         variants: {
           include: {

@@ -4,7 +4,7 @@ import {
   type LoaderFunctionArgs,
 } from "@remix-run/node";
 import { Link, useLocation, useRouteError } from "@remix-run/react";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import {
   AppProvider,
   Banner,
@@ -16,15 +16,16 @@ import {
   Text,
 } from "@shopify/polaris";
 import { boundary } from "@shopify/shopify-app-remix/server";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   installationAdmissionStatusSchema,
   type InstallationAdmissionStatus,
-} from "../../../../apps/web/lib/weletic/shopify/installation-admission-contract";
-import type { ShopifyMerchantOverview } from "../../../../apps/web/lib/weletic/shopify/staff-contract";
+} from "@weletic/contracts/shopify/installation-admission-contract";
+import type { ShopifyMerchantOverview } from "@weletic/contracts/shopify/staff-contract";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { installationBootstrapError } from "../installation-bootstrap-error";
 import { createInstallationStatusClient } from "../installation-status-client";
 import { installationStatusCopy } from "../installation-status-copy";
+import { useMerchantLocale } from "../merchant-locale";
 import { createMerchantOverviewClient } from "../merchant-overview-client";
 import { merchantOverviewCopy } from "../merchant-overview-copy";
 import { merchantPolarisTranslations } from "../merchant-polaris-translations";
@@ -77,7 +78,7 @@ export default function IndexPage() {
     () => createMerchantOverviewClient(() => shopify.idToken()),
     [shopify],
   );
-  const [locale, setLocale] = useState<"en" | "ja" | "vi">("en");
+  const [locale, setLocale] = useMerchantLocale();
   const readStatus = useMemo(
     () => createInstallationStatusClient(() => shopify.idToken()),
     [shopify],
@@ -95,13 +96,17 @@ export default function IndexPage() {
     null,
   );
   const inFlight = useRef(false);
+  const reloadQueued = useRef(false);
   const mounted = useRef(true);
   const notice = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (error) notice.current?.focus();
   }, [error]);
   const reload = useCallback(async () => {
-    if (inFlight.current) return;
+    if (inFlight.current) {
+      reloadQueued.current = true;
+      return;
+    }
     inFlight.current = true;
     setBusy(true);
     setError(null);
@@ -123,7 +128,13 @@ export default function IndexPage() {
         );
     } finally {
       inFlight.current = false;
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        if (reloadQueued.current) {
+          reloadQueued.current = false;
+          void reload();
+        }
+      }
     }
   }, [read, readStatus]);
   const reconnect = useCallback(async () => {
@@ -152,13 +163,19 @@ export default function IndexPage() {
   useEffect(() => {
     mounted.current = true;
     void reload();
+    const refreshed = () => {
+      void reload();
+    };
+    window.addEventListener("weletic-subscription-refreshed", refreshed);
     return () => {
+      window.removeEventListener("weletic-subscription-refreshed", refreshed);
       mounted.current = false;
     };
   }, [reload]);
   const content = (
     <div lang={locale}>
       <Page title={copy.title}>
+        <TitleBar title={copy.title} />
         <BlockStack gap="400">
           <Select
             label={copy.language}

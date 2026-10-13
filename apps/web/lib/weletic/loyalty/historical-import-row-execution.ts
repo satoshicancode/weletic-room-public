@@ -198,7 +198,7 @@ export async function executeHistoricalImportRow({
       return { executionId, replayed: false };
     },
     {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30_000,
     },
   );

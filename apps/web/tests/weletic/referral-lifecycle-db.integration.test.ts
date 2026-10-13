@@ -108,7 +108,7 @@ async function fixture() {
       shopDomain: `${id}.myshopify.com`,
       shopCurrency: "USD",
       currencyVerifiedAt: new Date(),
-      apiVersion: "2026-07",
+      apiVersion: "2026-10",
       storeAccessState: "active",
       installationGeneration: generation,
     },

@@ -71,7 +71,7 @@ export async function executeWorkflows({
         triggerConditions: {
           path: "$[*].attribute",
           array_contains: attribute,
-        },
+        } as any,
       })),
     },
   });
@@ -204,7 +204,7 @@ export async function executeWorkflows({
         leads: totalLeads,
         conversions: totalConversions,
         saleAmount: totalSaleAmount,
-        commissions: totalCommissions._sum.earnings ?? 0,
+        commissions: Number(totalCommissions._sum.earnings ?? 0),
       },
     },
   };

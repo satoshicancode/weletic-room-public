@@ -63,7 +63,7 @@ export async function getTopProgramsByCommissions({
     .map(({ programId, _sum }) => {
       const program = programIdMap[programId];
       if (!program) return null;
-      const commissions = _sum.earnings || 0;
+      const commissions = Number(_sum.earnings || 0);
       const payoutFee = program.workspace?.payoutFee || 0;
       return {
         ...program,

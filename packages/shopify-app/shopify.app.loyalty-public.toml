@@ -21,7 +21,7 @@ use_legacy_install_flow = false
 redirect_urls = ["https://loyalty-shopify-dev.weletic.com/auth/callback"]
 
 [webhooks]
-api_version = "2026-07"
+api_version = "2026-10"
 
 [[webhooks.subscriptions]]
 topics = ["app/uninstalled", "products/create", "products/update", "products/delete", "markets/create", "markets/update", "markets/delete", "orders/paid", "orders/fulfilled", "orders/cancelled", "customers/create", "customers/update", "refunds/create", "discounts/create", "discounts/update", "discounts/delete"]

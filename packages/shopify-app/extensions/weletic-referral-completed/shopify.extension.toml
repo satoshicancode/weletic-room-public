@@ -5,6 +5,7 @@
 name = "Weletic referral completed"
 type = "flow_trigger"
 handle = "weletic-referral-completed"
+uid = "e4090cbb-167b-494b-0136-652bcebaa49d5c312baa"
 description = "Starts a workflow after all rewards for a qualified Weletic referral are fulfilled."
 
 [settings]

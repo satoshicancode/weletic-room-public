@@ -18,16 +18,21 @@ const inputSchema = z.object({
 export const POST = withCron(async ({ rawBody }) => {
   const { provider, code, programId } = inputSchema.parse(JSON.parse(rawBody));
 
-  const workspace = await prisma.project.findUniqueOrThrow({
+  const program = await prisma.program.findUniqueOrThrow({
     where: {
-      defaultProgramId: programId,
+      id: programId,
     },
     select: {
-      id: true,
-      stripeConnectId: true,
-      shopifyStoreId: true,
+      workspace: {
+        select: {
+          id: true,
+          stripeConnectId: true,
+          shopifyStoreId: true,
+        },
+      },
     },
   });
+  const workspace = program.workspace;
 
   const discountProvider = getDiscountProvider(provider);
 

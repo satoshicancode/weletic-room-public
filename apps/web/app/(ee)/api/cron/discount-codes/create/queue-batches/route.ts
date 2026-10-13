@@ -83,7 +83,18 @@ export const POST = withCron(async ({ rawBody }) => {
           id: true,
         },
         where: {
-          discountCode: null,
+          OR: [
+            {
+              discountCode: null,
+            },
+            {
+              discountCode: {
+                disabledAt: {
+                  not: null,
+                },
+              },
+            },
+          ],
           partnerGroupDefaultLinkId: {
             not: null,
           },

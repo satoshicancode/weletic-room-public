@@ -7,7 +7,7 @@ import {
 } from "@/lib/upstash/redis-streams/partner-activity";
 import { toCentsNumber } from "@dub/utils";
 import { ProgramEnrollment } from "@prisma/client";
-import { differenceInDays, format } from "date-fns";
+import { differenceInDays } from "date-fns";
 import { logAndRespond } from "../../utils";
 
 export const dynamic = "force-dynamic";
@@ -289,11 +289,9 @@ const processPartnerActivityStreamBatch = () =>
                     .map(([key, _]) => `${key} = ?`)
                     .join(", ")} WHERE programId = ? AND partnerId = ?`,
                   [
-                    ...finalStatsToUpdate.map(([_, value]) =>
-                      value instanceof Date
-                        ? format(value, "yyyy-MM-dd HH:mm:ss")
-                        : value,
-                    ),
+                    // Dates are bound as-is: Prisma stores them in the engine's
+                    // canonical DateTime format (no MySQL-style strings).
+                    ...finalStatsToUpdate.map(([_, value]) => value),
                     programId,
                     partnerId,
                   ],

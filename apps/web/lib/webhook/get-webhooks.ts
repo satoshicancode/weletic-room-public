@@ -17,7 +17,7 @@ export async function getWebhooks({
   return await prisma.webhook.findMany({
     where: {
       projectId: workspaceId,
-      ...(triggers ? { triggers: { array_contains: triggers } } : {}),
+      ...(triggers ? { triggers: { array_contains: triggers } as any } : {}),
       ...(disabled !== undefined
         ? { disabledAt: disabled ? { not: null } : null }
         : {}),

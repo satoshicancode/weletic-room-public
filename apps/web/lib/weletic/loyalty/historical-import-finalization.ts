@@ -72,7 +72,7 @@ export async function finalizeHistoricalImportExecution({
       return { finalized: true as const, status };
     },
     {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30_000,
     },
   );

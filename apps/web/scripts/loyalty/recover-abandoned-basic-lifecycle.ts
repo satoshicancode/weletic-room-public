@@ -1751,8 +1751,21 @@ async function loadAbandonedBasicLifecycleFamilySnapshot({
   shopDomain: string;
   fixtureCustomerNumericIds: readonly string[];
 }): Promise<AbandonedBasicLifecycleFamilySnapshot> {
-  const db = client as PrismaClient;
+  const db = client;
   const ordered = { id: "asc" as const };
+  const [platformCommissions, platformPayouts] = await Promise.all([
+    db.commission.findMany({
+      where: { programId: platformProgramId },
+      select: { id: true },
+    }),
+    db.payout.findMany({
+      where: { programId: platformProgramId },
+      select: { id: true },
+    }),
+  ]);
+  const platformCommissionIds = platformCommissions.map((c) => c.id);
+  const platformPayoutIds = platformPayouts.map((p) => p.id);
+
   const families = await Promise.all([
     db.weleticShopifyStore.findMany({
       where: { id: storeId },
@@ -1811,7 +1824,9 @@ async function loadAbandonedBasicLifecycleFamilySnapshot({
           { orderLine: { order: { storeId } } },
           { refundLine: { refund: { storeId } } },
           { rule: { programId: platformProgramId } },
-          { commission: { programId: platformProgramId } },
+          ...(platformCommissionIds.length
+            ? [{ commissionId: { in: platformCommissionIds } }]
+            : []),
         ],
       },
       orderBy: ordered,
@@ -1821,11 +1836,15 @@ async function loadAbandonedBasicLifecycleFamilySnapshot({
       orderBy: ordered,
     }),
     db.weleticPayoutQuote.findMany({
-      where: { payout: { programId: platformProgramId } },
+      where: platformPayoutIds.length
+        ? { payoutId: { in: platformPayoutIds } }
+        : { payoutId: "__none__" },
       orderBy: ordered,
     }),
     db.weleticPayoutStatement.findMany({
-      where: { payout: { programId: platformProgramId } },
+      where: platformPayoutIds.length
+        ? { payoutId: { in: platformPayoutIds } }
+        : { payoutId: "__none__" },
       orderBy: ordered,
     }),
     db.weleticFxRateSnapshot.findMany({
@@ -1833,11 +1852,15 @@ async function loadAbandonedBasicLifecycleFamilySnapshot({
         OR: [
           { orders: { some: { storeId } } },
           { refunds: { some: { storeId } } },
-          {
-            payoutQuotes: {
-              some: { payout: { programId: platformProgramId } },
-            },
-          },
+          ...(platformPayoutIds.length
+            ? [
+                {
+                  payoutQuotes: {
+                    some: { payoutId: { in: platformPayoutIds } },
+                  },
+                },
+              ]
+            : []),
         ],
       },
       orderBy: ordered,

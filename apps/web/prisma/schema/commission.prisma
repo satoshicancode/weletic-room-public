@@ -1,24 +1,5 @@
-enum CommissionStatus {
-  pending
-  processed
-  paid
-  refunded
-  duplicate
-  fraud
-  canceled
-  hold
-}
-
-enum CommissionType {
-  click
-  lead
-  sale
-  referral
-  custom
-}
-
 model Commission {
-  id                 String           @id
+  id                 String   @id
   programId          String
   partnerId          String
   rewardId           String?
@@ -26,30 +7,29 @@ model Commission {
   payoutId           String?
   invoiceId          String? // only for sales (idempotency key, each sale event is associated with a unique invoice)
   customerId         String? // only for leads and sales
-  eventId            String?          @unique // only for leads and sales
+  eventId            String?  @unique // only for leads and sales
   description        String?
-  type               CommissionType
-  amount             Int // only for sales (amount of the sale event)
+  type               String
+  amount             BigInt // only for sales (amount of the sale event)
   quantity           Int // only for clicks/leads (quantity of the event)
-  earnings           Int              @default(0) // amount earned by the partner
-  currency           String           @default("usd")
-  status             CommissionStatus @default(pending)
+  earnings           BigInt   @default(0) // amount earned by the partner
+  currency           String   @default("usd")
+  status             String   @default("pending")
   userId             String? // user who created the manual commission
   sourceCommissionId String?
   sourcePartnerId    String?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  program             Program                        @relation(fields: [programId], references: [id])
-  partner             Partner                        @relation(fields: [partnerId], references: [id])
-  programEnrollment   ProgramEnrollment              @relation(fields: [programId, partnerId], references: [programId, partnerId])
-  payout              Payout?                        @relation(fields: [payoutId], references: [id])
-  link                Link?                          @relation(fields: [linkId], references: [id])
-  customer            Customer?                      @relation(fields: [customerId], references: [id])
-  reward              Reward?                        @relation(fields: [rewardId], references: [id])
-  bountySubmission    BountySubmission?
-  user                User?                          @relation(fields: [userId], references: [id])
-  weleticCalculations WeleticCommissionCalculation[]
+  program           Program           @relation(fields: [programId], references: [id])
+  partner           Partner           @relation(fields: [partnerId], references: [id])
+  programEnrollment ProgramEnrollment @relation(fields: [partnerId, programId], references: [partnerId, programId])
+  payout            Payout?           @relation(fields: [payoutId], references: [id])
+  link              Link?             @relation(fields: [linkId], references: [id])
+  customer          Customer?         @relation(fields: [customerId], references: [id])
+  reward            Reward?           @relation(fields: [rewardId], references: [id])
+  bountySubmission  BountySubmission?
+  user              User?             @relation(fields: [userId], references: [id])
 
   @@unique([invoiceId, programId])
   @@index([earnings, programId, partnerId, status]) // old index

@@ -77,7 +77,7 @@ it("owns a fresh bounded repeatable-read transaction and returns only the checke
   mocks.recover.mockResolvedValue(result);
   await expect(recoverHistoricalImportCommit({ scope })).resolves.toBe(result);
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
     timeout: 30000,
   });
   expect(mocks.recover).toHaveBeenCalledWith({ tx, scope });

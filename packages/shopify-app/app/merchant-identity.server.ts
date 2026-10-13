@@ -1,5 +1,5 @@
 import type { Shopify } from "@shopify/shopify-api";
-import { shopifyStaffUserIdSchema } from "../../../apps/web/lib/weletic/shopify/staff-contract";
+import { shopifyStaffUserIdSchema } from "@weletic/contracts/shopify/staff-contract";
 import { WeleticGatewayError } from "./weletic-api.server";
 
 /** Identity only, not merchant permission or company-store approval. */

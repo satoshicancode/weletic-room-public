@@ -47,10 +47,15 @@ export async function ensureOpenReviewAuthorInTransaction({
     action: "open_review_author",
     expectedInstallationGeneration: installationGeneration,
   });
-  const settings = await tx.$queryRaw<Array<{ enabled: boolean | number }>>`
+  const settings = await tx.$queryRaw<
+    Array<{ enabled: boolean | number | bigint }>
+  >`
     SELECT enabled FROM WeleticReviewSettings WHERE storeId = ${storeId} FOR UPDATE
   `;
-  if (settings.length !== 1 || ![true, 1].includes(settings[0].enabled))
+  if (
+    settings.length !== 1 ||
+    ![true, 1, BigInt(1)].includes(settings[0].enabled as any)
+  )
     throw new ReviewError("disabled", "Reviews are unavailable");
   const identities = deriveAllShopifyCustomerPrivacyIdentities({
     storeId,

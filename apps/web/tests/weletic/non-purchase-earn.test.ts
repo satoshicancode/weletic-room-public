@@ -10,7 +10,7 @@ import {
 } from "@/lib/weletic/loyalty/non-purchase-earn";
 import { enqueueSignupPointsCommunication } from "@/lib/weletic/loyalty/points-communication-producer";
 import { WeleticPointsLedgerEntryType } from "@prisma/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/prisma", () => ({
   prisma: {
@@ -50,6 +50,7 @@ vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
 }));
 
 describe("Non-Purchase Earning Engine & Anti-Gaming Rules (M1 / Smile.io Parity)", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -217,6 +218,18 @@ describe("Non-Purchase Earning Engine & Anti-Gaming Rules (M1 / Smile.io Parity)
   });
 
   describe("awardSignupWelcomeBonus", () => {
+    it("allows core enrollment to continue without a deferred signup award", async () => {
+      vi.stubEnv("WELETIC_FEATURE_PROFILE", "core-v1");
+      await expect(
+        awardSignupWelcomeBonus({
+          storeId: "store_1",
+          accountId: "wacc_1",
+          bonusPoints: 100,
+        }),
+      ).resolves.toBeNull();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(prisma.weleticPointsLedgerEntry.create).not.toHaveBeenCalled();
+    });
     it("successfully creates welcome bonus points ledger entry with correct metadata and sequence", async () => {
       const storeId = "store_test_1";
       const accountId = "wacc_user_1";

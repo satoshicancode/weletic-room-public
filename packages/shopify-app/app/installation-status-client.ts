@@ -1,4 +1,4 @@
-import { installationAdmissionStatusSchema } from "../../../apps/web/lib/weletic/shopify/installation-admission-contract";
+import { installationAdmissionStatusSchema } from "@weletic/contracts/shopify/installation-admission-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

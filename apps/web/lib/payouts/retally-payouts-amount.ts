@@ -11,7 +11,7 @@ export const retallyPayoutsAmount = async (payoutIdsToRetally: string[]) => {
           earnings: true,
         },
       });
-      const payoutAmount = commissionsSum._sum?.earnings ?? 0;
+      const payoutAmount = Number(commissionsSum._sum?.earnings ?? 0);
       if (payoutAmount > 0) {
         await prisma.payout.update({
           where: { id: payoutId },

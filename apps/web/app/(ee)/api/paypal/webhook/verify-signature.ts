@@ -59,12 +59,16 @@ async function downloadAndCache(url: string) {
   return certPem;
 }
 
+export const PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS = 300 * 1000; // 300 seconds
+
 export async function verifySignature({
   event,
   headers,
+  now = Date.now(),
 }: {
   event: string; // raw event data as string
   headers: Headers;
+  now?: number;
 }) {
   const transmissionId = headers.get("paypal-transmission-id");
   const transmissionSig = headers.get("paypal-transmission-sig");
@@ -74,6 +78,17 @@ export async function verifySignature({
   if (!transmissionId || !transmissionSig || !timeStamp || !certUrl) {
     console.error(
       "[PayPal] Missing required headers for signature verification",
+    );
+    return false;
+  }
+
+  const transmissionTimestamp = Date.parse(timeStamp);
+  if (
+    Number.isNaN(transmissionTimestamp) ||
+    Math.abs(now - transmissionTimestamp) > PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS
+  ) {
+    console.error(
+      `[PayPal] Invalid or expired transmission timestamp: ${timeStamp} (drift exceeds 300s)`,
     );
     return false;
   }

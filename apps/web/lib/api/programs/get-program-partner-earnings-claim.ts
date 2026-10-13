@@ -98,7 +98,9 @@ export async function getProgramPartnerEarningsClaim(programId: string) {
   });
 
   const topPartner = partnerEarnings[0];
-  const topPartnerLookbackEarningsCents = topPartner?._sum.earnings ?? 0;
+  const topPartnerLookbackEarningsCents = Number(
+    topPartner?._sum.earnings ?? 0,
+  );
 
   // Divide by the months the top partner has actually been earning, not a flat
   // LOOKBACK_MONTHS, so a top earner who started mid-window isn't diluted by

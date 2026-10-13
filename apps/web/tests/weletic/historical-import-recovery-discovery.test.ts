@@ -48,7 +48,7 @@ it("fences store/program before a database-clock bounded exact-scope read", asyn
     action: "loyalty_import_recovery_discovery",
   });
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
     timeout: 30000,
   });
   const query = mocks.raw.mock.calls[1][0] as Prisma.Sql;

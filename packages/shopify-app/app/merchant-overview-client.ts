@@ -1,4 +1,4 @@
-import { shopifyMerchantOverviewResponseSchema } from "../../../apps/web/lib/weletic/shopify/staff-contract";
+import { shopifyMerchantOverviewResponseSchema } from "@weletic/contracts/shopify/staff-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

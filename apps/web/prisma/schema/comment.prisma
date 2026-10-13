@@ -3,7 +3,7 @@ model PartnerComment {
   programId String
   partnerId String
   userId    String
-  text      String   @db.Text
+  text      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

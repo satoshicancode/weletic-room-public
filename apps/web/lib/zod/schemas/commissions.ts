@@ -18,8 +18,8 @@ export const CommissionSchema = z.object({
     example: "cm_1JVR7XRCSR0EDBAF39FZ4PMYE",
   }),
   type: z.enum(CommissionType).optional(), // Note: Not sure the type will ever be optional
-  amount: z.number(),
-  earnings: z.number(),
+  amount: centsSchema,
+  earnings: centsSchema,
   currency: z.string(),
   status: z.enum(CommissionStatus),
   invoiceId: z.string().nullable(),

@@ -2,7 +2,7 @@ import {
   auditedReviewModerationInputSchema,
   auditedReviewModerationResponseSchema,
   type AuditedReviewModerationInput,
-} from "../../../apps/web/lib/weletic/reviews/moderation-contract";
+} from "@weletic/contracts/reviews/moderation-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

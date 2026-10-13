@@ -4,7 +4,7 @@ import {
   manualReviewTranslationReadResponseSchema,
   manualReviewTranslationWriteResponseSchema,
   type ManualReviewTranslationInput,
-} from "../../../apps/web/lib/weletic/reviews/translation-contract";
+} from "@weletic/contracts/reviews/translation-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

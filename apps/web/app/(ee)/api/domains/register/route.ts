@@ -2,7 +2,7 @@ import { claimDotLinkDomain } from "@/lib/api/domains/claim-dot-link-domain";
 import { DubApiError } from "@/lib/api/errors";
 import { parseRequestBody } from "@/lib/api/utils";
 import { withWorkspace } from "@/lib/auth";
-import { DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES } from "@/lib/dynadot/constants";
+import { isWorkspaceEligibleForDomainRegistration } from "@/lib/dynadot/constants";
 import { registerDomainSchema } from "@/lib/zod/schemas/domains";
 import { NextResponse } from "next/server";
 
@@ -11,7 +11,10 @@ export const POST = withWorkspace(
   async ({ workspace, session, req }) => {
     const { domain } = registerDomainSchema.parse(await parseRequestBody(req));
 
-    if (!DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(workspace.id)) {
+    if (
+      !isWorkspaceEligibleForDomainRegistration(workspace) ||
+      !process.env.DYNADOT_API_KEY
+    ) {
       throw new DubApiError({
         code: "forbidden",
         message:

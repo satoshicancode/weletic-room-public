@@ -97,11 +97,15 @@ export async function attributeViaPromotionCodeId({
   }
 
   let link = discountCode.link;
+  if (link?.disabledAt) {
+    link = null;
+  }
   if (!link) {
     link = await prisma.link.findFirst({
       where: {
         programId: workspace.defaultProgramId,
         partnerId: discountCode.partnerId,
+        disabledAt: null,
       },
       orderBy: { createdAt: "asc" },
     });

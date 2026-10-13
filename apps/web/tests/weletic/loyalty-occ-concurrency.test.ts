@@ -106,6 +106,7 @@ describe("Milestone 3: Serializable OCC Ledger Concurrency & Balance Invariants 
       (prisma.weleticLoyaltyAccount.findUnique as any)
         .mockResolvedValueOnce({
           id: TEST_ACCOUNT_ID,
+          storeId: TEST_STORE_ID,
           cachedPointsBalance: BigInt(100),
           cachedPendingPoints: BigInt(0),
           lifetimePointsEarned: BigInt(100),
@@ -114,7 +115,17 @@ describe("Milestone 3: Serializable OCC Ledger Concurrency & Balance Invariants 
         })
         .mockResolvedValueOnce({
           id: TEST_ACCOUNT_ID,
-          cachedPointsBalance: BigInt(150), // Already updated by concurrent transaction
+          storeId: TEST_STORE_ID,
+          cachedPointsBalance: BigInt(150), // Read during healLedgerCache check
+          cachedPendingPoints: BigInt(0),
+          lifetimePointsEarned: BigInt(150),
+          lifetimePointsRedeemed: BigInt(0),
+          ledgerVersion: 2,
+        })
+        .mockResolvedValueOnce({
+          id: TEST_ACCOUNT_ID,
+          storeId: TEST_STORE_ID,
+          cachedPointsBalance: BigInt(150), // Fresh read for retry attempt 2
           cachedPendingPoints: BigInt(0),
           lifetimePointsEarned: BigInt(150),
           lifetimePointsRedeemed: BigInt(0),
@@ -350,6 +361,31 @@ describe("Milestone 3: Serializable OCC Ledger Concurrency & Balance Invariants 
       expect(balanceState?.isNegative).toBe(true);
       expect(balanceState?.canRedeem).toBe(false);
       expect(balanceState?.pointsBalance).toBe(BigInt(-50));
+    });
+
+    it("strictly rejects REDEEM_REWARD when redemption points exceed available balance (LOY-02)", async () => {
+      (prisma.weleticPointsLedgerEntry.findUnique as any).mockResolvedValue(
+        null,
+      );
+      (prisma.weleticLoyaltyAccount.findUnique as any).mockResolvedValue({
+        id: TEST_ACCOUNT_ID,
+        storeId: TEST_STORE_ID,
+        cachedPointsBalance: BigInt(50),
+        cachedPendingPoints: BigInt(0),
+        lifetimePointsEarned: BigInt(100),
+        lifetimePointsRedeemed: BigInt(50),
+        ledgerVersion: 1,
+      });
+
+      await expect(
+        appendPointsLedgerEntry({
+          storeId: TEST_STORE_ID,
+          accountId: TEST_ACCOUNT_ID,
+          entryType: WeleticPointsLedgerEntryType.REDEEM_REWARD,
+          pointsDelta: BigInt(-100),
+          idempotencyKey: "test_overdraw_redeem",
+        }),
+      ).rejects.toThrow(/Available points invariant failed/);
     });
   });
 });

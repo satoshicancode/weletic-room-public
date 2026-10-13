@@ -373,6 +373,10 @@ describe("M1: Security Boundary & RBAC Suite", () => {
         { accountId: "acc_1", pointsDelta: "9223372036854775808" },
         { accountId: "acc_1", pointsDelta: "-9223372036854775809" },
         { accountId: "acc_1", pointsDelta: "0" },
+        { accountId: "acc_1", pointsDelta: "10000000000000001" },
+        { accountId: "acc_1", pointsDelta: "-10000000000000001" },
+        { accountId: "acc_1", pointsDelta: 100, reason: "ab" },
+        { accountId: "acc_1", pointsDelta: 100, reason: "a".repeat(256) },
       ])(
         "rejects ambiguous/invalid manual adjustment before customer lookup: %j",
         async (body) => {
@@ -397,6 +401,49 @@ describe("M1: Security Boundary & RBAC Suite", () => {
           expect(prisma.weleticPointsLedgerEntry.create).not.toHaveBeenCalled();
         },
       );
+
+      it("rejects adjustment when daily store adjustment limit is reached", async () => {
+        vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({
+          id: "store_tenant_a",
+          projectId: "ws_tenant_a",
+        } as never);
+        vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue({
+          id: "acc_1",
+          storeId: "store_tenant_a",
+          status: "active",
+        } as never);
+        vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue({
+          id: "acc_1",
+          storeId: "store_tenant_a",
+          status: "active",
+          cachedPointsBalance: BigInt(500),
+          ledgerVersion: 1,
+        } as never);
+        vi.mocked(prisma.weleticPointsLedgerEntry.count).mockResolvedValue(
+          1000,
+        );
+
+        const response = await handler(
+          new Request(
+            `http://localhost/api/shopify/loyalty/admin/${endpoint}?workspaceId=ws_tenant_a`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                accountId: "acc_1",
+                pointsDelta: 100,
+                reason: "Valid reason for adjustment",
+              }),
+            },
+          ) as any,
+          { params: Promise.resolve({}) },
+        );
+        expect(response.status).toBe(400);
+        const resBody = await response.json();
+        expect(resBody.error.message).toContain(
+          "Daily manual points adjustment limit reached",
+        );
+      });
 
       it("accepts an exact large decimal string but rejects contradictory account/customer selectors", async () => {
         vi.mocked(prisma.weleticShopifyStore.findUnique).mockResolvedValue({

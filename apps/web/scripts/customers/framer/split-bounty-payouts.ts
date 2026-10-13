@@ -67,7 +67,7 @@ async function main() {
       continue;
     }
     const totalEarnings = otherCommissions.reduce(
-      (acc, commission) => acc + commission.earnings,
+      (acc, commission) => acc + Number(commission.earnings),
       0,
     );
     const periodStart = otherCommissions[0].createdAt;
@@ -110,7 +110,7 @@ async function main() {
         id: payout.id,
       },
       data: {
-        amount: payout.commissions[0].earnings,
+        amount: Number(payout.commissions[0].earnings),
         periodStart: payout.commissions[0].createdAt,
         periodEnd: payout.commissions[0].createdAt,
       },

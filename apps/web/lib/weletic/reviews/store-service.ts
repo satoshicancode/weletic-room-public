@@ -1,6 +1,7 @@
 import { createWeleticId } from "@/lib/weletic/ids";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { CoreLaunchDeferredError, isCoreLaunch } from "../core-launch-policy";
 import { ReviewError } from "./contracts";
 import { storeReviewParticipationContentDigest } from "./incentive-evidence";
 import {
@@ -45,6 +46,7 @@ export function submitAuthenticatedStoreReview({
   expectedInstallationGeneration: string;
   input: unknown;
 }) {
+  if (isCoreLaunch()) throw new CoreLaunchDeferredError();
   const patch = storeReviewSubmissionSchema.parse(input);
   if (!storeId || !shopperId || !expectedInstallationGeneration)
     throw new ReviewError(

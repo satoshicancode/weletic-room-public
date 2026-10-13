@@ -466,22 +466,7 @@ describe("Dub-Backed Shopper Referrals Engine (Milestone 4)", () => {
       expect(prisma.weleticLoyaltyAccount.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
           include: expect.objectContaining({
-            store: {
-              include: {
-                project: {
-                  include: {
-                    domains: {
-                      where: {
-                        primary: true,
-                        verified: true,
-                        archived: false,
-                      },
-                      take: 1,
-                    },
-                  },
-                },
-              },
-            },
+            store: true,
           }),
         }),
       );

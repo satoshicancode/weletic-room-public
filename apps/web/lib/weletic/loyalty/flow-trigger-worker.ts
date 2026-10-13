@@ -21,12 +21,14 @@ import {
   assertShopifyStoreAcceptsOperationalWrites,
   isShopifyStoreOperationalWritesBlocked,
 } from "@/lib/weletic/shopify/store-compliance-state";
+import { assertCoreLaunchJob } from "../core-launch-policy";
 
 export async function handleFlowTrigger(
   storeId: string,
   rawPayload: unknown,
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit,
 ): Promise<void> {
+  assertCoreLaunchJob("FLOW_TRIGGER", rawPayload);
   let payload: FlowTriggerPayload;
   try {
     payload = FlowTriggerPayloadSchema.parse(rawPayload);

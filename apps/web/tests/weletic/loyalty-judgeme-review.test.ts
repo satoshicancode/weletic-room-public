@@ -14,6 +14,7 @@ vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
 }));
 
 const mocks = vi.hoisted(() => ({
+  storeFindUnique: vi.fn(),
   integrationFindUnique: vi.fn(),
   integrationFindUniqueOrThrow: vi.fn(),
   integrationUpdateMany: vi.fn(),
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 const transactionClient = {
+  weleticShopifyStore: { findUnique: mocks.storeFindUnique },
   weleticLoyaltyReviewIntegration: {
     findUnique: mocks.integrationFindUnique,
     findUniqueOrThrow: mocks.integrationFindUniqueOrThrow,
@@ -129,6 +131,9 @@ function reviewFixture(overrides: Record<string, unknown> = {}) {
 describe("Judge.me verified review earning", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.storeFindUnique.mockResolvedValue({
+      shopDomain: "brand.myshopify.com",
+    });
     mocks.integrationFindUnique.mockResolvedValue(integrationFixture());
     mocks.accountFindFirst.mockResolvedValue(accountFixture());
     mocks.ledgerFindUnique.mockResolvedValue(null);

@@ -2,7 +2,7 @@ import {
   loyaltyNudgeRequestSchema,
   verifyLoyaltyNudgeResponse,
   type LoyaltyNudgeRequest,
-} from "../../../apps/web/lib/weletic/loyalty/nudge-contract";
+} from "@weletic/contracts/loyalty/nudge-contract";
 import {
   createMerchantJsonPost,
   StaffAccessClientError,

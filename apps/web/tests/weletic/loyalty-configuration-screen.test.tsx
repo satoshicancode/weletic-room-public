@@ -131,6 +131,32 @@ describe("shared Loyalty configuration editor", () => {
     await act(async () => node.click());
   }
 
+  it.each([false, true])(
+    "omits deferred controls and writes in core launch (new: %s)",
+    async (draft) => {
+      data.capabilities.coreLaunch = true;
+      if (draft) {
+        data.program = null;
+        data.configurationRevision = null;
+      }
+      await render();
+      expect(
+        container.querySelector('[name="vipAutoDowngradeEnabled"]'),
+      ).toBeNull();
+      expect(container.querySelector('[name="pointsExpiryDays"]')).toBeNull();
+      field("name").value = "Core program";
+      await submit();
+      expect(transport.save).toHaveBeenCalledOnce();
+      const settings = vi.mocked(transport.save).mock.calls[0][0].settings;
+      expect(settings.name).toBe("Core program");
+      expect(
+        Object.keys(settings).some(
+          (key) => key.startsWith("vip") || key.startsWith("pointsExpiry"),
+        ),
+      ).toBe(false);
+    },
+  );
+
   it("saves only changed fields with the current installation and state token", async () => {
     await render();
     field("name").value = "New name";

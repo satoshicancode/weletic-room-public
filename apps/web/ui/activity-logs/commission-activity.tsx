@@ -160,7 +160,7 @@ export function CommissionActivity({
           ),
         };
 
-  const fmt = (v: number) =>
+  const fmt = (v: number | bigint) =>
     currencyFormatter(v, { trailingZeroDisplay: "stripIfInteger" });
 
   const logEvents = (activityLogs ?? []).flatMap((log) => {

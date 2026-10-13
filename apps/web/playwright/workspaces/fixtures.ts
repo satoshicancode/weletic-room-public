@@ -43,7 +43,7 @@ export const test = base.extend<{
       expect(await workspaces.json()).toEqual([]);
       await use(page);
     },
-    { timeout: 60_000 },
+    { scope: "test", timeout: 60_000 },
   ],
   workspace: async ({ page }, use) => {
     const slug = `e2e-billing-${randomUUID()}`;
