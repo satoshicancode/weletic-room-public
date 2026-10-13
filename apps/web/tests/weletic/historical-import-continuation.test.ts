@@ -47,7 +47,7 @@ it("rotates source ownership and requeues the same job in one fresh transaction"
     continued: true,
   });
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
     timeout: 30000,
   });
   expect(mocks.assert).toHaveBeenCalledWith({ tx, lease });

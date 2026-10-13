@@ -32,6 +32,7 @@ export interface HoldingPeriodJobPayload {
   holdingPeriodDays?: number;
   availableAt?: string;
   grantId?: string;
+  referralId?: string;
   sourceOrderExternalId?: string;
 }
 
@@ -42,8 +43,177 @@ export interface ReleaseHoldingPeriodGrantParams {
   accountId?: string;
   storeId?: string;
   expectedInstallationGeneration?: string | null;
+  jobId?: string;
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
   tx?: Prisma.TransactionClient;
+}
+
+export type ReleaseHoldingPeriodGrantResult = {
+  released: boolean;
+  grantId?: string;
+  referralId?: string;
+  points?: bigint;
+  ledgerEntryId?: string;
+  reason?: string;
+};
+
+type ReleasableGrant = any;
+
+/** Marks the release amount on the grant, written by the claim statement. */
+function withReleaseIntent(
+  snapshot: Prisma.JsonValue | null | undefined,
+  points: bigint,
+): Prisma.JsonObject {
+  const base =
+    snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)
+      ? (snapshot as Prisma.JsonObject)
+      : {};
+  return {
+    ...base,
+    releaseIntent: { points: points.toString() },
+  };
+}
+
+function readReleaseIntent(
+  snapshot: Prisma.JsonValue | null | undefined,
+): bigint | null {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+    return null;
+  }
+  const intent = (snapshot as Prisma.JsonObject).releaseIntent;
+  if (!intent || typeof intent !== "object" || Array.isArray(intent)) {
+    return null;
+  }
+  const points = (intent as Prisma.JsonObject).points;
+  return typeof points === "string" && /^\d+$/.test(points)
+    ? BigInt(points)
+    : null;
+}
+
+/**
+ * Steps after the grant claim: ledger credit and its side effects. Every step
+ * is idempotent (ledger / outbox idempotency keys), so this can run any number
+ * of times for the same release.
+ */
+async function completeRelease(
+  client: Prisma.TransactionClient,
+  grant: ReleasableGrant,
+  pointsToRelease: bigint,
+  params: ReleaseHoldingPeriodGrantParams,
+) {
+  // 4. Append EARN_ORDER ledger entry with negative pending delta and positive points delta
+  const idempotencyKey = `holding_release:${grant.orderId}`;
+  const reason = `Holding period release for order ${grant.order?.orderName || grant.order?.externalId || grant.orderId}`;
+
+  const receipt = await appendPointsLedgerEntryWithReceipt({
+    storeId: grant.storeId,
+    accountId: grant.accountId,
+    entryType: WeleticPointsLedgerEntryType.EARN_ORDER,
+    pointsDelta: pointsToRelease,
+    pendingDelta: -pointsToRelease,
+    grantId: grant.id,
+    referenceType: "COMMERCE_ORDER",
+    referenceId: grant.orderId,
+    idempotencyKey,
+    reason,
+    metadata: {
+      grantId: grant.id,
+      orderId: grant.orderId,
+      grossPoints: grant.grossPoints.toString(),
+      releasedPoints: pointsToRelease.toString(),
+      selectedCampaignId: grant.selectedCampaignId ?? null,
+      campaignMultiplier: grant.campaignMultiplier?.toString() ?? null,
+    },
+    tx: client,
+  });
+  const ledgerEntry = receipt.entry;
+  await enqueueFlowTriggerJob({
+    storeId: grant.storeId,
+    eventId: ledgerEntry.id,
+    payload: {
+      accountId: grant.accountId,
+      handle: "weletic-points-earned",
+      pointsDelta: pointsToRelease.toString(),
+      pointsBalance: ledgerEntry.balanceAfter.toString(),
+      reason: "holding_period_release",
+      orderId: grant.order.externalId,
+    },
+    loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+    tx: client,
+  });
+
+  // 5. Enqueue Metafield sync to push updated live balance to Shopify
+  await enqueueOutboxJob({
+    storeId: grant.storeId,
+    jobType: "METAFIELD_SYNC",
+    payload: {
+      accountId: grant.accountId,
+      triggerReason: "holding_period_release",
+    },
+    idempotencyKey: `metafield_sync:release:${grant.id}`,
+    loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+    tx: client,
+  });
+  await scheduleTierReviewAfterQualifyingActivity({
+    storeId: grant.storeId,
+    accountId: grant.accountId,
+    activityKey: `holding_release:${grant.id}`,
+    reason: "held_order_points_released",
+    loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+    tx: client,
+  });
+
+  await reconcilePersistedOrderMerchandiseRefunds({
+    storeId: grant.storeId,
+    refunds: grant.order.refunds || [],
+    tx: client,
+    expectedInstallationGeneration: params.expectedInstallationGeneration,
+    loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+  });
+  await enqueuePurchasePointsCommunication({
+    tx: client,
+    storeId: grant.storeId,
+    programId: grant.programId,
+    receipt,
+    loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+  });
+  return {
+    released: true,
+    grantId: grant.id,
+    points: pointsToRelease,
+    ledgerEntryId: ledgerEntry.id,
+  };
+}
+
+/**
+ * A release claim whose ledger credit never landed (crash/timeout between two
+ * D1 statements) is detectable: the claim recorded `releaseIntent` and the
+ * `holding_release:<orderId>` ledger entry is absent. Complete it.
+ */
+async function recoverInterruptedRelease(
+  client: Prisma.TransactionClient,
+  grant: ReleasableGrant,
+  params: ReleaseHoldingPeriodGrantParams,
+) {
+  const points = readReleaseIntent(grant.calculationSnapshot);
+  if (
+    points === null ||
+    points <= BigInt(0) ||
+    typeof client.weleticPointsLedgerEntry?.findUnique !== "function"
+  ) {
+    return null;
+  }
+  const credited = await client.weleticPointsLedgerEntry.findUnique({
+    where: {
+      storeId_idempotencyKey: {
+        storeId: grant.storeId,
+        idempotencyKey: `holding_release:${grant.orderId}`,
+      },
+    },
+    select: { id: true },
+  });
+  if (credited) return null;
+  return completeRelease(client, grant, points, params);
 }
 
 /**
@@ -53,7 +223,7 @@ export interface ReleaseHoldingPeriodGrantParams {
  */
 export async function releaseHoldingPeriodGrant(
   params: ReleaseHoldingPeriodGrantParams,
-) {
+): Promise<ReleaseHoldingPeriodGrantResult> {
   const {
     payload,
     grantId: directGrantId,
@@ -100,6 +270,124 @@ export async function releaseHoldingPeriodGrant(
         : null;
 
     if (!grant) {
+      if (payload?.referralId) {
+        const referral = await client.weleticLoyaltyReferral.findUnique({
+          where: { id: payload.referralId },
+        });
+        if (!referral) {
+          return { released: false, reason: "referral_not_found" };
+        }
+        const effectiveStoreId = params.storeId || referral.storeId;
+        if (referral.storeId !== effectiveStoreId) {
+          throw new Error(
+            `Loyalty referral ${referral.id} does not belong to Shopify store ${effectiveStoreId}`,
+          );
+        }
+        if (
+          payload.accountId &&
+          referral.advocateAccountId !== payload.accountId
+        ) {
+          throw new Error(
+            `Loyalty referral ${referral.id} does not belong to account ${payload.accountId}`,
+          );
+        }
+
+        const pointsToRelease = BigInt(payload.pendingPoints || 0);
+        if (pointsToRelease <= BigInt(0)) {
+          return { released: false, reason: "zero_pending_points" };
+        }
+
+        let isCancelledOrRefunded = false;
+        if (
+          typeof client.weleticCommerceOrder?.findUnique === "function" &&
+          targetOrderId
+        ) {
+          const qualifyingOrder = await client.weleticCommerceOrder.findUnique({
+            where: { id: targetOrderId },
+          });
+          if (qualifyingOrder) {
+            const status = (qualifyingOrder.status || "").toLowerCase();
+            if (
+              status === "refunded" ||
+              status === "voided" ||
+              status === "cancelled"
+            ) {
+              isCancelledOrRefunded = true;
+            }
+          }
+        }
+
+        if (isCancelledOrRefunded) {
+          await appendPointsLedgerEntry({
+            storeId: effectiveStoreId,
+            accountId: referral.advocateAccountId,
+            entryType: WeleticPointsLedgerEntryType.REFUND_REVERSAL,
+            pointsDelta: BigInt(0),
+            pendingDelta: -pointsToRelease,
+            referenceType: "referral",
+            referenceId: referral.id,
+            idempotencyKey: `referral_holding_void:${referral.id}:${targetOrderId}`,
+            reason: `Pending referral points voided due to refunded/cancelled order ${targetOrderId}`,
+            metadata: {
+              referralId: referral.id,
+              orderId: targetOrderId,
+              pendingVoided: pointsToRelease.toString(),
+            },
+            tx: client,
+          });
+          return {
+            released: false,
+            reason: "qualifying_order_refunded",
+            referralId: referral.id,
+          };
+        }
+
+        const ledgerEntry = await appendPointsLedgerEntry({
+          storeId: effectiveStoreId,
+          accountId: referral.advocateAccountId,
+          entryType: WeleticPointsLedgerEntryType.EARN_REFERRAL,
+          pointsDelta: pointsToRelease,
+          pendingDelta: -pointsToRelease,
+          referenceType: "referral",
+          referenceId: referral.id,
+          idempotencyKey: `referral_holding_release:${referral.id}:${targetOrderId}`,
+          reason: `Matured referral points released from order ${targetOrderId}`,
+          metadata: {
+            referralId: referral.id,
+            orderId: targetOrderId,
+            releasedPoints: pointsToRelease.toString(),
+            holdingPeriodDays: payload.holdingPeriodDays,
+          },
+          tx: client,
+        });
+
+        await enqueueFlowTriggerJob({
+          storeId: effectiveStoreId,
+          eventId: ledgerEntry.id,
+          payload: {
+            accountId: referral.advocateAccountId,
+            handle: "weletic-points-earned",
+            pointsDelta: pointsToRelease.toString(),
+            pointsBalance: ledgerEntry.balanceAfter.toString(),
+            reason: "referral_points_holding_matured",
+            orderId: targetOrderId,
+          },
+          loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+          tx: client,
+        });
+
+        await scheduleTierReviewAfterQualifyingActivity({
+          storeId: effectiveStoreId,
+          accountId: referral.advocateAccountId,
+          activityKey: `referral_matured:${referral.id}:${targetOrderId}`,
+          reason: "referral_points_holding_matured",
+          loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+          tx: client,
+        });
+
+        return { released: true, reason: "matured", referralId: referral.id };
+      }
+
       return { released: false, reason: "grant_not_found" };
     }
 
@@ -127,6 +415,8 @@ export async function releaseHoldingPeriodGrant(
     // 2. A partially reversed grant can still have pending points that must
     // mature after the refunded portion was voided. All terminal states skip.
     if (grant.status !== "pending" && grant.status !== "partially_reversed") {
+      const recovered = await recoverInterruptedRelease(client, grant, params);
+      if (recovered) return recovered;
       return {
         released: false,
         reason: `grant_already_${grant.status}`,
@@ -137,6 +427,12 @@ export async function releaseHoldingPeriodGrant(
     const pointsToRelease = grant.pendingPoints;
     if (pointsToRelease <= BigInt(0)) {
       if (grant.status === "partially_reversed") {
+        const recovered = await recoverInterruptedRelease(
+          client,
+          grant,
+          params,
+        );
+        if (recovered) return recovered;
         return {
           released: false,
           reason: "grant_already_partially_reversed",
@@ -275,9 +571,12 @@ export async function releaseHoldingPeriodGrant(
       throw new Error("Holding-period release attempted before maturity");
     }
 
-    // 3. Claim the exact pending grant snapshot before crediting it. The CAS
-    // and ledger write share one serializable transaction, so a concurrent
-    // refund can never be overwritten or resurrected as settled points.
+    // 3. Claim the exact pending grant snapshot before crediting it. The claim
+    // is a single compare-and-set statement, so a concurrent refund can never
+    // be overwritten or resurrected as settled points. D1 cannot make the
+    // claim and the ledger credit atomic, so the claim also records the release
+    // intent in the same statement; a crash before the credit is completed by
+    // the next replay (see `recoverInterruptedRelease`).
     const currentSettled = BigInt(grant.settledPoints ?? 0);
     const currentReversed = BigInt(grant.reversedPoints ?? 0);
     const nextStatus =
@@ -296,6 +595,10 @@ export async function releaseHoldingPeriodGrant(
         settledPoints: currentSettled + pointsToRelease,
         pendingPoints: BigInt(0),
         settledAt: new Date(),
+        calculationSnapshot: withReleaseIntent(
+          grant.calculationSnapshot,
+          pointsToRelease,
+        ) as Prisma.InputJsonValue,
       },
     });
     if (releaseClaim.count !== 1) {
@@ -304,88 +607,7 @@ export async function releaseHoldingPeriodGrant(
       );
     }
 
-    // 4. Append EARN_ORDER ledger entry with negative pending delta and positive points delta
-    const idempotencyKey = `holding_release:${grant.orderId}`;
-    const reason = `Holding period release for order ${grant.order?.orderName || grant.order?.externalId || grant.orderId}`;
-
-    const receipt = await appendPointsLedgerEntryWithReceipt({
-      storeId: grant.storeId,
-      accountId: grant.accountId,
-      entryType: WeleticPointsLedgerEntryType.EARN_ORDER,
-      pointsDelta: pointsToRelease,
-      pendingDelta: -pointsToRelease,
-      grantId: grant.id,
-      referenceType: "COMMERCE_ORDER",
-      referenceId: grant.orderId,
-      idempotencyKey,
-      reason,
-      metadata: {
-        grantId: grant.id,
-        orderId: grant.orderId,
-        grossPoints: grant.grossPoints.toString(),
-        releasedPoints: pointsToRelease.toString(),
-        selectedCampaignId: grant.selectedCampaignId ?? null,
-        campaignMultiplier: grant.campaignMultiplier?.toString() ?? null,
-      },
-      tx: client,
-    });
-    const ledgerEntry = receipt.entry;
-    await enqueueFlowTriggerJob({
-      storeId: grant.storeId,
-      eventId: ledgerEntry.id,
-      payload: {
-        accountId: grant.accountId,
-        handle: "weletic-points-earned",
-        pointsDelta: pointsToRelease.toString(),
-        pointsBalance: ledgerEntry.balanceAfter.toString(),
-        reason: "holding_period_release",
-        orderId: grant.order.externalId,
-      },
-      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
-      tx: client,
-    });
-
-    // 5. Enqueue Metafield sync to push updated live balance to Shopify
-    await enqueueOutboxJob({
-      storeId: grant.storeId,
-      jobType: "METAFIELD_SYNC",
-      payload: {
-        accountId: grant.accountId,
-        triggerReason: "holding_period_release",
-      },
-      idempotencyKey: `metafield_sync:release:${grant.id}`,
-      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
-      tx: client,
-    });
-    await scheduleTierReviewAfterQualifyingActivity({
-      storeId: grant.storeId,
-      accountId: grant.accountId,
-      activityKey: `holding_release:${grant.id}`,
-      reason: "held_order_points_released",
-      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
-      tx: client,
-    });
-
-    await reconcilePersistedOrderMerchandiseRefunds({
-      storeId: grant.storeId,
-      refunds: grant.order.refunds || [],
-      tx: client,
-      expectedInstallationGeneration: params.expectedInstallationGeneration,
-      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
-    });
-    await enqueuePurchasePointsCommunication({
-      tx: client,
-      storeId: grant.storeId,
-      programId: grant.programId,
-      receipt,
-      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
-    });
-    return {
-      released: true,
-      grantId: grant.id,
-      points: pointsToRelease,
-      ledgerEntryId: ledgerEntry.id,
-    };
+    return completeRelease(client, grant, pointsToRelease, params);
   };
 
   if (tx) {

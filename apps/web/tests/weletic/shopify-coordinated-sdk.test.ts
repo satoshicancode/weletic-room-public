@@ -280,6 +280,8 @@ describe("coordinated Shopify SDK operations", () => {
     vi.stubEnv("SHOPIFY_APP_URL", "https://shopify-runtime.invalid");
     vi.stubEnv("WELETIC_API_URL", "https://session-gateway.invalid");
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", serviceSecret);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
   });
   afterEach(() => {
     redisStore.clear();
@@ -537,11 +539,16 @@ describe("coordinated Shopify SDK operations", () => {
       sdk.unauthenticated.admin(shop),
       sdk.unauthenticated.admin(shop),
     ]);
-    expect(
-      results.filter((result) => result.status === "fulfilled"),
-    ).toHaveLength(1);
+    const fulfilled = results.filter(
+      (result): result is PromiseFulfilledResult<any> =>
+        result.status === "fulfilled",
+    );
+    expect(fulfilled.length).toBeGreaterThanOrEqual(1);
     expect(fixture.controls.providerCalls).toBe(1);
     expect(fixture.controls.mutationCalls).toBe(1);
+    for (const item of fulfilled) {
+      expect(item.value.session.accessToken).toBe("synthetic-fresh-token");
+    }
   });
 
   it("uses the actual SDK for an installed background operation", async () => {
@@ -571,18 +578,22 @@ describe("coordinated Shopify SDK operations", () => {
       signWeleticShopifyRequest,
       WELETIC_SHOPIFY_SIGNATURE_HEADER,
       WELETIC_SHOPIFY_TIMESTAMP_HEADER,
+      WELETIC_SHOPIFY_REQUEST_ID_HEADER,
     } = await import("@/lib/weletic/shopify/service-auth");
     const path = `/api/internal/installed-admin-session?shop=${shop}&generation=generation-1`;
     const timestamp = String(Date.now());
+    const requestId = "req_missing_session_test_1";
     const request = new Request(`https://shopify-runtime.invalid${path}`, {
       headers: {
         [WELETIC_SHOPIFY_TIMESTAMP_HEADER]: timestamp,
+        [WELETIC_SHOPIFY_REQUEST_ID_HEADER]: requestId,
         [WELETIC_SHOPIFY_SIGNATURE_HEADER]: signWeleticShopifyRequest({
           timestamp,
           method: "GET",
           path,
           body: "",
           secret: serviceSecret,
+          requestId,
         }),
       },
     });

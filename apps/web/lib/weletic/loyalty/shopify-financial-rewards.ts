@@ -518,6 +518,8 @@ export async function createShopifyStoreCredit({
   currencyCode,
   expiresAt,
   notify,
+  note,
+  redemptionId,
   customFetch,
 }: {
   credentials: ResolvedShopifyCredentials;
@@ -526,10 +528,15 @@ export async function createShopifyStoreCredit({
   currencyCode: string;
   expiresAt: Date | null;
   notify: boolean;
+  note?: string | null;
+  redemptionId?: string | null;
   customFetch?: typeof fetch;
 }): Promise<ShopifyStoreCreditResult> {
   assertFinancialRewardScope({ credentials, rewardType: "store_credit" });
   try {
+    const effectiveNote =
+      note ?? (redemptionId ? `Weletic Redemption [${redemptionId}]` : null);
+
     const data = await shopifyAdminGraphqlRequest<{
       storeCreditAccountCredit: {
         storeCreditAccountTransaction: {
@@ -556,6 +563,7 @@ export async function createShopifyStoreCredit({
           },
           expiresAt: expiresAt?.toISOString() ?? null,
           notify,
+          ...(effectiveNote ? { note: effectiveNote } : {}),
         },
       },
       customFetch,
@@ -644,12 +652,16 @@ export async function debitShopifyStoreCredit({
   amountMinor,
   currencyCode,
   customFetch,
+  availableBalanceMinor,
+  capAtAvailableBalance = false,
 }: {
   credentials: ResolvedShopifyCredentials;
   accountId: string;
   amountMinor: bigint;
   currencyCode: string;
   customFetch?: typeof fetch;
+  availableBalanceMinor?: bigint | null;
+  capAtAvailableBalance?: boolean;
 }): Promise<ShopifyStoreCreditDebitResult> {
   assertFinancialRewardScope({ credentials, rewardType: "store_credit" });
   if (amountMinor <= BigInt(0)) {
@@ -658,7 +670,32 @@ export async function debitShopifyStoreCredit({
       "Store Credit debit amount must be positive.",
     );
   }
-  const expectedAmount = minorUnitsToDecimal(amountMinor, currencyCode);
+
+  // Solvency guard: prevent negative store credit balances where applicable
+  let effectiveAmountMinor = amountMinor;
+  if (availableBalanceMinor !== undefined && availableBalanceMinor !== null) {
+    if (effectiveAmountMinor > availableBalanceMinor) {
+      if (capAtAvailableBalance) {
+        if (availableBalanceMinor <= BigInt(0)) {
+          throw new ShopifyFinancialRewardError(
+            "INVALID_REQUEST",
+            "Cannot debit store credit from an account with zero or negative balance.",
+          );
+        }
+        effectiveAmountMinor = availableBalanceMinor;
+      } else {
+        throw new ShopifyFinancialRewardError(
+          "INVALID_REQUEST",
+          "Store Credit debit amount cannot exceed available balance.",
+        );
+      }
+    }
+  }
+
+  const expectedAmount = minorUnitsToDecimal(
+    effectiveAmountMinor,
+    currencyCode,
+  );
   try {
     const data = await shopifyAdminGraphqlRequest<{
       storeCreditAccountDebit: {
@@ -738,6 +775,14 @@ export type ShopifyCustomerStoreCreditTransaction = {
   currencyCode: string;
   createdAt: Date;
   expiresAt: Date | null;
+  note?: string | null;
+  balanceTransaction?: {
+    note?: string | null;
+    amount?: {
+      amount: string;
+      currencyCode: string;
+    };
+  } | null;
 };
 
 export async function auditShopifyCustomerStoreCreditTransactions({
@@ -786,7 +831,9 @@ export async function auditShopifyCustomerStoreCreditTransactions({
   for (const accEdge of accounts) {
     const acc = accEdge.node;
     for (const txEdge of acc.transactions.edges) {
-      transactions.push({
+      const rawNode = txEdge.node as any;
+      const rawNote = rawNode.note ?? rawNode.balanceTransaction?.note ?? null;
+      const txItem: ShopifyCustomerStoreCreditTransaction = {
         id: txEdge.node.id,
         accountId: acc.id,
         amount: txEdge.node.amount.amount,
@@ -795,7 +842,20 @@ export async function auditShopifyCustomerStoreCreditTransactions({
         expiresAt: txEdge.node.expiresAt
           ? new Date(txEdge.node.expiresAt)
           : null,
-      });
+      };
+      if (rawNote !== null && rawNote !== undefined) {
+        txItem.note = rawNote;
+        txItem.balanceTransaction = {
+          note: rawNote,
+          amount: {
+            amount: txEdge.node.amount.amount,
+            currencyCode: txEdge.node.amount.currencyCode,
+          },
+        };
+      } else if (rawNode.balanceTransaction) {
+        txItem.balanceTransaction = rawNode.balanceTransaction;
+      }
+      transactions.push(txItem);
     }
   }
 

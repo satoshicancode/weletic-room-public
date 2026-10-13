@@ -2,9 +2,7 @@ import { handleAndReturnErrorResponse } from "@/lib/api/errors";
 import { ratelimitOrThrow } from "@/lib/api/utils";
 import { getUrlQuerySchema } from "@/lib/zod/schemas/links";
 import { NextRequest, NextResponse } from "next/server";
-import { getMetaTags } from "./utils";
-
-export const runtime = "edge";
+import { assertSafeFetchUrl, getMetaTags } from "./utils";
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,6 +24,9 @@ export async function GET(req: NextRequest) {
 
     // Rate limit by IP
     await ratelimitOrThrow(req, "metatags");
+
+    // Enforce fail-closed SSRF defense: block loopback, RFC 1918, metadata, link-local
+    await assertSafeFetchUrl(url);
 
     // Get metatags
     const metatags = await getMetaTags(url);

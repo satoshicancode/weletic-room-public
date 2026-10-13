@@ -1,6 +1,6 @@
 import { getProgramEnrollmentOrThrow } from "@/lib/api/programs/get-program-enrollment-or-throw";
 import { withPartnerProfile } from "@/lib/auth/partner";
-import { prisma, sanitizeFullTextSearch } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import {
   getPartnerSubmittedLeadsCountQuerySchema,
   partnerSubmittedLeadsCountResponseSchema,
@@ -31,8 +31,10 @@ export const GET = withPartnerProfile(
         ? search.includes("@")
           ? { email: search }
           : {
-              email: { search: sanitizeFullTextSearch(search) },
-              name: { search: sanitizeFullTextSearch(search) },
+              OR: [
+                { email: { contains: search } },
+                { name: { contains: search } },
+              ],
             }
         : {}),
     };

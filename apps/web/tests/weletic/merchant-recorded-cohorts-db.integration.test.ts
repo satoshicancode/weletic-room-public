@@ -274,7 +274,7 @@ it("reconciles retained earned and redemption-debit cohorts without redacted or 
           endAt,
         }),
       ]),
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
   expect(debits).toEqual({
     status: "available",
@@ -404,7 +404,7 @@ it("classifies retained confirmed point issuances across range, month, tenant an
         startAt: new Date("2026-09-15T12:00:00.000Z"),
         endAt: new Date("2026-11-02T10:00:00.000Z"),
       }),
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
   expect(series).toEqual({
     status: "available",

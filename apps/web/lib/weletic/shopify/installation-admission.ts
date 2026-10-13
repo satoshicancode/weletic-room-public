@@ -1,3 +1,7 @@
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { Prisma, type WeleticShopifyPendingInstallation } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import {
@@ -31,7 +35,7 @@ export async function readPendingInstallation(
   >(Prisma.sql`
     SELECT * FROM WeleticShopifyPendingInstallation
     WHERE appId = ${scope.appId} AND (${Prisma.join(predicates, " OR ")})
-    LIMIT 2 FOR UPDATE
+    LIMIT 2 ${forUpdateClause}
   `);
   if (rows.length > 1) throw new Error("Ambiguous installation admission");
   return rows[0] ?? null;
@@ -84,7 +88,7 @@ export async function readInstallationAdmissionStatus(
   identity: unknown,
 ): Promise<InstallationAdmissionStatus> {
   const [clock] = await tx.$queryRaw<Array<{ now: Date }>>(
-    Prisma.sql`SELECT CURRENT_TIMESTAMP(3) AS now`,
+    Prisma.sql`SELECT ${currentTimestampClause} AS now`,
   );
   const actor = assertFreshInstallationStatusIdentity(
     identity,
@@ -101,12 +105,12 @@ export async function readInstallationAdmissionStatus(
   >(Prisma.sql`
     SELECT id, installationGeneration, complianceState, storeAccessState
     FROM WeleticShopifyStore WHERE shopDomain = ${actor.shop}
-    LIMIT 1 FOR UPDATE
+    LIMIT 1 ${forUpdateClause}
   `);
   const store = stores[0];
   const pending = await readPendingInstallation(tx, actor);
   const [lockedClock] = await tx.$queryRaw<Array<{ now: Date }>>(
-    Prisma.sql`SELECT CURRENT_TIMESTAMP(3) AS now`,
+    Prisma.sql`SELECT ${currentTimestampClause} AS now`,
   );
   assertFreshInstallationStatusIdentity(identity, actor.appId, lockedClock.now);
   if (pending?.state === "redacted") return { status: "unavailable" };

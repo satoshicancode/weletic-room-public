@@ -59,15 +59,12 @@ export const GET = withAxiom(async (req) => {
     }
 
     // Find the installation
-    const installation = await prisma.installedIntegration.findFirst({
+    const installations = await prisma.installedIntegration.findMany({
       where: {
         integrationId: APPSFLYER_INTEGRATION_ID,
-        settings: {
-          path: "$.appIds",
-          array_contains: appId,
-        },
       },
       select: {
+        settings: true,
         project: {
           select: {
             id: true,
@@ -78,6 +75,11 @@ export const GET = withAxiom(async (req) => {
       },
     });
 
+    const installation = installations.find((inst) => {
+      const s = inst.settings as { appIds?: string[] } | null;
+      return Array.isArray(s?.appIds) && s.appIds.includes(appId);
+    });
+
     if (!installation) {
       throw new DubApiError({
         code: "bad_request",
@@ -85,7 +87,8 @@ export const GET = withAxiom(async (req) => {
       });
     }
 
-    workspace = installation.project;
+    const currentWorkspace = installation.project;
+    workspace = currentWorkspace;
 
     // Track lead event
     if (partnerEventId === "lead") {
@@ -108,7 +111,7 @@ export const GET = withAxiom(async (req) => {
         eventQuantity: undefined,
         mode: undefined,
         metadata: null,
-        workspace,
+        workspace: currentWorkspace,
       });
 
       response = JSON.stringify(leadResponse);
@@ -132,7 +135,7 @@ export const GET = withAxiom(async (req) => {
         invoiceId,
         leadEventName: undefined,
         metadata: null,
-        workspace,
+        workspace: currentWorkspace,
       });
 
       response = JSON.stringify(saleResponse);
@@ -140,7 +143,7 @@ export const GET = withAxiom(async (req) => {
 
     waitUntil(
       captureWebhookLog({
-        workspaceId: workspace.id,
+        workspaceId: currentWorkspace.id,
         method: req.method,
         path: "/appsflyer/webhook",
         statusCode: 200,

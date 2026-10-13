@@ -179,16 +179,47 @@ function signRequest({
   return crypto.createHmac("sha256", secret).update(canonical).digest("hex");
 }
 
+export const WELETIC_INTERNAL_NONCE_TTL_SECONDS = 720;
+const internalNonceCache = new Map<string, number>();
+
+export function clearInternalNonceCacheForTest(): void {
+  internalNonceCache.clear();
+}
+
+export function recordInternalNonce(
+  requestId: string,
+  now: number = Date.now(),
+  ttlSeconds: number = WELETIC_INTERNAL_NONCE_TTL_SECONDS,
+): boolean {
+  for (const [id, expiresAt] of internalNonceCache.entries()) {
+    if (expiresAt <= now) {
+      internalNonceCache.delete(id);
+    }
+  }
+
+  const existingExpiresAt = internalNonceCache.get(requestId);
+  if (existingExpiresAt && existingExpiresAt > now) {
+    return false;
+  }
+
+  internalNonceCache.set(requestId, now + ttlSeconds * 1000);
+  return true;
+}
+
 export function verifyWeleticInternalRequest({
   request,
   body = "",
   now = Date.now(),
   secret = requireEnv("WELETIC_SHOPIFY_SERVICE_SECRET"),
+  requireRequestId = false,
+  ttlSeconds = WELETIC_INTERNAL_NONCE_TTL_SECONDS,
 }: {
   request: Request;
   body?: string;
   now?: number;
   secret?: string;
+  requireRequestId?: boolean;
+  ttlSeconds?: number;
 }) {
   if (secret.length < 32) {
     throw new Error(
@@ -200,6 +231,18 @@ export function verifyWeleticInternalRequest({
   const signature = request.headers.get(WELETIC_INTERNAL_SIGNATURE_HEADER);
   const requestId = request.headers.get(WELETIC_REQUEST_ID_HEADER);
   if (!timestamp || !signature || !/^[a-f0-9]{64}$/.test(signature)) {
+    return false;
+  }
+
+  const isStrict =
+    requireRequestId ||
+    process.env.WELETIC_SERVICE_AUTH_REQUIRE_REQUEST_ID !== "false";
+
+  if (!requestId) {
+    if (isStrict) {
+      return false;
+    }
+  } else if (!/^[A-Za-z0-9_-]{1,128}$/.test(requestId)) {
     return false;
   }
 
@@ -221,10 +264,23 @@ export function verifyWeleticInternalRequest({
     secret,
   });
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature, "hex"),
-    Buffer.from(expected, "hex"),
-  );
+  const signatureBuffer = Buffer.from(signature, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  if (
+    signatureBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+  ) {
+    return false;
+  }
+
+  if (requestId) {
+    const isUnique = recordInternalNonce(requestId, now, ttlSeconds);
+    if (!isUnique) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export async function weleticApiRequest(

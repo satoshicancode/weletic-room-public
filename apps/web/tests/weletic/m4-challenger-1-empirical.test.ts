@@ -109,6 +109,8 @@ function createSignedRequestHelper(
 describe("Milestone M4: SEC-01 Empirical Challenge & Boundary Tests (Challenger 1)", () => {
   beforeEach(() => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", TEST_SECRET);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
     redisStore.clear();
     mockRedisSet.mockReset();
     mockRedisSet.mockImplementation(

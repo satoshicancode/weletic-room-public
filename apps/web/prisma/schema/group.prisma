@@ -1,36 +1,30 @@
-enum PartnerLinkStructure {
-  short
-  query
-  path
-}
-
 model PartnerGroup {
-  id                           String               @id
+  id                           String    @id
   programId                    String
   name                         String
   slug                         String
   color                        String?
-  clickRewardId                String?              @unique
-  leadRewardId                 String?              @unique
-  saleRewardId                 String?              @unique
-  referralRewardId             String?              @unique
-  discountId                   String?              @unique
-  linkStructure                PartnerLinkStructure @default(short)
-  additionalLinks              Json?                @db.Json
-  maxPartnerLinks              Int                  @default(0)
-  applicationFormData          Json?                @db.Json
+  clickRewardId                String?   @unique
+  leadRewardId                 String?   @unique
+  saleRewardId                 String?   @unique
+  referralRewardId             String?   @unique
+  discountId                   String?   @unique
+  linkStructure                String    @default("short")
+  additionalLinks              Json?
+  maxPartnerLinks              Int       @default(0)
+  applicationFormData          Json?
   applicationFormPublishedAt   DateTime?
-  landerData                   Json?                @db.Json
+  landerData                   Json?
   landerPublishedAt            DateTime?
   logo                         String?
   wordmark                     String?
   brandColor                   String?
-  holdingPeriodDays            Int                  @default(0) // number of days to wait before earnings are added to a payout
+  holdingPeriodDays            Int       @default(0) // number of days to wait before earnings are added to a payout
   autoApprovePartnersEnabledAt DateTime?
-  workflowId                   String?              @unique
-  utmTemplateId                String?              @unique
-  createdAt                    DateTime             @default(now())
-  updatedAt                    DateTime             @updatedAt
+  workflowId                   String?   @unique
+  utmTemplateId                String?   @unique
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
 
   program                  Program                   @relation(fields: [programId], references: [id], onDelete: Cascade)
   clickReward              Reward?                   @relation("ClickReward", fields: [clickRewardId], references: [id])

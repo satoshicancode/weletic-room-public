@@ -135,7 +135,7 @@ it("reads signed import context without uploading or preparing a source", async 
   });
   expect(mocks.manage).not.toHaveBeenCalled();
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
   });
 });
 it("routes signed status reads without source upload or preparation", async () => {
@@ -200,7 +200,7 @@ it("binds reconciliation revision to the signed body and performs no preparation
   mocks.reconcile.mockResolvedValue({ reconciled: true });
   expect((await POST(request(body))).status).toBe(200);
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
     timeout: 30_000,
   });
   expect(mocks.verify).toHaveBeenCalledWith(
@@ -241,7 +241,7 @@ it("signs actor, operation and file together and forwards exact decoded bytes", 
     bytes: Buffer.from("[]"),
   });
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
     timeout: 30_000,
   });
 });

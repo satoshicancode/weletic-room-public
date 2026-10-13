@@ -16,7 +16,7 @@ export function ResetLoginAttempts() {
               email: data.get("email"),
             }),
           })
-            .then((res) => res.json())
+            .then((res) => res.json() as Promise<{ error?: string }>)
             .then((res) => {
               if (res.error) {
                 toast.error(res.error);

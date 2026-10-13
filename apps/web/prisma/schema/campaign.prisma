@@ -1,35 +1,16 @@
-enum CampaignType {
-  marketing
-  transactional
-}
-
-enum CampaignStatus {
-  draft
-
-  // Transactional
-  active
-  paused
-
-  // Marketing
-  scheduled
-  sending
-  sent
-  canceled
-}
-
 model Campaign {
   id              String               @id
   programId       String
   workflowId      String?              @unique
   userId          String
   qstashMessageId String?              @unique
-  type            CampaignType
-  status          CampaignStatus       @default(draft)
+  type            String
+  status          String               @default("draft")
   name            String
   subject         String
-  preview         String?              @db.Text
+  preview         String?
   from            String?
-  bodyJson        Json                 @db.Json
+  bodyJson        Json
   scheduledAt     DateTime?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt

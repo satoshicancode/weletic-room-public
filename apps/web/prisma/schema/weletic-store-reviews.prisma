@@ -1,31 +1,17 @@
 // Store-experience feedback is separate from historical product reviews.
 // Reader/privacy readiness and an explicit merchant revision precede writers.
-enum WeleticStoreReviewStatus {
-  pending
-  published
-  hidden
-  rejected
-  redacted
-}
-
-enum WeleticStoreReviewSource {
-  invitation
-  open
-  imported
-}
-
 model WeleticStoreReviewSettings {
-  id                  String   @id
-  storeId             String   @unique
-  revision            Int      @default(1)
-  enabled             Boolean  @default(false)
-  requestEmailEnabled Boolean  @default(false)
+  id                  String    @id
+  storeId             String    @unique
+  revision            Int       @default(1)
+  enabled             Boolean   @default(false)
+  requestEmailEnabled Boolean   @default(false)
   activatedAt         DateTime?
-  autoPublish         Boolean  @default(false)
-  sendAfterDays       Int      @default(7)
-  expiresAfterDays    Int      @default(30)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  autoPublish         Boolean   @default(false)
+  sendAfterDays       Int       @default(7)
+  expiresAfterDays    Int       @default(30)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   store WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Restrict)
 }
@@ -33,35 +19,35 @@ model WeleticStoreReviewSettings {
 // Exactly one invitation per order. Policy is the original order-wide promise,
 // never a separate store-review reward policy or a freshly evaluated setting.
 model WeleticStoreReviewRequest {
-  id                        String                     @id
+  id                        String    @id
   storeId                   String
   orderId                   String
   shopperId                 String
   incentivePolicyId         String?
-  installationGeneration    String                     @db.VarChar(64)
+  installationGeneration    String
   settingsRevision          Int
-  status                    WeleticReviewRequestStatus @default(queued)
+  status                    String    @default("queued")
   fulfilledAt               DateTime
   sendAt                    DateTime
   expiresAt                 DateTime
-  tokenHash                 String?                    @unique @db.VarChar(64)
-  encryptedDeliveryToken    String?                    @db.Text
-  encryptedDeliverySnapshot String?                    @db.MediumText
-  deliveryToken             String?                    @db.VarChar(64)
+  tokenHash                 String?   @unique
+  encryptedDeliveryToken    String?
+  encryptedDeliverySnapshot String?
+  deliveryToken             String?
   deliveryLeaseExpiresAt    DateTime?
   deliveryReservedAt        DateTime?
-  deliveryAttempts          Int                        @default(0)
-  lastError                 String?                    @db.VarChar(191)
+  deliveryAttempts          Int       @default(0)
+  lastError                 String?
   sentAt                    DateTime?
   submittedAt               DateTime?
   cancelledAt               DateTime?
-  cancellationReason        String?                    @db.VarChar(191)
-  createdAt                 DateTime                   @default(now())
-  updatedAt                 DateTime                   @updatedAt
+  cancellationReason        String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
-  store           WeleticShopifyStore            @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  order           WeleticCommerceOrder           @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  shopper         WeleticShopper                 @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
+  store           WeleticShopifyStore             @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  order           WeleticCommerceOrder            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  shopper         WeleticShopper                  @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
   incentivePolicy WeleticReviewIncentivePolicy?   @relation(fields: [storeId, incentivePolicyId], references: [storeId, id], onDelete: Restrict)
   lines           WeleticStoreReviewRequestLine[]
   review          WeleticStoreReview?
@@ -92,39 +78,39 @@ model WeleticStoreReviewRequestLine {
 }
 
 model WeleticStoreReview {
-  id                              String                    @id
+  id                              String    @id
   storeId                         String
   // Imported content must not manufacture a Shopify customer. Authenticated
   // and invitation writers require an actual same-store shopper in service code.
   shopperId                       String?
-  requestId                       String?                   @unique
-  source                          WeleticStoreReviewSource
-  status                          WeleticStoreReviewStatus  @default(pending)
-  version                         Int                       @default(1)
+  requestId                       String?   @unique
+  source                          String
+  status                          String    @default("pending")
+  version                         Int       @default(1)
   rating                          Int
-  title                           String                    @db.VarChar(120)
-  body                            String                    @db.Text
-  displayName                     String                    @db.VarChar(80)
-  locale                          String                    @db.VarChar(8)
-  merchantReply                   String?                   @db.Text
-  verifiedPurchase                Boolean                   @default(false)
-  incentivized                    Boolean                   @default(false)
-  participationStatus             String                    @default("pending") @db.VarChar(32)
+  title                           String
+  body                            String
+  displayName                     String
+  locale                          String
+  merchantReply                   String?
+  verifiedPurchase                Boolean   @default(false)
+  incentivized                    Boolean   @default(false)
+  participationStatus             String    @default("pending")
   participationValidatedAt        DateTime?
-  participationValidationRevision String?                   @db.VarChar(64)
-  participationContentDigest      String?                   @db.VarChar(64)
-  rewardStatus                    WeleticReviewRewardStatus @default(ineligible)
-  rewardLedgerId                  String?                   @db.VarChar(191)
-  rewardReason                    String?                   @db.VarChar(191)
+  participationValidationRevision String?
+  participationContentDigest      String?
+  rewardStatus                    String    @default("ineligible")
+  rewardLedgerId                  String?
+  rewardReason                    String?
   publishedAt                     DateTime?
   moderatedAt                     DateTime?
   redactedAt                      DateTime?
-  createdAt                       DateTime                  @default(now())
-  updatedAt                       DateTime                  @updatedAt
+  createdAt                       DateTime  @default(now())
+  updatedAt                       DateTime  @updatedAt
 
-  store            WeleticShopifyStore                @relation(fields: [storeId], references: [id], onDelete: Restrict)
-  shopper          WeleticShopper?                    @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
-  request          WeleticStoreReviewRequest?         @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
+  store            WeleticShopifyStore                 @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  shopper          WeleticShopper?                     @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
+  request          WeleticStoreReviewRequest?          @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
   moderationAudits WeleticStoreReviewModerationAudit[]
 
   @@unique([storeId, id])
@@ -135,23 +121,23 @@ model WeleticStoreReview {
 }
 
 model WeleticStoreReviewModerationAudit {
-  id                     String                   @id
+  id                     String    @id
   storeId                String
   reviewId               String
-  actorKind              String                   @db.VarChar(32)
+  actorKind              String
   actorUserId            String?
   appId                  String?
-  installationGeneration String                   @db.VarChar(64)
-  merchantActionId       String?                  @db.VarChar(64)
-  reasonCode             String                   @db.VarChar(32)
-  reasonDetails          String?                  @db.Text
+  installationGeneration String
+  merchantActionId       String?
+  reasonCode             String
+  reasonDetails          String?
   fromVersion            Int
   toVersion              Int
-  fromStatus             WeleticStoreReviewStatus
-  toStatus               WeleticStoreReviewStatus
+  fromStatus             String
+  toStatus               String
   replyChanged           Boolean
   redactedAt             DateTime?
-  createdAt              DateTime                 @default(now())
+  createdAt              DateTime  @default(now())
 
   review WeleticStoreReview @relation(fields: [storeId, reviewId], references: [storeId, id], onDelete: Restrict)
 

@@ -130,7 +130,7 @@ it.each(["restricted_development", "unavailable", "paid"])(
     );
     expect(container.textContent).toContain(
       status === "restricted_development"
-        ? "Restricted yamaxdev feature testing"
+        ? "Restricted development feature testing"
         : "Restricted testing access is paused",
     );
     expect(container.textContent).not.toContain("Subscription verified");
@@ -161,14 +161,14 @@ it("recovers one transient entry verification failure without claiming access ea
   await act(async () => root.render(restrictedApp()));
   expect(container.textContent).toContain("Checking subscription");
   expect(container.textContent).not.toContain(
-    "Restricted yamaxdev feature testing",
+    "Restricted development feature testing",
   );
   await act(async () => {
     await vi.advanceTimersByTimeAsync(750);
   });
   expect(mocks.post).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain(
-    "Restricted yamaxdev feature testing",
+    "Restricted development feature testing",
   );
 });
 

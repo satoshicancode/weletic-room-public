@@ -68,7 +68,7 @@ it("verifies a real body signature before passing the strict actor to one transa
   expect(mocks.transaction).toHaveBeenCalledExactlyOnceWith(
     expect.any(Function),
     {
-      isolationLevel: "RepeatableRead",
+      isolationLevel: "Serializable",
     },
   );
   expect(mocks.manage).toHaveBeenCalledExactlyOnceWith({

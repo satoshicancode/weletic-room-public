@@ -120,7 +120,8 @@ export async function reconcilePendingStoreCreditRedemption({
     Math.max(attemptBase.getTime() + 10 * 60_000, now.getTime() + 60_000),
   );
 
-  let matchingTx: ShopifyCustomerStoreCreditTransaction | null = null;
+  // Find all candidate transactions meeting currency, amount, temporal proximity, and collision criteria
+  const candidateTxs: ShopifyCustomerStoreCreditTransaction[] = [];
   for (const tx of transactions) {
     if (tx.currencyCode.toUpperCase() !== expectedCurrency.toUpperCase()) {
       continue;
@@ -145,8 +146,32 @@ export async function reconcilePendingStoreCreditRedemption({
       continue;
     }
 
-    matchingTx = tx;
-    break;
+    candidateTxs.push(tx);
+  }
+
+  // Feature 10 (Unique Note / Token Correlation):
+  // Primary criterion: require tx.balanceTransaction.note (or tx.note) matching the redemption ID
+  // so that concurrent manual credits from Shopify admin are never mistakenly matched.
+  const noteMatchedTx = candidateTxs.find((tx) => {
+    const note = tx.balanceTransaction?.note ?? tx.note;
+    return typeof note === "string" && note.includes(redemption.id);
+  });
+
+  let matchingTx: ShopifyCustomerStoreCreditTransaction | null = null;
+  if (noteMatchedTx) {
+    matchingTx = noteMatchedTx;
+  } else {
+    // Fallback heuristic: Only match a candidate if it does not have a conflicting/non-matching note,
+    // and there is no ambiguity among candidate transactions. If a candidate explicitly has a note
+    // that does NOT match redemption.id (e.g. manual admin credit or another redemption), it is excluded.
+    const eligibleFallbackTxs = candidateTxs.filter((tx) => {
+      const note = tx.balanceTransaction?.note ?? tx.note;
+      return !note;
+    });
+
+    if (eligibleFallbackTxs.length === 1) {
+      matchingTx = eligibleFallbackTxs[0];
+    }
   }
 
   if (matchingTx) {

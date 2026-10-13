@@ -11,8 +11,15 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-const E2E_USER_ID = "clxz1q7c7000hbqx5ckv4r82h";
-const E2E_WORKSPACE_ID = "clrei1gld0002vs9mzn93p8ik";
+const E2E_USER_ID =
+  process.env.E2E_CLEANUP_USER_ID ??
+  process.env.E2E_USER_ID ??
+  "clxz1q7c7000hbqx5ckv4r82h";
+
+const E2E_WORKSPACE_ID =
+  process.env.E2E_CLEANUP_WORKSPACE_ID ??
+  process.env.E2E_WORKSPACE_ID ??
+  "clrei1gld0002vs9mzn93p8ik";
 
 // This route is used to remove links, domains and tags created during our E2E tests.
 // Runs every 6 hours (0 * / 6 * * *)

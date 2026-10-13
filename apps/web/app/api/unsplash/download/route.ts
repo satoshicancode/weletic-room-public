@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { unsplash } from "../utils";
 
 export async function POST(req: Request) {
-  const { url } = await req.json();
+  const { url } = (await req.json()) as { url?: string };
   if (!url) return new Response("Missing url", { status: 400 });
 
   const response = await unsplash.photos.trackDownload({

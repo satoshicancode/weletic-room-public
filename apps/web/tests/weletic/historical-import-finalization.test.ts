@@ -52,7 +52,7 @@ beforeEach(() => {
 it("proves all rows before terminal CAS and clears the lease", async () => {
   expect(await run()).toEqual({ finalized: true, status: "committed" });
   expect(mocks.transaction.mock.calls[0][1]).toEqual({
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
     timeout: 30000,
   });
   expect(mocks.lease).toHaveBeenCalledTimes(2);

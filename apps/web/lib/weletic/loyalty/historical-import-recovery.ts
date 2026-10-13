@@ -21,7 +21,7 @@ export async function recoverHistoricalImportCommit({
   return prisma.$transaction(
     (tx) => recoverHistoricalImportCommitLeaseInTransaction({ tx, scope }),
     {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30_000,
     },
   );
@@ -50,7 +50,7 @@ export async function recoverHistoricalImportCommitFromOutbox({
       return { lease, expiresAt: recovered.expiresAt };
     },
     {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30_000,
     },
   );
@@ -74,7 +74,7 @@ export async function recoverHistoricalImportRollbackFromOutbox({
       return { lease, expiresAt: recovered.expiresAt };
     },
     {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30_000,
     },
   );

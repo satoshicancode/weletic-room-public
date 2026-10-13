@@ -66,7 +66,7 @@ export const GET = withWorkspace(async ({ workspace }) => {
 // PUT /api/workspaces/[idOrSlug]/import/short - save Short.io API key
 export const PUT = withWorkspace(
   async ({ req, workspace }) => {
-    const { apiKey } = await req.json();
+    const { apiKey } = (await req.json()) as { apiKey: string };
     const response = await redis.set(`import:short:${workspace.id}`, apiKey);
     return NextResponse.json(response);
   },
@@ -78,7 +78,7 @@ export const PUT = withWorkspace(
 // POST /api/workspaces/[idOrSlug]/import/short - create job to import links from Short.io
 export const POST = withWorkspace(
   async ({ req, workspace, session }) => {
-    const { selectedDomains, importTags, folderId } = await req.json();
+    const { selectedDomains, importTags, folderId } = (await req.json()) as any;
 
     if (folderId) {
       await verifyFolderAccess({

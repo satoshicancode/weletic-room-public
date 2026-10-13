@@ -106,6 +106,7 @@ export async function getPartnerForProgram({
       ...(includeComposite
         ? {
             discountCodes: {
+              where: { disabledAt: null },
               select: {
                 id: true,
                 code: true,

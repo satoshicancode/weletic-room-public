@@ -18,10 +18,10 @@ export function BanLink() {
 
     setPending(true);
     try {
-      const res = await fetch(
+      const res = (await fetch(
         `/api/admin/links/ban?domain=dub.sh&key=${encodeURIComponent(key)}`,
         { method: "DELETE" },
-      ).then((r) => r.json());
+      ).then((r) => r.json())) as { error?: string };
       if (res.error) {
         toast.error(res.error);
       } else {

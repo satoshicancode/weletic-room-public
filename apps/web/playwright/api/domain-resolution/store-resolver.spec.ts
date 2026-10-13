@@ -211,7 +211,10 @@ test("Invariant 1: Multi-domain resolution across primary domain, myshopifyDomai
 
     const webhookSecret =
       process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
-    const body = JSON.stringify({ id: 123456 });
+    const body = JSON.stringify({
+      id: 123456,
+      updated_at: new Date().toISOString(),
+    });
     const hmac = calculateHmac(body, webhookSecret);
 
     // 3. Test resolution by myshopifyDomain via HTTP webhook endpoint

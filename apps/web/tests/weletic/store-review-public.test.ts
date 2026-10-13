@@ -67,7 +67,7 @@ it("uses one snapshot and returns explicit content without granting open-review 
   expect(JSON.stringify(value)).not.toContain("private-");
   expect(value.items[0]).not.toHaveProperty("requestId");
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
   });
   expect(mocks.raw.mock.calls[1][0].sql).toContain(
     "t.customerDigest = i.customerDigest",

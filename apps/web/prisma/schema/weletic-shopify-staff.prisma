@@ -2,14 +2,14 @@
 // All writes serialize through the store lifecycle lock; reinstall never
 // adopts grants from an earlier installation generation.
 model WeleticShopifyStaffGrant {
-  id                     String   @id @db.VarChar(64)
+  id                     String   @id
   storeId                String
-  appId                  String   @db.VarChar(191)
-  installationGeneration String   @db.VarChar(64)
-  shopifyUserId          String   @db.VarChar(20)
+  appId                  String
+  installationGeneration String
+  shopifyUserId          String
   permissions            Json
   revision               Int      @default(1)
-  updatedByShopifyUserId String   @db.VarChar(20)
+  updatedByShopifyUserId String
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
@@ -23,16 +23,16 @@ model WeleticShopifyStaffGrant {
 // ID consumes the signed request nonce; a failed transaction consumes neither.
 // No access tokens, session payloads, email addresses or arbitrary request bodies.
 model WeleticShopifyMerchantAction {
-  id                     String   @id @db.VarChar(64)
+  id                     String   @id
   storeId                String
-  appId                  String   @db.VarChar(191)
-  installationGeneration String   @db.VarChar(64)
-  requestId              String   @db.VarChar(64)
-  shopifyUserId          String   @db.VarChar(20)
+  appId                  String
+  installationGeneration String
+  requestId              String
+  shopifyUserId          String
   owner                  Boolean
-  permission             String   @db.VarChar(64)
+  permission             String
   grantRevision          Int?
-  targetShopifyUserId    String?  @db.VarChar(20)
+  targetShopifyUserId    String?
   changedPermissions     Json?
   changedGrantRevision   Int?
   createdAt              DateTime @default(now())

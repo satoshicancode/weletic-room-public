@@ -17,10 +17,11 @@ import {
 import { readPendingInstallation } from "./installation-admission";
 import { readBoundedShopifyJson } from "./read-bounded-json";
 import {
+  getRestrictedDevelopmentConfig,
+  getRestrictedDevelopmentStores,
   hasFreshRestrictedDevelopmentAccess,
   hasRestrictedDevelopmentConfiguration,
   permitsRestrictedDevelopmentIdentity,
-  RESTRICTED_DEVELOPMENT,
 } from "./restricted-development";
 import { lockShopifySessionLifecycle } from "./session-lifecycle-fence";
 import {
@@ -262,6 +263,7 @@ export async function assertFreshInstallationSubscription(
   pendingInstallationId: string,
   generation: string,
   now: Date,
+  expectedShop?: string,
 ) {
   assertNewBenefitsEnabled();
   const appId = process.env.SHOPIFY_API_KEY ?? "";
@@ -276,9 +278,22 @@ export async function assertFreshInstallationSubscription(
     hasRestrictedDevelopmentConfiguration(process.env) ||
     row.status === "restricted_development"
   ) {
+    let targetShop = expectedShop?.trim();
+    if (!targetShop) {
+      const pendingRecord =
+        await tx.weleticShopifyPendingInstallation.findUnique({
+          where: { id: pendingInstallationId },
+          include: { mappedStore: true },
+        });
+      targetShop =
+        pendingRecord?.mappedStore?.shopDomain ??
+        getRestrictedDevelopmentConfig(process.env).shop;
+    }
+    if (!targetShop) throw fail();
+
     const pending = await readPendingInstallation(tx, {
       appId,
-      shop: "montdev.myshopify.com",
+      shop: targetShop,
     });
     if (
       !pending ||
@@ -290,12 +305,7 @@ export async function assertFreshInstallationSubscription(
       pending.uninstalledAt ||
       pending.redactedAt ||
       (pending.expiresAt && pending.expiresAt <= now) ||
-      !hasFreshRestrictedDevelopmentAccess(
-        row,
-        "montdev.myshopify.com",
-        generation,
-        now,
-      )
+      !hasFreshRestrictedDevelopmentAccess(row, targetShop, generation, now)
     )
       throw fail();
     if (pending.mappedStoreId) {
@@ -304,7 +314,7 @@ export async function assertFreshInstallationSubscription(
       });
       if (
         !store ||
-        store.shopDomain !== "montdev.myshopify.com" ||
+        store.shopDomain !== targetShop ||
         store.installationGeneration !== generation ||
         store.complianceState !== "active" ||
         store.storeAccessState === "suspended"
@@ -353,9 +363,9 @@ export async function assertStoreSubscriptionForNewBenefit(
   assertNewBenefitsEnabled();
   if (!isCoreLaunch()) return;
   const [store] = await tx.$queryRaw<
-    Array<{ installationGeneration: string | null }>
+    Array<{ installationGeneration: string | null; shopDomain: string }>
   >(
-    Prisma.sql`SELECT installationGeneration FROM WeleticShopifyStore WHERE id = ${storeId} LIMIT 1 FOR UPDATE`,
+    Prisma.sql`SELECT installationGeneration, shopDomain FROM WeleticShopifyStore WHERE id = ${storeId} LIMIT 1 FOR UPDATE`,
   );
   const pending = await tx.weleticShopifyPendingInstallation.findUnique({
     where: { mappedStoreId: storeId },
@@ -379,6 +389,7 @@ export async function assertStoreSubscriptionForNewBenefit(
     pending.id,
     store.installationGeneration,
     clock.now,
+    store.shopDomain,
   );
 }
 
@@ -396,10 +407,16 @@ export async function assertReviewAwardTestingAuthority(
     select: { shopDomain: true },
   });
   if (!store) throw fail();
-  if (
-    hasRestrictedDevelopmentConfiguration(process.env) ||
-    store.shopDomain === RESTRICTED_DEVELOPMENT.shop
-  ) {
+  const restrictedStores = getRestrictedDevelopmentStores(process.env);
+  const cfg = getRestrictedDevelopmentConfig(process.env);
+  const isMatch =
+    restrictedStores.length > 0
+      ? restrictedStores.includes(store.shopDomain)
+      : cfg.shop
+        ? store.shopDomain === cfg.shop
+        : true;
+
+  if (hasRestrictedDevelopmentConfiguration(process.env) && isMatch) {
     // A profile change must not bypass the core-only subscription primitive.
     if (!isCoreLaunch()) throw fail();
     await assertStoreSubscriptionForNewBenefit(tx, storeId);
@@ -452,6 +469,7 @@ export async function reconcileSubscribedInstallation(
       current.pending.id,
       current.generation,
       current.now,
+      shop,
     );
     const store = await tx.weleticShopifyStore.findUniqueOrThrow({
       where: { id: result.storeId! },
@@ -480,7 +498,8 @@ export async function reconcileSubscribedInstallation(
         revision,
         operator:
           result.status === "restricted_development"
-            ? "restricted-yamaxdev-testing"
+            ? process.env.WELETIC_RESTRICTED_OPERATOR ??
+              `restricted-${process.env.WELETIC_RESTRICTED_DEV_STORE ?? "dev-store"}-testing`
             : "shopify-app-pricing",
         reason:
           result.status === "restricted_development"

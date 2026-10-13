@@ -244,6 +244,8 @@ describe("Weletic Shopify service authentication", () => {
 
   test("resolves mocked Redis client successfully without emitting fallback warning", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const nonce = `clean-redis-resolve-${crypto.randomUUID()}`;
@@ -400,6 +402,8 @@ describe("Weletic Shopify service authentication", () => {
 
   test("emits observable warning log when Redis is unavailable and fallback occurs", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
     vi.stubEnv("WELETIC_SERVICE_AUTH_REDIS_FAILURE_MODE", "fallback_memory");
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -419,6 +423,8 @@ describe("Weletic Shopify service authentication", () => {
 
   test("strictly requires 'OK' response from redis.set", async () => {
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", secret);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
     mockRedisSet.mockResolvedValueOnce(null);
 
     const input = createSignedRequest({

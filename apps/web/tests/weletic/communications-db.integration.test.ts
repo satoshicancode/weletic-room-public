@@ -94,7 +94,7 @@ async function save(
         },
       });
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
 }
 it("allows one winner when two editors concurrently create the initial policy", async () => {

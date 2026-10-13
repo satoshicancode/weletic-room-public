@@ -1152,6 +1152,28 @@ export async function evaluateReferralFriendClaimQualification({
           "Referral advocate does not belong to the active loyalty program.",
         );
       }
+      if (typeof (tx as any).weleticCommerceOrder?.findUnique === "function") {
+        const qualifyingOrder = await (
+          tx as any
+        ).weleticCommerceOrder.findUnique({
+          where: { id: orderId },
+        });
+        if (qualifyingOrder) {
+          if (qualifyingOrder.storeId !== storeId) {
+            return {
+              qualified: false as const,
+              reason: "Qualifying order belongs to another Shopify store",
+            };
+          }
+          const orderStatus = (qualifyingOrder.status || "").toLowerCase();
+          if (orderStatus !== "paid") {
+            return {
+              qualified: false as const,
+              reason: `Qualifying order is not paid (current status: ${qualifyingOrder.status})`,
+            };
+          }
+        }
+      }
       if (heldReferralSubscriptionOrderId(referral.metadata)) {
         return {
           qualified: false as const,
@@ -1444,33 +1466,53 @@ export async function evaluateReferralFriendClaimQualification({
       if (counter.count !== 1) {
         throw new Error("Advocate referral limit was reached.");
       }
+      const holdingPeriodDays = Number(lockedProgram.holdingPeriodDays || 0);
+      const isAdvocateHeld = holdingPeriodDays > 0;
+
       if (advocateAwarded > BigInt(0)) {
         const ledgerEntry = await appendPointsLedgerEntry({
           storeId,
           accountId: referral.advocateAccountId,
           entryType: WeleticPointsLedgerEntryType.EARN_REFERRAL,
-          pointsDelta: advocateAwarded,
+          pointsDelta: isAdvocateHeld ? BigInt(0) : advocateAwarded,
+          pendingDelta: isAdvocateHeld ? advocateAwarded : BigInt(0),
           referenceType: "referral_friend_claim",
           referenceId: referral.id,
           idempotencyKey: ledgerKey,
-          reason: `Referral reward for a friend's first order (${orderId})`,
-          metadata: { referralId: referral.id, orderId },
-          tx,
-        });
-        await enqueueFlowTriggerJob({
-          storeId,
-          eventId: ledgerEntry.id,
-          payload: {
-            accountId: referral.advocateAccountId,
-            handle: "weletic-points-earned",
-            pointsDelta: advocateAwarded.toString(),
-            pointsBalance: ledgerEntry.balanceAfter.toString(),
-            reason: "referral_friend_reward",
+          reason: isAdvocateHeld
+            ? `Referral reward for a friend's first order (${orderId}) [Holding period: ${holdingPeriodDays}d]`
+            : `Referral reward for a friend's first order (${orderId})`,
+          metadata: {
+            referralId: referral.id,
             orderId,
+            ...(isAdvocateHeld
+              ? {
+                  holdingPeriodDays,
+                  heldUntil: new Date(
+                    qualifiedAt.getTime() +
+                      holdingPeriodDays * 24 * 60 * 60 * 1000,
+                  ).toISOString(),
+                }
+              : {}),
           },
-          loyaltyMaintenancePermit,
           tx,
         });
+        if (!isAdvocateHeld) {
+          await enqueueFlowTriggerJob({
+            storeId,
+            eventId: ledgerEntry.id,
+            payload: {
+              accountId: referral.advocateAccountId,
+              handle: "weletic-points-earned",
+              pointsDelta: advocateAwarded.toString(),
+              pointsBalance: ledgerEntry.balanceAfter.toString(),
+              reason: "referral_friend_reward",
+              orderId,
+            },
+            loyaltyMaintenancePermit,
+            tx,
+          });
+        }
         if (operationalStore!.installationGeneration !== null)
           await enqueueReferralBenefitCommunication({
             tx,
@@ -1487,14 +1529,37 @@ export async function evaluateReferralFriendClaimQualification({
             receipt: { created: true, kind: "points", id: ledgerEntry.id },
             loyaltyMaintenancePermit,
           });
-        await scheduleTierReviewAfterQualifyingActivity({
-          storeId,
-          accountId: referral.advocateAccountId,
-          activityKey: ledgerKey,
-          reason: "referral_friend_points_earned",
-          loyaltyMaintenancePermit,
-          tx,
-        });
+        if (!isAdvocateHeld) {
+          await scheduleTierReviewAfterQualifyingActivity({
+            storeId,
+            accountId: referral.advocateAccountId,
+            activityKey: ledgerKey,
+            reason: "referral_friend_points_earned",
+            loyaltyMaintenancePermit,
+            tx,
+          });
+        } else {
+          const availableAt = new Date(
+            qualifiedAt.getTime() + holdingPeriodDays * 24 * 60 * 60 * 1000,
+          );
+          await enqueueOutboxJob({
+            storeId,
+            jobType: "HOLDING_PERIOD_RELEASE",
+            payload: {
+              orderId,
+              accountId: referral.advocateAccountId,
+              shopperId: referral.advocateAccount?.shopperId || "",
+              pendingPoints: advocateAwarded.toString(),
+              holdingPeriodDays,
+              availableAt: availableAt.toISOString(),
+              referralId: referral.id,
+            },
+            scheduledFor: availableAt,
+            idempotencyKey: `referral_holding_release_job:${referral.id}:${orderId}`,
+            loyaltyMaintenancePermit,
+            tx,
+          });
+        }
       }
       if (!couponSnapshot) {
         await enqueueFlowTriggerJob({
@@ -1513,6 +1578,11 @@ export async function evaluateReferralFriendClaimQualification({
         });
       }
       if (couponSnapshot && advocateCoupon && couponKey) {
+        const scheduledFor = isAdvocateHeld
+          ? new Date(
+              qualifiedAt.getTime() + holdingPeriodDays * 24 * 60 * 60 * 1000,
+            )
+          : undefined;
         await enqueueOutboxJob({
           storeId,
           jobType: "REFERRAL_REWARD_PROVISION",
@@ -1524,6 +1594,7 @@ export async function evaluateReferralFriendClaimQualification({
             side: "advocate",
             rewardSnapshot: couponSnapshot,
           },
+          ...(scheduledFor ? { scheduledFor } : {}),
           idempotencyKey: couponKey,
           loyaltyMaintenancePermit,
           tx,

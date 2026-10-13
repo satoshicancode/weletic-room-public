@@ -6,7 +6,10 @@ import { NextResponse } from "next/server";
 
 // POST /api/admin/impersonate
 export const POST = withAdmin(async ({ req }) => {
-  const { email, slug } = await req.json();
+  const { email, slug } = (await req.json()) as {
+    email?: string;
+    slug?: string;
+  };
 
   const userEmails: string[] = [];
   if (email) {

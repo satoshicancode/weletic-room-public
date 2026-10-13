@@ -104,7 +104,7 @@ const processStreamBatch = (): Promise<{
                 disabledAt: null,
                 triggers: {
                   array_contains: [LINK_CLICK_WEBHOOK_TRIGGER],
-                },
+                } as any,
               },
               select: {
                 id: true,

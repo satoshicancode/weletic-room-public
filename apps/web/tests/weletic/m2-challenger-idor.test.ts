@@ -1,0 +1,1 @@
+m2-challenger-adversarial-e2e.test.ts

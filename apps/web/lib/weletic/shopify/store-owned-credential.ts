@@ -1,4 +1,8 @@
 import { decrypt, encrypt } from "@/lib/encryption";
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import * as z from "zod/v4";
@@ -56,7 +60,7 @@ export async function assertLegacyShopifyCredentialAuthority(
     );
   const rows = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id FROM WeleticShopifyInstallationCredential
-    WHERE storeId = ${storeId} AND appId = ${appId} LIMIT 1 FOR UPDATE
+    WHERE storeId = ${storeId} AND appId = ${appId} LIMIT 1 ${forUpdateClause}
   `);
   if (rows.length)
     throw new ShopifyCredentialUnavailableError(
@@ -113,7 +117,7 @@ async function lockCredentialRow(
   const rows = await tx.$queryRaw<CredentialRow[]>(Prisma.sql`
     SELECT id, storeId, appId, installationGeneration, revision, credentialCiphertext
     FROM WeleticShopifyInstallationCredential
-    WHERE storeId = ${identity.storeId} AND appId = ${identity.appId} LIMIT 2 FOR UPDATE
+    WHERE storeId = ${identity.storeId} AND appId = ${identity.appId} LIMIT 2 ${forUpdateClause}
   `);
   if (rows.length > 1)
     throw new ShopifyCredentialUnavailableError("Ambiguous store credential");
@@ -189,7 +193,7 @@ export async function readFrozenStoreOwnedVoucherCredential(
     }>
   >(Prisma.sql`
     SELECT id, projectId, shopDomain, complianceState, installationGeneration
-    FROM WeleticShopifyStore WHERE id = ${proof.storeId} LIMIT 1 FOR UPDATE
+    FROM WeleticShopifyStore WHERE id = ${proof.storeId} LIMIT 1 ${forUpdateClause}
   `);
   if (
     !store ||
@@ -245,7 +249,7 @@ export async function readFrozenStoreOwnedVoucherCredential(
   >(Prisma.sql`
     SELECT id, storeId, redemptionId, source, status, lockedBy, leaseVersion, expectedDiscountCodeCanonical,
       (lockedAt > DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 5 MINUTE)) AS live
-    FROM WeleticShopifyVoucherCleanup WHERE id = ${proof.cleanupId} LIMIT 1 FOR UPDATE
+    FROM WeleticShopifyVoucherCleanup WHERE id = ${proof.cleanupId} LIMIT 1 ${forUpdateClause}
   `);
   if (
     !lease ||
@@ -274,7 +278,7 @@ export async function readFrozenStoreOwnedVoucherCredential(
     WHERE l.storeId = ${store.id} AND l.cleanupId = ${proof.cleanupId}
       AND r.requestType = ${proof.source} AND r.status IN ('pending', 'processing', 'retrying')
       AND r.phase IN ('enumerate_vouchers', 'voucher_cleanup')
-    ORDER BY r.createdAt DESC LIMIT 20 FOR UPDATE
+    ORDER BY r.createdAt DESC LIMIT 20 ${forUpdateClause}
   `);
   const authorized = requests.some((request) => {
     if (request.shopDomain !== identity.shop) return false;
@@ -356,11 +360,11 @@ export async function publishStoreOwnedShopifyCredential(
       INSERT INTO WeleticShopifyInstallationCredential
         (id, storeId, appId, installationGeneration, revision, credentialCiphertext, createdAt, updatedAt)
       VALUES (${randomUUID()}, ${identity.storeId}, ${identity.appId}, ${identity.installationGeneration},
-        ${revision}, ${ciphertext}, CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))
+        ${revision}, ${ciphertext}, ${currentTimestampClause}, ${currentTimestampClause})
     `);
   } else {
     const count = await tx.$executeRaw(Prisma.sql`
-      UPDATE WeleticShopifyInstallationCredential SET revision = ${revision}, credentialCiphertext = ${ciphertext}, updatedAt = CURRENT_TIMESTAMP(3)
+      UPDATE WeleticShopifyInstallationCredential SET revision = ${revision}, credentialCiphertext = ${ciphertext}, updatedAt = ${currentTimestampClause}
       WHERE id = ${row.id} AND storeId = ${identity.storeId} AND appId = ${identity.appId}
         AND installationGeneration = ${identity.installationGeneration} AND revision = ${options.expectedRevision}
     `);

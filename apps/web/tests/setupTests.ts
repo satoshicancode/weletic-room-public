@@ -1,6 +1,17 @@
 import crypto from "node:crypto";
 import { vi } from "vitest";
 
+process.env.ENCRYPTION_KEY ||=
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+process.env.STORAGE_ENDPOINT ||=
+  "https://00000000000000000000000000000000.r2.cloudflarestorage.com";
+process.env.STORAGE_PUBLIC_BUCKET ||= "weletic-test-public";
+process.env.STORAGE_PRIVATE_BUCKET ||= "weletic-test-private";
+process.env.STORAGE_ACCESS_KEY_ID ||= "test-access-key";
+process.env.STORAGE_SECRET_ACCESS_KEY ||= "test-secret-key";
+
+vi.mock("server-only", () => ({}));
+
 Object.defineProperty(globalThis, "crypto", {
   value: crypto,
   writable: false, // Ensure it's not writable
@@ -82,3 +93,17 @@ vi.mock("@/lib/auth/rate-limit-request", () => ({
 
 // Initialize Weletic RBAC plugin registrations for test environment
 import "@/lib/weletic/rbac/register";
+
+// Runtime enum export fail-safe for Vitest
+try {
+  const prismaClient = require("@prisma/client");
+  const { ALL_ENUMS } = require("@/lib/types/enums");
+  Object.assign(prismaClient, ALL_ENUMS);
+  if (prismaClient.$Enums) {
+    Object.assign(prismaClient.$Enums, ALL_ENUMS);
+  }
+  // Intentionally no Prisma.TransactionIsolationLevel patching: only
+  // Serializable is supported by the SQLite engine and by our code.
+} catch {
+  // Handled
+}

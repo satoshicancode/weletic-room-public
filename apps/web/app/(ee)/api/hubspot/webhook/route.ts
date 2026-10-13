@@ -21,7 +21,9 @@ export const POST = withAxiom(async (req) => {
       });
     }
 
-    if (!HUBSPOT_CLIENT_SECRET) {
+    const hubspotClientSecret = process.env.HUBSPOT_CLIENT_SECRET;
+
+    if (!hubspotClientSecret) {
       throw new DubApiError({
         code: "internal_server_error",
         message: "Missing HUBSPOT_CLIENT_SECRET environment variable.",
@@ -29,14 +31,20 @@ export const POST = withAxiom(async (req) => {
     }
 
     // Create expected hash: client_secret + request_body
-    const sourceString = HUBSPOT_CLIENT_SECRET + rawBody;
+    const sourceString = hubspotClientSecret + rawBody;
     const expectedHash = crypto
       .createHash("sha256")
       .update(sourceString)
       .digest("hex");
 
-    // Compare with provided signature
-    if (signature !== expectedHash) {
+    // Constant-time signature comparison with buffer length equality pre-check
+    const sigBuf = Buffer.from(signature, "utf8");
+    const expBuf = Buffer.from(expectedHash, "utf8");
+
+    if (
+      sigBuf.length !== expBuf.length ||
+      !crypto.timingSafeEqual(sigBuf, expBuf)
+    ) {
       throw new DubApiError({
         code: "unauthorized",
         message: "Invalid webhook signature.",

@@ -586,9 +586,9 @@ describe("SYNC-02: Adversarial Stress Test Suite (Challenger 2)", () => {
       );
     });
 
-    it("3.7: Completely malformed date string in created_at falls back gracefully to permissive behavior", async () => {
+    it("3.7: Completely malformed date string in created_at falls back safely with fail-closed non-attribution (FIN-AUDIT-11)", async () => {
       // Malformed date: new Date('corrupt-date') is NaN.
-      // System falls back gracefully (as designed for synthetic test payloads without dates).
+      // Under FIN-AUDIT-11, disabled codes fail closed when order timestamp is corrupted.
       const disabledDate = new Date("2026-08-15T00:00:00Z");
 
       mocks.discountFindMany.mockResolvedValue([
@@ -619,9 +619,9 @@ describe("SYNC-02: Adversarial Stress Test Suite (Challenger 2)", () => {
         storeId: "store_adv",
       });
 
-      // Does not throw unhandled exception
+      // Does not throw unhandled exception and safely fails closed
       expect(result).toContain(
-        "Order event processed successfully with discount codes",
+        "[Shopify] Factual order recorded. Order is not from a Dub affiliate link.",
       );
     });
   });

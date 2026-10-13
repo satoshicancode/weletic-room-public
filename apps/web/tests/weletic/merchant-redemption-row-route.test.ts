@@ -66,7 +66,7 @@ it("verifies the entire body before a repeatable-read owner export", async () =>
     expect.objectContaining({ body: JSON.stringify(input) }),
   );
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
   });
   expect(mocks.query).toHaveBeenCalledWith({
     tx,

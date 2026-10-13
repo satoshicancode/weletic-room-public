@@ -1,6 +1,6 @@
 import { getDefaultProgramIdOrThrow } from "@/lib/api/programs/get-default-program-id-or-throw";
 import { withWorkspace } from "@/lib/auth";
-import { prisma, sanitizeFullTextSearch } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import {
   getSubmittedLeadsCountQuerySchema,
   submittedLeadsCountResponseSchema,
@@ -35,8 +35,10 @@ export const GET = withWorkspace(
         ? search.includes("@")
           ? { email: search }
           : {
-              email: { search: sanitizeFullTextSearch(search) },
-              name: { search: sanitizeFullTextSearch(search) },
+              OR: [
+                { email: { contains: search } },
+                { name: { contains: search } },
+              ],
             }
         : {}),
     };

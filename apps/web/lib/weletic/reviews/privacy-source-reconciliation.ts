@@ -257,6 +257,6 @@ export async function reconcileReviewPrivacySourcePage({
             : null,
       };
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
 }
