@@ -663,8 +663,13 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
   describe("Challenge 4: Cloudflare Queue Resource Name & Runbook Consistency", () => {
     const repoRoot = path.resolve(__dirname, "../../../..");
     const workersDir = path.join(repoRoot, "apps/web/workers");
+    const candidateRunbookPaths = [
+      path.join(repoRoot, "CLOUDFLARE_NATIVE_MIGRATION_REPORT.md"),
+      "/Users/hironguyen/teamwork_projects/cloudflare_native_launch/CLOUDFLARE_NATIVE_MIGRATION_REPORT.md",
+    ];
     const runbookPath =
-      "/Users/hironguyen/teamwork_projects/cloudflare_native_launch/CLOUDFLARE_NATIVE_MIGRATION_REPORT.md";
+      candidateRunbookPaths.find((p) => fs.existsSync(p)) ??
+      path.join(repoRoot, "CLOUDFLARE_NATIVE_MIGRATION_REPORT.md");
 
     const workerTomlPaths = [
       path.join(workersDir, "webhook-ingress/wrangler.toml"),
