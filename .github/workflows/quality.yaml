@@ -162,6 +162,7 @@ jobs:
           node-version: 20
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web exec prisma db push --schema=./prisma/schema --accept-data-loss
       - name: Run affected unit tests
         env:
           SHOPIFY_AFFECTED: ${{ needs.changes.outputs.shopify }}
