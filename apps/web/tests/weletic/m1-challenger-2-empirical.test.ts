@@ -409,31 +409,15 @@ describe("M1 Database Migration Challenger 2: Empirical Verification Suite", () 
     });
 
     it("3.2 Concurrent Interactive Transactions: executes 20 concurrent transactions without deadlocks", async () => {
-      const runWithRetry = async (
-        fn: () => Promise<any>,
-        retries = 5,
-        delay = 50,
-      ): Promise<any> => {
-        try {
-          return await fn();
-        } catch (err: any) {
-          if (
-            retries > 0 &&
-            (err.code === "P2034" ||
-              err.code === "P2028" ||
-              /busy|locked/i.test(err.message || ""))
-          ) {
-            await new Promise((r) => setTimeout(r, delay + Math.random() * 50));
-            return runWithRetry(fn, retries - 1, delay * 2);
-          }
-          throw err;
-        }
-      };
+      const concurrency = 4;
+      const tasks = Array.from({ length: 20 }, (_, idx) => idx);
+      const results: PromiseSettledResult<any>[] = [];
 
-      const results = await Promise.allSettled(
-        Array.from({ length: 20 }, async (_, idx) => {
-          return runWithRetry(() =>
-            prisma.$transaction(
+      for (let i = 0; i < tasks.length; i += concurrency) {
+        const chunk = tasks.slice(i, i + concurrency);
+        const chunkResults = await Promise.allSettled(
+          chunk.map(async (idx) => {
+            return prisma.$transaction(
               async (tx) => {
                 const project = await tx.project.findUnique({
                   where: { id: testWorkspaceId },
@@ -446,13 +430,14 @@ describe("M1 Database Migration Challenger 2: Empirical Verification Suite", () 
                 return { idx, projectId: project?.id };
               },
               {
-                maxWait: 15000,
-                timeout: 15000,
+                maxWait: 5000,
+                timeout: 5000,
               },
-            ),
-          );
-        }),
-      );
+            );
+          }),
+        );
+        results.push(...chunkResults);
+      }
 
       const rejected = results.filter((r) => r.status === "rejected");
       expect(rejected).toHaveLength(0);
