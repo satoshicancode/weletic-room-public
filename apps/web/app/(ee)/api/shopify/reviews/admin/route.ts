@@ -4,6 +4,7 @@ import { storage } from "@/lib/storage";
 import { listAdminReviews } from "@/lib/weletic/reviews/admin";
 import { ReviewError } from "@/lib/weletic/reviews/contracts";
 import { reviewHttpError, reviewJson } from "@/lib/weletic/reviews/http";
+import { requireReviewStorage } from "@/lib/weletic/reviews/media";
 import { reviewModuleToggleSchema } from "@/lib/weletic/reviews/module-contract";
 import {
   moderateNativeReview,
@@ -30,6 +31,7 @@ export const GET = withWorkspace(
     try {
       const store = await resolveStore(workspace.id);
       if (searchParams.mediaId) {
+        requireReviewStorage();
         const media = await prisma.weleticReviewMedia.findFirst({
           where: {
             id: searchParams.mediaId,

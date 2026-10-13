@@ -33,7 +33,14 @@ export async function getWeleticShopifyInstallation(workspaceId: string) {
         shop: store.shopDomain,
         installationGeneration: store.installationGeneration,
       }).catch((error: unknown) => {
-        if (error instanceof ShopifyCredentialUnavailableError)
+        if (
+          error instanceof ShopifyCredentialUnavailableError ||
+          (error as Error)?.name === "ShopifyCredentialUnavailableError" ||
+          (error as Error)?.name === "ShopifySessionCoordinationError" ||
+          (error as Error)?.name === "SessionCredentialWriteBlockedError" ||
+          (error as Error)?.message?.includes("Shopify credential") ||
+          (error as Error)?.message?.includes("Shopify session coordination")
+        )
           throw new DubApiError({
             code: "bad_request",
             message: "Reconnect the Shopify app before accessing this store.",

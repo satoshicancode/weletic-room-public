@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { storage } from "@/lib/storage";
 import { ReviewError } from "@/lib/weletic/reviews/contracts";
+import { requireReviewStorage } from "@/lib/weletic/reviews/media";
 import {
   merchantReviewMediaInputSchema,
   merchantReviewMediaResponseSchema,
@@ -33,6 +34,7 @@ export async function readShopifyMerchantReviewMedia({
     if (!row) throw new ReviewError("not_found", "Media unavailable");
     return row;
   });
+  requireReviewStorage();
   return merchantReviewMediaResponseSchema.parse({
     kind: media.kind,
     contentType: media.contentType,

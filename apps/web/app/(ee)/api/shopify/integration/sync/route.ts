@@ -1,9 +1,12 @@
+import { ErrorCodes } from "@/lib/api/error-codes";
+import { DubApiError } from "@/lib/api/errors";
 import { withWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
   dispatchWeleticShopifyCatalogSync,
   syncWeleticShopifyCatalog,
 } from "@/lib/weletic/shopify/catalog-sync";
+import { ShopifyStoreOperationalWritesBlockedError } from "@/lib/weletic/shopify/store-compliance-state";
 import { WeleticSyncStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 
@@ -31,16 +34,30 @@ export const POST = withWorkspace(
         { status: 202 },
       );
     } catch (error: any) {
+      if (error instanceof DubApiError) {
+        return NextResponse.json(
+          { error: { message: error.message, code: error.code } },
+          { status: ErrorCodes[error.code] || 400 },
+        );
+      }
       const isLockError =
         error.message?.includes("already running") ||
-        error.message?.includes("Could not acquire lock");
+        error.message?.includes("Could not acquire lock") ||
+        error.message?.includes("belongs to a stale installation") ||
+        error.message?.includes("store identity changed");
+      const isBlockedError =
+        error instanceof ShopifyStoreOperationalWritesBlockedError ||
+        error.name === "ShopifyStoreOperationalWritesBlockedError" ||
+        error.name === "ShopifyCredentialUnavailableError" ||
+        error.name === "SessionCredentialWriteBlockedError" ||
+        error.message?.includes("is blocked because store");
       return NextResponse.json(
         {
           error: {
             message: error.message || "Failed to synchronize Shopify catalog.",
           },
         },
-        { status: isLockError ? 409 : 500 },
+        { status: isLockError || isBlockedError ? 409 : 500 },
       );
     }
   },

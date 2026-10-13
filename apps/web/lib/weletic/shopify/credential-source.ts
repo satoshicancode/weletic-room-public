@@ -14,6 +14,7 @@ import {
   assertLegacyShopifyCredentialAuthority,
   readStoreOwnedShopifyCredential,
 } from "./store-owned-credential";
+import { canonicalizeShopifyDomain } from "./store-resolver";
 
 /** Internal credential selection, not caller authorization. No caching, token
  * exchange, or legacy fallback after a public admission/credential failure.
@@ -25,9 +26,11 @@ export async function readShopifyCredentialSource(input: {
   shop: string;
   installationGeneration: string | null;
 }) {
+  const normalizedShop =
+    canonicalizeShopifyDomain(input.shop) || input.shop.trim().toLowerCase();
   const scope = {
     appId: process.env.SHOPIFY_API_KEY?.trim() || "",
-    shop: input.shop,
+    shop: normalizedShop,
   };
   shopifySessionCoordinationId(scope);
   try {

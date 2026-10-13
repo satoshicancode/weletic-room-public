@@ -37,7 +37,10 @@ async function ensureConnectedShopifyStore(
   workspaceId: string,
   programId: string,
 ) {
-  const shopDomain = `playwright-sync-${randomName("store")}.myshopify.com`;
+  const uniqueId = randomName("store")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  const shopDomain = `playwright-sync-${uniqueId}.myshopify.com`;
   const store = await prisma.weleticShopifyStore.upsert({
     where: { projectId: workspaceId },
     create: {
@@ -313,7 +316,9 @@ test("GET /api/shopify/integration/sync – rejects foreign workspace runId with
         id: `wstore_foreign_${Date.now()}`,
         projectId: foreignWorkspaceId,
         programId: `prog_foreign_${Date.now()}`,
-        shopDomain: `foreign-${randomName("shop")}.myshopify.com`,
+        shopDomain: `foreign-${randomName("shop")
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "")}.myshopify.com`,
         shopCurrency: "USD",
         apiVersion: "2026-10",
       },

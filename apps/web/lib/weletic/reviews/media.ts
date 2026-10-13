@@ -223,7 +223,14 @@ async function inspectReviewVideo(objectKey: string) {
         "bad_request",
         "Video must be no longer than 60 seconds",
       );
-    if (width < 1 || height < 1 || width > 4096 || height > 4096)
+    if (
+      !Number.isFinite(width) ||
+      !Number.isFinite(height) ||
+      width < 1 ||
+      height < 1 ||
+      width > 4096 ||
+      height > 4096
+    )
       throw new ReviewError("bad_request", "Video dimensions are unsupported");
     return { durationMs, width, height, videoCodec: "avc", audioCodec };
   } finally {
