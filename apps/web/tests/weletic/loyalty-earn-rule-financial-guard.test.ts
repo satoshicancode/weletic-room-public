@@ -31,6 +31,7 @@ vi.mock("@/lib/prisma", () => {
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    weleticLoyaltyRefundAllocation: { createMany: vi.fn() },
     weleticLoyaltyProgram: { findUnique: vi.fn() },
     weleticPointsLedgerEntry: {
       findMany: vi.fn(),
@@ -367,6 +368,11 @@ describe("loyalty earn-rule financial guard", () => {
     (prisma.weleticLoyaltyOrderLineEarn.updateMany as any).mockResolvedValue({
       count: 1,
     });
+    (prisma.weleticLoyaltyRefundAllocation.createMany as any).mockResolvedValue(
+      {
+        count: 1,
+      },
+    );
     (prisma.weleticLoyaltyAccount.update as any).mockResolvedValue({});
     (prisma.weleticLoyaltyAccount.updateMany as any).mockResolvedValue({
       count: 1,

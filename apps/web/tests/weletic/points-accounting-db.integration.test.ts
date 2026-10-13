@@ -39,7 +39,7 @@ beforeAll(async () => {
     process.env.POINTS_ACCOUNTING_DATABASE_INTEGRATION !== "1" ||
     url.protocol !== "mysql:" ||
     url.hostname !== "127.0.0.1" ||
-    !["3307", "3309"].includes(url.port) ||
+    !["3307", "3309", "3317"].includes(url.port) ||
     url.username !== "loyalty_dev" ||
     !/^\/weletic_loyalty_it_points_[a-z0-9_]+$/.test(url.pathname)
   ) {
@@ -106,6 +106,7 @@ afterAll(async () => {
     expect(await prisma.weleticLoyaltyAccount.count()).toBe(0);
     expect(await prisma.weleticPointsLedgerEntry.count()).toBe(0);
     expect(await prisma.weleticLoyaltyEarnGrant.count()).toBe(0);
+    expect(await prisma.weleticLoyaltyRefundAllocation.count()).toBe(0);
     expect(await prisma.weleticLoyaltyOutboxJob.count()).toBe(0);
   }
   vi.useRealTimers();
@@ -761,6 +762,260 @@ it("store audit reconciles grant balances with linked earn and refund entries", 
   expect((await audit()).status).toBe("clean");
 });
 
+it("store audit verifies refund points against retained source-line allocations", async () => {
+  const f = await seed();
+  const orderId = await order(f);
+  await earn(f, orderId);
+  const refundId = await refund(f, orderId, [[0, BigInt("3000")]]);
+  await reverse(f, refundId);
+  const entry = await prisma.weleticPointsLedgerEntry.findFirstOrThrow({
+    where: {
+      storeId: f.id,
+      entryType: "REFUND_REVERSAL",
+      referenceId: refundId,
+    },
+  });
+  const originalMetadata = entry.metadata as Prisma.InputJsonValue;
+  expect(originalMetadata).toMatchObject({
+    refundAllocationVersion: 1,
+    refundAllocationMode: "line_refund",
+    lineReversals: [{ orderLineId: `${orderId}-0`, points: "30" }],
+  });
+  const audit = () =>
+    prisma.$transaction((tx) =>
+      readStoreWalletReconciliation({ tx, storeId: f.id }),
+    );
+  expect(await audit()).toMatchObject({
+    status: "clean",
+    refundAllocationMismatch: "0",
+    refundAllocationUnavailable: "0",
+    refundSourceTargetMismatch: "0",
+    refundSourceTargetUnavailable: "0",
+  });
+
+  const sourceLine = await prisma.weleticCommerceRefundLine.findFirstOrThrow({
+    where: { refundId },
+  });
+  await prisma.weleticCommerceRefundLine.update({
+    where: { id: sourceLine.id },
+    data: { shopAmount: sourceLine.shopAmount + BigInt("1000") },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    refundAllocationMismatch: "0",
+    refundLineAllocationMismatch: "0",
+    refundSourceTargetMismatch: "1",
+  });
+  await prisma.weleticCommerceRefundLine.update({
+    where: { id: sourceLine.id },
+    data: { shopAmount: sourceLine.shopAmount },
+  });
+  expect((await audit()).status).toBe("clean");
+  await prisma.weleticCommerceRefundLine.update({
+    where: { id: sourceLine.id },
+    data: { quantity: sourceLine.quantity + 1 },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    refundSourceTargetMismatch: "1",
+  });
+  await prisma.weleticCommerceRefundLine.update({
+    where: { id: sourceLine.id },
+    data: { quantity: sourceLine.quantity },
+  });
+  expect((await audit()).status).toBe("clean");
+
+  for (const [path, value] of [
+    ["$.lineReversals[0].points", "999"],
+    ["$.lineReversals[0].points", "not-a-number"],
+    [
+      "$.lineReversals[0].points",
+      "99999999999999999999999999999999999999999999999999999999999999999999999999999999",
+    ],
+    ["$.lineReversals[0].orderLineId", `${orderId}-1`],
+    ["$.refundAllocationMode", "order_adjustment"],
+  ] as const) {
+    await prisma.$executeRaw`
+      UPDATE WeleticPointsLedgerEntry
+      SET metadata = JSON_SET(metadata, ${path}, ${value})
+      WHERE id = ${entry.id}
+    `;
+    expect(await audit()).toMatchObject({
+      status: "mismatch",
+      refundAllocationMismatch: "1",
+      refundAllocationUnavailable: "0",
+    });
+    await prisma.weleticPointsLedgerEntry.update({
+      where: { id: entry.id },
+      data: { metadata: originalMetadata },
+    });
+  }
+
+  const allocation =
+    await prisma.weleticLoyaltyRefundAllocation.findFirstOrThrow({
+      where: { storeId: f.id, ledgerEntryId: entry.id },
+    });
+  await prisma.weleticLoyaltyRefundAllocation.update({
+    where: { id: allocation.id },
+    data: { points: allocation.points + BigInt(1) },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    refundAllocationMismatch: "1",
+  });
+  await prisma.weleticLoyaltyRefundAllocation.update({
+    where: { id: allocation.id },
+    data: { points: allocation.points },
+  });
+  expect((await audit()).status).toBe("clean");
+  await prisma.weleticLoyaltyRefundAllocation.update({
+    where: { id: allocation.id },
+    data: { ledgerEntryId: `missing-${entry.id}` },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    refundAllocationMismatch: "1",
+    orphanRefundAllocations: "1",
+  });
+  await prisma.weleticLoyaltyRefundAllocation.update({
+    where: { id: allocation.id },
+    data: { ledgerEntryId: entry.id },
+  });
+  expect((await audit()).status).toBe("clean");
+
+  await prisma.$executeRaw`
+    UPDATE WeleticPointsLedgerEntry
+    SET metadata = JSON_REMOVE(metadata, '$.refundAllocationVersion')
+    WHERE id = ${entry.id}
+  `;
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    refundAllocationMismatch: "1",
+    refundAllocationUnavailable: "0",
+  });
+});
+
+it("store audit accepts order-level refund allocation only without a matching source line", async () => {
+  const f = await seed();
+  const orderId = await order(f);
+  await earn(f, orderId);
+  const refundId = randomUUID();
+  await prisma.weleticCommerceRefund.create({
+    data: {
+      id: refundId,
+      storeId: f.id,
+      orderId,
+      externalId: refundId,
+      presentmentCurrency: "USD",
+      presentmentAmount: BigInt("3000"),
+      shopCurrency: "USD",
+      shopAmount: BigInt("3000"),
+      accountingCurrency: "USD",
+      accountingAmount: BigInt("3000"),
+      accountingFxRate: "1",
+      occurredAt: new Date(),
+    },
+  });
+  await reverse(f, refundId);
+  const entry = await prisma.weleticPointsLedgerEntry.findFirstOrThrow({
+    where: {
+      storeId: f.id,
+      entryType: "REFUND_REVERSAL",
+      referenceId: refundId,
+    },
+  });
+  expect(entry.metadata).toMatchObject({
+    refundAllocationVersion: 1,
+    refundAllocationMode: "order_adjustment",
+  });
+  expect(
+    await prisma.$transaction((tx) =>
+      readStoreWalletReconciliation({ tx, storeId: f.id }),
+    ),
+  ).toMatchObject({
+    status: "unavailable",
+    refundAllocationMismatch: "0",
+    refundAllocationUnavailable: "0",
+    refundSourceTargetMismatch: "0",
+    refundSourceTargetUnavailable: "2",
+  });
+});
+
+it("keeps line identifiers out of redacted ledger metadata while auditing retained financial allocations", async () => {
+  const f = await seed();
+  const orderId = await order(f);
+  await earn(f, orderId);
+  const refundId = await refund(f, orderId, [[0, BigInt("3000")]]);
+  await processRefundPointsReversal({
+    storeId: f.id,
+    refundId,
+    privacyMinimized: true,
+    expectedInstallationGeneration: f.expectedInstallationGeneration,
+  });
+  const entry = await prisma.weleticPointsLedgerEntry.findFirstOrThrow({
+    where: {
+      storeId: f.id,
+      entryType: "REFUND_REVERSAL",
+      referenceId: refundId,
+    },
+  });
+  expect(entry.metadata).toMatchObject({
+    privacyRedacted: true,
+    refundAllocationVersion: 1,
+    lineReversalCount: 1,
+  });
+  expect(entry.metadata).not.toHaveProperty("lineReversals");
+  expect(entry.metadata).not.toHaveProperty("refundId");
+  expect(
+    await prisma.$transaction((tx) =>
+      readStoreWalletReconciliation({ tx, storeId: f.id }),
+    ),
+  ).toMatchObject({ status: "clean", refundAllocationMismatch: "0" });
+});
+
+it("store audit detects per-line refund shifts even when grant totals still agree", async () => {
+  const f = await seed();
+  const orderId = await order(f);
+  await earn(f, orderId);
+  const refundId = await refund(f, orderId, [
+    [0, BigInt("3000")],
+    [1, BigInt("2000")],
+  ]);
+  await reverse(f, refundId);
+  const audit = () =>
+    prisma.$transaction((tx) =>
+      readStoreWalletReconciliation({ tx, storeId: f.id }),
+    );
+  expect(await audit()).toMatchObject({
+    status: "clean",
+    refundAllocationMismatch: "0",
+    refundLineAllocationMismatch: "0",
+  });
+  const grant = await prisma.weleticLoyaltyEarnGrant.findFirstOrThrow({
+    where: { storeId: f.id, orderId },
+  });
+  const lines = await prisma.weleticLoyaltyOrderLineEarn.findMany({
+    where: { grantId: grant.id },
+    orderBy: { orderLineId: "asc" },
+  });
+  expect(lines).toHaveLength(2);
+  await prisma.weleticLoyaltyOrderLineEarn.update({
+    where: { id: lines[0].id },
+    data: { reversedPoints: lines[0].reversedPoints + BigInt(1) },
+  });
+  await prisma.weleticLoyaltyOrderLineEarn.update({
+    where: { id: lines[1].id },
+    data: { reversedPoints: lines[1].reversedPoints - BigInt(1) },
+  });
+  expect(await audit()).toMatchObject({
+    status: "mismatch",
+    lineAllocationMismatch: "0",
+    grantLedgerMismatch: "0",
+    refundAllocationMismatch: "0",
+    refundLineAllocationMismatch: "2",
+  });
+});
+
 it("store audit rejects an immediate earn linked to a different order", async () => {
   const f = await seed();
   const firstOrder = await order(f);
@@ -837,9 +1092,11 @@ it("store audit accepts a conserved legacy refund correction with a positive del
       readStoreWalletReconciliation({ tx, storeId: f.id }),
     ),
   ).toMatchObject({
-    status: "clean",
+    status: "unavailable",
     grantLedgerMismatch: "0",
     grantLedgerSourceMismatch: "0",
+    refundAllocationUnavailable: "2",
+    refundAllocationMismatch: "0",
   });
 });
 
@@ -863,8 +1120,23 @@ it("P01: purchase multi-line earn, duplicate delivery and partial/full refund co
   await balance(f, BigInt("0"));
   await conserved(f);
   expect(
+    await prisma.$transaction((tx) =>
+      readStoreWalletReconciliation({ tx, storeId: f.id }),
+    ),
+  ).toMatchObject({
+    status: "clean",
+    refundAllocationMismatch: "0",
+    refundLineAllocationMismatch: "0",
+    refundSourceTargetMismatch: "0",
+  });
+  expect(
     await prisma.weleticLoyaltyEarnGrant.count({ where: { storeId: f.id } }),
   ).toBe(1);
+  expect(
+    await prisma.weleticLoyaltyRefundAllocation.count({
+      where: { storeId: f.id },
+    }),
+  ).toBe(3);
 });
 
 it.each([true, false])(
