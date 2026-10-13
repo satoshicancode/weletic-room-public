@@ -51,7 +51,7 @@ function fixture() {
   let discoveredEntries = [entry];
   tx.$queryRaw.mockImplementation(async (query: { strings: string[] }) => {
     const sql = query.strings.join(" ");
-    if (sql.includes("FORCE INDEX (wl_import_metadata_source_idx)")) {
+    if (sql.includes("json_extract(metadata, '$.sourceId')")) {
       return discoveredEntries;
     }
     if (sql.includes("SELECT l.id FROM")) {
@@ -244,12 +244,9 @@ describe("stored import reconciliation", () => {
     });
     expect(JSON.stringify(result)).not.toMatch(/snapshot|account|Customer/);
     expect(f.tx.$queryRaw.mock.calls[1][0].strings.join(" ")).toContain(
-      "FORCE INDEX (wl_import_metadata_source_idx)",
+      "json_extract(metadata, '$.sourceId')",
     );
-    expect(f.tx.$queryRaw.mock.calls[1][0].strings.join(" ")).toContain(
-      "JSON_CONTAINS(metadata, JSON_QUOTE(",
-    );
-    expect(f.tx.$queryRaw.mock.calls[1][0].values).toEqual(["source", "source", 3]);
+    expect(f.tx.$queryRaw.mock.calls[1][0].values).toEqual(["source", 3]);
   });
   it("stops before reading execution or ledger when source verification fails", async () => {
     const f = fixture();

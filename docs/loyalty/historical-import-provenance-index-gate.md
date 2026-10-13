@@ -7,16 +7,13 @@ rollbacks, worker recovery, or independent financial reconciliation.
 
 ## Deployment order
 
-The indexed reader uses `FORCE INDEX (wl_import_metadata_source_idx)` and
-therefore cannot run before
+The indexed reader uses `json_extract(metadata, '$.sourceId')` backed by an
+SQLite expression index `wl_import_metadata_source_idx` and
+therefore runs with indexed lookups once
 [`20260924_loyalty_import_source_provenance_index.sql`](../../infra/shopify-development/migrations/20260924_loyalty_import_source_provenance_index.sql)
-has completed on its exact database. A missing index is an error, not an empty
-reconciliation. Keep the previous application revision deployed while the
-additive DDL is reviewed, approved, applied, and verified; pause new import
-work if the target DDL needs a table-lock window. Keep privacy and recovery
-workers compatible with persisted jobs. The previous reader can use the newer
-schema. Do not deploy the new reader or start a
-50,000-row run before the index is visible and its read plan is accepted.
+has completed on its exact database. Under Cloudflare D1 / SQLite, expression
+indexes on `json_extract(...)` avoid unindexed table scans without requiring
+virtual generated columns or vendor-specific `FORCE INDEX` hints.
 In a disposable MySQL round trip, a subsequent `prisma db push` silently
 removed **both** the generated column and index because they are outside the
 Prisma schema. Do not run `db push` against a migrated target. Treat any schema

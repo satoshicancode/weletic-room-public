@@ -123,16 +123,12 @@ export async function readHistoricalImportExecutionProofInTransaction({
   // globally unique. Discover foreign stray writes too, only after source
   // ownership validation; the checker rejects them without returning row data.
   const maximumSourceEntries = snapshots.length * 2;
-  // The first predicate matches the additive generated-column index. Force it because
-  // small-table statistics can choose a full scan; the release schema gate
-  // must apply the index before this reader is deployed. Keep the exact
-  // JSON string predicate too: a cast may truncate malformed long values and
-  // must never broaden the source evidence set. This discovery is global so a
-  // foreign-store orphan cannot be hidden by a tenant filter.
+  // In Cloudflare D1 (SQLite), discovery uses SQLite json_extract(metadata, '$.sourceId'),
+  // which is backed by the expression index wl_import_metadata_source_idx.
+  // This discovery is global so a foreign-store orphan cannot be hidden by a tenant filter.
   const discovered = await tx.$queryRaw<WeleticPointsLedgerEntry[]>(Prisma.sql`
-    SELECT * FROM WeleticPointsLedgerEntry FORCE INDEX (wl_import_metadata_source_idx)
-    WHERE importSourceId = ${sourceId}
-      AND JSON_CONTAINS(metadata, JSON_QUOTE(${sourceId}), '$.sourceId')
+    SELECT * FROM WeleticPointsLedgerEntry
+    WHERE json_extract(metadata, '$.sourceId') = ${sourceId}
     LIMIT ${maximumSourceEntries + 1}
   `);
   if (discovered.length > maximumSourceEntries)
