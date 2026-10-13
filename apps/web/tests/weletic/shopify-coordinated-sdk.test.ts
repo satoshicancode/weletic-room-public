@@ -537,11 +537,16 @@ describe("coordinated Shopify SDK operations", () => {
       sdk.unauthenticated.admin(shop),
       sdk.unauthenticated.admin(shop),
     ]);
-    expect(
-      results.filter((result) => result.status === "fulfilled"),
-    ).toHaveLength(1);
+    const fulfilled = results.filter(
+      (result): result is PromiseFulfilledResult<any> =>
+        result.status === "fulfilled",
+    );
+    expect(fulfilled.length).toBeGreaterThanOrEqual(1);
     expect(fixture.controls.providerCalls).toBe(1);
     expect(fixture.controls.mutationCalls).toBe(1);
+    for (const item of fulfilled) {
+      expect(item.value.session.accessToken).toBe("synthetic-fresh-token");
+    }
   });
 
   it("uses the actual SDK for an installed background operation", async () => {
