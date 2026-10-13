@@ -160,6 +160,6 @@ export function hasPublicReviewPhotoOwnership(
   review: Review,
   media: Media,
 ) {
-  if (media.kind !== "photo") return false;
+  if ((media.kind ?? "photo") !== "photo") return false;
   return hasPublicReviewMediaOwnership(storeId, review, media);
 }
