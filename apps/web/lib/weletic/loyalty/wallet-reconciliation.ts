@@ -257,40 +257,43 @@ export async function readStoreWalletReconciliation({
         CAST(COALESCE(SUM(CASE
           WHEN entry.referenceType = 'COMMERCE_ORDER'
             OR (entry.referenceType = 'COMMERCE_REFUND'
-              AND COALESCE(JSON_CONTAINS_PATH(entry.metadata, 'one', '$.refundAllocationVersion'), 0) = 0
+              AND json_type(entry.metadata, '$.refundAllocationVersion') IS NULL
               AND NOT EXISTS (
                 SELECT 1 FROM WeleticLoyaltyRefundAllocation allocation
                 WHERE allocation.storeId = entry.storeId AND allocation.ledgerEntryId = entry.id))
             THEN 1 ELSE 0 END), 0) AS CHAR) AS refundAllocationUnavailable,
         CAST(COALESCE(SUM(CASE
           WHEN entry.referenceType = 'COMMERCE_REFUND'
-            AND (COALESCE(JSON_CONTAINS_PATH(entry.metadata, 'one', '$.refundAllocationVersion'), 0) = 1
+            AND (json_type(entry.metadata, '$.refundAllocationVersion') IS NOT NULL
               OR EXISTS (
                 SELECT 1 FROM WeleticLoyaltyRefundAllocation allocation
                 WHERE allocation.storeId = entry.storeId AND allocation.ledgerEntryId = entry.id))
             AND (
-              COALESCE(JSON_TYPE(JSON_EXTRACT(entry.metadata, '$.refundAllocationVersion')), '') <> 'INTEGER'
-              OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.refundAllocationVersion')), '') <> '1'
-              OR (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.privacyRedacted')), '') = 'true'
-                AND COALESCE(JSON_CONTAINS_PATH(entry.metadata, 'one', '$.lineReversals'), 0) <> 0)
-              OR (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.privacyRedacted')), '') <> 'true'
-                AND COALESCE(JSON_TYPE(JSON_EXTRACT(entry.metadata, '$.lineReversals')), '') <> 'ARRAY')
-              OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.refundAllocationMode')), '')
+              COALESCE(json_type(entry.metadata, '$.refundAllocationVersion'), '') NOT IN ('integer', 'INTEGER')
+              OR COALESCE(CAST(json_extract(entry.metadata, '$.refundAllocationVersion') AS TEXT), '') <> '1'
+              OR ((COALESCE(CAST(json_extract(entry.metadata, '$.privacyRedacted') AS TEXT), '') IN ('true', '1')
+                   OR json_extract(entry.metadata, '$.privacyRedacted') = 1)
+                AND json_type(entry.metadata, '$.lineReversals') IS NOT NULL)
+              OR ((COALESCE(CAST(json_extract(entry.metadata, '$.privacyRedacted') AS TEXT), '') NOT IN ('true', '1')
+                   AND COALESCE(json_extract(entry.metadata, '$.privacyRedacted'), 0) <> 1)
+                AND COALESCE(json_type(entry.metadata, '$.lineReversals'), '') NOT IN ('array', 'ARRAY'))
+              OR COALESCE(CAST(json_extract(entry.metadata, '$.refundAllocationMode') AS TEXT), '')
                 NOT IN ('line_refund', 'order_adjustment')
               OR entry.grantId IS NULL
               OR entry.pointsDelta + entry.pendingDelta >= 0
-              OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.totalClawback')), '')
+              OR COALESCE(CAST(json_extract(entry.metadata, '$.totalClawback') AS TEXT), '')
                 <> CAST(-entry.pointsDelta - entry.pendingDelta AS CHAR)
-              OR COALESCE(JSON_TYPE(JSON_EXTRACT(entry.metadata, '$.lineReversalCount')), '') <> 'INTEGER'
+              OR COALESCE(json_type(entry.metadata, '$.lineReversalCount'), '') NOT IN ('integer', 'INTEGER')
               OR (SELECT COUNT(*) FROM WeleticLoyaltyRefundAllocation allocation
                   WHERE allocation.storeId = entry.storeId AND allocation.ledgerEntryId = entry.id) = 0
               OR (SELECT COUNT(*) FROM WeleticLoyaltyRefundAllocation allocation
                   WHERE allocation.storeId = entry.storeId AND allocation.ledgerEntryId = entry.id)
-                <> CAST(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.lineReversalCount')), '-1') AS SIGNED)
-              OR (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.privacyRedacted')), '') <> 'true'
+                <> CAST(COALESCE(CAST(json_extract(entry.metadata, '$.lineReversalCount') AS TEXT), '-1') AS INTEGER)
+              OR ((COALESCE(CAST(json_extract(entry.metadata, '$.privacyRedacted') AS TEXT), '') NOT IN ('true', '1')
+                   AND COALESCE(json_extract(entry.metadata, '$.privacyRedacted'), 0) <> 1)
                 AND (SELECT COUNT(*) FROM WeleticLoyaltyRefundAllocation allocation
                   WHERE allocation.storeId = entry.storeId AND allocation.ledgerEntryId = entry.id)
-                  <> COALESCE(JSON_LENGTH(JSON_EXTRACT(entry.metadata, '$.lineReversals')), -1))
+                  <> COALESCE(json_array_length(entry.metadata, '$.lineReversals'), -1))
               OR (SELECT COALESCE(SUM(allocation.points), 0)
                   FROM WeleticLoyaltyRefundAllocation allocation
                   WHERE allocation.storeId = entry.storeId AND allocation.ledgerEntryId = entry.id)
@@ -299,7 +302,7 @@ export async function readStoreWalletReconciliation({
                 SELECT 1 FROM WeleticLoyaltyRefundAllocation allocation
                 LEFT JOIN WeleticLoyaltyOrderLineEarn lineEarn
                   ON lineEarn.grantId = entry.grantId AND lineEarn.storeId = entry.storeId
-                  AND BINARY lineEarn.orderLineId = BINARY allocation.orderLineId
+                  AND lineEarn.orderLineId = allocation.orderLineId
                 WHERE allocation.storeId = entry.storeId
                   AND allocation.ledgerEntryId = entry.id
                   AND (allocation.grantId <> entry.grantId
@@ -307,23 +310,25 @@ export async function readStoreWalletReconciliation({
                     OR allocation.points <= 0
                     OR lineEarn.id IS NULL OR lineEarn.isExcluded <> 0
                     OR allocation.points > lineEarn.awardedPoints
-                    OR (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.privacyRedacted')), '') <> 'true'
-                      AND COALESCE(JSON_CONTAINS(
-                      JSON_EXTRACT(entry.metadata, '$.lineReversals'),
-                      JSON_OBJECT('orderLineId', allocation.orderLineId,
-                        'points', CAST(allocation.points AS CHAR))), 0) <> 1)
-                    OR (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.refundAllocationMode')), '') = 'line_refund'
+                    OR ((COALESCE(CAST(json_extract(entry.metadata, '$.privacyRedacted') AS TEXT), '') NOT IN ('true', '1')
+                         AND COALESCE(json_extract(entry.metadata, '$.privacyRedacted'), 0) <> 1)
+                      AND NOT EXISTS (
+                        SELECT 1 FROM json_each(entry.metadata, '$.lineReversals') elem
+                        WHERE json_extract(elem.value, '$.orderLineId') = allocation.orderLineId
+                          AND CAST(json_extract(elem.value, '$.points') AS TEXT) = CAST(allocation.points AS TEXT)
+                      ))
+                    OR (COALESCE(CAST(json_extract(entry.metadata, '$.refundAllocationMode') AS TEXT), '') = 'line_refund'
                       AND NOT EXISTS (
                         SELECT 1 FROM WeleticCommerceRefundLine refundLine
                         WHERE refundLine.refundId = entry.referenceId
-                          AND BINARY refundLine.orderLineId = BINARY allocation.orderLineId)))
+                          AND refundLine.orderLineId = allocation.orderLineId)))
               )
-              OR (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(entry.metadata, '$.refundAllocationMode')), '') = 'order_adjustment'
+              OR (COALESCE(CAST(json_extract(entry.metadata, '$.refundAllocationMode') AS TEXT), '') = 'order_adjustment'
                 AND EXISTS (
                   SELECT 1 FROM WeleticCommerceRefundLine refundLine
                   JOIN WeleticLoyaltyOrderLineEarn lineEarn
                     ON lineEarn.orderLineId = refundLine.orderLineId
-                    AND BINARY lineEarn.orderLineId = BINARY refundLine.orderLineId
+                    AND lineEarn.orderLineId = refundLine.orderLineId
                     AND lineEarn.grantId = entry.grantId AND lineEarn.storeId = entry.storeId
                   WHERE refundLine.refundId = entry.referenceId))
             ) THEN 1 ELSE 0 END), 0) AS CHAR) AS refundAllocationMismatch
@@ -347,7 +352,7 @@ export async function readStoreWalletReconciliation({
       WHERE allocation.storeId = ${storeId}
       GROUP BY allocation.grantId, allocation.orderLineId
     ) allocations ON allocations.grantId = grantRow.id
-      AND BINARY allocations.orderLineId = BINARY lineEarn.orderLineId
+      AND allocations.orderLineId = lineEarn.orderLineId
     WHERE grantRow.storeId = ${storeId}
       AND NOT EXISTS (
         SELECT 1 FROM WeleticPointsLedgerEntry unknownEntry
@@ -356,7 +361,7 @@ export async function readStoreWalletReconciliation({
           AND unknownEntry.entryType = 'REFUND_REVERSAL'
           AND (unknownEntry.referenceType = 'COMMERCE_ORDER'
             OR (unknownEntry.referenceType = 'COMMERCE_REFUND'
-              AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(unknownEntry.metadata, '$.refundAllocationVersion')), '') <> '1'))
+              AND COALESCE(CAST(json_extract(unknownEntry.metadata, '$.refundAllocationVersion') AS TEXT), '') <> '1'))
       )
       AND lineEarn.reversedPoints <> COALESCE(allocations.allocatedPoints, 0)
   `);
@@ -381,30 +386,18 @@ export async function readStoreWalletReconciliation({
         CAST(COALESCE(SUM(CASE WHEN COALESCE(unsupported.hasUnsupported, 0) = 1
           THEN 1 ELSE 0 END), 0) AS CHAR) AS refundSourceTargetUnavailable,
         CAST(COALESCE(SUM(CASE WHEN COALESCE(unsupported.hasUnsupported, 0) = 0
-          AND lineEarn.reversedPoints <> LEAST(
+          AND lineEarn.reversedPoints <> min(
             lineEarn.awardedPoints,
-            GREATEST(
+            max(
               CASE WHEN lineEarn.lineNetAmount > 0 AND COALESCE(source.refundedAmount, 0) > 0
-                THEN (CAST(source.refundedAmount AS DECIMAL(65, 0))
-                    * CAST(lineEarn.awardedPoints AS DECIMAL(65, 0)))
-                    DIV CAST(lineEarn.lineNetAmount AS DECIMAL(65, 0))
-                  + (MOD(
-                    CAST(source.refundedAmount AS DECIMAL(65, 0))
-                      * CAST(lineEarn.awardedPoints AS DECIMAL(65, 0)),
-                    CAST(lineEarn.lineNetAmount AS DECIMAL(65, 0))) * 2
-                    >= lineEarn.lineNetAmount)
+                THEN ((source.refundedAmount * lineEarn.awardedPoints) / lineEarn.lineNetAmount)
+                  + (CASE WHEN ((source.refundedAmount * lineEarn.awardedPoints) % lineEarn.lineNetAmount) * 2
+                    >= lineEarn.lineNetAmount THEN 1 ELSE 0 END)
                 ELSE 0 END,
               CASE WHEN lineEarn.quantity > 0 AND COALESCE(source.refundedQuantity, 0) > 0
-                THEN (LEAST(CAST(source.refundedQuantity AS DECIMAL(65, 0)),
-                    CAST(lineEarn.quantity AS DECIMAL(65, 0)))
-                    * CAST(lineEarn.awardedPoints AS DECIMAL(65, 0)))
-                    DIV CAST(lineEarn.quantity AS DECIMAL(65, 0))
-                  + (MOD(
-                    LEAST(CAST(source.refundedQuantity AS DECIMAL(65, 0)),
-                      CAST(lineEarn.quantity AS DECIMAL(65, 0)))
-                      * CAST(lineEarn.awardedPoints AS DECIMAL(65, 0)),
-                    CAST(lineEarn.quantity AS DECIMAL(65, 0))) * 2
-                    >= lineEarn.quantity)
+                THEN ((min(source.refundedQuantity, lineEarn.quantity) * lineEarn.awardedPoints) / lineEarn.quantity)
+                  + (CASE WHEN ((min(source.refundedQuantity, lineEarn.quantity) * lineEarn.awardedPoints) % lineEarn.quantity) * 2
+                    >= lineEarn.quantity THEN 1 ELSE 0 END)
                 ELSE 0 END
             )) THEN 1 ELSE 0 END), 0) AS CHAR) AS refundSourceTargetMismatch
       FROM WeleticLoyaltyOrderLineEarn lineEarn
@@ -420,13 +413,13 @@ export async function readStoreWalletReconciliation({
         GROUP BY refund.storeId, refund.orderId, refundLine.orderLineId
       ) source ON source.storeId = grantRow.storeId
         AND source.orderId = grantRow.orderId
-        AND BINARY source.orderLineId = BINARY lineEarn.orderLineId
+        AND source.orderLineId = lineEarn.orderLineId
       LEFT JOIN (
         SELECT grantId, MAX(CASE
           WHEN referenceType = 'COMMERCE_ORDER'
             OR (referenceType = 'COMMERCE_REFUND'
-              AND (COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.refundAllocationVersion')), '') <> '1'
-                OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.refundAllocationMode')), '') = 'order_adjustment'))
+              AND (COALESCE(CAST(json_extract(metadata, '$.refundAllocationVersion') AS TEXT), '') <> '1'
+                OR COALESCE(CAST(json_extract(metadata, '$.refundAllocationMode') AS TEXT), '') = 'order_adjustment'))
             THEN 1 ELSE 0 END) AS hasUnsupported
         FROM WeleticPointsLedgerEntry
         WHERE storeId = ${storeId} AND entryType = 'REFUND_REVERSAL'

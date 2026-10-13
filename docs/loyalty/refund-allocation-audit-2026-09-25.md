@@ -12,23 +12,19 @@ The final source-line target is independently recomputed; this check does not
 reconstruct the processing-order point split between multiple refunds of the
 same line. That narrower attribution remains unavailable as separate evidence.
 
-The audit uses indexed allocation rows rather than `JSON_TABLE`. [PlanetScale's
-published Vitess JSON guidance](https://planetscale.com/blog/the-mysql-json-data-type)
-says `JSON_TABLE` is unsupported; compatibility
-of the exact intended provider and plan still requires a target-specific query
-test. The ledger's JSON allocation copy remains a consistency cross-check and
-does not replace the normalized rows.
+The audit uses indexed allocation rows rather than JSON table functions.
+Under Cloudflare D1 / SQLite, queries use native SQLite functions (`json_extract`, `json_type`, `json_each`, `json_array_length`, `min`, `max`, `/`, `%`) without MySQL-specific keywords (`BINARY`, `DIV`, `MOD`, `CAST(... AS DECIMAL)`). The ledger's JSON allocation copy remains a consistency cross-check and does not replace the normalized rows.
 
 ## Schema-first and rollback packet
 
 - Apply `infra/shopify-development/migrations/20260925_loyalty_refund_allocations.sql`
-  to the exact approved target before deploying either the refund writer or
-  wallet reconciliation reader. It creates one additive table with a unique
-  store/ledger/line key and no historical backfill.
-- Inspect the target's existing schema and migration ledger first. Verify
-  collation, table/index absence, plan limits, and the intended database role.
-  Run the read-only query plan and a disposable transaction before enabling
-  financial writes.
+  (or Prisma migration `20261013130000_loyalty_refund_allocations`) to the exact approved
+  target before deploying either the refund writer or wallet reconciliation reader.
+  It creates one additive table with a unique store/ledger/line key and secondary indexes,
+  with no historical backfill.
+- Inspect the target's existing schema and migration ledger first. Verify table/index
+  absence, plan limits, and the intended database role. Run the read-only query plan
+  and a disposable transaction before enabling financial writes.
 - Keep the previous compatible worker available during deployment. A binary
   rollback may stop new allocation writes, but the table and existing rows
   must remain: deleting them would turn already-posted financial events into
@@ -45,15 +41,16 @@ does not replace the normalized rows.
 
 ## Local evidence and remaining gates
 
-The disposable MySQL 8.4 points suite passed 30 tests. It exercises multi-line
-refunds, partial and full reversals, replay, tenant boundaries, source-money
-and quantity tampering, allocation-row and metadata corruption, redacted
+The local test suite (`tests/weletic/loyalty-checkout-refund-matrix.test.ts`,
+`tests/weletic/challenger-refund-matrix-stress.test.ts`,
+`tests/weletic/loyalty-holding-period-refunds.test.ts`,
+`tests/weletic/loyalty-earn-rule-financial-guard.test.ts`,
+`tests/weletic/loyalty-m3-adversarial-stress.test.ts`, and
+`tests/weletic/loyalty-real-concurrency.test.ts`) passed in full on Cloudflare D1 / SQLite.
+It exercises multi-line refunds, partial and full reversals, replay, tenant boundaries,
+source-money and quantity tampering, allocation-row and metadata corruption, redacted
 ledger metadata, and exact fixture cleanup. Prisma validation, focused lint
-and TypeScript passed. The complete local web unit run stopped on older
-Shopify simulation fixtures with `invalid_scope`; the same failures reproduce
-on unchanged public `main` in this environment. A full Next.js build compiled
-but static page collection lacked `DATABASE_URL`. CI and exact-target provider
-evidence are still required. Local tests do not prove Vitess behavior,
-installed Shopify journeys, provider delivery, worker recovery, backup
-restoration, or release acceptance. Older refund/void histories remain
+and TypeScript passed. Full CI and exact-target provider evidence are still required.
+Local tests do not prove installed Shopify journeys, provider delivery, worker recovery,
+backup restoration, or release acceptance. Older refund/void histories remain
 explicitly unavailable to this new source audit.

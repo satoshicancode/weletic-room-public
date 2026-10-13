@@ -1,20 +1,21 @@
--- Add immutable line-level evidence for new refund reversal events. Apply to
--- the exact target before deploying the writer or wallet reconciliation reader.
--- Historical ledger entries stay without allocations and remain unavailable.
-CREATE TABLE `WeleticLoyaltyRefundAllocation` (
-  `id` VARCHAR(191) NOT NULL,
-  `storeId` VARCHAR(191) NOT NULL,
-  `ledgerEntryId` VARCHAR(191) NOT NULL,
-  `grantId` VARCHAR(191) NOT NULL,
-  `refundId` VARCHAR(191) NOT NULL,
-  `orderLineId` VARCHAR(191) NOT NULL,
-  `points` BIGINT NOT NULL,
-  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  PRIMARY KEY (`id`),
-  UNIQUE INDEX `RefundAllocation_store_ledger_line_key`
-    (`storeId`, `ledgerEntryId`, `orderLineId`),
-  INDEX `WeleticLoyaltyRefundAllocation_storeId_grantId_orderLineId_idx`
-    (`storeId`, `grantId`, `orderLineId`),
-  INDEX `WeleticLoyaltyRefundAllocation_storeId_refundId_idx`
-    (`storeId`, `refundId`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- Add immutable line-level evidence for new refund reversal events.
+-- SQLite / Cloudflare D1 schema definition.
+CREATE TABLE IF NOT EXISTS "WeleticLoyaltyRefundAllocation" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "storeId" TEXT NOT NULL,
+  "ledgerEntryId" TEXT NOT NULL,
+  "grantId" TEXT NOT NULL,
+  "refundId" TEXT NOT NULL,
+  "orderLineId" TEXT NOT NULL,
+  "points" BIGINT NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "RefundAllocation_store_ledger_line_key"
+  ON "WeleticLoyaltyRefundAllocation"("storeId", "ledgerEntryId", "orderLineId");
+
+CREATE INDEX IF NOT EXISTS "WeleticLoyaltyRefundAllocation_storeId_grantId_orderLineId_idx"
+  ON "WeleticLoyaltyRefundAllocation"("storeId", "grantId", "orderLineId");
+
+CREATE INDEX IF NOT EXISTS "WeleticLoyaltyRefundAllocation_storeId_refundId_idx"
+  ON "WeleticLoyaltyRefundAllocation"("storeId", "refundId");
