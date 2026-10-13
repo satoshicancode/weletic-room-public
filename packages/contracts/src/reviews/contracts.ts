@@ -79,6 +79,16 @@ export class ReviewError extends Error {
   }
 }
 
+export function isReviewError(error: unknown): error is ReviewError {
+  return (
+    error instanceof ReviewError ||
+    (typeof error === "object" &&
+      error !== null &&
+      (error as Error).name === "ReviewError" &&
+      typeof (error as ReviewError).code === "string")
+  );
+}
+
 // Ported from OpenClub's review request lifecycle: 256-bit opaque tokens and
 // SHA-256 lookup only. Tokens are never included in logging or public responses.
 export const generateReviewToken = () => randomBytes(32).toString("base64url");

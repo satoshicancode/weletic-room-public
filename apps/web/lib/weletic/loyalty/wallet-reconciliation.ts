@@ -328,7 +328,6 @@ export async function readStoreWalletReconciliation({
                   SELECT 1 FROM WeleticCommerceRefundLine refundLine
                   JOIN WeleticLoyaltyOrderLineEarn lineEarn
                     ON lineEarn.orderLineId = refundLine.orderLineId
-                    AND lineEarn.orderLineId = refundLine.orderLineId
                     AND lineEarn.grantId = entry.grantId AND lineEarn.storeId = entry.storeId
                   WHERE refundLine.refundId = entry.referenceId))
             ) THEN 1 ELSE 0 END), 0) AS CHAR) AS refundAllocationMismatch

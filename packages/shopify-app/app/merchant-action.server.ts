@@ -178,7 +178,9 @@ export function createMerchantAction(
         ([400, 401, 403, 409, 413].includes(error.status) ||
           ((operation === "customer-profile" ||
             operation === "review-translations-read" ||
-            operation === "review-translations-write") &&
+            operation === "review-translations-write" ||
+            operation === "create-review" ||
+            operation === "review-media") &&
             error.status === 404))
           ? error.status
           : 503;

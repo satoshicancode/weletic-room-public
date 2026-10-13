@@ -17,15 +17,18 @@ async function setupLoyaltyTestEnvironment(
       id: `wstore_loyalty_${Date.now()}_${randomName("s")}`,
       projectId: workspaceId,
       programId,
-      shopDomain: `playwright-loyalty-${randomName("store")}.myshopify.com`,
+      shopDomain: `playwright-loyalty-${randomName("store")
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "")}.myshopify.com`,
       shopCurrency: "USD",
       apiVersion: "2026-10",
+      complianceState: "active",
+      storeAccessState: "active",
       installationGeneration: "gen_playwright_loyalty",
     },
     update: {
-      shopCurrency: "USD",
-      apiVersion: "2026-10",
-      installationGeneration: "gen_playwright_loyalty",
+      complianceState: "active",
+      storeAccessState: "active",
     },
   });
 

@@ -5,7 +5,12 @@ import {
 import { Prisma } from "@prisma/client";
 import { deriveAllShopifyShopPrivacyIdentities } from "./privacy-identity";
 
-export class SessionCredentialWriteBlockedError extends Error {}
+export class SessionCredentialWriteBlockedError extends Error {
+  constructor(message?: string) {
+    super(message);
+    this.name = "SessionCredentialWriteBlockedError";
+  }
+}
 
 export type LockedShopifySessionStore = {
   id: string;

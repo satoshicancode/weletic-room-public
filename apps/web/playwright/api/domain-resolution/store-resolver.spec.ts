@@ -85,7 +85,9 @@ test("POST /api/shopify/integration/webhook – handles unknown shop domain grac
 }) => {
   const webhookSecret =
     process.env.SHOPIFY_WEBHOOK_SECRET || DEFAULT_WEBHOOK_SECRET;
-  const unknownDomain = `unknown-tenant-${randomName("shop")}.myshopify.com`;
+  const unknownDomain = `unknown-tenant-${randomName("shop")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")}.myshopify.com`;
   const body = JSON.stringify({ id: 999999 });
   const hmac = calculateHmac(body, webhookSecret);
 

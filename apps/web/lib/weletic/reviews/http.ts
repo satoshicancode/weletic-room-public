@@ -1,5 +1,5 @@
 import { ZodError } from "zod";
-import { ReviewError } from "./contracts";
+import { isReviewError } from "./contracts";
 
 export function reviewJson(data: unknown, status = 200) {
   return Response.json(data, {
@@ -19,7 +19,7 @@ export function reviewHttpError(error: unknown) {
       400,
     );
   }
-  if (error instanceof ReviewError) {
+  if (isReviewError(error)) {
     const statuses = {
       not_found: 404,
       conflict: 409,
@@ -29,7 +29,7 @@ export function reviewHttpError(error: unknown) {
     };
     return reviewJson(
       { error: { code: error.code, message: error.message } },
-      statuses[error.code],
+      statuses[error.code] || 500,
     );
   }
   // Never log submission bodies, tokens, recipient addresses, or storage URLs.
