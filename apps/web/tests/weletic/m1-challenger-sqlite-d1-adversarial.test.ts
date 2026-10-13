@@ -97,8 +97,8 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
   });
 
   describe("Task 1.1: Enum Runtime Availability & Preservation Across Modules", () => {
-    it("preserves all 102 runtime enum dictionaries in ALL_ENUMS and exports from @/lib/types/enums", () => {
-      expect(Object.keys(ALL_ENUMS).length).toBe(102);
+    it("preserves all 104 runtime enum dictionaries in ALL_ENUMS and exports from @/lib/types/enums", () => {
+      expect(Object.keys(ALL_ENUMS).length).toBe(104);
 
       // Verify specific core enums exist in ALL_ENUMS
       expect(ALL_ENUMS.WorkspaceRole).toBeDefined();
@@ -106,6 +106,8 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
       expect(ALL_ENUMS.WeleticRewardType).toBeDefined();
       expect(ALL_ENUMS.WeleticSyncStatus).toBeDefined();
       expect(ALL_ENUMS.BountyType).toBeDefined();
+      expect(ALL_ENUMS.WeleticReviewMediaKind).toBeDefined();
+      expect(ALL_ENUMS.WeleticReviewSource).toBeDefined();
 
       // Verify imported from @/lib/types/enums works as runtime object
       expect(WorkspaceRole.owner).toBe("owner");

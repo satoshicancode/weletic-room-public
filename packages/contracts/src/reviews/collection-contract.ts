@@ -7,6 +7,7 @@ export const reviewCollectionFields = {
   expiresAfterDays: z.number().int().min(1).max(90),
   autoPublish: z.boolean(),
   photoUploadsEnabled: z.boolean(),
+  videoUploadsEnabled: z.boolean().default(false),
   requestEmailEnabled: z.boolean(),
 };
 
@@ -65,6 +66,7 @@ export function defaultReviewCollectionPolicy(): ReviewCollectionPolicy {
     expiresAfterDays: 30,
     autoPublish: false,
     photoUploadsEnabled: true,
+    videoUploadsEnabled: false,
     requestEmailEnabled: false,
     reminderAfterDays: [],
   };

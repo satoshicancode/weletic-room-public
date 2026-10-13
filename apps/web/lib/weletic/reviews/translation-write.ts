@@ -58,20 +58,23 @@ export async function writeReviewTranslationInTransaction({
   });
   if (!source) throw new ReviewError("not_found", "Review unavailable");
   if (
-    await hasShopifyCustomerPrivacyTombstone({
+    source.shopper &&
+    (await hasShopifyCustomerPrivacyTombstone({
       tx,
       storeId,
       shopifyCustomerId: source.shopper.shopifyCustomerId,
       email: source.shopper.email,
-    })
+    }))
   )
     throw new ReviewError("not_found", "Review unavailable");
-  await assertReviewTranslationOwnerAvailable({
-    tx,
-    storeId,
-    shopperId: source.shopperId,
-    installationGeneration: patch.expectedInstallationGeneration,
-  });
+  if (source.shopperId) {
+    await assertReviewTranslationOwnerAvailable({
+      tx,
+      storeId,
+      shopperId: source.shopperId,
+      installationGeneration: patch.expectedInstallationGeneration,
+    });
+  }
   if (source.version !== patch.expectedReviewVersion)
     throw new ReviewError(
       "conflict",

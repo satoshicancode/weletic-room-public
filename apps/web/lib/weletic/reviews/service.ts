@@ -15,14 +15,17 @@ import {
   type ReviewCollectionWriteInput,
 } from "./collection-contract";
 import {
+  REVIEW_MAX_PHOTOS,
+  REVIEW_MAX_VIDEO_DURATION_MS,
+  REVIEW_MAX_VIDEOS,
   ReviewError,
   reviewModerationSchema,
   reviewSettingsSchema,
   reviewSubmissionSchema,
 } from "./contracts";
 import {
-  REVIEW_FLOW_HANDLES,
   isReviewPublicationTransition,
+  REVIEW_FLOW_HANDLES,
 } from "./flow-contract";
 import {
   hasOpenReviewFlowOwnership,
@@ -33,6 +36,7 @@ import { reserveProductReviewIncentiveInTransaction } from "./incentive-claims";
 import { reviewParticipationContentDigest } from "./incentive-evidence";
 import { invalidateReviewIncentiveInTransaction } from "./incentive-invalidation";
 import { fulfillReviewPointsClaimInTransaction } from "./incentive-points";
+import { merchantReviewCreateInputSchema } from "./merchant-contract";
 import {
   reviewModuleToggleSchema,
   type ReviewModuleToggle,
@@ -145,6 +149,10 @@ async function writeReviewSettings(
         collection?.policy.photoUploadsEnabled ??
         previous?.photoUploadsEnabled ??
         true,
+      videoUploadsEnabled:
+        collection?.policy.videoUploadsEnabled ??
+        previous?.videoUploadsEnabled ??
+        false,
       requestEmailEnabled:
         collection?.policy.requestEmailEnabled ??
         previous?.requestEmailEnabled ??
@@ -252,8 +260,10 @@ async function applyPublishedReviewReward(
     include: { request: { include: reviewRequestInclude }, media: true },
   });
   if (
-    // New promises never fall back to the publication-based legacy writer.
+    (review.source ?? "verified_customer") !== "verified_customer" ||
     !review.request ||
+    !review.shopperId ||
+    // New promises never fall back to the publication-based legacy writer.
     review.request.incentivePolicyId !== null ||
     review.status !== "published" ||
     review.rewardStatus === "awarded" ||
@@ -305,7 +315,9 @@ async function applyPublishedReviewReward(
       rating: review.rating,
       body: review.body,
       productId: review.request.product.externalId,
-      hasPhoto: review.media.some((m) => m.status === "uploaded"),
+      hasPhoto: review.media.some(
+        (m) => m.status === "uploaded" && m.kind === "photo",
+      ),
       hasVideo: false,
       verifiedStatus: "verified-purchase",
     },
@@ -337,6 +349,53 @@ async function applyPublishedReviewReward(
       rewardReason: result.reason,
     },
   });
+}
+
+export async function createMerchantReviewInTransaction({
+  tx,
+  storeId,
+  userId,
+  input,
+}: {
+  tx: Prisma.TransactionClient;
+  storeId: string;
+  userId: string;
+  input: unknown;
+}) {
+  const data = merchantReviewCreateInputSchema.parse(input);
+  const [settings, product] = await Promise.all([
+    tx.weleticReviewSettings.findUnique({ where: { storeId } }),
+    tx.weleticShopifyProduct.findFirst({
+      where: { storeId, externalId: data.productId, status: "active" },
+      select: { id: true },
+    }),
+  ]);
+  if (!settings?.enabled)
+    throw new ReviewError("disabled", "Reviews are unavailable");
+  if (!product) throw new ReviewError("not_found", "Product unavailable");
+  const now = new Date();
+  const review = await tx.weleticProductReview.create({
+    data: {
+      id: createWeleticId("wreview_"),
+      storeId,
+      productId: product.id,
+      source: "merchant",
+      createdByUserId: userId,
+      verifiedPurchase: false,
+      rating: data.rating,
+      title: data.title,
+      body: data.body,
+      displayName: data.displayName,
+      status: data.status,
+      publishedAt: data.status === "published" ? now : null,
+      participationStatus: "ineligible",
+      rewardStatus: "ineligible",
+      rewardReason: "merchant_authored",
+    },
+  });
+  if (review.status === "published")
+    await enqueueReviewSummary(tx, storeId, review.productId, `${review.id}:1`);
+  return review;
 }
 
 export async function submitNativeReview(storeId: string, input: unknown) {
@@ -374,8 +433,6 @@ export async function submitNativeReview(storeId: string, input: unknown) {
       )
         throw new ReviewError("unavailable", "Purchase is no longer eligible");
     }
-    if (data.mediaIds.length && !settings.photoUploadsEnabled)
-      throw new ReviewError("bad_request", "Photos are disabled");
     const media = await tx.weleticReviewMedia.findMany({
       where: {
         storeId,
@@ -389,8 +446,27 @@ export async function submitNativeReview(storeId: string, input: unknown) {
     if (media.length !== data.mediaIds.length)
       throw new ReviewError(
         "bad_request",
-        "Photo unavailable or owned by another request",
+        "Media unavailable or owned by another request",
       );
+    const photos = media.filter((item) => item.kind === "photo");
+    const videos = media.filter((item) => item.kind === "video");
+    if (photos.length > REVIEW_MAX_PHOTOS || videos.length > REVIEW_MAX_VIDEOS)
+      throw new ReviewError("bad_request", "Too many review media files");
+    if (photos.length && !settings.photoUploadsEnabled)
+      throw new ReviewError("bad_request", "Photos are disabled");
+    if (videos.length && !settings.videoUploadsEnabled)
+      throw new ReviewError("bad_request", "Videos are disabled");
+    if (
+      videos.some(
+        (item) =>
+          item.contentType !== "video/mp4" ||
+          item.videoCodec !== "avc" ||
+          (item.audioCodec !== null && item.audioCodec !== "aac") ||
+          !item.durationMs ||
+          item.durationMs > REVIEW_MAX_VIDEO_DURATION_MS,
+      )
+    )
+      throw new ReviewError("bad_request", "Video validation is incomplete");
     const consumed = await tx.weleticReviewRequest.updateMany({
       where: {
         id: request.id,
@@ -549,11 +625,18 @@ export async function moderateNativeReviewInTransaction({
     throw new ReviewError("not_found", "Review unavailable");
   if (review.request)
     assertReviewPolicyReference(review.request.incentivePolicyId);
-  if (patch.retryReward && !review.request)
-    throw new ReviewError(
-      "bad_request",
-      "Open reviews have no incentive to retry",
-    );
+  if (patch.retryReward) {
+    if (review.source === "merchant")
+      throw new ReviewError(
+        "bad_request",
+        "Merchant reviews cannot earn rewards",
+      );
+    if (!review.request || !review.shopperId)
+      throw new ReviewError(
+        "bad_request",
+        "Open reviews have no incentive to retry",
+      );
+  }
   if (review.version !== patch.version)
     throw new ReviewError(
       "conflict",
@@ -562,8 +645,8 @@ export async function moderateNativeReviewInTransaction({
   const status = patch.status ?? review.status;
   if (
     patch.retryReward &&
-    review.request &&
-    review.request.incentivePolicyId === null &&
+    (review.source ?? "verified_customer") === "verified_customer" &&
+    review.request?.incentivePolicyId === null &&
     status !== "published"
   )
     throw new ReviewError(
@@ -590,11 +673,12 @@ export async function moderateNativeReviewInTransaction({
       "conflict",
       "Review changed; reload before moderating",
     );
-  if (
-    patch.retryReward &&
-    review.request &&
-    review.request.incentivePolicyId !== null
-  ) {
+  if (patch.retryReward && review.request?.incentivePolicyId !== null) {
+    if (!review.request || !review.shopperId)
+      throw new ReviewError(
+        "unavailable",
+        "Review purchase evidence is missing",
+      );
     if (!generation)
       throw new ReviewError(
         "unavailable",
@@ -667,11 +751,15 @@ export async function moderateNativeReviewInTransaction({
           }
         }
       }
-    } else {
+    } else if (
+      (review.source ?? "verified_customer") === "verified_customer" &&
+      review.request
+    ) {
       await applyPublishedReviewReward(tx, storeId, review.id, generation);
     }
   } else if (status === "rejected" || status === "hidden") {
     if (
+      (review.source ?? "verified_customer") === "verified_customer" &&
       review.rewardStatus === "awarded" &&
       review.request &&
       review.request.incentivePolicyId === null
@@ -724,9 +812,14 @@ export async function moderateNativeReviewInTransaction({
   }
   if (status === "published" || review.status === "published") {
     if (
+      review.source !== "merchant" &&
       (review.request
         ? !review.openSubmission
-        : hasOpenReviewFlowOwnership(storeId, review)) &&
+        : review.shopperId !== null &&
+          hasOpenReviewFlowOwnership(storeId, {
+            ...review,
+            shopperId: review.shopperId,
+          })) &&
       isReviewPublicationTransition(review.status, status)
     )
       await enqueueReviewFlowEvent({

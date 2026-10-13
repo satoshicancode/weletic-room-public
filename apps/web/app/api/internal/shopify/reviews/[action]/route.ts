@@ -7,7 +7,10 @@ import {
 } from "@/lib/weletic/reviews/contracts";
 import { reviewHttpError, reviewJson } from "@/lib/weletic/reviews/http";
 import {
+  finalizeReviewVideo,
+  getPublicReviewMedia,
   getPublicReviewPhoto,
+  reserveReviewVideo,
   uploadReviewPhoto,
 } from "@/lib/weletic/reviews/media";
 import { openReviewSubmissionRoute } from "@/lib/weletic/reviews/open-submission-route";
@@ -50,8 +53,8 @@ async function handle(request: Request, context: Context) {
       return storeAccountInvitationsRoute(request);
     const allowed =
       request.method === "GET"
-        ? ["list", "store-list", "photo", "health"]
-        : ["request", "submit", "upload"];
+        ? ["list", "store-list", "photo", "media", "health"]
+        : ["request", "submit", "upload", "video-reserve", "video-finalize"];
     if (!allowed.includes(action))
       throw new ReviewError("not_found", "Review route unavailable");
     const bytes = await readWeleticShopifyRequestBodyBytes(request, {
@@ -128,6 +131,14 @@ async function handle(request: Request, context: Context) {
         .parse(url.searchParams.get("mediaId"));
       return reviewJson(await getPublicReviewPhoto(storeId, mediaId));
     }
+    if (action === "media") {
+      const mediaId = z
+        .string()
+        .max(191)
+        .regex(/^wrevmedia_[A-Za-z0-9_-]+$/)
+        .parse(url.searchParams.get("mediaId"));
+      return reviewJson(await getPublicReviewMedia(storeId, mediaId));
+    }
     const input: unknown = JSON.parse(body);
     const { token } = tokenSchema.passthrough().parse(input);
     const limit = await ratelimit(60, "1 h").limit(
@@ -149,6 +160,10 @@ async function handle(request: Request, context: Context) {
       );
     if (action === "submit")
       return reviewJson(await submitNativeReview(storeId, input), 201);
+    if (action === "video-reserve")
+      return reviewJson(await reserveReviewVideo(storeId, input), 201);
+    if (action === "video-finalize")
+      return reviewJson(await finalizeReviewVideo(storeId, input));
     const photo = photoSchema.parse(input);
     return reviewJson(
       await uploadReviewPhoto(

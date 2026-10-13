@@ -58,6 +58,7 @@ export async function handleReviewFlowTrigger(
           select: {
             id: true,
             requestId: true,
+            source: true,
             incentivized: true,
             openSubmission: { select: openReviewFlowSourceSelection },
             status: true,
@@ -87,35 +88,41 @@ export async function handleReviewFlowTrigger(
             },
           },
         });
-        const ownsSource =
-          review &&
-          (review.request
-            ? !review.openSubmission &&
-              review.request.storeId === storeId &&
-              review.request.order.storeId === storeId &&
-              review.request.order.shopperId === review.shopperId &&
-              review.request.shopperId === review.shopperId &&
-              review.request.productId === review.productId &&
-              (event.handle !== REVIEW_FLOW_HANDLES.SUBMITTED ||
-                review.request.installationGeneration ===
-                  event.installationGeneration)
-            : hasOpenReviewFlowOwnership(
-                storeId,
-                review,
-                event.handle === REVIEW_FLOW_HANDLES.SUBMITTED
-                  ? event.installationGeneration
-                  : undefined,
-              ));
         if (
           !review ||
+          !review.shopper ||
+          !review.shopperId ||
+          review.source === "merchant"
+        )
+          return null;
+        const currentShopper = review.shopper;
+        const currentShopperId = review.shopperId;
+        const ownsSource = review.request
+          ? !review.openSubmission &&
+            review.request.storeId === storeId &&
+            review.request.order.storeId === storeId &&
+            review.request.order.shopperId === currentShopperId &&
+            review.request.shopperId === currentShopperId &&
+            review.request.productId === review.productId &&
+            (event.handle !== REVIEW_FLOW_HANDLES.SUBMITTED ||
+              review.request.installationGeneration ===
+                event.installationGeneration)
+          : hasOpenReviewFlowOwnership(
+              storeId,
+              { ...review, shopperId: currentShopperId },
+              event.handle === REVIEW_FLOW_HANDLES.SUBMITTED
+                ? event.installationGeneration
+                : undefined,
+            );
+        if (
           !ownsSource ||
           review.version < event.version ||
           review.rating !== event.rating ||
           review.verifiedPurchase !== event.verifiedPurchase ||
-          review.shopper.storeId !== storeId ||
+          currentShopper.storeId !== storeId ||
           review.product.storeId !== storeId ||
-          review.shopper.privacyTombstones.length ||
-          !review.shopper.shopifyCustomerId ||
+          currentShopper.privacyTombstones.length ||
+          !currentShopper.shopifyCustomerId ||
           (event.handle === REVIEW_FLOW_HANDLES.PUBLISHED &&
             review.status !== "published")
         )
@@ -124,7 +131,7 @@ export async function handleReviewFlowTrigger(
           await lockReviewOwnerPrivacySource({
             tx,
             storeId,
-            shopperId: review.shopperId,
+            shopperId: currentShopperId,
             installationGeneration: event.installationGeneration,
             loyaltyMaintenancePermit,
           });
@@ -136,14 +143,14 @@ export async function handleReviewFlowTrigger(
           await hasShopifyCustomerPrivacyTombstone({
             tx,
             storeId,
-            shopifyCustomerId: review.shopper.shopifyCustomerId,
-            email: review.shopper.email,
+            shopifyCustomerId: currentShopper.shopifyCustomerId,
+            email: currentShopper.email,
           })
         )
           return null;
         return {
           workspaceId: review.store.projectId,
-          customerGid: review.shopper.shopifyCustomerId,
+          customerGid: currentShopper.shopifyCustomerId,
         };
       },
       event.installationGeneration,

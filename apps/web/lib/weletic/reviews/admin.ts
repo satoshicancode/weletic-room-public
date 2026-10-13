@@ -117,6 +117,7 @@ export async function listAdminReviews(
             displayName: true,
             merchantReply: true,
             verifiedPurchase: true,
+            source: true,
             incentivized: true,
             rewardStatus: true,
             rewardReason: true,
@@ -126,7 +127,7 @@ export async function listAdminReviews(
             product: { select: { title: true, externalId: true } },
             media: {
               where: { storeId, status: "uploaded" },
-              select: { id: true },
+              select: { id: true, kind: true },
             },
           },
         })

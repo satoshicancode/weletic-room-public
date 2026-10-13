@@ -117,7 +117,10 @@ it("returns matching translated text and original without internal privacy/sourc
       where: expect.objectContaining({
         storeId: "store_1",
         redactedAt: null,
-        shopper: { storeId: "store_1", privacyTombstones: { none: {} } },
+        OR: [
+          { source: "merchant" },
+          { shopper: { storeId: "store_1", privacyTombstones: { none: {} } } },
+        ],
       }),
       select: expect.objectContaining({
         translations: expect.objectContaining({

@@ -99,7 +99,9 @@ export async function invalidateReviewIncentiveInTransaction({
         });
   if (
     !review ||
+    (review.source ?? "verified_customer") !== "verified_customer" ||
     !review.request ||
+    !review.shopperId ||
     review.shopperId !== claim.shopperId ||
     review.redactedAt ||
     review.status === "redacted" ||

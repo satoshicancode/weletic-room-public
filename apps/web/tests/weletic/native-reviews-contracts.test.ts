@@ -3,7 +3,9 @@ import {
   hashReviewToken,
   hasUnrefundedReviewQuantity,
   REVIEW_MAX_PHOTO_BYTES,
+  REVIEW_MAX_VIDEO_BYTES,
   reviewSubmissionSchema,
+  reviewVideoReserveSchema,
 } from "@/lib/weletic/reviews/contracts";
 import { normalizeReviewPhoto } from "@/lib/weletic/reviews/media";
 import sharp from "sharp";
@@ -66,7 +68,31 @@ describe("native review contracts", () => {
     expect(
       reviewSubmissionSchema.safeParse({
         ...valid,
-        mediaIds: Array.from({ length: 6 }, (_, i) => `wrevmedia_${i}`),
+        mediaIds: Array.from({ length: 7 }, (_, i) => `wrevmedia_${i}`),
+      }).success,
+    ).toBe(false);
+  });
+  it("accepts only bounded MP4 video reservations", () => {
+    const token = generateReviewToken();
+    expect(
+      reviewVideoReserveSchema.parse({
+        token,
+        contentType: "video/mp4",
+        sizeBytes: REVIEW_MAX_VIDEO_BYTES,
+      }).sizeBytes,
+    ).toBe(REVIEW_MAX_VIDEO_BYTES);
+    expect(
+      reviewVideoReserveSchema.safeParse({
+        token,
+        contentType: "video/quicktime",
+        sizeBytes: 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      reviewVideoReserveSchema.safeParse({
+        token,
+        contentType: "video/mp4",
+        sizeBytes: REVIEW_MAX_VIDEO_BYTES + 1,
       }).success,
     ).toBe(false);
   });

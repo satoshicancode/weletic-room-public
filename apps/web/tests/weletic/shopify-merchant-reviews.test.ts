@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   reviews: vi.fn(),
   requests: vi.fn(),
   claims: vi.fn(),
+  products: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 vi.mock("@/lib/weletic/shopify/staff-authorization", () => ({
@@ -17,6 +18,7 @@ const tx = {
   weleticProductReview: { findMany: mocks.reviews },
   weleticReviewRequest: { findMany: mocks.requests },
   weleticReviewIncentiveClaim: { findMany: mocks.claims },
+  weleticShopifyProduct: { findMany: mocks.products },
 } as unknown as Parameters<
   typeof listShopifyMerchantReviewsInTransaction
 >[0]["tx"];
@@ -32,13 +34,14 @@ const row = {
   displayName: "Buyer",
   merchantReply: null,
   verifiedPurchase: true,
+  source: "verified_customer",
   incentivized: true,
   rewardStatus: "awarded",
   rewardReason: "private internal reason",
   shopperId: "private-shopper",
   request: { orderId: "private-order", incentivePolicyId: null },
   product: { title: "Product", externalId: "product-1" },
-  media: [{ id: "private-media-id" }],
+  media: [{ id: "private-media-id", kind: "photo" }],
 };
 const identity = {
   storeId: "store-a",
@@ -55,6 +58,9 @@ describe("merchant review inbox production projection", () => {
     mocks.reviews.mockResolvedValue([row]);
     mocks.requests.mockResolvedValue([]);
     mocks.claims.mockResolvedValue([]);
+    mocks.products.mockResolvedValue([
+      { title: "Product", externalId: "gid://shopify/Product/1" },
+    ]);
   });
   it("uses the authorized transaction and exact reviews.read permission", async () => {
     const result = await read({ view: "reviews", rating: 1, status: "hidden" });
@@ -74,7 +80,7 @@ describe("merchant review inbox production projection", () => {
         select: expect.objectContaining({
           media: {
             where: { storeId: "store-a", status: "uploaded" },
-            select: { id: true },
+            select: { id: true, kind: true },
           },
         }),
       }),
@@ -85,10 +91,9 @@ describe("merchant review inbox production projection", () => {
       incentivized: true,
       rewardStatus: "awarded",
       photoCount: 1,
+      videoCount: 0,
     });
-    expect(JSON.stringify(result)).not.toMatch(
-      /private-media-id|private internal reason/,
-    );
+    expect(JSON.stringify(result)).not.toMatch(/private internal reason/);
   });
   it("keeps participation claim enrichment inside the authorized transaction", async () => {
     mocks.reviews.mockResolvedValue([
@@ -326,11 +331,14 @@ describe("merchant review inbox browser client", () => {
       .fn()
       .mockResolvedValueOnce("first")
       .mockResolvedValueOnce("second");
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockImplementation(async () =>
-        Response.json({ view: "reviews", items: [], nextCursor: null }),
-      );
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () =>
+      Response.json({
+        view: "reviews",
+        items: [],
+        nextCursor: null,
+        products: [],
+      }),
+    );
     const client = createMerchantReviewsClient(token, fetcher);
     await client({ view: "reviews" });
     await client({ view: "reviews" });

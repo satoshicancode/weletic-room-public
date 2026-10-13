@@ -38,13 +38,16 @@ export const GET = withWorkspace(
             reviewId: { not: null },
           },
         });
-        if (!media) throw new ReviewError("not_found", "Photo unavailable");
+        if (!media) throw new ReviewError("not_found", "Media unavailable");
         return reviewJson({
           url: await storage.getSignedDownloadUrl({
             key: media.objectKey,
             bucket: "private",
-            expiresIn: 60,
+            expiresIn: media.kind === "video" ? 900 : 60,
           }),
+          kind: media.kind,
+          contentType: media.contentType,
+          durationMs: media.durationMs,
         });
       }
       const [settings, list] = await Promise.all([
@@ -61,6 +64,7 @@ export const GET = withWorkspace(
           expiresAfterDays: 30,
           autoPublish: false,
           photoUploadsEnabled: true,
+          videoUploadsEnabled: false,
           requestEmailEnabled: false,
         },
         shopDomain: store.shopDomain,

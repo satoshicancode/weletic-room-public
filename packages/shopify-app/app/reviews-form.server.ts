@@ -12,6 +12,13 @@ export function reviewFormResponse(
   mode: "invitation" | "open" = "invitation",
 ) {
   const nonce = randomBytes(24).toString("base64");
+  const storageOrigin = (() => {
+    try {
+      return new URL(process.env.STORAGE_ENDPOINT || "").origin;
+    } catch {
+      return "";
+    }
+  })();
   const locale = reviewFormLocale(localeInput);
   const copies = mode === "open" ? openReviewFormCopy : reviewFormCopy;
   const copy = copies[locale];
@@ -35,6 +42,7 @@ h1{font-size:28px;line-height:1.2}label{display:block;margin:18px 0 6px;font-wei
 <label for="title" data-copy="title">${text("title")}</label><input id="title" name="title" maxlength="120" required>
 <label for="body" data-copy="body">${text("body")}</label><textarea id="body" name="body" minlength="20" maxlength="10000" required aria-describedby="body-help"></textarea><small id="body-help" data-copy="bodyHelp">${text("bodyHelp")}</small>
 <div id="photos" hidden><label for="photoFiles" data-copy="photos">${text("photos")}</label><input id="photoFiles" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-describedby="photo-help"><small id="photo-help" data-copy="photoHelp">${text("photoHelp")}</small></div>
+<div id="video" hidden><label for="videoFile">Video (optional)</label><input id="videoFile" type="file" accept="video/mp4"><small>One MP4 video using H.264/AAC, up to 60 seconds and 50 MB.</small></div>
 <label class="consent"><input type="checkbox" id="consent" required> <span data-copy="consent">${text("consent")}</span></label>
 <p data-copy="rewardNotice">${text("rewardNotice")}</p>
 <div id="incentive-disclosure"></div>
@@ -46,7 +54,7 @@ h1{font-size:28px;line-height:1.2}label{display:block;margin:18px 0 6px;font-wei
         "Cache-Control": "private, no-store",
         "Referrer-Policy": "no-referrer",
         "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'`,
+        "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self' ${storageOrigin}; media-src blob:; base-uri 'none'; form-action 'self'; frame-ancestors 'self'`,
       },
     },
   );
@@ -70,6 +78,7 @@ export const REVIEW_FORM_SCRIPT = String.raw`
   let completed = false;
   let uncertain = false;
   let photosEnabled = false;
+  let videosEnabled = false;
   let disclosure = null;
   const copy = () => REVIEW_FORM_COPY[locale];
   function renderDisclosure() {
@@ -114,7 +123,9 @@ export const REVIEW_FORM_SCRIPT = String.raw`
     renderDisclosure();
     document.getElementById('product').textContent = result.productTitle;
     photosEnabled = result.photoUploadsEnabled;
+    videosEnabled = Boolean(result.videoUploadsEnabled);
     document.getElementById('photos').hidden = !photosEnabled;
+    document.getElementById('video').hidden = !videosEnabled;
     form.hidden = false;
     ready = true;
   }
@@ -137,6 +148,24 @@ export const REVIEW_FORM_SCRIPT = String.raw`
           uploads.set(file, uploaded.id);
         }
         mediaIds.push(uploads.get(file));
+      }
+      const video = videosEnabled ? document.getElementById('videoFile').files?.[0] : null;
+      if (video) {
+        if (video.type !== 'video/mp4' || video.size > 50 * 1024 * 1024) throw new Error('invalidPhotos');
+        const duration = await new Promise((resolve, reject) => {
+          const preview = document.createElement('video');
+          const url = URL.createObjectURL(video);
+          preview.preload = 'metadata';
+          preview.onloadedmetadata = () => { const value = preview.duration; URL.revokeObjectURL(url); resolve(value); };
+          preview.onerror = () => { URL.revokeObjectURL(url); reject(new Error('readPhoto')); };
+          preview.src = url;
+        });
+        if (!Number.isFinite(duration) || duration <= 0 || duration > 60) throw new Error('invalidPhotos');
+        const reservation = await api('video-reserve', { token, contentType: video.type, sizeBytes: video.size });
+        const upload = await fetch(reservation.uploadUrl, { method: 'PUT', headers: { 'Content-Type': video.type }, body: video });
+        if (!upload.ok) throw new Error('unavailable');
+        const finalized = await api('video-finalize', { token, mediaId: reservation.id });
+        mediaIds.push(finalized.id);
       }
       const result = await api('submit', { token, rating: Number(form.elements.rating.value), title: form.elements.title.value, body: form.elements.body.value, displayName: form.elements.displayName.value, mediaIds, publishConsent: document.getElementById('consent').checked });
       if (!result || !['published', 'pending'].includes(result.status)) throw new Error('uncertain');

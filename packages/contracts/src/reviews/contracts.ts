@@ -4,6 +4,9 @@ import { reviewCollectionFields } from "./collection-contract";
 
 export const REVIEW_MAX_PHOTOS = 5;
 export const REVIEW_MAX_PHOTO_BYTES = 2 * 1024 * 1024;
+export const REVIEW_MAX_VIDEOS = 1;
+export const REVIEW_MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+export const REVIEW_MAX_VIDEO_DURATION_MS = 60_000;
 export const reviewSettingsSchema = z
   .object({
     enabled: z.boolean(),
@@ -24,15 +27,33 @@ export const reviewSubmissionBaseSchema = z
           .max(191)
           .regex(/^wrevmedia_[A-Za-z0-9_-]+$/),
       )
-      .max(REVIEW_MAX_PHOTOS)
+      .max(REVIEW_MAX_PHOTOS + REVIEW_MAX_VIDEOS)
       .default([]),
     publishConsent: z.literal(true),
   })
   .strict();
 export const reviewSubmissionSchema = reviewSubmissionBaseSchema.refine(
   (v) => new Set(v.mediaIds).size === v.mediaIds.length,
-  "Duplicate photos",
+  "Duplicate media",
 );
+
+export const reviewVideoReserveSchema = z
+  .object({
+    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    contentType: z.literal("video/mp4"),
+    sizeBytes: z.number().int().min(1).max(REVIEW_MAX_VIDEO_BYTES),
+  })
+  .strict();
+
+export const reviewVideoFinalizeSchema = z
+  .object({
+    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    mediaId: z
+      .string()
+      .max(191)
+      .regex(/^wrevmedia_[A-Za-z0-9_-]+$/),
+  })
+  .strict();
 
 export const reviewModerationSchema = z
   .object({

@@ -261,9 +261,46 @@
         article.append(reply);
       }
       if (review.media.length) {
-        const photos = element("div", undefined, "wr-photos");
-        article.append(photos);
-        for (const [index, media] of review.media.entries())
+        const gallery = element("div", undefined, "wr-media");
+        article.append(gallery);
+        for (const [index, media] of review.media.entries()) {
+          if (media.kind === "video") {
+            const play = element(
+              "button",
+              "▶ Play review video",
+              "wr-video-play",
+            );
+            play.type = "button";
+            play.addEventListener("click", async () => {
+              play.disabled = true;
+              try {
+                const result = await this.request("media", {
+                  mediaId: media.id,
+                });
+                if (
+                  !this.isConnected ||
+                  !this.contains(article) ||
+                  result.kind !== "video"
+                )
+                  return;
+                const url = new URL(result.url);
+                if (url.protocol !== "https:") return;
+                const video = element("video");
+                video.controls = true;
+                video.playsInline = true;
+                video.preload = "metadata";
+                video.referrerPolicy = "no-referrer";
+                video.src = url.href;
+                play.replaceWith(video);
+                await video.play().catch(() => {});
+              } catch {
+                play.disabled = false;
+                play.textContent = "Video unavailable";
+              }
+            });
+            gallery.append(play);
+            continue;
+          }
           this.request("photo", { mediaId: media.id })
             .then((result) => {
               // Pagination keeps existing cards alive; only discard images
@@ -276,11 +313,12 @@
               img.alt = `${this.copy.photo} ${index + 1}`;
               img.loading = "lazy";
               img.referrerPolicy = "no-referrer";
-              photos.append(img);
+              gallery.append(img);
             })
             .catch(() => {
               /* Omit unavailable photos without hiding the review. */
             });
+        }
       }
       return article;
     }

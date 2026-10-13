@@ -437,7 +437,7 @@ class StorageClient {
     headers,
   }: {
     key: string;
-    method: "PUT" | "GET";
+    method: "PUT" | "GET" | "HEAD";
     bucket: BucketType;
     expiresIn: number;
     headers?: Record<string, string>;
@@ -508,6 +508,31 @@ class StorageClient {
       bucket: opts.bucket || "private",
       expiresIn: opts.expiresIn || 600,
     });
+  }
+
+  async head({
+    key,
+    bucket = "private",
+  }: {
+    key: string;
+    bucket?: BucketType;
+  }) {
+    const url = await this.getSignedUrl({
+      key,
+      method: "HEAD",
+      bucket,
+      expiresIn: 60,
+    });
+    const response = await fetch(url, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error("Stored object is unavailable.");
+    return {
+      contentLength: Number(response.headers.get("content-length")),
+      contentType: response.headers.get("content-type"),
+      etag: response.headers.get("etag"),
+    };
   }
 
   private base64ToArrayBuffer(base64: string, opts?: imageOptions) {

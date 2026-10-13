@@ -26,6 +26,7 @@ model WeleticReviewSettings {
   expiresAfterDays        Int       @default(30)
   autoPublish             Boolean   @default(false)
   photoUploadsEnabled     Boolean   @default(true)
+  videoUploadsEnabled     Boolean   @default(false)
   requestEmailEnabled     Boolean   @default(false)
   collectionRevision      Int       @default(0)
   // Null is the legacy no-reminders configuration; never backfill old requests.
@@ -260,7 +261,9 @@ model WeleticProductReview {
   // writers remain disabled until explicit provenance and all readers ship.
   requestId                       String?   @unique
   productId                       String
-  shopperId                       String
+  shopperId                       String?
+  source                          String    @default("verified_customer")
+  createdByUserId                 String?
   status                          String    @default("pending")
   version                         Int       @default(1)
   rating                          Int
@@ -288,7 +291,7 @@ model WeleticProductReview {
   store            WeleticShopifyStore               @relation(fields: [storeId], references: [id], onDelete: Cascade)
   request          WeleticReviewRequest?             @relation(fields: [storeId, requestId], references: [storeId, id], onDelete: Restrict)
   product          WeleticShopifyProduct             @relation(fields: [productId], references: [id], onDelete: Restrict)
-  shopper          WeleticShopper                    @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
+  shopper          WeleticShopper?                   @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict)
   media            WeleticReviewMedia[]
   moderationAudits WeleticReviewModerationAudit[]
   translations     WeleticProductReviewTranslation[]
@@ -412,7 +415,13 @@ model WeleticReviewMedia {
   reviewId        String?
   objectKey       String   @unique
   contentType     String
+  kind            String   @default("photo")
   sizeBytes       Int
+  durationMs      Int?
+  width           Int?
+  height          Int?
+  videoCodec      String?
+  audioCodec      String?
   status          String   @default("reserved")
   uploadExpiresAt DateTime
   createdAt       DateTime @default(now())

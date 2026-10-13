@@ -81,12 +81,14 @@ async function reviewGatewayResponse(
       );
     const allowed =
       request.method === "GET"
-        ? ["list", "store-list", "store-invitations", "photo"]
+        ? ["list", "store-list", "store-invitations", "photo", "media"]
         : request.method === "POST"
           ? [
               "request",
               "submit",
               "upload",
+              "video-reserve",
+              "video-finalize",
               "open-submit",
               "open-prepare",
               "open-upload",

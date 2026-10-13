@@ -4,7 +4,7 @@ import { z } from "zod";
 import { hasShopifyCustomerPrivacyTombstone } from "../shopify/privacy-identity";
 import { ReviewError } from "./contracts";
 import {
-  hasPublicReviewPhotoOwnership,
+  hasPublicReviewMediaOwnership,
   publicPhotoMediaSelection,
   publicPhotoReviewSelection,
 } from "./media-public-ownership";
@@ -170,7 +170,10 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
           complianceState: "active" as const,
           reviewSettings: { enabled: true },
         },
-        shopper: { storeId, privacyTombstones: { none: {} } },
+        OR: [
+          { source: "merchant" as const },
+          { shopper: { storeId, privacyTombstones: { none: {} } } },
+        ],
       };
       const rows = await tx.weleticProductReview.findMany({
         where: {
@@ -254,7 +257,11 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
           | "incentivized"
           | "createdAt"
         > & {
-          media: Array<{ id: string }>;
+          media: Array<{
+            id: string;
+            kind: "photo" | "video";
+            durationMs: number | null;
+          }>;
           translation?: {
             locale: "en" | "ja" | "vi";
             original: { title: string; body: string };
@@ -263,12 +270,13 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
       > = [];
       for (const row of pageRows) {
         if (
-          await hasShopifyCustomerPrivacyTombstone({
+          row.shopper &&
+          (await hasShopifyCustomerPrivacyTombstone({
             tx,
             storeId,
             shopifyCustomerId: row.shopper.shopifyCustomerId,
             email: row.shopper.email,
-          })
+          }))
         )
           throw new ReviewError("unavailable", "Product reviews unavailable");
         const projection = projectManualReviewTranslation({
@@ -290,9 +298,13 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
           createdAt: row.createdAt,
           media: row.media
             .filter((media) =>
-              hasPublicReviewPhotoOwnership(storeId, row, media),
+              hasPublicReviewMediaOwnership(storeId, row, media),
             )
-            .map(({ id }) => ({ id })),
+            .map(({ id, kind, durationMs }) => ({
+              id,
+              kind: kind as "photo" | "video",
+              durationMs,
+            })),
           ...(projection.translated && query.locale
             ? {
                 translation: {

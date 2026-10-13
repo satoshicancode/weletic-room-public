@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   reviewCustomerAccountResponse,
@@ -70,6 +72,26 @@ describe("native review production proxy gateway", () => {
       true,
     );
   });
+  it.each(["video-reserve", "video-finalize"])(
+    "forwards the allowlisted %s video action",
+    async (action) => {
+      const body = JSON.stringify({ token: "A".repeat(43) });
+      const response = await reviewProxyResponse(
+        new Request(
+          `https://shop.example.test/apps/weletic/reviews/${action}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          },
+        ),
+        "verified.myshopify.com",
+        `reviews/${action}`,
+      );
+      expect(response.status).toBe(200);
+      expect(transport).toHaveBeenCalledOnce();
+    },
+  );
   it("forwards only bounded store-summary inputs with the verified shop", async () => {
     await reviewProxyResponse(
       new Request(
@@ -295,6 +317,7 @@ describe("native review production proxy gateway", () => {
     expect(transport).not.toHaveBeenCalled();
   });
   it("serves a nonce-scoped no-store form without server-side token disclosure", async () => {
+    vi.stubEnv("STORAGE_ENDPOINT", "https://account.r2.cloudflarestorage.com");
     const response = await reviewProxyResponse(
       new Request(
         "https://shop.example.test/apps/weletic/reviews/write#token=secret",
@@ -304,6 +327,9 @@ describe("native review production proxy gateway", () => {
     );
     expect(response.headers.get("content-security-policy")).toContain(
       "script-src 'nonce-",
+    );
+    expect(response.headers.get("content-security-policy")).toContain(
+      "connect-src 'self' https://account.r2.cloudflarestorage.com",
     );
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(await response.text()).not.toContain("token=secret");
@@ -323,4 +349,29 @@ describe("native review production proxy gateway", () => {
       expect(transport).not.toHaveBeenCalled();
     },
   );
+  it("does not render a public merchant-authored badge", () => {
+    const candidates = [
+      resolve(
+        process.cwd(),
+        "../../packages/shopify-app/extensions/weletic-analytics/assets/weletic-reviews.js",
+      ),
+      resolve(
+        process.cwd(),
+        "../packages/shopify-app/extensions/weletic-analytics/assets/weletic-reviews.js",
+      ),
+      resolve(
+        process.cwd(),
+        "packages/shopify-app/extensions/weletic-analytics/assets/weletic-reviews.js",
+      ),
+      resolve(
+        __dirname,
+        "../../../../packages/shopify-app/extensions/weletic-analytics/assets/weletic-reviews.js",
+      ),
+    ];
+    const assetPath = candidates.find(existsSync);
+    expect(assetPath).toBeDefined();
+    const asset = readFileSync(assetPath!, "utf8");
+    expect(asset).toContain(".verifiedPurchase");
+    expect(asset).not.toMatch(/merchant[- ]authored.{0,80}badge/i);
+  });
 });
