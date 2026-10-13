@@ -9,7 +9,7 @@ export const cleanupRedundantLinkWebhookEntries = async () => {
     where: {
       triggers: {
         array_contains: [LINK_CLICK_WEBHOOK_TRIGGER],
-      },
+      } as any,
       linkScope: {
         not: "links",
       },

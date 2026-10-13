@@ -78,8 +78,7 @@ export const PUT = withWorkspace(
 // POST /api/workspaces/[idOrSlug]/import/short - create job to import links from Short.io
 export const POST = withWorkspace(
   async ({ req, workspace, session }) => {
-    const { selectedDomains, importTags, folderId } =
-      (await req.json()) as any;
+    const { selectedDomains, importTags, folderId } = (await req.json()) as any;
 
     if (folderId) {
       await verifyFolderAccess({

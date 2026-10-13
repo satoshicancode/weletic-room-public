@@ -1,3 +1,4 @@
+import { provisionFinancialRewardReservation } from "@/lib/weletic/loyalty/financial-reward-saga";
 import {
   createLoyaltyRedemptionProvisioningSnapshot,
   getShopifyCustomerSelectionDigest,
@@ -6,7 +7,6 @@ import {
   auditShopifyCustomerStoreCreditTransactions,
   debitShopifyStoreCredit,
 } from "@/lib/weletic/loyalty/shopify-financial-rewards";
-import { provisionFinancialRewardReservation } from "@/lib/weletic/loyalty/financial-reward-saga";
 import {
   reconcilePendingStoreCreditRedemption,
   reconcilePendingStoreCreditRedemptionsSweep,

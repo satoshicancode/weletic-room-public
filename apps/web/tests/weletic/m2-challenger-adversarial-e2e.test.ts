@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -40,17 +40,17 @@ vi.mock("@/lib/auth", () => ({
   },
 }));
 
-import { DubApiError, handleApiError } from "@/lib/api/errors";
 import { ErrorCodes } from "@/lib/api/error-codes";
-import { assertE2EWorkspace } from "../../app/(ee)/api/e2e/guard";
-import {
-  GET as notificationEmailsGET,
-  POST as notificationEmailsPOST,
-  DELETE as notificationEmailsDELETE,
-} from "../../app/(ee)/api/e2e/notification-emails/route";
-import { ACME_WORKSPACE_ID, ACME_PROGRAM_ID } from "@dub/utils";
+import { DubApiError, handleApiError } from "@/lib/api/errors";
+import { ACME_PROGRAM_ID, ACME_WORKSPACE_ID } from "@dub/utils";
 import fs from "node:fs";
 import path from "node:path";
+import { assertE2EWorkspace } from "../../app/(ee)/api/e2e/guard";
+import {
+  DELETE as notificationEmailsDELETE,
+  GET as notificationEmailsGET,
+  POST as notificationEmailsPOST,
+} from "../../app/(ee)/api/e2e/notification-emails/route";
 
 describe("Adversarial E2E Backdoor & Cross-Tenant IDOR Challenger (Milestone 2)", () => {
   const originalEnv = { ...process.env };
@@ -203,10 +203,13 @@ describe("Adversarial E2E Backdoor & Cross-Tenant IDOR Challenger (Milestone 2)"
     it("POST: Rejects unauthorized tenant with 403 Forbidden before reaching database", async () => {
       vi.stubEnv("NODE_ENV", "test");
 
-      const req = new NextRequest("http://localhost/api/e2e/notification-emails", {
-        method: "POST",
-        body: JSON.stringify({ campaignId: "cmp_target_campaign" }),
-      });
+      const req = new NextRequest(
+        "http://localhost/api/e2e/notification-emails",
+        {
+          method: "POST",
+          body: JSON.stringify({ campaignId: "cmp_target_campaign" }),
+        },
+      );
 
       await expect(
         (notificationEmailsPOST as any)({
@@ -317,14 +320,17 @@ describe("Adversarial E2E Backdoor & Cross-Tenant IDOR Challenger (Milestone 2)"
       // Campaign query fails to find foreign campaign within caller workspace
       mockCampaignFindFirst.mockResolvedValueOnce(null);
 
-      const req = new NextRequest("http://localhost/api/e2e/notification-emails", {
-        method: "POST",
-        body: JSON.stringify({
-          campaignId: victimCampaignId,
-          emailId: "evil_email_injection_01",
-          partnerId: "pt_foreign_partner",
-        }),
-      });
+      const req = new NextRequest(
+        "http://localhost/api/e2e/notification-emails",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            campaignId: victimCampaignId,
+            emailId: "evil_email_injection_01",
+            partnerId: "pt_foreign_partner",
+          }),
+        },
+      );
 
       const response = await (notificationEmailsPOST as any)({
         req,
@@ -364,13 +370,16 @@ describe("Adversarial E2E Backdoor & Cross-Tenant IDOR Challenger (Milestone 2)"
         programId: callerWorkspace.defaultProgramId,
       });
 
-      const req = new NextRequest("http://localhost/api/e2e/notification-emails", {
-        method: "POST",
-        body: JSON.stringify({
-          campaignId: ownCampaignId,
-          emailId: "legit_email_01",
-        }),
-      });
+      const req = new NextRequest(
+        "http://localhost/api/e2e/notification-emails",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            campaignId: ownCampaignId,
+            emailId: "legit_email_01",
+          }),
+        },
+      );
 
       const response = await (notificationEmailsPOST as any)({
         req,
@@ -480,10 +489,13 @@ describe("Adversarial E2E Backdoor & Cross-Tenant IDOR Challenger (Milestone 2)"
       ).rejects.toThrowError(DubApiError);
 
       // POST attempt in production
-      const postReq = new NextRequest("http://localhost/api/e2e/notification-emails", {
-        method: "POST",
-        body: JSON.stringify({ campaignId: "cmp_any" }),
-      });
+      const postReq = new NextRequest(
+        "http://localhost/api/e2e/notification-emails",
+        {
+          method: "POST",
+          body: JSON.stringify({ campaignId: "cmp_any" }),
+        },
+      );
       await expect(
         (notificationEmailsPOST as any)({
           req: postReq,

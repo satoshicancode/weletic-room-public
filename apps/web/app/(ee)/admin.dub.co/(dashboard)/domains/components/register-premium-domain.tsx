@@ -52,7 +52,10 @@ export function RegisterPremiumDomain() {
       setIsSearching(false);
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        const payload = (await response.json().catch(() => ({}))) as Record<
+          string,
+          unknown
+        >;
         toast.error(
           typeof payload.error === "string"
             ? payload.error

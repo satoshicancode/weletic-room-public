@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -26,7 +26,8 @@ vi.mock("../../../lib/weletic/link-kv-cache", () => ({
   evictLinkFromKv: mockEvictLinkFromKv,
   evictLinksBatchFromKv: mockEvictLinksBatchFromKv,
   tombstoneLinkInKv: mockTombstoneLinkInKv,
-  buildKvKey: (domain: string, key: string) => `link:${domain}:${key.toLowerCase()}`,
+  buildKvKey: (domain: string, key: string) =>
+    `link:${domain}:${key.toLowerCase()}`,
 }));
 
 vi.mock("../../../lib/api/links/cache", () => ({
@@ -78,8 +79,8 @@ vi.mock("../../../lib/prisma", () => ({
   },
 }));
 
-import { updateLink } from "../../../lib/api/links/update-link";
 import { bulkUpdateLinks } from "../../../lib/api/links/bulk-update-links";
+import { updateLink } from "../../../lib/api/links/update-link";
 
 describe("LNK-01 & LNK-06: updateLink and bulkUpdateLinks KV Synchronization", () => {
   beforeEach(() => {

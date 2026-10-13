@@ -9,7 +9,6 @@ import { sumValidQualifyingPoints } from "@/lib/weletic/loyalty/qualifying-revie
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
 import { enqueueVipAchievementCommunication } from "@/lib/weletic/loyalty/vip-achievement-communication-producer";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
-import { addDays } from "date-fns";
 import {
   Prisma,
   WeleticLoyaltyTierChangeReason,
@@ -17,6 +16,7 @@ import {
   WeleticVipMilestoneMode,
   WeleticVipTimeframe,
 } from "@prisma/client";
+import { addDays } from "date-fns";
 
 export type TierReviewPeriod = "ROLLING_12M" | "CALENDAR_YEAR" | "LIFETIME";
 
@@ -444,10 +444,7 @@ export async function evaluateTierMaintenanceCycle(
       where: { id: account.id },
       data: {
         currentTierId: highestQualifyingTier.id,
-        tierExpiresAt: addDays(
-          now,
-          newTier.qualificationWindowDays ?? 365,
-        ),
+        tierExpiresAt: addDays(now, newTier.qualificationWindowDays ?? 365),
         tierSpendRolling12Months: qualifyingSpend,
         tierPointsRolling12Months: qualifyingPoints,
       },

@@ -1,7 +1,7 @@
 import { recordLink } from "@/lib/tinybird/record-link";
+import { evictLinksBatchFromKv } from "@/lib/weletic/link-kv-cache";
 import { linkCache } from "./cache";
 import { ExpandedLink } from "./utils/transform-link";
-import { evictLinksBatchFromKv } from "@/lib/weletic/link-kv-cache";
 
 export async function propagateBulkLinkChanges({
   links,

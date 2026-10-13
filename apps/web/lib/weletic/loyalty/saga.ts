@@ -9,7 +9,6 @@ import {
   type LoyaltyMaintenancePermit,
 } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
-import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import {
   enqueueOutboxJob,
   enqueueOutboxJobFromProgramTransaction,
@@ -60,6 +59,7 @@ import { ShopifyFinancialRewardError } from "@/lib/weletic/loyalty/shopify-finan
 import { hasShopifyCustomerRedactionTombstone } from "@/lib/weletic/loyalty/shopper-privacy";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import { nanoid } from "@dub/utils";
 import {
   Prisma,
@@ -251,483 +251,502 @@ async function provisionDiscountSagaUnlocked(
     reservation = await withFinancialTransactionRetry(
       () =>
         prisma.$transaction(async (tx) => {
-    const operationalStore = await assertShopifyStoreAcceptsOperationalWrites({
-      storeId,
-      action: "reward_redemption",
-      requireVerifiedCurrency: true,
-      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
-      tx,
-    });
-    if (!operationalStore) {
-      throw new Error("Shopify store is unavailable for loyalty redemption.");
-    }
-    const lockedProgram = await lockLoyaltyProgramRow({
-      tx,
-      storeId,
-      mode: "lock_only",
-    });
-    // 1. Validate Loyalty Account
-    const account = await tx.weleticLoyaltyAccount.findUnique({
-      where: { id: accountId },
-      include: { program: true, shopper: true },
-    });
-
-    if (!account) {
-      throw new Error(`Loyalty account ${accountId} not found.`);
-    }
-
-    if (account.storeId !== storeId) {
-      throw new Error("Loyalty account does not belong to this Shopify store.");
-    }
-
-    // This check deliberately precedes idempotent-reservation continuation.
-    // A retry of a pre-redaction `provisioning` row must not reach Shopify
-    // after customer closure. Compensating/expiry cleanup uses separate paths
-    // and remains allowed for closed accounts.
-    if (
-      account.status !== "active" ||
-      hasShopifyCustomerRedactionTombstone(account.metadata)
-    ) {
-      throw new Error(
-        `Loyalty account ${accountId} is not active (${account.status}).`,
-      );
-    }
-
-    // Resolve retries before applying eligibility checks for a new debit.
-    // Issued/live replays remain readable while disabled; a provisioning replay
-    // must pass the active program fence again before any Shopify adoption or
-    // mutation.
-    const existing = await tx.weleticRewardRedemption.findUnique({
-      where: {
-        storeId_idempotencyKey: { storeId, idempotencyKey },
-      },
-    });
-    if (existing) {
-      if (existing.settlementQuarantinedAt) {
-        throw new Error(
-          `Redemption ${existing.id} is quarantined pending canonical discount reconciliation.`,
-        );
-      }
-      if (
-        existing.accountId !== accountId ||
-        existing.rewardDefinitionId !== rewardDefinitionId ||
-        (requestedCode !== undefined &&
-          existing.shopifyDiscountCode !== generatedCode) ||
-        (pointsCostOverride !== undefined &&
-          existing.pointsSpent !== BigInt(pointsCostOverride)) ||
-        (expiresAtOverride !== undefined &&
-          (existing.expiresAt?.getTime() ?? null) !==
-            expiresAtOverride.getTime())
-      ) {
-        throw new Error(
-          "Redemption idempotency key was reused for another request.",
-        );
-      }
-      if (
-        existing.status !== WeleticRedemptionStatus.provisioning &&
-        existing.status !== WeleticRedemptionStatus.issued &&
-        existing.status !== WeleticRedemptionStatus.active
-      ) {
-        throw new Error(
-          `Redemption request is already terminal (${existing.status}).`,
-        );
-      }
-      const provisioningSnapshot = readLoyaltyRedemptionProvisioningSnapshot(
-        existing.metadata,
-      );
-      const alreadyIssued =
-        existing.status === WeleticRedemptionStatus.issued ||
-        existing.status === WeleticRedemptionStatus.active;
-      if (!alreadyIssued && !provisioningSnapshot) {
-        throw new Error(
-          `Provisioning redemption ${existing.id} is missing its immutable Shopify configuration snapshot.`,
-        );
-      }
-      if (provisioningSnapshot) {
-        if (
-          provisioningSnapshot.rewardDefinitionId !== rewardDefinitionId ||
-          provisioningSnapshot.pointsCost !== existing.pointsSpent.toString() ||
-          provisioningSnapshot.expiresAt !==
-            (existing.expiresAt?.toISOString() ?? null)
-        ) {
-          throw new Error(
-            `Provisioning redemption ${existing.id} does not match its immutable Shopify configuration snapshot.`,
-          );
-        }
-        assertProvisioningReplayMatchesSnapshot({
-          snapshot: provisioningSnapshot,
-          pointsCostOverride,
-          discountValueOverride,
-          expiresInDays,
-          storeId,
-          shopifyCustomerId: account.shopper.shopifyCustomerId,
-        });
-        if (
-          !alreadyIssued &&
-          provisioningSnapshot.currencyVerifiedAt !==
-            operationalStore.currencyVerifiedAt?.toISOString()
-        ) {
-          throw new Error(
-            `Provisioning redemption ${existing.id} belongs to a stale Shopify currency generation.`,
-          );
-        }
-      }
-      return {
-        redemption: existing,
-        account,
-        effectivePointsCost: existing.pointsSpent,
-        expiresAt: existing.expiresAt,
-        balanceAfter: account.cachedPointsBalance,
-        discountOwnership: getPersistedLoyaltyDiscountProvisioningIdentity({
-          identity: {
+          const operationalStore =
+            await assertShopifyStoreAcceptsOperationalWrites({
+              storeId,
+              action: "reward_redemption",
+              requireVerifiedCurrency: true,
+              loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+              tx,
+            });
+          if (!operationalStore) {
+            throw new Error(
+              "Shopify store is unavailable for loyalty redemption.",
+            );
+          }
+          const lockedProgram = await lockLoyaltyProgramRow({
+            tx,
             storeId,
-            redemptionId: existing.id,
-            accountId,
-            rewardDefinitionId,
-            discountCode: existing.shopifyDiscountCode,
-          },
-          metadata: existing.metadata,
-        }),
-        discountMetadata: existing.metadata,
-        provisioningSnapshot,
-        alreadyIssued,
-      };
-    }
-
-    await assertStoreSubscriptionForNewBenefit(tx, storeId);
-
-    // 2. Validate Reward Definition only for a new reservation. A retry is
-    // fully defined by its immutable provisioning snapshot and must remain
-    // recoverable after the merchant edits, disables, or deletes the reward.
-    const reward = await tx.weleticRewardDefinition.findUnique({
-      where: { id: rewardDefinitionId },
-    });
-
-    if (!reward || reward.storeId !== storeId) {
-      throw new Error("Reward definition not found for this Shopify store.");
-    }
-
-    assertCoreLaunchReward({
-      ...reward,
-      purchaseType: readLoyaltyPurchasePolicy(
-        reward.purchasePolicy,
-        DEFAULT_REWARD_PURCHASE_POLICY,
-      ).purchaseType,
-    });
-    if (!requestedCode && reward.rewardType === "gift_card") {
-      generatedCode = `WLGC${nanoid(12).toUpperCase()}`;
-    } else if (!requestedCode && reward.rewardType === "store_credit") {
-      generatedCode = `WLSC${nanoid(12).toUpperCase()}`;
-    }
-
-    const effectivePointsCost =
-      pointsCostOverride !== undefined
-        ? BigInt(pointsCostOverride)
-        : reward.pointsCost;
-
-    assertLockedLoyaltyProgramActive(
-      lockedProgram,
-      params.loyaltyMaintenancePermit,
-    );
-
-    if (reward.status !== WeleticRewardStatus.active) {
-      throw new Error("Reward definition not found or inactive.");
-    }
-
-    if (effectivePointsCost <= BigInt(0)) {
-      throw new Error("Reward points cost must be greater than zero.");
-    }
-
-    if (pointsCostOverride !== undefined) {
-      if (reward.exchangeType !== "incremental" || !reward.pointsStep) {
-        throw new Error(
-          "Points override is only allowed for incremental rewards.",
-        );
-      }
-      const minPoints = reward.minPointsCost ?? reward.pointsCost;
-      const maxPoints = reward.maxPointsCost;
-      if (
-        effectivePointsCost < minPoints ||
-        (maxPoints !== null && effectivePointsCost > maxPoints) ||
-        effectivePointsCost % reward.pointsStep !== BigInt(0)
-      ) {
-        throw new Error(
-          "Requested points do not satisfy the reward step or limits.",
-        );
-      }
-    }
-
-    if (
-      account.cachedPointsBalance < effectivePointsCost ||
-      account.cachedPointsBalance <= BigInt(0)
-    ) {
-      throw new Error(
-        `Insufficient points balance: required ${effectivePointsCost}, available ${account.cachedPointsBalance}.`,
-      );
-    }
-
-    // Synchronous Pre-flight Authoritative Ledger Verification & Anomaly Quarantine
-    let authoritativeLedgerSum: bigint | null = null;
-    let authoritativeLedgerCount: number | null = null;
-    let crossTenantEntriesDetected = false;
-
-    if (typeof tx.weleticPointsLedgerEntry?.aggregate === "function") {
-      const [storeLedgerAggregate, accountTotalCount] = await Promise.all([
-        tx.weleticPointsLedgerEntry.aggregate({
-          where: { accountId, storeId },
-          _sum: { pointsDelta: true },
-          _count: { id: true },
-        }),
-        typeof tx.weleticPointsLedgerEntry?.count === "function"
-          ? tx.weleticPointsLedgerEntry.count({
-              where: { accountId },
-            })
-          : null,
-      ]);
-      if (storeLedgerAggregate?._sum && storeLedgerAggregate?._count) {
-        authoritativeLedgerSum =
-          storeLedgerAggregate._sum.pointsDelta ?? BigInt(0);
-        authoritativeLedgerCount = storeLedgerAggregate._count.id;
-        if (
-          accountTotalCount !== null &&
-          accountTotalCount !== authoritativeLedgerCount
-        ) {
-          crossTenantEntriesDetected = true;
-        }
-      }
-    }
-    if (
-      authoritativeLedgerSum === null &&
-      typeof tx.weleticPointsLedgerEntry?.findMany === "function"
-    ) {
-      const allEntries = await tx.weleticPointsLedgerEntry.findMany({
-        where: { accountId },
-        select: { pointsDelta: true, storeId: true },
-      });
-      if (Array.isArray(allEntries)) {
-        const storeEntries = allEntries.filter(
-          (e) => !e.storeId || e.storeId === storeId,
-        );
-        if (storeEntries.length !== allEntries.length) {
-          crossTenantEntriesDetected = true;
-        }
-        authoritativeLedgerSum = storeEntries.reduce(
-          (sum, entry) => sum + BigInt(entry.pointsDelta),
-          BigInt(0),
-        );
-        authoritativeLedgerCount = storeEntries.length;
-      }
-    }
-
-    if (authoritativeLedgerSum !== null) {
-      const hasDiscrepancy =
-        crossTenantEntriesDetected ||
-        authoritativeLedgerSum < effectivePointsCost ||
-        authoritativeLedgerSum !== account.cachedPointsBalance ||
-        (account.ledgerVersion !== undefined &&
-          account.ledgerVersion !== null &&
-          account.ledgerVersion > 0 &&
-          authoritativeLedgerCount !== null &&
-          account.ledgerVersion !== authoritativeLedgerCount);
-
-      if (hasDiscrepancy) {
-        const existingMeta =
-          account.metadata &&
-          typeof account.metadata === "object" &&
-          !Array.isArray(account.metadata)
-            ? (account.metadata as Record<string, unknown>)
-            : {};
-
-        const quarantineReason = crossTenantEntriesDetected
-          ? `Pre-flight redemption ledger discrepancy detected: account ${accountId} contains cross-tenant entries not belonging to store ${storeId}.`
-          : `Pre-flight redemption ledger discrepancy detected: cached balance (${account.cachedPointsBalance}) does not match authoritative ledger sum (${authoritativeLedgerSum}) or is insufficient for redemption cost (${effectivePointsCost}).`;
-
-        if (typeof (tx as any).weleticLoyaltyAccount?.update === "function") {
-          await (tx as any).weleticLoyaltyAccount.update({
+            mode: "lock_only",
+          });
+          // 1. Validate Loyalty Account
+          const account = await tx.weleticLoyaltyAccount.findUnique({
             where: { id: accountId },
-            data: {
-              status: "suspended",
-              metadata: {
-                ...existingMeta,
-                quarantine: {
-                  isQuarantined: true,
-                  quarantinedAt: new Date().toISOString(),
-                  reason: quarantineReason,
-                  cachedBalance: account.cachedPointsBalance.toString(),
-                  ledgerSum: authoritativeLedgerSum.toString(),
-                  requiredPoints: effectivePointsCost.toString(),
-                },
-              } as Prisma.InputJsonValue,
+            include: { program: true, shopper: true },
+          });
+
+          if (!account) {
+            throw new Error(`Loyalty account ${accountId} not found.`);
+          }
+
+          if (account.storeId !== storeId) {
+            throw new Error(
+              "Loyalty account does not belong to this Shopify store.",
+            );
+          }
+
+          // This check deliberately precedes idempotent-reservation continuation.
+          // A retry of a pre-redaction `provisioning` row must not reach Shopify
+          // after customer closure. Compensating/expiry cleanup uses separate paths
+          // and remains allowed for closed accounts.
+          if (
+            account.status !== "active" ||
+            hasShopifyCustomerRedactionTombstone(account.metadata)
+          ) {
+            throw new Error(
+              `Loyalty account ${accountId} is not active (${account.status}).`,
+            );
+          }
+
+          // Resolve retries before applying eligibility checks for a new debit.
+          // Issued/live replays remain readable while disabled; a provisioning replay
+          // must pass the active program fence again before any Shopify adoption or
+          // mutation.
+          const existing = await tx.weleticRewardRedemption.findUnique({
+            where: {
+              storeId_idempotencyKey: { storeId, idempotencyKey },
             },
           });
-        }
-
-        throw new PreflightRedemptionDiscrepancyError(
-          accountId,
-          storeId,
-          account.cachedPointsBalance,
-          authoritativeLedgerSum,
-          effectivePointsCost,
-          existingMeta,
-          quarantineReason,
-        );
-      }
-    }
-
-    const effectiveExpiresInDays =
-      expiresInDays !== undefined && expiresInDays !== null
-        ? expiresInDays
-        : reward.expiresInDays;
-
-    const expiresAt =
-      expiresAtOverride ??
-      (effectiveExpiresInDays
-        ? new Date(Date.now() + effectiveExpiresInDays * 86400000)
-        : null);
-    const startsAt = new Date();
-    const discountOwnership = createLoyaltyDiscountProvisioningIdentity({
-      identity: {
-        storeId,
-        redemptionId,
-        accountId,
-        rewardDefinitionId: reward.id,
-        discountCode: generatedCode,
-      },
-      rewardName: reward.name,
-    });
-    const provisioningSnapshot = createLoyaltyRedemptionProvisioningSnapshot({
-      reward,
-      pointsCost: effectivePointsCost,
-      discountValue:
-        discountValueOverride !== undefined
-          ? discountValueOverride
-          : reward.discountValue,
-      expiresInDays: effectiveExpiresInDays ?? null,
-      shopCurrency: operationalStore.shopCurrency,
-      currencyVerifiedAt: operationalStore.currencyVerifiedAt!,
-      customerSelectionDigest: getShopifyCustomerSelectionDigest({
-        storeId,
-        shopifyCustomerId: account.shopper.shopifyCustomerId,
-      }),
-      startsAt,
-      expiresAt,
-    });
-    const discountMetadata = mergeLoyaltyDiscountOwnershipMetadata({
-      metadata: {
-        rewardSnapshot: {
-          name: reward.name,
-          rewardType: reward.rewardType,
-          ...(reward.salesChannel ? { salesChannel: reward.salesChannel } : {}),
-          ...(reward.description ? { description: reward.description } : {}),
-        },
-        provisioningSnapshot,
-        ...(operationalStore.installationGeneration
-          ? {
-              rewardCommunicationOrigin: createRewardCommunicationOrigin({
-                storeId,
-                accountId,
-                redemptionId,
-                installationGeneration: operationalStore.installationGeneration,
-                provisioningDigest: provisioningSnapshot.contentDigest,
-              }),
+          if (existing) {
+            if (existing.settlementQuarantinedAt) {
+              throw new Error(
+                `Redemption ${existing.id} is quarantined pending canonical discount reconciliation.`,
+              );
             }
-          : {}),
-      },
-      ownership: discountOwnership,
-    });
+            if (
+              existing.accountId !== accountId ||
+              existing.rewardDefinitionId !== rewardDefinitionId ||
+              (requestedCode !== undefined &&
+                existing.shopifyDiscountCode !== generatedCode) ||
+              (pointsCostOverride !== undefined &&
+                existing.pointsSpent !== BigInt(pointsCostOverride)) ||
+              (expiresAtOverride !== undefined &&
+                (existing.expiresAt?.getTime() ?? null) !==
+                  expiresAtOverride.getTime())
+            ) {
+              throw new Error(
+                "Redemption idempotency key was reused for another request.",
+              );
+            }
+            if (
+              existing.status !== WeleticRedemptionStatus.provisioning &&
+              existing.status !== WeleticRedemptionStatus.issued &&
+              existing.status !== WeleticRedemptionStatus.active
+            ) {
+              throw new Error(
+                `Redemption request is already terminal (${existing.status}).`,
+              );
+            }
+            const provisioningSnapshot =
+              readLoyaltyRedemptionProvisioningSnapshot(existing.metadata);
+            const alreadyIssued =
+              existing.status === WeleticRedemptionStatus.issued ||
+              existing.status === WeleticRedemptionStatus.active;
+            if (!alreadyIssued && !provisioningSnapshot) {
+              throw new Error(
+                `Provisioning redemption ${existing.id} is missing its immutable Shopify configuration snapshot.`,
+              );
+            }
+            if (provisioningSnapshot) {
+              if (
+                provisioningSnapshot.rewardDefinitionId !==
+                  rewardDefinitionId ||
+                provisioningSnapshot.pointsCost !==
+                  existing.pointsSpent.toString() ||
+                provisioningSnapshot.expiresAt !==
+                  (existing.expiresAt?.toISOString() ?? null)
+              ) {
+                throw new Error(
+                  `Provisioning redemption ${existing.id} does not match its immutable Shopify configuration snapshot.`,
+                );
+              }
+              assertProvisioningReplayMatchesSnapshot({
+                snapshot: provisioningSnapshot,
+                pointsCostOverride,
+                discountValueOverride,
+                expiresInDays,
+                storeId,
+                shopifyCustomerId: account.shopper.shopifyCustomerId,
+              });
+              if (
+                !alreadyIssued &&
+                provisioningSnapshot.currencyVerifiedAt !==
+                  operationalStore.currencyVerifiedAt?.toISOString()
+              ) {
+                throw new Error(
+                  `Provisioning redemption ${existing.id} belongs to a stale Shopify currency generation.`,
+                );
+              }
+            }
+            return {
+              redemption: existing,
+              account,
+              effectivePointsCost: existing.pointsSpent,
+              expiresAt: existing.expiresAt,
+              balanceAfter: account.cachedPointsBalance,
+              discountOwnership:
+                getPersistedLoyaltyDiscountProvisioningIdentity({
+                  identity: {
+                    storeId,
+                    redemptionId: existing.id,
+                    accountId,
+                    rewardDefinitionId,
+                    discountCode: existing.shopifyDiscountCode,
+                  },
+                  metadata: existing.metadata,
+                }),
+              discountMetadata: existing.metadata,
+              provisioningSnapshot,
+              alreadyIssued,
+            };
+          }
 
-    // 3. Create redemption record in 'provisioning' status
-    const redemption = await tx.weleticRewardRedemption.create({
-      data: {
-        id: redemptionId,
-        storeId,
-        accountId,
-        rewardDefinitionId: reward.id,
-        pointsSpent: effectivePointsCost,
-        shopifyDiscountCode: generatedCode,
-        shopifyDiscountCodeCanonical:
-          canonicalizeLoyaltyDiscountCode(generatedCode),
-        artifactKind:
-          reward.rewardType === "gift_card"
-            ? WeleticRewardArtifactKind.gift_card
-            : reward.rewardType === "store_credit"
-              ? WeleticRewardArtifactKind.store_credit
-              : WeleticRewardArtifactKind.discount_code,
-        status: WeleticRedemptionStatus.provisioning,
-        expiresAt,
-        idempotencyKey,
-        metadata: discountMetadata,
-      },
-    });
+          await assertStoreSubscriptionForNewBenefit(tx, storeId);
 
-    // 4. Append immutable debit ledger entry
-    const ledgerEntry = await appendPointsLedgerEntry({
-      storeId,
-      accountId,
-      entryType: WeleticPointsLedgerEntryType.REDEEM_REWARD,
-      pointsDelta: -effectivePointsCost,
-      referenceType: "REWARD_REDEMPTION",
-      referenceId: redemption.id,
-      idempotencyKey: `redeem_debit:${redemption.id}`,
-      reason: `Redeemed ${reward.name} voucher`,
-      metadata: {
-        rewardId: reward.id,
-        rewardName: reward.name,
-        rewardDescription: reward.description,
-        rewardType: reward.rewardType,
-        discountCode: generatedCode,
-      },
-      tx,
-    });
+          // 2. Validate Reward Definition only for a new reservation. A retry is
+          // fully defined by its immutable provisioning snapshot and must remain
+          // recoverable after the merchant edits, disables, or deletes the reward.
+          const reward = await tx.weleticRewardDefinition.findUnique({
+            where: { id: rewardDefinitionId },
+          });
 
-    // 5. Link ledgerEntryId
-    await tx.weleticRewardRedemption.update({
-      where: { id: redemption.id },
-      data: { ledgerEntryId: ledgerEntry.id },
-    });
+          if (!reward || reward.storeId !== storeId) {
+            throw new Error(
+              "Reward definition not found for this Shopify store.",
+            );
+          }
 
-    // 6. Enqueue durable 2-minute recovery outbox job
-    await enqueueOutboxJobFromProgramTransaction({
-      storeId,
-      jobType: "REDEMPTION_RECOVERY",
-      payload: {
-        redemptionId: redemption.id,
-        accountId,
-        rewardDefinitionId: reward.id,
-        pointsCost: effectivePointsCost.toString(),
-        shopifyDiscountCode: generatedCode,
-        artifactKind:
-          reward.rewardType === "gift_card"
-            ? WeleticRewardArtifactKind.gift_card
-            : reward.rewardType === "store_credit"
-              ? WeleticRewardArtifactKind.store_credit
-              : WeleticRewardArtifactKind.discount_code,
-        attemptCount: 0,
-        sagaPhase: "provisioning",
-      },
-      scheduledFor: new Date(Date.now() + 120_000), // 2 minutes
-      idempotencyKey: `recovery:${redemption.id}`,
-      loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
-      tx,
-    });
+          assertCoreLaunchReward({
+            ...reward,
+            purchaseType: readLoyaltyPurchasePolicy(
+              reward.purchasePolicy,
+              DEFAULT_REWARD_PURCHASE_POLICY,
+            ).purchaseType,
+          });
+          if (!requestedCode && reward.rewardType === "gift_card") {
+            generatedCode = `WLGC${nanoid(12).toUpperCase()}`;
+          } else if (!requestedCode && reward.rewardType === "store_credit") {
+            generatedCode = `WLSC${nanoid(12).toUpperCase()}`;
+          }
 
-    return {
-      redemption,
-      account,
-      effectivePointsCost,
-      expiresAt,
-      balanceAfter:
-        ledgerEntry.balanceAfter ??
-        account.cachedPointsBalance - effectivePointsCost,
-      alreadyIssued: false,
-      discountOwnership,
-      discountMetadata,
-      provisioningSnapshot,
-    };
-  }),
-  { actionName: "redeem_reward_reservation" },
-);
-} catch (error) {
+          const effectivePointsCost =
+            pointsCostOverride !== undefined
+              ? BigInt(pointsCostOverride)
+              : reward.pointsCost;
+
+          assertLockedLoyaltyProgramActive(
+            lockedProgram,
+            params.loyaltyMaintenancePermit,
+          );
+
+          if (reward.status !== WeleticRewardStatus.active) {
+            throw new Error("Reward definition not found or inactive.");
+          }
+
+          if (effectivePointsCost <= BigInt(0)) {
+            throw new Error("Reward points cost must be greater than zero.");
+          }
+
+          if (pointsCostOverride !== undefined) {
+            if (reward.exchangeType !== "incremental" || !reward.pointsStep) {
+              throw new Error(
+                "Points override is only allowed for incremental rewards.",
+              );
+            }
+            const minPoints = reward.minPointsCost ?? reward.pointsCost;
+            const maxPoints = reward.maxPointsCost;
+            if (
+              effectivePointsCost < minPoints ||
+              (maxPoints !== null && effectivePointsCost > maxPoints) ||
+              effectivePointsCost % reward.pointsStep !== BigInt(0)
+            ) {
+              throw new Error(
+                "Requested points do not satisfy the reward step or limits.",
+              );
+            }
+          }
+
+          if (
+            account.cachedPointsBalance < effectivePointsCost ||
+            account.cachedPointsBalance <= BigInt(0)
+          ) {
+            throw new Error(
+              `Insufficient points balance: required ${effectivePointsCost}, available ${account.cachedPointsBalance}.`,
+            );
+          }
+
+          // Synchronous Pre-flight Authoritative Ledger Verification & Anomaly Quarantine
+          let authoritativeLedgerSum: bigint | null = null;
+          let authoritativeLedgerCount: number | null = null;
+          let crossTenantEntriesDetected = false;
+
+          if (typeof tx.weleticPointsLedgerEntry?.aggregate === "function") {
+            const [storeLedgerAggregate, accountTotalCount] = await Promise.all(
+              [
+                tx.weleticPointsLedgerEntry.aggregate({
+                  where: { accountId, storeId },
+                  _sum: { pointsDelta: true },
+                  _count: { id: true },
+                }),
+                typeof tx.weleticPointsLedgerEntry?.count === "function"
+                  ? tx.weleticPointsLedgerEntry.count({
+                      where: { accountId },
+                    })
+                  : null,
+              ],
+            );
+            if (storeLedgerAggregate?._sum && storeLedgerAggregate?._count) {
+              authoritativeLedgerSum =
+                storeLedgerAggregate._sum.pointsDelta ?? BigInt(0);
+              authoritativeLedgerCount = storeLedgerAggregate._count.id;
+              if (
+                accountTotalCount !== null &&
+                accountTotalCount !== authoritativeLedgerCount
+              ) {
+                crossTenantEntriesDetected = true;
+              }
+            }
+          }
+          if (
+            authoritativeLedgerSum === null &&
+            typeof tx.weleticPointsLedgerEntry?.findMany === "function"
+          ) {
+            const allEntries = await tx.weleticPointsLedgerEntry.findMany({
+              where: { accountId },
+              select: { pointsDelta: true, storeId: true },
+            });
+            if (Array.isArray(allEntries)) {
+              const storeEntries = allEntries.filter(
+                (e) => !e.storeId || e.storeId === storeId,
+              );
+              if (storeEntries.length !== allEntries.length) {
+                crossTenantEntriesDetected = true;
+              }
+              authoritativeLedgerSum = storeEntries.reduce(
+                (sum, entry) => sum + BigInt(entry.pointsDelta),
+                BigInt(0),
+              );
+              authoritativeLedgerCount = storeEntries.length;
+            }
+          }
+
+          if (authoritativeLedgerSum !== null) {
+            const hasDiscrepancy =
+              crossTenantEntriesDetected ||
+              authoritativeLedgerSum < effectivePointsCost ||
+              authoritativeLedgerSum !== account.cachedPointsBalance ||
+              (account.ledgerVersion !== undefined &&
+                account.ledgerVersion !== null &&
+                account.ledgerVersion > 0 &&
+                authoritativeLedgerCount !== null &&
+                account.ledgerVersion !== authoritativeLedgerCount);
+
+            if (hasDiscrepancy) {
+              const existingMeta =
+                account.metadata &&
+                typeof account.metadata === "object" &&
+                !Array.isArray(account.metadata)
+                  ? (account.metadata as Record<string, unknown>)
+                  : {};
+
+              const quarantineReason = crossTenantEntriesDetected
+                ? `Pre-flight redemption ledger discrepancy detected: account ${accountId} contains cross-tenant entries not belonging to store ${storeId}.`
+                : `Pre-flight redemption ledger discrepancy detected: cached balance (${account.cachedPointsBalance}) does not match authoritative ledger sum (${authoritativeLedgerSum}) or is insufficient for redemption cost (${effectivePointsCost}).`;
+
+              if (
+                typeof (tx as any).weleticLoyaltyAccount?.update === "function"
+              ) {
+                await (tx as any).weleticLoyaltyAccount.update({
+                  where: { id: accountId },
+                  data: {
+                    status: "suspended",
+                    metadata: {
+                      ...existingMeta,
+                      quarantine: {
+                        isQuarantined: true,
+                        quarantinedAt: new Date().toISOString(),
+                        reason: quarantineReason,
+                        cachedBalance: account.cachedPointsBalance.toString(),
+                        ledgerSum: authoritativeLedgerSum.toString(),
+                        requiredPoints: effectivePointsCost.toString(),
+                      },
+                    } as Prisma.InputJsonValue,
+                  },
+                });
+              }
+
+              throw new PreflightRedemptionDiscrepancyError(
+                accountId,
+                storeId,
+                account.cachedPointsBalance,
+                authoritativeLedgerSum,
+                effectivePointsCost,
+                existingMeta,
+                quarantineReason,
+              );
+            }
+          }
+
+          const effectiveExpiresInDays =
+            expiresInDays !== undefined && expiresInDays !== null
+              ? expiresInDays
+              : reward.expiresInDays;
+
+          const expiresAt =
+            expiresAtOverride ??
+            (effectiveExpiresInDays
+              ? new Date(Date.now() + effectiveExpiresInDays * 86400000)
+              : null);
+          const startsAt = new Date();
+          const discountOwnership = createLoyaltyDiscountProvisioningIdentity({
+            identity: {
+              storeId,
+              redemptionId,
+              accountId,
+              rewardDefinitionId: reward.id,
+              discountCode: generatedCode,
+            },
+            rewardName: reward.name,
+          });
+          const provisioningSnapshot =
+            createLoyaltyRedemptionProvisioningSnapshot({
+              reward,
+              pointsCost: effectivePointsCost,
+              discountValue:
+                discountValueOverride !== undefined
+                  ? discountValueOverride
+                  : reward.discountValue,
+              expiresInDays: effectiveExpiresInDays ?? null,
+              shopCurrency: operationalStore.shopCurrency,
+              currencyVerifiedAt: operationalStore.currencyVerifiedAt!,
+              customerSelectionDigest: getShopifyCustomerSelectionDigest({
+                storeId,
+                shopifyCustomerId: account.shopper.shopifyCustomerId,
+              }),
+              startsAt,
+              expiresAt,
+            });
+          const discountMetadata = mergeLoyaltyDiscountOwnershipMetadata({
+            metadata: {
+              rewardSnapshot: {
+                name: reward.name,
+                rewardType: reward.rewardType,
+                ...(reward.salesChannel
+                  ? { salesChannel: reward.salesChannel }
+                  : {}),
+                ...(reward.description
+                  ? { description: reward.description }
+                  : {}),
+              },
+              provisioningSnapshot,
+              ...(operationalStore.installationGeneration
+                ? {
+                    rewardCommunicationOrigin: createRewardCommunicationOrigin({
+                      storeId,
+                      accountId,
+                      redemptionId,
+                      installationGeneration:
+                        operationalStore.installationGeneration,
+                      provisioningDigest: provisioningSnapshot.contentDigest,
+                    }),
+                  }
+                : {}),
+            },
+            ownership: discountOwnership,
+          });
+
+          // 3. Create redemption record in 'provisioning' status
+          const redemption = await tx.weleticRewardRedemption.create({
+            data: {
+              id: redemptionId,
+              storeId,
+              accountId,
+              rewardDefinitionId: reward.id,
+              pointsSpent: effectivePointsCost,
+              shopifyDiscountCode: generatedCode,
+              shopifyDiscountCodeCanonical:
+                canonicalizeLoyaltyDiscountCode(generatedCode),
+              artifactKind:
+                reward.rewardType === "gift_card"
+                  ? WeleticRewardArtifactKind.gift_card
+                  : reward.rewardType === "store_credit"
+                    ? WeleticRewardArtifactKind.store_credit
+                    : WeleticRewardArtifactKind.discount_code,
+              status: WeleticRedemptionStatus.provisioning,
+              expiresAt,
+              idempotencyKey,
+              metadata: discountMetadata,
+            },
+          });
+
+          // 4. Append immutable debit ledger entry
+          const ledgerEntry = await appendPointsLedgerEntry({
+            storeId,
+            accountId,
+            entryType: WeleticPointsLedgerEntryType.REDEEM_REWARD,
+            pointsDelta: -effectivePointsCost,
+            referenceType: "REWARD_REDEMPTION",
+            referenceId: redemption.id,
+            idempotencyKey: `redeem_debit:${redemption.id}`,
+            reason: `Redeemed ${reward.name} voucher`,
+            metadata: {
+              rewardId: reward.id,
+              rewardName: reward.name,
+              rewardDescription: reward.description,
+              rewardType: reward.rewardType,
+              discountCode: generatedCode,
+            },
+            tx,
+          });
+
+          // 5. Link ledgerEntryId
+          await tx.weleticRewardRedemption.update({
+            where: { id: redemption.id },
+            data: { ledgerEntryId: ledgerEntry.id },
+          });
+
+          // 6. Enqueue durable 2-minute recovery outbox job
+          await enqueueOutboxJobFromProgramTransaction({
+            storeId,
+            jobType: "REDEMPTION_RECOVERY",
+            payload: {
+              redemptionId: redemption.id,
+              accountId,
+              rewardDefinitionId: reward.id,
+              pointsCost: effectivePointsCost.toString(),
+              shopifyDiscountCode: generatedCode,
+              artifactKind:
+                reward.rewardType === "gift_card"
+                  ? WeleticRewardArtifactKind.gift_card
+                  : reward.rewardType === "store_credit"
+                    ? WeleticRewardArtifactKind.store_credit
+                    : WeleticRewardArtifactKind.discount_code,
+              attemptCount: 0,
+              sagaPhase: "provisioning",
+            },
+            scheduledFor: new Date(Date.now() + 120_000), // 2 minutes
+            idempotencyKey: `recovery:${redemption.id}`,
+            loyaltyMaintenancePermit: params.loyaltyMaintenancePermit,
+            tx,
+          });
+
+          return {
+            redemption,
+            account,
+            effectivePointsCost,
+            expiresAt,
+            balanceAfter:
+              ledgerEntry.balanceAfter ??
+              account.cachedPointsBalance - effectivePointsCost,
+            alreadyIssued: false,
+            discountOwnership,
+            discountMetadata,
+            provisioningSnapshot,
+          };
+        }),
+      { actionName: "redeem_reward_reservation" },
+    );
+  } catch (error) {
     if (error instanceof PreflightRedemptionDiscrepancyError) {
       if (typeof prisma.weleticLoyaltyAccount?.update === "function") {
         await prisma.weleticLoyaltyAccount.update({

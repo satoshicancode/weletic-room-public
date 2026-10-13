@@ -1,6 +1,5 @@
 import { verifySlackSignature } from "@/lib/integrations/slack/verify-request";
 import { createHmac } from "crypto";
-import * as crypto from "crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("Slack Webhook Request Verification (SEC-AUDIT-01)", () => {
@@ -85,7 +84,9 @@ describe("Slack Webhook Request Verification (SEC-AUDIT-01)", () => {
 
     await expect(
       verifySlackSignature(req, requestBody, { nowMilliseconds: fixedNowMs }),
-    ).rejects.toThrowError(/must differ from system time by no more than 5 minutes or request is stale/);
+    ).rejects.toThrowError(
+      /must differ from system time by no more than 5 minutes or request is stale/,
+    );
   });
 
   it("rejects requests further in the future than 5 minutes (+301 seconds - Replay Defense)", async () => {
@@ -95,7 +96,9 @@ describe("Slack Webhook Request Verification (SEC-AUDIT-01)", () => {
 
     await expect(
       verifySlackSignature(req, requestBody, { nowMilliseconds: fixedNowMs }),
-    ).rejects.toThrowError(/must differ from system time by no more than 5 minutes or request is stale/);
+    ).rejects.toThrowError(
+      /must differ from system time by no more than 5 minutes or request is stale/,
+    );
   });
 
   it("rejects non-numeric and NaN timestamps", async () => {
@@ -106,7 +109,9 @@ describe("Slack Webhook Request Verification (SEC-AUDIT-01)", () => {
 
     await expect(
       verifySlackSignature(req, requestBody, { nowMilliseconds: fixedNowMs }),
-    ).rejects.toThrowError(/header x-slack-request-timestamp did not have the expected type/);
+    ).rejects.toThrowError(
+      /header x-slack-request-timestamp did not have the expected type/,
+    );
   });
 
   it("rejects unknown signature versions", async () => {
@@ -143,7 +148,11 @@ describe("Slack Webhook Request Verification (SEC-AUDIT-01)", () => {
   });
 
   it("rejects tampered signature of correct length via constant-time check", async () => {
-    const authenticSig = createSignature(signingSecret, fixedNowSec, requestBody);
+    const authenticSig = createSignature(
+      signingSecret,
+      fixedNowSec,
+      requestBody,
+    );
     const [ver, hash] = authenticSig.split("=");
     // Corrupt the final byte of the 64-char hex
     const corruptedHash = hash.slice(0, 63) + (hash[63] === "a" ? "b" : "a");
@@ -160,7 +169,11 @@ describe("Slack Webhook Request Verification (SEC-AUDIT-01)", () => {
   });
 
   it("rejects signatures with single-byte flips across various positions", async () => {
-    const authenticSig = createSignature(signingSecret, fixedNowSec, requestBody);
+    const authenticSig = createSignature(
+      signingSecret,
+      fixedNowSec,
+      requestBody,
+    );
     const [ver, hash] = authenticSig.split("=");
 
     for (const pos of [0, 16, 32, 48, 63]) {

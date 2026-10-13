@@ -18,6 +18,7 @@ export type LockedLoyaltyProgram = {
   metadata: Prisma.JsonValue | null;
   storeAccessState?: string;
   version?: number;
+  holdingPeriodDays?: number | null;
 };
 
 export class OptimisticLockConflictError extends Error {

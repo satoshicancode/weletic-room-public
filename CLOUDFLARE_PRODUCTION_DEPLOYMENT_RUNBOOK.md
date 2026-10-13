@@ -5,6 +5,7 @@
 Toàn bộ mã nguồn monorepo **Weletic Room** đã hoàn tất các vòng kiểm toán bảo mật chuyên sâu (`VICTORY CONFIRMED`), tuân thủ nghiêm ngặt 4 bất biến kiến trúc trong [`.agents/rules/shopify_sync_invariants.md`](./.agents/rules/shopify_sync_invariants.md), và các bản build production của **Next.js Web (`apps/web`)** cùng **Shopify Embedded App (`@weletic/shopify-app`)** đều đạt **Exit Code 0** trên nhánh `main`.
 
 Hệ thống được thiết kế theo kiến trúc **100% Cloudflare Native** vận hành với ngân sách tối ưu:
+
 - **$0/tháng (Free Tier)** hoặc tối đa **$5/tháng (Cloudflare Workers Paid)**
 - Không phụ thuộc vào PlanetScale, Upstash, Tinybird, AWS S3 hay Vercel.
 
@@ -14,14 +15,14 @@ Hệ thống được thiết kế theo kiến trúc **100% Cloudflare Native** 
 
 Trước khi triển khai, chuẩn bị tài khoản Cloudflare và tài nguyên theo bảng sau:
 
-| Dịch Vụ | Tên Tài Nguyên (Production) | Mục Đích | Chi Phí Dự Kiến |
-| :--- | :--- | :--- | :--- |
-| **Cloudflare D1** | `weletic-production` | CSDL lõi SQLite (Users, Workspaces, Programs, Commissions, Loyalty) | $0 (Gói Workers) |
-| **Cloudflare R2** | `weletic-media-prod` | Lưu trữ UGC Video Reviews, ảnh sản phẩm Yamax, exports | $0 (10 GB miễn phí, 0đ Egress) |
-| **Cloudflare KV** | `weletic-links-kv-prod` | Cache Affiliate shortlinks & Store Domain Resolver | $0 |
-| **Cloudflare Queues** | `order-webhook-queue`<br>`order-webhook-dlq` | Tiếp nhận và xử lý bất đồng bộ webhook `orders/paid` & `refunds/create` | $0 (1M tin nhắn/tháng) |
-| **Analytics Engine** | `weletic_analytics` | Ghi nhận click/conversion thời gian thực thay thế Tinybird | $0 |
-| **Cloudflare for SaaS** | Zone `yamax.co` / Custom Hostnames | Tự động cấp phát SSL cho 100 domain thương hiệu của đối tác | $0 (100 hostnames miễn phí) |
+| Dịch Vụ                 | Tên Tài Nguyên (Production)                  | Mục Đích                                                                | Chi Phí Dự Kiến                |
+| :---------------------- | :------------------------------------------- | :---------------------------------------------------------------------- | :----------------------------- |
+| **Cloudflare D1**       | `weletic-production`                         | CSDL lõi SQLite (Users, Workspaces, Programs, Commissions, Loyalty)     | $0 (Gói Workers)               |
+| **Cloudflare R2**       | `weletic-media-prod`                         | Lưu trữ UGC Video Reviews, ảnh sản phẩm Yamax, exports                  | $0 (10 GB miễn phí, 0đ Egress) |
+| **Cloudflare KV**       | `weletic-links-kv-prod`                      | Cache Affiliate shortlinks & Store Domain Resolver                      | $0                             |
+| **Cloudflare Queues**   | `order-webhook-queue`<br>`order-webhook-dlq` | Tiếp nhận và xử lý bất đồng bộ webhook `orders/paid` & `refunds/create` | $0 (1M tin nhắn/tháng)         |
+| **Analytics Engine**    | `weletic_analytics`                          | Ghi nhận click/conversion thời gian thực thay thế Tinybird              | $0                             |
+| **Cloudflare for SaaS** | Zone `yamax.co` / Custom Hostnames           | Tự động cấp phát SSL cho 100 domain thương hiệu của đối tác             | $0 (100 hostnames miễn phí)    |
 
 ---
 
@@ -106,10 +107,12 @@ WELETIC_SERVICE_AUTH_SECRET="<GENERATED_64_CHAR_HEX_SECRET>" # Biến bí mật 
 
 > [!IMPORTANT]
 > Trước khi deploy, hãy mở các file `apps/web/workers/*/wrangler.toml` và thay thế các ID mẫu:
+>
 > - Thay `database_id = "weletic-d1-prod"` bằng UUID D1 database thực tế từ Bước 1.
 > - Thay `id = "weletic-links-kv-prod"` bằng ID KV namespace thực tế từ Bước 1.
 
 Cấu hình các worker secrets qua CLI:
+
 ```bash
 # Webhook Ingress secrets:
 cd apps/web/workers/webhook-ingress

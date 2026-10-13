@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { isNotHostedImage, storage } from "@/lib/storage";
+import { evictLinksBatchFromKv } from "@/lib/weletic/link-kv-cache";
 import { bulkUpdateLinksBodySchema } from "@/lib/zod/schemas/links";
 import { R2_URL, getParamsFromURL, nanoid, truncate } from "@dub/utils";
 import { Prisma } from "@prisma/client";
@@ -10,7 +11,6 @@ import { includeProgramEnrollment } from "./include-program-enrollment";
 import { includeTags } from "./include-tags";
 import { propagateBulkLinkChanges } from "./propagate-bulk-link-changes";
 import { transformLink } from "./utils";
-import { evictLinksBatchFromKv } from "@/lib/weletic/link-kv-cache";
 
 export async function bulkUpdateLinks(
   // omit externalIds from params

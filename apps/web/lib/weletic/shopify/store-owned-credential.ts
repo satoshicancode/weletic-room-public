@@ -1,9 +1,9 @@
 import { decrypt, encrypt } from "@/lib/encryption";
-import { Prisma } from "@prisma/client";
 import {
-  forUpdateClause,
   currentTimestampClause,
+  forUpdateClause,
 } from "@/lib/prisma/sql-helpers";
+import { Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import * as z from "zod/v4";
 import { ShopifyCredentialUnavailableError } from "./credential-errors";

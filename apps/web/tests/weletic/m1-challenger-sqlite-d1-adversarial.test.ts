@@ -1,8 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { prisma, createPrismaClient } from "@/lib/prisma";
-import { ALL_ENUMS, WorkspaceRole, BountyType, CommissionStatus, WeleticRewardType, WeleticSyncStatus } from "@/lib/types/enums";
+import { createPrismaClient, prisma } from "@/lib/prisma";
+import {
+  ALL_ENUMS,
+  BountyType,
+  CommissionStatus,
+  WorkspaceRole,
+} from "@/lib/types/enums";
 import * as PrismaClientExports from "@prisma/client";
 import { Prisma } from "@prisma/client";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
   const TEST_TAG = `adv_m1_${Date.now()}`;
@@ -17,7 +22,9 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
     // Fail-fast network guard: Verify zero network calls occur
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {
-      throw new Error("[ADVERSARIAL VIOLATION] External network call attempted during SQLite offline test");
+      throw new Error(
+        "[ADVERSARIAL VIOLATION] External network call attempted during SQLite offline test",
+      );
     }) as any;
 
     // Create base project and user for relational integrity
@@ -72,9 +79,18 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
       }
 
       // Use raw SQL to bypass the ProgramEnrollment.partnerId bug in relationMode="prisma" cascade
-      await prisma.$executeRawUnsafe("DELETE FROM Program WHERE id = ?", testProgramId);
-      await prisma.$executeRawUnsafe("DELETE FROM User WHERE id = ?", testUserId);
-      await prisma.$executeRawUnsafe("DELETE FROM Project WHERE id = ?", testWorkspaceId);
+      await prisma.$executeRawUnsafe(
+        "DELETE FROM Program WHERE id = ?",
+        testProgramId,
+      );
+      await prisma.$executeRawUnsafe(
+        "DELETE FROM User WHERE id = ?",
+        testUserId,
+      );
+      await prisma.$executeRawUnsafe(
+        "DELETE FROM Project WHERE id = ?",
+        testWorkspaceId,
+      );
     } catch (e) {
       console.warn("Cleanup warning in afterAll:", e);
     }
@@ -129,7 +145,10 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
           role: WorkspaceRole.owner,
         },
       });
-      createdProjectUserIds.push({ projectId: testWorkspaceId, userId: testUserId });
+      createdProjectUserIds.push({
+        projectId: testWorkspaceId,
+        userId: testUserId,
+      });
 
       expect(pu.role).toBe("owner");
 
@@ -208,9 +227,12 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
 
   describe("Task 1.3: Large Text Fields & JSON Columns (former @db.LongText and @db.Json)", () => {
     it("handles 100KB and 1MB large text in SQLite TEXT columns without truncation", async () => {
-      const baseChunk = "Weletic Cloudflare D1 SQLite text migration stress testing chunk. ";
+      const baseChunk =
+        "Weletic Cloudflare D1 SQLite text migration stress testing chunk. ";
       const targetSize100K = 100 * 1024;
-      const text100KB = baseChunk.repeat(Math.ceil(targetSize100K / baseChunk.length)).slice(0, targetSize100K);
+      const text100KB = baseChunk
+        .repeat(Math.ceil(targetSize100K / baseChunk.length))
+        .slice(0, targetSize100K);
 
       const act1 = await prisma.activityLog.create({
         data: {
@@ -267,8 +289,10 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
             },
           },
         },
-        unicodeDetails: "Tài sản thương hiệu Yamax: Áo khoác & Quần Legging Yenergy™ 🚀",
-        specialChars: "Quotes ' \" and backslashes \\ / \n\r\t and null-like \u0000 strings",
+        unicodeDetails:
+          "Tài sản thương hiệu Yamax: Áo khoác & Quần Legging Yenergy™ 🚀",
+        specialChars:
+          "Quotes ' \" and backslashes \\ / \n\r\t and null-like \u0000 strings",
         numericEdgeCases: {
           zero: 0,
           negative: -999999.99,
@@ -302,7 +326,10 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
         where: { id: actJson.id },
       });
       expect(readActJson?.changeSet).toEqual(complexJson);
-      expect((readActJson?.changeSet as any).meta.nestedLevel1.nestedLevel2.nestedLevel3.deepValue).toBe("deep_leaf_node_verified");
+      expect(
+        (readActJson?.changeSet as any).meta.nestedLevel1.nestedLevel2
+          .nestedLevel3.deepValue,
+      ).toBe("deep_leaf_node_verified");
       expect((readActJson?.changeSet as any).batchEvents.length).toBe(200);
     });
 
@@ -330,13 +357,41 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
     beforeAll(async () => {
       // Seed test customers with various name and email characteristics
       const customersToCreate = [
-        { id: `c_alice_${TEST_TAG}`, name: "Alice Wonderland", email: "alice.wonder@example.com" },
-        { id: `c_bob_${TEST_TAG}`, name: "Bob Builder", email: "bob.build@enterprise.org" },
-        { id: `c_null_name_${TEST_TAG}`, name: null, email: "no.name.user@domain.com" },
-        { id: `c_null_email_${TEST_TAG}`, name: "No Email Customer", email: null },
-        { id: `c_wildcard_pct_${TEST_TAG}`, name: "100% Discount Shopper", email: "percent%shopper@domain.com" },
-        { id: `c_wildcard_under_${TEST_TAG}`, name: "Under_Score_User", email: "under_score@domain.com" },
-        { id: `c_sql_inject_${TEST_TAG}`, name: "Robert'); DROP TABLE Customers;--", email: "bobby.tables@domain.com" },
+        {
+          id: `c_alice_${TEST_TAG}`,
+          name: "Alice Wonderland",
+          email: "alice.wonder@example.com",
+        },
+        {
+          id: `c_bob_${TEST_TAG}`,
+          name: "Bob Builder",
+          email: "bob.build@enterprise.org",
+        },
+        {
+          id: `c_null_name_${TEST_TAG}`,
+          name: null,
+          email: "no.name.user@domain.com",
+        },
+        {
+          id: `c_null_email_${TEST_TAG}`,
+          name: "No Email Customer",
+          email: null,
+        },
+        {
+          id: `c_wildcard_pct_${TEST_TAG}`,
+          name: "100% Discount Shopper",
+          email: "percent%shopper@domain.com",
+        },
+        {
+          id: `c_wildcard_under_${TEST_TAG}`,
+          name: "Under_Score_User",
+          email: "under_score@domain.com",
+        },
+        {
+          id: `c_sql_inject_${TEST_TAG}`,
+          name: "Robert'); DROP TABLE Customers;--",
+          email: "bobby.tables@domain.com",
+        },
       ];
 
       for (const c of customersToCreate) {
@@ -355,7 +410,7 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
 
     it("executes search query when search string is empty or whitespace", async () => {
       // Logic from get-customers.ts: if search is empty string, search filter is omitted
-      const search = "";
+      const search: string = "";
       const whereClause = {
         projectId: testWorkspaceId,
         ...(search
@@ -378,10 +433,7 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
       const search = "Alice";
       const whereClause = {
         projectId: testWorkspaceId,
-        OR: [
-          { email: { contains: search } },
-          { name: { contains: search } },
-        ],
+        OR: [{ email: { contains: search } }, { name: { contains: search } }],
       };
 
       const results = await prisma.customer.findMany({ where: whereClause });
@@ -414,10 +466,7 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
       const results = await prisma.customer.findMany({
         where: {
           projectId: testWorkspaceId,
-          OR: [
-            { email: { contains: search } },
-            { name: { contains: search } },
-          ],
+          OR: [{ email: { contains: search } }, { name: { contains: search } }],
         },
       });
 
@@ -538,7 +587,9 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
           throw new Error("Deliberate transaction failure to verify rollback");
         });
       } catch (err: any) {
-        expect(err.message).toBe("Deliberate transaction failure to verify rollback");
+        expect(err.message).toBe(
+          "Deliberate transaction failure to verify rollback",
+        );
       }
 
       const rolledBack = await prisma.activityLog.findUnique({
@@ -548,10 +599,11 @@ describe("Milestone 1 SQLite/D1 Empirical Adversarial Challenge Suite", () => {
     });
 
     it("executes raw SQL queries with parameters on local SQLite returning BigInt", async () => {
-      const result: any = await prisma.$queryRaw`SELECT 1 + 1 AS sum, 'sqlite_online' AS status;`;
+      const result: any =
+        await prisma.$queryRaw`SELECT 1 + 1 AS sum, 'sqlite_online' AS status;`;
       expect(result).toBeDefined();
       // Prisma on SQLite returns integer expressions as BigInt
-      expect(result[0].sum).toBe(2n);
+      expect(result[0].sum).toBe(BigInt(2));
       expect(Number(result[0].sum)).toBe(2);
       expect(result[0].status).toBe("sqlite_online");
     });

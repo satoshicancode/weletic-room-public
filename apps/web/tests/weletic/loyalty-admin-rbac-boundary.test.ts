@@ -419,7 +419,9 @@ describe("M1: Security Boundary & RBAC Suite", () => {
           cachedPointsBalance: BigInt(500),
           ledgerVersion: 1,
         } as never);
-        vi.mocked(prisma.weleticPointsLedgerEntry.count).mockResolvedValue(1000);
+        vi.mocked(prisma.weleticPointsLedgerEntry.count).mockResolvedValue(
+          1000,
+        );
 
         const response = await handler(
           new Request(
@@ -438,7 +440,9 @@ describe("M1: Security Boundary & RBAC Suite", () => {
         );
         expect(response.status).toBe(400);
         const resBody = await response.json();
-        expect(resBody.error.message).toContain("Daily manual points adjustment limit reached");
+        expect(resBody.error.message).toContain(
+          "Daily manual points adjustment limit reached",
+        );
       });
 
       it("accepts an exact large decimal string but rejects contradictory account/customer selectors", async () => {

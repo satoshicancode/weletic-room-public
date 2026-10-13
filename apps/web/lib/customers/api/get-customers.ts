@@ -1,4 +1,4 @@
-import { prisma, sanitizeFullTextSearch } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { getCustomersQuerySchemaExtended } from "@/lib/zod/schemas/customers";
 import * as z from "zod/v4";
 import { DubApiError } from "../../api/errors";

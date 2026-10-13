@@ -1,7 +1,7 @@
-import { NextRequest } from "next/server";
-import { POST } from "../../app/(ee)/api/hubspot/webhook/route";
 import crypto from "crypto";
+import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { POST } from "../../app/(ee)/api/hubspot/webhook/route";
 
 vi.mock("server-only", () => ({}));
 
@@ -32,7 +32,9 @@ vi.mock("@/lib/cron/enqueue-batch-jobs", () => ({
 
 describe("HubSpot Webhook Verification (SEC-AUDIT-02)", () => {
   const clientSecret = "hubspot-secret-token-xyz";
-  const payload = JSON.stringify([{ eventId: 101, subscriptionType: "deal.creation" }]);
+  const payload = JSON.stringify([
+    { eventId: 101, subscriptionType: "deal.creation" },
+  ]);
 
   function computeHubSpotSignature(secret: string, body: string) {
     return crypto
@@ -97,7 +99,8 @@ describe("HubSpot Webhook Verification (SEC-AUDIT-02)", () => {
 
   it("returns 401 when signature length matches but bytes differ", async () => {
     const validSig = computeHubSpotSignature(clientSecret, payload);
-    const corruptedSig = validSig.slice(0, 63) + (validSig[63] === "0" ? "1" : "0");
+    const corruptedSig =
+      validSig.slice(0, 63) + (validSig[63] === "0" ? "1" : "0");
     const req = makeRequest({ signature: corruptedSig });
 
     const res = await POST(req, {} as any);

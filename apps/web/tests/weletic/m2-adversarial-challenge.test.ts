@@ -1,33 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import crypto from "node:crypto";
 import { NextRequest } from "next/server";
+import crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Module imports under adversarial test
-import { verifySlackSignature } from "../../lib/integrations/slack/verify-request";
+import {
+  createD1NonceClient,
+  createKVNonceClient,
+  resetServiceAuthNonceCache,
+  setServiceAuthRedisClient,
+  verifyWeleticShopifyRequest,
+  WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
+  WELETIC_SHOPIFY_SIGNATURE_HEADER,
+  WELETIC_SHOPIFY_TIMESTAMP_HEADER,
+  type D1DatabaseLike,
+  type KVNamespaceLike,
+  type RedisSetClient,
+} from "@weletic/contracts/shopify/service-auth";
 import { POST as hubspotWebhookPOST } from "../../app/(ee)/api/hubspot/webhook/route";
 import {
   generateUnsubscribeToken,
   verifyUnsubscribeToken,
 } from "../../lib/email/unsubscribe-token";
-import {
-  decrypt,
-  decryptOrPassthrough,
-  encrypt,
-} from "../../lib/encryption";
-import {
-  createKVNonceClient,
-  createD1NonceClient,
-  verifyWeleticShopifyRequest,
-  setServiceAuthRedisClient,
-  resetServiceAuthNonceCache,
-  type KVNamespaceLike,
-  type D1DatabaseLike,
-  type RedisSetClient,
-  WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
-  WELETIC_SHOPIFY_TIMESTAMP_HEADER,
-  WELETIC_SHOPIFY_SIGNATURE_HEADER,
-  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
-} from "@weletic/contracts/shopify/service-auth";
+import { decrypt, decryptOrPassthrough, encrypt } from "../../lib/encryption";
+import { verifySlackSignature } from "../../lib/integrations/slack/verify-request";
 
 // Mocks for Next.js route testing
 vi.mock("server-only", () => ({}));
@@ -125,7 +121,9 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
         const req = makeSlackRequest(ts, sig);
         await expect(
           verifySlackSignature(req, body, { nowMilliseconds: fixedNowMs }),
-        ).rejects.toThrow(/must differ from system time by no more than 5 minutes/);
+        ).rejects.toThrow(
+          /must differ from system time by no more than 5 minutes/,
+        );
       });
 
       it("accepts future timestamp at exactly +300s boundary", async () => {
@@ -161,21 +159,68 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
         const req = makeSlackRequest(ts, sig);
         await expect(
           verifySlackSignature(req, body, { nowMilliseconds: fixedNowMs }),
-        ).rejects.toThrow(/must differ from system time by no more than 5 minutes/);
+        ).rejects.toThrow(
+          /must differ from system time by no more than 5 minutes/,
+        );
       });
     });
 
     describe("Slack Timestamp Header String Fuzzing", () => {
       const nonNumericCases = [
-        { label: "alpha string", value: "abc", errorPattern: /header x-slack-request-timestamp did not have the expected type \(NaN\)/ },
-        { label: "literal NaN", value: "NaN", errorPattern: /header x-slack-request-timestamp did not have the expected type \(NaN\)/ },
-        { label: "positive Infinity", value: "Infinity", errorPattern: /must differ from system time by no more than 5 minutes/ },
-        { label: "negative Infinity", value: "-Infinity", errorPattern: /must differ from system time by no more than 5 minutes/ },
-        { label: "negative integer -1", value: "-1", errorPattern: /must differ from system time by no more than 5 minutes/ },
-        { label: "extreme future 1e10", value: "1e10", errorPattern: /must differ from system time by no more than 5 minutes/ },
-        { label: "empty string", value: "", errorPattern: /must differ from system time by no more than 5 minutes/ },
-        { label: "symbol string", value: "???$$$***", errorPattern: /header x-slack-request-timestamp did not have the expected type \(NaN\)/ },
-        { label: "boolean string true", value: "true", errorPattern: /header x-slack-request-timestamp did not have the expected type \(NaN\)/ },
+        {
+          label: "alpha string",
+          value: "abc",
+          errorPattern:
+            /header x-slack-request-timestamp did not have the expected type \(NaN\)/,
+        },
+        {
+          label: "literal NaN",
+          value: "NaN",
+          errorPattern:
+            /header x-slack-request-timestamp did not have the expected type \(NaN\)/,
+        },
+        {
+          label: "positive Infinity",
+          value: "Infinity",
+          errorPattern:
+            /must differ from system time by no more than 5 minutes/,
+        },
+        {
+          label: "negative Infinity",
+          value: "-Infinity",
+          errorPattern:
+            /must differ from system time by no more than 5 minutes/,
+        },
+        {
+          label: "negative integer -1",
+          value: "-1",
+          errorPattern:
+            /must differ from system time by no more than 5 minutes/,
+        },
+        {
+          label: "extreme future 1e10",
+          value: "1e10",
+          errorPattern:
+            /must differ from system time by no more than 5 minutes/,
+        },
+        {
+          label: "empty string",
+          value: "",
+          errorPattern:
+            /must differ from system time by no more than 5 minutes/,
+        },
+        {
+          label: "symbol string",
+          value: "???$$$***",
+          errorPattern:
+            /header x-slack-request-timestamp did not have the expected type \(NaN\)/,
+        },
+        {
+          label: "boolean string true",
+          value: "true",
+          errorPattern:
+            /header x-slack-request-timestamp did not have the expected type \(NaN\)/,
+        },
       ];
 
       for (const { label, value, errorPattern } of nonNumericCases) {
@@ -198,7 +243,9 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
         });
         await expect(
           verifySlackSignature(req, body, { nowMilliseconds: fixedNowMs }),
-        ).rejects.toThrow(/must differ from system time by no more than 5 minutes/);
+        ).rejects.toThrow(
+          /must differ from system time by no more than 5 minutes/,
+        );
       });
     });
 
@@ -240,7 +287,11 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
       });
 
       it("rejects 63-byte signature (1 byte short) without RangeError", async () => {
-        const validSig = computeSlackSignature(signingSecret, fixedNowSec, body);
+        const validSig = computeSlackSignature(
+          signingSecret,
+          fixedNowSec,
+          body,
+        );
         const shortSig = validSig.slice(0, -1);
         const req = makeSlackRequest(fixedNowSec, shortSig);
         await expect(
@@ -249,7 +300,11 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
       });
 
       it("rejects 65-byte signature (1 byte long) without RangeError", async () => {
-        const validSig = computeSlackSignature(signingSecret, fixedNowSec, body);
+        const validSig = computeSlackSignature(
+          signingSecret,
+          fixedNowSec,
+          body,
+        );
         const longSig = validSig + "f";
         const req = makeSlackRequest(fixedNowSec, longSig);
         await expect(
@@ -258,7 +313,11 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
       });
 
       it("rejects exact-length 64-byte signature with single-bit flips across multiple offsets", async () => {
-        const validSig = computeSlackSignature(signingSecret, fixedNowSec, body);
+        const validSig = computeSlackSignature(
+          signingSecret,
+          fixedNowSec,
+          body,
+        );
         const [, hash] = validSig.split("=");
 
         for (const offset of [0, 1, 15, 31, 48, 63]) {
@@ -274,7 +333,11 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
 
       it("handles large 512KB payload correctly with timingSafeEqual", async () => {
         const largeBody = "x".repeat(512 * 1024);
-        const sig = computeSlackSignature(signingSecret, fixedNowSec, largeBody);
+        const sig = computeSlackSignature(
+          signingSecret,
+          fixedNowSec,
+          largeBody,
+        );
         const req = makeSlackRequest(fixedNowSec, sig);
         await expect(
           verifySlackSignature(req, largeBody, { nowMilliseconds: fixedNowMs }),
@@ -391,13 +454,20 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
 
     it("returns 401 when request body is tampered by even a trailing space", async () => {
       const sig = computeHubSpotSig(hubspotSecret, validPayload);
-      const req = makeHubspotRequest({ signature: sig, body: validPayload + " " });
+      const req = makeHubspotRequest({
+        signature: sig,
+        body: validPayload + " ",
+      });
       const res = await hubspotWebhookPOST(req, {} as any);
       expect(res.status).toBe(401);
     });
 
     it("handles empty payload: rejects mismatched signature with 401", async () => {
-      const req = makeHubspotRequest({ signature: "any-64-character-signature-0123456789abcdef0123456789abcdef012345", body: "" });
+      const req = makeHubspotRequest({
+        signature:
+          "any-64-character-signature-0123456789abcdef0123456789abcdef012345",
+        body: "",
+      });
       const res = await hubspotWebhookPOST(req, {} as any);
       expect(res.status).toBe(401);
     });
@@ -451,7 +521,9 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
     it("returns null on 23-char signature (1 char short) without RangeError", () => {
       const token = generateUnsubscribeToken(testEmail);
       const [encodedEmail, sig] = token.split(".");
-      expect(verifyUnsubscribeToken(`${encodedEmail}.${sig.slice(0, 23)}`)).toBeNull();
+      expect(
+        verifyUnsubscribeToken(`${encodedEmail}.${sig.slice(0, 23)}`),
+      ).toBeNull();
     });
 
     it("returns null on 25-char signature (1 char long) without RangeError", () => {
@@ -467,7 +539,9 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
       for (let i = 0; i < sig.length; i++) {
         const flippedChar = sig[i] === "a" ? "b" : "a";
         const corruptedSig = sig.slice(0, i) + flippedChar + sig.slice(i + 1);
-        expect(verifyUnsubscribeToken(`${encodedEmail}.${corruptedSig}`)).toBeNull();
+        expect(
+          verifyUnsubscribeToken(`${encodedEmail}.${corruptedSig}`),
+        ).toBeNull();
       }
     });
 
@@ -483,9 +557,13 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
       vi.resetModules();
       vi.stubEnv("UNSUBSCRIBE_TOKEN_SECRET", "");
       vi.stubEnv("NEXTAUTH_SECRET", "");
-      const { generateUnsubscribeToken: freshGen, verifyUnsubscribeToken: freshVerify } =
-        await import("../../lib/email/unsubscribe-token");
-      expect(() => freshGen(testEmail)).toThrow(/UNSUBSCRIBE_TOKEN_SECRET is not set/);
+      const {
+        generateUnsubscribeToken: freshGen,
+        verifyUnsubscribeToken: freshVerify,
+      } = await import("../../lib/email/unsubscribe-token");
+      expect(() => freshGen(testEmail)).toThrow(
+        /UNSUBSCRIBE_TOKEN_SECRET is not set/,
+      );
       expect(freshVerify("any.token")).toBeNull();
     });
   });
@@ -514,7 +592,9 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
     }) {
       const signature = crypto
         .createHmac("sha256", secret)
-        .update(`${timestamp}\n${method.toUpperCase()}\n${path}\n${body}\n${requestId}`)
+        .update(
+          `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}\n${requestId}`,
+        )
         .digest("hex");
 
       const headers = new Headers({
@@ -587,7 +667,9 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
                   async run() {
                     const [key, expiresAt] = values as [string, number];
                     if (d1Db.has(key)) {
-                      throw new Error("UNIQUE constraint failed: ServiceAuthNonce.nonceKey");
+                      throw new Error(
+                        "UNIQUE constraint failed: ServiceAuthNonce.nonceKey",
+                      );
                     }
                     d1Db.set(key, expiresAt);
                     return { success: true, meta: { changes: 1 } };
@@ -639,7 +721,9 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
                     const [p1, p2] = values as [any, any];
                     if (query.includes("INSERT")) {
                       if (d1Db.has(p1)) {
-                        throw new Error("UNIQUE constraint failed: ServiceAuthNonce.nonceKey");
+                        throw new Error(
+                          "UNIQUE constraint failed: ServiceAuthNonce.nonceKey",
+                        );
                       }
                       d1Db.set(p1, p2);
                     } else if (query.includes("UPDATE")) {
@@ -650,7 +734,9 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
                   async first<T = unknown>() {
                     const key = values[0] as string;
                     const expiresAt = d1Db.get(key);
-                    return expiresAt !== undefined ? ({ expiresAt } as T) : null;
+                    return expiresAt !== undefined
+                      ? ({ expiresAt } as T)
+                      : null;
                   },
                 };
               },
@@ -806,7 +892,8 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
   // 5. AES-256-GCM SLICING & TAMPERING STRESS
   // =========================================================================
   describe("5. AES-256-GCM Slicing, Buffer Hardening & Tampering Stress", () => {
-    const rawKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const rawKey =
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     beforeEach(() => {
       process.env.ENCRYPTION_KEY = rawKey;
@@ -826,7 +913,9 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
 
           if (len === 0) {
             expect(() => decrypt("")).toThrow(/must be a non-empty string/);
-            expect(() => decryptOrPassthrough("")).toThrow(/must be a non-empty string/);
+            expect(() => decryptOrPassthrough("")).toThrow(
+              /must be a non-empty string/,
+            );
           } else {
             expect(() => decrypt(base64)).toThrow(/less than minimum 28 bytes/);
             // decryptOrPassthrough must fail closed on truncated buffer
@@ -860,7 +949,8 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
     });
 
     describe("Tampering Probing: IV, Auth Tag, and Ciphertext Bits", () => {
-      const samplePlaintext = "shpat_critical_merchant_shopify_access_token_12345";
+      const samplePlaintext =
+        "shpat_critical_merchant_shopify_access_token_12345";
 
       it("rejects tampering at every single byte of the 12-byte IV (bytes 0-11)", () => {
         const ciphertext = encrypt(samplePlaintext);
@@ -898,7 +988,11 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
         const ciphertext = encrypt(samplePlaintext);
         const rawBuf = Buffer.from(ciphertext, "base64");
 
-        const targetIndices = [28, 28 + Math.floor((rawBuf.length - 28) / 2), rawBuf.length - 1];
+        const targetIndices = [
+          28,
+          28 + Math.floor((rawBuf.length - 28) / 2),
+          rawBuf.length - 1,
+        ];
 
         for (const idx of targetIndices) {
           const tamperedBuf = Buffer.from(rawBuf);
@@ -946,8 +1040,12 @@ describe("M2 Adversarial Challenge Suite: TimingSafeEqual, Replay & Crypto Stres
         const validCiphertext = encrypt("secret");
         delete process.env.ENCRYPTION_KEY;
 
-        expect(() => decrypt(validCiphertext)).toThrow(/ENCRYPTION_KEY is not set/);
-        expect(() => decryptOrPassthrough(validCiphertext)).toThrow(/ENCRYPTION_KEY is not set/);
+        expect(() => decrypt(validCiphertext)).toThrow(
+          /ENCRYPTION_KEY is not set/,
+        );
+        expect(() => decryptOrPassthrough(validCiphertext)).toThrow(
+          /ENCRYPTION_KEY is not set/,
+        );
       });
 
       it("supports key rotation / key formats: base64 (32-byte) and hex (32-byte)", () => {

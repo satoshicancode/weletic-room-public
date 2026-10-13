@@ -1,26 +1,26 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import crypto from "node:crypto";
+import {
+  redirectRateLimiter,
+  webhookRateLimiter,
+} from "../../lib/weletic/edge-rate-limiter";
+import {
+  buildKvKey,
+  handleLinkRedirection,
+  KV_NEGATIVE_CACHE_TTL_SECONDS,
+  type LinkRecord,
+  type LinkRedirectorEnv,
+  type NegativeCacheSentinel,
+} from "../../workers/link-redirector/src/index";
 import {
   handleWebhookIngress,
   readLimitedBody,
   WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
   type WebhookIngressEnv,
 } from "../../workers/webhook-ingress/src/index";
-import {
-  handleLinkRedirection,
-  buildKvKey,
-  KV_NEGATIVE_CACHE_TTL_SECONDS,
-  type LinkRedirectorEnv,
-  type LinkRecord,
-  type NegativeCacheSentinel,
-} from "../../workers/link-redirector/src/index";
-import {
-  webhookRateLimiter,
-  redirectRateLimiter,
-} from "../../lib/weletic/edge-rate-limiter";
 
 const TEST_SECRET = "shpss_test_shopify_webhook_secret_32bytes_12345";
 
@@ -52,7 +52,9 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
         ORDER_WEBHOOK_QUEUE: mockQueue,
       };
 
-      const exactPayload = new Uint8Array(WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES);
+      const exactPayload = new Uint8Array(
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
+      );
       exactPayload.fill(0x57); // 'W'
       const signature = signPayload(exactPayload, TEST_SECRET);
 
@@ -88,7 +90,9 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
         ORDER_WEBHOOK_QUEUE: mockQueue,
       };
 
-      const oversizedPayload = new Uint8Array(WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 1);
+      const oversizedPayload = new Uint8Array(
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 1,
+      );
       oversizedPayload.fill(0x58); // 'X'
       const signature = signPayload(oversizedPayload, TEST_SECRET);
 
@@ -175,7 +179,10 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
         body: stream,
       } as unknown as Request;
 
-      const result = await readLimitedBody(mockRequest, WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES);
+      const result = await readLimitedBody(
+        mockRequest,
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
+      );
 
       expect(result.exceeded).toBe(true);
       expect(result.bytes.byteLength).toBe(0);
@@ -372,12 +379,18 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
           }
           return entry.value;
         }),
-        put: vi.fn(async (key: string, value: string, options?: { expirationTtl?: number }) => {
-          const expiresAt = options?.expirationTtl
-            ? Date.now() + options.expirationTtl * 1000
-            : undefined;
-          store.set(key, { value, expiresAt });
-        }),
+        put: vi.fn(
+          async (
+            key: string,
+            value: string,
+            options?: { expirationTtl?: number },
+          ) => {
+            const expiresAt = options?.expirationTtl
+              ? Date.now() + options.expirationTtl * 1000
+              : undefined;
+            store.set(key, { value, expiresAt });
+          },
+        ),
       };
     }
 
@@ -542,7 +555,9 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
       // Request 1: Initial load (queries D1, populates positive cache)
       const res1 = await handleLinkRedirection(new Request(reqUrl), env);
       expect(res1.status).toBe(302);
-      expect(res1.headers.get("Location")).toContain("/products/yenergy-leggings");
+      expect(res1.headers.get("Location")).toContain(
+        "/products/yenergy-leggings",
+      );
       expect(res1.headers.get("Location")).toContain("currency=USD");
       expect(res1.headers.get("Location")).toContain("via=summer-vip");
       expect(d1PrepareSpy).toHaveBeenCalledTimes(1);
@@ -558,7 +573,9 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
       for (let i = 2; i <= 50; i++) {
         const res = await handleLinkRedirection(new Request(reqUrl), env);
         expect(res.status).toBe(302);
-        expect(res.headers.get("Location")).toContain("/products/yenergy-leggings");
+        expect(res.headers.get("Location")).toContain(
+          "/products/yenergy-leggings",
+        );
       }
       expect(d1PrepareSpy).toHaveBeenCalledTimes(1); // STILL 1!
     });
@@ -591,19 +608,33 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
       };
 
       // 1. Probe non-existent slug
-      const resMissing = await handleLinkRedirection(new Request("https://yamax.com/missing-slug"), env);
+      const resMissing = await handleLinkRedirection(
+        new Request("https://yamax.com/missing-slug"),
+        env,
+      );
       expect(resMissing.status).toBe(404);
 
       // 2. Query valid slug immediately after
-      const resValid = await handleLinkRedirection(new Request("https://yamax.com/valid-slug"), env);
+      const resValid = await handleLinkRedirection(
+        new Request("https://yamax.com/valid-slug"),
+        env,
+      );
       expect(resValid.status).toBe(302);
-      expect(resValid.headers.get("Location")).toContain("https://yamax.com/promo");
+      expect(resValid.headers.get("Location")).toContain(
+        "https://yamax.com/promo",
+      );
 
       // Verify KV stores both distinct keys accurately
-      const missingSentinel = await kv.get(buildKvKey("yamax.com", "missing-slug"), "json");
+      const missingSentinel = await kv.get(
+        buildKvKey("yamax.com", "missing-slug"),
+        "json",
+      );
       expect(missingSentinel.notFound).toBe(true);
 
-      const validCache = await kv.get(buildKvKey("yamax.com", "valid-slug"), "json");
+      const validCache = await kv.get(
+        buildKvKey("yamax.com", "valid-slug"),
+        "json",
+      );
       expect(validCache.notFound).toBeUndefined();
       expect(validCache.id).toBe("lnk_valid");
     });
@@ -628,7 +659,10 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
 
       // 20 requests to soft-deleted link
       for (let i = 0; i < 20; i++) {
-        const res = await handleLinkRedirection(new Request(`https://yamax.com/${slug}`), env);
+        const res = await handleLinkRedirection(
+          new Request(`https://yamax.com/${slug}`),
+          env,
+        );
         expect(res.status).toBe(404);
       }
 
@@ -655,7 +689,10 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
       const slug = "archived-campaign-2024";
 
       for (let i = 0; i < 20; i++) {
-        const res = await handleLinkRedirection(new Request(`https://yamax.com/${slug}`), env);
+        const res = await handleLinkRedirection(
+          new Request(`https://yamax.com/${slug}`),
+          env,
+        );
         expect(res.status).toBe(404);
       }
 
@@ -679,7 +716,10 @@ describe("Empirical Challenger M4_1: Edge Payload Limits & D1 Quota Penetration"
         DB: { prepare: d1PrepareSpy } as any,
       };
 
-      const res = await handleLinkRedirection(new Request("https://yamax.com/error-prone-slug"), env);
+      const res = await handleLinkRedirection(
+        new Request("https://yamax.com/error-prone-slug"),
+        env,
+      );
       expect(res.status).toBe(404);
       expect(await res.text()).toBe("Not Found");
     });

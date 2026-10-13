@@ -15,8 +15,7 @@ export function assertE2EWorkspace(
     });
   }
 
-  const allowedWorkspaceId =
-    process.env.E2E_WORKSPACE_ID || ACME_WORKSPACE_ID;
+  const allowedWorkspaceId = process.env.E2E_WORKSPACE_ID || ACME_WORKSPACE_ID;
 
   if (workspace.id !== allowedWorkspaceId) {
     throw new DubApiError({

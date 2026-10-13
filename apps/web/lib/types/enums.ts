@@ -6,20 +6,23 @@ export const BountyPerformanceScope = {
   new: "new",
   lifetime: "lifetime",
 } as const;
-export type BountyPerformanceScope = (typeof BountyPerformanceScope)[keyof typeof BountyPerformanceScope];
+export type BountyPerformanceScope =
+  (typeof BountyPerformanceScope)[keyof typeof BountyPerformanceScope];
 
 export const BountyStartMode = {
   absolute: "absolute",
   relative: "relative",
 } as const;
-export type BountyStartMode = (typeof BountyStartMode)[keyof typeof BountyStartMode];
+export type BountyStartMode =
+  (typeof BountyStartMode)[keyof typeof BountyStartMode];
 
 export const BountySubmissionFrequency = {
   day: "day",
   week: "week",
   month: "month",
 } as const;
-export type BountySubmissionFrequency = (typeof BountySubmissionFrequency)[keyof typeof BountySubmissionFrequency];
+export type BountySubmissionFrequency =
+  (typeof BountySubmissionFrequency)[keyof typeof BountySubmissionFrequency];
 
 export const BountySubmissionRejectionReason = {
   invalidProof: "invalidProof",
@@ -28,7 +31,8 @@ export const BountySubmissionRejectionReason = {
   didNotMeetCriteria: "didNotMeetCriteria",
   other: "other",
 } as const;
-export type BountySubmissionRejectionReason = (typeof BountySubmissionRejectionReason)[keyof typeof BountySubmissionRejectionReason];
+export type BountySubmissionRejectionReason =
+  (typeof BountySubmissionRejectionReason)[keyof typeof BountySubmissionRejectionReason];
 
 export const BountySubmissionStatus = {
   draft: "draft",
@@ -36,7 +40,8 @@ export const BountySubmissionStatus = {
   approved: "approved",
   rejected: "rejected",
 } as const;
-export type BountySubmissionStatus = (typeof BountySubmissionStatus)[keyof typeof BountySubmissionStatus];
+export type BountySubmissionStatus =
+  (typeof BountySubmissionStatus)[keyof typeof BountySubmissionStatus];
 
 export const BountyType = {
   performance: "performance",
@@ -53,7 +58,8 @@ export const CampaignStatus = {
   sent: "sent",
   canceled: "canceled",
 } as const;
-export type CampaignStatus = (typeof CampaignStatus)[keyof typeof CampaignStatus];
+export type CampaignStatus =
+  (typeof CampaignStatus)[keyof typeof CampaignStatus];
 
 export const CampaignType = {
   marketing: "marketing",
@@ -87,7 +93,8 @@ export const CommissionStatus = {
   canceled: "canceled",
   hold: "hold",
 } as const;
-export type CommissionStatus = (typeof CommissionStatus)[keyof typeof CommissionStatus];
+export type CommissionStatus =
+  (typeof CommissionStatus)[keyof typeof CommissionStatus];
 
 export const CommissionType = {
   click: "click",
@@ -96,13 +103,15 @@ export const CommissionType = {
   referral: "referral",
   custom: "custom",
 } as const;
-export type CommissionType = (typeof CommissionType)[keyof typeof CommissionType];
+export type CommissionType =
+  (typeof CommissionType)[keyof typeof CommissionType];
 
 export const DiscountProvider = {
   stripe: "stripe",
   shopify: "shopify",
 } as const;
-export type DiscountProvider = (typeof DiscountProvider)[keyof typeof DiscountProvider];
+export type DiscountProvider =
+  (typeof DiscountProvider)[keyof typeof DiscountProvider];
 
 export const DubProduct = {
   program: "program",
@@ -117,7 +126,8 @@ export const EmailDomainStatus = {
   temporary_failure: "temporary_failure",
   not_started: "not_started",
 } as const;
-export type EmailDomainStatus = (typeof EmailDomainStatus)[keyof typeof EmailDomainStatus];
+export type EmailDomainStatus =
+  (typeof EmailDomainStatus)[keyof typeof EmailDomainStatus];
 
 export const EventType = {
   click: "click",
@@ -131,7 +141,8 @@ export const FolderAccessLevel = {
   read: "read",
   write: "write",
 } as const;
-export type FolderAccessLevel = (typeof FolderAccessLevel)[keyof typeof FolderAccessLevel];
+export type FolderAccessLevel =
+  (typeof FolderAccessLevel)[keyof typeof FolderAccessLevel];
 
 export const FolderType = {
   default: "default",
@@ -144,21 +155,24 @@ export const FolderUserRole = {
   editor: "editor",
   viewer: "viewer",
 } as const;
-export type FolderUserRole = (typeof FolderUserRole)[keyof typeof FolderUserRole];
+export type FolderUserRole =
+  (typeof FolderUserRole)[keyof typeof FolderUserRole];
 
 export const FraudAlertStatus = {
   pending: "pending",
   confirmed: "confirmed",
   dismissed: "dismissed",
 } as const;
-export type FraudAlertStatus = (typeof FraudAlertStatus)[keyof typeof FraudAlertStatus];
+export type FraudAlertStatus =
+  (typeof FraudAlertStatus)[keyof typeof FraudAlertStatus];
 
 export const FraudEventStatus = {
   pending: "pending",
   resolved: "resolved",
   expired: "expired",
 } as const;
-export type FraudEventStatus = (typeof FraudEventStatus)[keyof typeof FraudEventStatus];
+export type FraudEventStatus =
+  (typeof FraudEventStatus)[keyof typeof FraudEventStatus];
 
 export const FraudRuleType = {
   customerEmailMatch: "customerEmailMatch",
@@ -180,7 +194,8 @@ export const IdentityVerificationStatus = {
   abandoned: "abandoned",
   review: "review",
 } as const;
-export type IdentityVerificationStatus = (typeof IdentityVerificationStatus)[keyof typeof IdentityVerificationStatus];
+export type IdentityVerificationStatus =
+  (typeof IdentityVerificationStatus)[keyof typeof IdentityVerificationStatus];
 
 export const IndustryInterest = {
   SaaS: "SaaS",
@@ -208,7 +223,8 @@ export const IndustryInterest = {
   Sports: "Sports",
   Science_And_Engineering: "Science_And_Engineering",
 } as const;
-export type IndustryInterest = (typeof IndustryInterest)[keyof typeof IndustryInterest];
+export type IndustryInterest =
+  (typeof IndustryInterest)[keyof typeof IndustryInterest];
 
 export const InvoiceStatus = {
   processing: "processing",
@@ -243,14 +259,16 @@ export const MonthlyTraffic = {
   FiftyThousandToOneHundredThousand: "FiftyThousandToOneHundredThousand",
   OneHundredThousandPlus: "OneHundredThousandPlus",
 } as const;
-export type MonthlyTraffic = (typeof MonthlyTraffic)[keyof typeof MonthlyTraffic];
+export type MonthlyTraffic =
+  (typeof MonthlyTraffic)[keyof typeof MonthlyTraffic];
 
 export const NotificationEmailType = {
   Message: "Message",
   Bounty: "Bounty",
   Campaign: "Campaign",
 } as const;
-export type NotificationEmailType = (typeof NotificationEmailType)[keyof typeof NotificationEmailType];
+export type NotificationEmailType =
+  (typeof NotificationEmailType)[keyof typeof NotificationEmailType];
 
 export const PartnerBannedReason = {
   tos_violation: "tos_violation",
@@ -260,14 +278,16 @@ export const PartnerBannedReason = {
   spam: "spam",
   brand_abuse: "brand_abuse",
 } as const;
-export type PartnerBannedReason = (typeof PartnerBannedReason)[keyof typeof PartnerBannedReason];
+export type PartnerBannedReason =
+  (typeof PartnerBannedReason)[keyof typeof PartnerBannedReason];
 
 export const PartnerLinkStructure = {
   short: "short",
   query: "query",
   path: "path",
 } as const;
-export type PartnerLinkStructure = (typeof PartnerLinkStructure)[keyof typeof PartnerLinkStructure];
+export type PartnerLinkStructure =
+  (typeof PartnerLinkStructure)[keyof typeof PartnerLinkStructure];
 
 export const PartnerNetworkStatus = {
   draft: "draft",
@@ -276,7 +296,8 @@ export const PartnerNetworkStatus = {
   rejected: "rejected",
   trusted: "trusted",
 } as const;
-export type PartnerNetworkStatus = (typeof PartnerNetworkStatus)[keyof typeof PartnerNetworkStatus];
+export type PartnerNetworkStatus =
+  (typeof PartnerNetworkStatus)[keyof typeof PartnerNetworkStatus];
 
 export const PartnerPayoutMethod = {
   connect: "connect",
@@ -284,13 +305,15 @@ export const PartnerPayoutMethod = {
   paypal: "paypal",
   tremendous: "tremendous",
 } as const;
-export type PartnerPayoutMethod = (typeof PartnerPayoutMethod)[keyof typeof PartnerPayoutMethod];
+export type PartnerPayoutMethod =
+  (typeof PartnerPayoutMethod)[keyof typeof PartnerPayoutMethod];
 
 export const PartnerProfileType = {
   individual: "individual",
   company: "company",
 } as const;
-export type PartnerProfileType = (typeof PartnerProfileType)[keyof typeof PartnerProfileType];
+export type PartnerProfileType =
+  (typeof PartnerProfileType)[keyof typeof PartnerProfileType];
 
 export const PartnerRole = {
   owner: "owner",
@@ -346,7 +369,8 @@ export const PostbackReceiver = {
   custom: "custom",
   slack: "slack",
 } as const;
-export type PostbackReceiver = (typeof PostbackReceiver)[keyof typeof PostbackReceiver];
+export type PostbackReceiver =
+  (typeof PostbackReceiver)[keyof typeof PostbackReceiver];
 
 export const PreferredEarningStructure = {
   Revenue_Share: "Revenue_Share",
@@ -355,7 +379,8 @@ export const PreferredEarningStructure = {
   Per_Click: "Per_Click",
   One_Time_Payment: "One_Time_Payment",
 } as const;
-export type PreferredEarningStructure = (typeof PreferredEarningStructure)[keyof typeof PreferredEarningStructure];
+export type PreferredEarningStructure =
+  (typeof PreferredEarningStructure)[keyof typeof PreferredEarningStructure];
 
 export const ProgramApplicationRejectionReason = {
   needsMoreDetail: "needsMoreDetail",
@@ -363,7 +388,8 @@ export const ProgramApplicationRejectionReason = {
   notTheRightFit: "notTheRightFit",
   other: "other",
 } as const;
-export type ProgramApplicationRejectionReason = (typeof ProgramApplicationRejectionReason)[keyof typeof ProgramApplicationRejectionReason];
+export type ProgramApplicationRejectionReason =
+  (typeof ProgramApplicationRejectionReason)[keyof typeof ProgramApplicationRejectionReason];
 
 export const ProgramEnrollmentStatus = {
   pending: "pending",
@@ -375,21 +401,24 @@ export const ProgramEnrollmentStatus = {
   banned: "banned",
   archived: "archived",
 } as const;
-export type ProgramEnrollmentStatus = (typeof ProgramEnrollmentStatus)[keyof typeof ProgramEnrollmentStatus];
+export type ProgramEnrollmentStatus =
+  (typeof ProgramEnrollmentStatus)[keyof typeof ProgramEnrollmentStatus];
 
 export const ProgramPayoutMode = {
   internal: "internal",
   hybrid: "hybrid",
   external: "external",
 } as const;
-export type ProgramPayoutMode = (typeof ProgramPayoutMode)[keyof typeof ProgramPayoutMode];
+export type ProgramPayoutMode =
+  (typeof ProgramPayoutMode)[keyof typeof ProgramPayoutMode];
 
 export const ReapplicationTimeframe = {
   instant: "instant",
   standard: "standard",
   never: "never",
 } as const;
-export type ReapplicationTimeframe = (typeof ReapplicationTimeframe)[keyof typeof ReapplicationTimeframe];
+export type ReapplicationTimeframe =
+  (typeof ReapplicationTimeframe)[keyof typeof ReapplicationTimeframe];
 
 export const RewardSpendLimitInterval = {
   allTime: "allTime",
@@ -397,13 +426,15 @@ export const RewardSpendLimitInterval = {
   week: "week",
   month: "month",
 } as const;
-export type RewardSpendLimitInterval = (typeof RewardSpendLimitInterval)[keyof typeof RewardSpendLimitInterval];
+export type RewardSpendLimitInterval =
+  (typeof RewardSpendLimitInterval)[keyof typeof RewardSpendLimitInterval];
 
 export const RewardStructure = {
   percentage: "percentage",
   flat: "flat",
 } as const;
-export type RewardStructure = (typeof RewardStructure)[keyof typeof RewardStructure];
+export type RewardStructure =
+  (typeof RewardStructure)[keyof typeof RewardStructure];
 
 export const SalesChannel = {
   Blogs: "Blogs",
@@ -425,7 +456,8 @@ export const SubmittedLeadStatus = {
   closedWon: "closedWon",
   closedLost: "closedLost",
 } as const;
-export type SubmittedLeadStatus = (typeof SubmittedLeadStatus)[keyof typeof SubmittedLeadStatus];
+export type SubmittedLeadStatus =
+  (typeof SubmittedLeadStatus)[keyof typeof SubmittedLeadStatus];
 
 export const WebhookReceiver = {
   user: "user",
@@ -434,13 +466,15 @@ export const WebhookReceiver = {
   slack: "slack",
   segment: "segment",
 } as const;
-export type WebhookReceiver = (typeof WebhookReceiver)[keyof typeof WebhookReceiver];
+export type WebhookReceiver =
+  (typeof WebhookReceiver)[keyof typeof WebhookReceiver];
 
 export const WeleticCommissionRuleType = {
   percentage: "percentage",
   fixed: "fixed",
 } as const;
-export type WeleticCommissionRuleType = (typeof WeleticCommissionRuleType)[keyof typeof WeleticCommissionRuleType];
+export type WeleticCommissionRuleType =
+  (typeof WeleticCommissionRuleType)[keyof typeof WeleticCommissionRuleType];
 
 export const WeleticCommissionScope = {
   program: "program",
@@ -451,7 +485,8 @@ export const WeleticCommissionScope = {
   promotion: "promotion",
   tag: "tag",
 } as const;
-export type WeleticCommissionScope = (typeof WeleticCommissionScope)[keyof typeof WeleticCommissionScope];
+export type WeleticCommissionScope =
+  (typeof WeleticCommissionScope)[keyof typeof WeleticCommissionScope];
 
 export const WeleticComplianceRequestStatus = {
   pending: "pending",
@@ -460,7 +495,8 @@ export const WeleticComplianceRequestStatus = {
   completed: "completed",
   dead_letter: "dead_letter",
 } as const;
-export type WeleticComplianceRequestStatus = (typeof WeleticComplianceRequestStatus)[keyof typeof WeleticComplianceRequestStatus];
+export type WeleticComplianceRequestStatus =
+  (typeof WeleticComplianceRequestStatus)[keyof typeof WeleticComplianceRequestStatus];
 
 export const WeleticComplianceRequestType = {
   customer_data_request: "customer_data_request",
@@ -468,53 +504,61 @@ export const WeleticComplianceRequestType = {
   shop_redact: "shop_redact",
   app_uninstalled: "app_uninstalled",
 } as const;
-export type WeleticComplianceRequestType = (typeof WeleticComplianceRequestType)[keyof typeof WeleticComplianceRequestType];
+export type WeleticComplianceRequestType =
+  (typeof WeleticComplianceRequestType)[keyof typeof WeleticComplianceRequestType];
 
 export const WeleticCustomerClassification = {
   new: "new",
   returning: "returning",
   unknown: "unknown",
 } as const;
-export type WeleticCustomerClassification = (typeof WeleticCustomerClassification)[keyof typeof WeleticCustomerClassification];
+export type WeleticCustomerClassification =
+  (typeof WeleticCustomerClassification)[keyof typeof WeleticCustomerClassification];
 
 export const WeleticCustomerPrivacyIdentityKind = {
   customer_id: "customer_id",
   customer_email: "customer_email",
 } as const;
-export type WeleticCustomerPrivacyIdentityKind = (typeof WeleticCustomerPrivacyIdentityKind)[keyof typeof WeleticCustomerPrivacyIdentityKind];
+export type WeleticCustomerPrivacyIdentityKind =
+  (typeof WeleticCustomerPrivacyIdentityKind)[keyof typeof WeleticCustomerPrivacyIdentityKind];
 
 export const WeleticEarningRuleType = {
   multiplier: "multiplier",
   fixed_points: "fixed_points",
 } as const;
-export type WeleticEarningRuleType = (typeof WeleticEarningRuleType)[keyof typeof WeleticEarningRuleType];
+export type WeleticEarningRuleType =
+  (typeof WeleticEarningRuleType)[keyof typeof WeleticEarningRuleType];
 
 export const WeleticFixedAmountMode = {
   order: "order",
   line: "line",
   item: "item",
 } as const;
-export type WeleticFixedAmountMode = (typeof WeleticFixedAmountMode)[keyof typeof WeleticFixedAmountMode];
+export type WeleticFixedAmountMode =
+  (typeof WeleticFixedAmountMode)[keyof typeof WeleticFixedAmountMode];
 
 export const WeleticLedgerEntryType = {
   sale: "sale",
   reversal: "reversal",
   adjustment: "adjustment",
 } as const;
-export type WeleticLedgerEntryType = (typeof WeleticLedgerEntryType)[keyof typeof WeleticLedgerEntryType];
+export type WeleticLedgerEntryType =
+  (typeof WeleticLedgerEntryType)[keyof typeof WeleticLedgerEntryType];
 
 export const WeleticLoyaltyAccountStatus = {
   active: "active",
   suspended: "suspended",
   closed: "closed",
 } as const;
-export type WeleticLoyaltyAccountStatus = (typeof WeleticLoyaltyAccountStatus)[keyof typeof WeleticLoyaltyAccountStatus];
+export type WeleticLoyaltyAccountStatus =
+  (typeof WeleticLoyaltyAccountStatus)[keyof typeof WeleticLoyaltyAccountStatus];
 
 export const WeleticLoyaltyBackfillCreditStatus = {
   claimed: "claimed",
   credited: "credited",
 } as const;
-export type WeleticLoyaltyBackfillCreditStatus = (typeof WeleticLoyaltyBackfillCreditStatus)[keyof typeof WeleticLoyaltyBackfillCreditStatus];
+export type WeleticLoyaltyBackfillCreditStatus =
+  (typeof WeleticLoyaltyBackfillCreditStatus)[keyof typeof WeleticLoyaltyBackfillCreditStatus];
 
 export const WeleticLoyaltyBackfillJobStatus = {
   pending: "pending",
@@ -525,7 +569,8 @@ export const WeleticLoyaltyBackfillJobStatus = {
   failed: "failed",
   cancelled: "cancelled",
 } as const;
-export type WeleticLoyaltyBackfillJobStatus = (typeof WeleticLoyaltyBackfillJobStatus)[keyof typeof WeleticLoyaltyBackfillJobStatus];
+export type WeleticLoyaltyBackfillJobStatus =
+  (typeof WeleticLoyaltyBackfillJobStatus)[keyof typeof WeleticLoyaltyBackfillJobStatus];
 
 export const WeleticLoyaltyEarnGrantStatus = {
   pending: "pending",
@@ -535,7 +580,8 @@ export const WeleticLoyaltyEarnGrantStatus = {
   reversed: "reversed",
   voided: "voided",
 } as const;
-export type WeleticLoyaltyEarnGrantStatus = (typeof WeleticLoyaltyEarnGrantStatus)[keyof typeof WeleticLoyaltyEarnGrantStatus];
+export type WeleticLoyaltyEarnGrantStatus =
+  (typeof WeleticLoyaltyEarnGrantStatus)[keyof typeof WeleticLoyaltyEarnGrantStatus];
 
 export const WeleticLoyaltyImportRowStatus = {
   pending: "pending",
@@ -543,7 +589,8 @@ export const WeleticLoyaltyImportRowStatus = {
   rolled_back: "rolled_back",
   contained: "contained",
 } as const;
-export type WeleticLoyaltyImportRowStatus = (typeof WeleticLoyaltyImportRowStatus)[keyof typeof WeleticLoyaltyImportRowStatus];
+export type WeleticLoyaltyImportRowStatus =
+  (typeof WeleticLoyaltyImportRowStatus)[keyof typeof WeleticLoyaltyImportRowStatus];
 
 export const WeleticLoyaltyImportStatus = {
   preview: "preview",
@@ -554,7 +601,8 @@ export const WeleticLoyaltyImportStatus = {
   contained: "contained",
   cancelled: "cancelled",
 } as const;
-export type WeleticLoyaltyImportStatus = (typeof WeleticLoyaltyImportStatus)[keyof typeof WeleticLoyaltyImportStatus];
+export type WeleticLoyaltyImportStatus =
+  (typeof WeleticLoyaltyImportStatus)[keyof typeof WeleticLoyaltyImportStatus];
 
 export const WeleticLoyaltyOutboxJobStatus = {
   pending: "pending",
@@ -564,7 +612,8 @@ export const WeleticLoyaltyOutboxJobStatus = {
   dead_letter: "dead_letter",
   cancelled: "cancelled",
 } as const;
-export type WeleticLoyaltyOutboxJobStatus = (typeof WeleticLoyaltyOutboxJobStatus)[keyof typeof WeleticLoyaltyOutboxJobStatus];
+export type WeleticLoyaltyOutboxJobStatus =
+  (typeof WeleticLoyaltyOutboxJobStatus)[keyof typeof WeleticLoyaltyOutboxJobStatus];
 
 export const WeleticLoyaltyOutboxJobType = {
   HOLDING_PERIOD_RELEASE: "HOLDING_PERIOD_RELEASE",
@@ -586,7 +635,8 @@ export const WeleticLoyaltyOutboxJobType = {
   REVIEW_POINTS_RECOVERY: "REVIEW_POINTS_RECOVERY",
   ANONYMOUS_REFERRAL_EMAIL: "ANONYMOUS_REFERRAL_EMAIL",
 } as const;
-export type WeleticLoyaltyOutboxJobType = (typeof WeleticLoyaltyOutboxJobType)[keyof typeof WeleticLoyaltyOutboxJobType];
+export type WeleticLoyaltyOutboxJobType =
+  (typeof WeleticLoyaltyOutboxJobType)[keyof typeof WeleticLoyaltyOutboxJobType];
 
 export const WeleticLoyaltyReferralStatus = {
   pending: "pending",
@@ -595,7 +645,8 @@ export const WeleticLoyaltyReferralStatus = {
   cancelled: "cancelled",
   fraud_blocked: "fraud_blocked",
 } as const;
-export type WeleticLoyaltyReferralStatus = (typeof WeleticLoyaltyReferralStatus)[keyof typeof WeleticLoyaltyReferralStatus];
+export type WeleticLoyaltyReferralStatus =
+  (typeof WeleticLoyaltyReferralStatus)[keyof typeof WeleticLoyaltyReferralStatus];
 
 export const WeleticLoyaltyStatus = {
   draft: "draft",
@@ -603,7 +654,8 @@ export const WeleticLoyaltyStatus = {
   active: "active",
   disabled: "disabled",
 } as const;
-export type WeleticLoyaltyStatus = (typeof WeleticLoyaltyStatus)[keyof typeof WeleticLoyaltyStatus];
+export type WeleticLoyaltyStatus =
+  (typeof WeleticLoyaltyStatus)[keyof typeof WeleticLoyaltyStatus];
 
 export const WeleticLoyaltyTierChangeReason = {
   threshold_reached: "threshold_reached",
@@ -613,7 +665,8 @@ export const WeleticLoyaltyTierChangeReason = {
   grace_period_expired: "grace_period_expired",
   program_activation: "program_activation",
 } as const;
-export type WeleticLoyaltyTierChangeReason = (typeof WeleticLoyaltyTierChangeReason)[keyof typeof WeleticLoyaltyTierChangeReason];
+export type WeleticLoyaltyTierChangeReason =
+  (typeof WeleticLoyaltyTierChangeReason)[keyof typeof WeleticLoyaltyTierChangeReason];
 
 export const WeleticOrderStatus = {
   pending: "pending",
@@ -622,7 +675,8 @@ export const WeleticOrderStatus = {
   refunded: "refunded",
   voided: "voided",
 } as const;
-export type WeleticOrderStatus = (typeof WeleticOrderStatus)[keyof typeof WeleticOrderStatus];
+export type WeleticOrderStatus =
+  (typeof WeleticOrderStatus)[keyof typeof WeleticOrderStatus];
 
 export const WeleticPayoutProfileStatus = {
   draft: "draft",
@@ -630,7 +684,8 @@ export const WeleticPayoutProfileStatus = {
   verified: "verified",
   disabled: "disabled",
 } as const;
-export type WeleticPayoutProfileStatus = (typeof WeleticPayoutProfileStatus)[keyof typeof WeleticPayoutProfileStatus];
+export type WeleticPayoutProfileStatus =
+  (typeof WeleticPayoutProfileStatus)[keyof typeof WeleticPayoutProfileStatus];
 
 export const WeleticPointsLedgerEntryType = {
   EARN_ORDER: "EARN_ORDER",
@@ -644,7 +699,8 @@ export const WeleticPointsLedgerEntryType = {
   BACKFILL_CORRECTION: "BACKFILL_CORRECTION",
   TIER_BONUS: "TIER_BONUS",
 } as const;
-export type WeleticPointsLedgerEntryType = (typeof WeleticPointsLedgerEntryType)[keyof typeof WeleticPointsLedgerEntryType];
+export type WeleticPointsLedgerEntryType =
+  (typeof WeleticPointsLedgerEntryType)[keyof typeof WeleticPointsLedgerEntryType];
 
 export const WeleticProductReviewStatus = {
   pending: "pending",
@@ -653,21 +709,24 @@ export const WeleticProductReviewStatus = {
   rejected: "rejected",
   redacted: "redacted",
 } as const;
-export type WeleticProductReviewStatus = (typeof WeleticProductReviewStatus)[keyof typeof WeleticProductReviewStatus];
+export type WeleticProductReviewStatus =
+  (typeof WeleticProductReviewStatus)[keyof typeof WeleticProductReviewStatus];
 
 export const WeleticProductStatus = {
   active: "active",
   draft: "draft",
   archived: "archived",
 } as const;
-export type WeleticProductStatus = (typeof WeleticProductStatus)[keyof typeof WeleticProductStatus];
+export type WeleticProductStatus =
+  (typeof WeleticProductStatus)[keyof typeof WeleticProductStatus];
 
 export const WeleticReconciliationStatus = {
   open: "open",
   resolved: "resolved",
   ignored: "ignored",
 } as const;
-export type WeleticReconciliationStatus = (typeof WeleticReconciliationStatus)[keyof typeof WeleticReconciliationStatus];
+export type WeleticReconciliationStatus =
+  (typeof WeleticReconciliationStatus)[keyof typeof WeleticReconciliationStatus];
 
 export const WeleticRedemptionStatus = {
   active: "active",
@@ -678,13 +737,15 @@ export const WeleticRedemptionStatus = {
   cancelled: "cancelled",
   expired: "expired",
 } as const;
-export type WeleticRedemptionStatus = (typeof WeleticRedemptionStatus)[keyof typeof WeleticRedemptionStatus];
+export type WeleticRedemptionStatus =
+  (typeof WeleticRedemptionStatus)[keyof typeof WeleticRedemptionStatus];
 
 export const WeleticReferralRewardKind = {
   points: "points",
   coupon: "coupon",
 } as const;
-export type WeleticReferralRewardKind = (typeof WeleticReferralRewardKind)[keyof typeof WeleticReferralRewardKind];
+export type WeleticReferralRewardKind =
+  (typeof WeleticReferralRewardKind)[keyof typeof WeleticReferralRewardKind];
 
 export const WeleticReviewMediaStatus = {
   reserved: "reserved",
@@ -692,13 +753,15 @@ export const WeleticReviewMediaStatus = {
   deletion_pending: "deletion_pending",
   deleted: "deleted",
 } as const;
-export type WeleticReviewMediaStatus = (typeof WeleticReviewMediaStatus)[keyof typeof WeleticReviewMediaStatus];
+export type WeleticReviewMediaStatus =
+  (typeof WeleticReviewMediaStatus)[keyof typeof WeleticReviewMediaStatus];
 
 export const WeleticReviewOwnerPrivacyState = {
   active: "active",
   redacted: "redacted",
 } as const;
-export type WeleticReviewOwnerPrivacyState = (typeof WeleticReviewOwnerPrivacyState)[keyof typeof WeleticReviewOwnerPrivacyState];
+export type WeleticReviewOwnerPrivacyState =
+  (typeof WeleticReviewOwnerPrivacyState)[keyof typeof WeleticReviewOwnerPrivacyState];
 
 export const WeleticReviewRequestStatus = {
   queued: "queued",
@@ -709,7 +772,8 @@ export const WeleticReviewRequestStatus = {
   cancelled: "cancelled",
   failed: "failed",
 } as const;
-export type WeleticReviewRequestStatus = (typeof WeleticReviewRequestStatus)[keyof typeof WeleticReviewRequestStatus];
+export type WeleticReviewRequestStatus =
+  (typeof WeleticReviewRequestStatus)[keyof typeof WeleticReviewRequestStatus];
 
 export const WeleticReviewRewardStatus = {
   pending: "pending",
@@ -720,34 +784,39 @@ export const WeleticReviewRewardStatus = {
   recovery_pending: "recovery_pending",
   unrecoverable: "unrecoverable",
 } as const;
-export type WeleticReviewRewardStatus = (typeof WeleticReviewRewardStatus)[keyof typeof WeleticReviewRewardStatus];
+export type WeleticReviewRewardStatus =
+  (typeof WeleticReviewRewardStatus)[keyof typeof WeleticReviewRewardStatus];
 
 export const WeleticRewardArtifactKind = {
   discount_code: "discount_code",
   gift_card: "gift_card",
   store_credit: "store_credit",
 } as const;
-export type WeleticRewardArtifactKind = (typeof WeleticRewardArtifactKind)[keyof typeof WeleticRewardArtifactKind];
+export type WeleticRewardArtifactKind =
+  (typeof WeleticRewardArtifactKind)[keyof typeof WeleticRewardArtifactKind];
 
 export const WeleticRewardExchangeType = {
   fixed: "fixed",
   incremental: "incremental",
 } as const;
-export type WeleticRewardExchangeType = (typeof WeleticRewardExchangeType)[keyof typeof WeleticRewardExchangeType];
+export type WeleticRewardExchangeType =
+  (typeof WeleticRewardExchangeType)[keyof typeof WeleticRewardExchangeType];
 
 export const WeleticRewardSalesChannel = {
   online_store: "online_store",
   pos: "pos",
   both: "both",
 } as const;
-export type WeleticRewardSalesChannel = (typeof WeleticRewardSalesChannel)[keyof typeof WeleticRewardSalesChannel];
+export type WeleticRewardSalesChannel =
+  (typeof WeleticRewardSalesChannel)[keyof typeof WeleticRewardSalesChannel];
 
 export const WeleticRewardStatus = {
   active: "active",
   inactive: "inactive",
   archived: "archived",
 } as const;
-export type WeleticRewardStatus = (typeof WeleticRewardStatus)[keyof typeof WeleticRewardStatus];
+export type WeleticRewardStatus =
+  (typeof WeleticRewardStatus)[keyof typeof WeleticRewardStatus];
 
 export const WeleticRewardType = {
   amount_off: "amount_off",
@@ -757,7 +826,8 @@ export const WeleticRewardType = {
   gift_card: "gift_card",
   store_credit: "store_credit",
 } as const;
-export type WeleticRewardType = (typeof WeleticRewardType)[keyof typeof WeleticRewardType];
+export type WeleticRewardType =
+  (typeof WeleticRewardType)[keyof typeof WeleticRewardType];
 
 export const WeleticShopifyPendingInstallationState = {
   pending_approval: "pending_approval",
@@ -765,34 +835,39 @@ export const WeleticShopifyPendingInstallationState = {
   uninstalled: "uninstalled",
   redacted: "redacted",
 } as const;
-export type WeleticShopifyPendingInstallationState = (typeof WeleticShopifyPendingInstallationState)[keyof typeof WeleticShopifyPendingInstallationState];
+export type WeleticShopifyPendingInstallationState =
+  (typeof WeleticShopifyPendingInstallationState)[keyof typeof WeleticShopifyPendingInstallationState];
 
 export const WeleticShopifyStoreAccessState = {
   pending_approval: "pending_approval",
   active: "active",
   suspended: "suspended",
 } as const;
-export type WeleticShopifyStoreAccessState = (typeof WeleticShopifyStoreAccessState)[keyof typeof WeleticShopifyStoreAccessState];
+export type WeleticShopifyStoreAccessState =
+  (typeof WeleticShopifyStoreAccessState)[keyof typeof WeleticShopifyStoreAccessState];
 
 export const WeleticShopifyStoreComplianceState = {
   active: "active",
   frozen: "frozen",
   redacted: "redacted",
 } as const;
-export type WeleticShopifyStoreComplianceState = (typeof WeleticShopifyStoreComplianceState)[keyof typeof WeleticShopifyStoreComplianceState];
+export type WeleticShopifyStoreComplianceState =
+  (typeof WeleticShopifyStoreComplianceState)[keyof typeof WeleticShopifyStoreComplianceState];
 
 export const WeleticShopperDeliveryState = {
   attempted: "attempted",
   sent: "sent",
 } as const;
-export type WeleticShopperDeliveryState = (typeof WeleticShopperDeliveryState)[keyof typeof WeleticShopperDeliveryState];
+export type WeleticShopperDeliveryState =
+  (typeof WeleticShopperDeliveryState)[keyof typeof WeleticShopperDeliveryState];
 
 export const WeleticStoreReviewSource = {
   invitation: "invitation",
   open: "open",
   imported: "imported",
 } as const;
-export type WeleticStoreReviewSource = (typeof WeleticStoreReviewSource)[keyof typeof WeleticStoreReviewSource];
+export type WeleticStoreReviewSource =
+  (typeof WeleticStoreReviewSource)[keyof typeof WeleticStoreReviewSource];
 
 export const WeleticStoreReviewStatus = {
   pending: "pending",
@@ -801,7 +876,8 @@ export const WeleticStoreReviewStatus = {
   rejected: "rejected",
   redacted: "redacted",
 } as const;
-export type WeleticStoreReviewStatus = (typeof WeleticStoreReviewStatus)[keyof typeof WeleticStoreReviewStatus];
+export type WeleticStoreReviewStatus =
+  (typeof WeleticStoreReviewStatus)[keyof typeof WeleticStoreReviewStatus];
 
 export const WeleticSyncStatus = {
   pending: "pending",
@@ -809,21 +885,24 @@ export const WeleticSyncStatus = {
   succeeded: "succeeded",
   failed: "failed",
 } as const;
-export type WeleticSyncStatus = (typeof WeleticSyncStatus)[keyof typeof WeleticSyncStatus];
+export type WeleticSyncStatus =
+  (typeof WeleticSyncStatus)[keyof typeof WeleticSyncStatus];
 
 export const WeleticVipMilestoneMode = {
   amount_spent: "amount_spent",
   points_earned: "points_earned",
   both: "both",
 } as const;
-export type WeleticVipMilestoneMode = (typeof WeleticVipMilestoneMode)[keyof typeof WeleticVipMilestoneMode];
+export type WeleticVipMilestoneMode =
+  (typeof WeleticVipMilestoneMode)[keyof typeof WeleticVipMilestoneMode];
 
 export const WeleticVipTimeframe = {
   rolling_12m: "rolling_12m",
   calendar_year: "calendar_year",
   lifetime: "lifetime",
 } as const;
-export type WeleticVipTimeframe = (typeof WeleticVipTimeframe)[keyof typeof WeleticVipTimeframe];
+export type WeleticVipTimeframe =
+  (typeof WeleticVipTimeframe)[keyof typeof WeleticVipTimeframe];
 
 export const WeleticVoucherCleanupSource = {
   customer_redact: "customer_redact",
@@ -831,7 +910,8 @@ export const WeleticVoucherCleanupSource = {
   shop_redact: "shop_redact",
   review_invalidation: "review_invalidation",
 } as const;
-export type WeleticVoucherCleanupSource = (typeof WeleticVoucherCleanupSource)[keyof typeof WeleticVoucherCleanupSource];
+export type WeleticVoucherCleanupSource =
+  (typeof WeleticVoucherCleanupSource)[keyof typeof WeleticVoucherCleanupSource];
 
 export const WeleticVoucherCleanupStatus = {
   pending: "pending",
@@ -841,7 +921,8 @@ export const WeleticVoucherCleanupStatus = {
   dead_letter: "dead_letter",
   cancelled: "cancelled",
 } as const;
-export type WeleticVoucherCleanupStatus = (typeof WeleticVoucherCleanupStatus)[keyof typeof WeleticVoucherCleanupStatus];
+export type WeleticVoucherCleanupStatus =
+  (typeof WeleticVoucherCleanupStatus)[keyof typeof WeleticVoucherCleanupStatus];
 
 export const WeleticWebhookStatus = {
   received: "received",
@@ -849,7 +930,8 @@ export const WeleticWebhookStatus = {
   ignored: "ignored",
   failed: "failed",
 } as const;
-export type WeleticWebhookStatus = (typeof WeleticWebhookStatus)[keyof typeof WeleticWebhookStatus];
+export type WeleticWebhookStatus =
+  (typeof WeleticWebhookStatus)[keyof typeof WeleticWebhookStatus];
 
 export const WorkflowTrigger = {
   partnerEnrolled: "partnerEnrolled",
@@ -859,7 +941,8 @@ export const WorkflowTrigger = {
   leadRecorded: "leadRecorded",
   saleRecorded: "saleRecorded",
 } as const;
-export type WorkflowTrigger = (typeof WorkflowTrigger)[keyof typeof WorkflowTrigger];
+export type WorkflowTrigger =
+  (typeof WorkflowTrigger)[keyof typeof WorkflowTrigger];
 
 export const WorkspaceRole = {
   owner: "owner",

@@ -178,8 +178,8 @@ export async function bootstrapSubscribedStore(
     {
       ...input,
       operator: isRestrictedDevelopmentEnvironment(process.env)
-        ? (process.env.WELETIC_RESTRICTED_OPERATOR ??
-          `restricted-${process.env.WELETIC_RESTRICTED_DEV_STORE ?? "dev-store"}-testing`)
+        ? process.env.WELETIC_RESTRICTED_OPERATOR ??
+          `restricted-${process.env.WELETIC_RESTRICTED_DEV_STORE ?? "dev-store"}-testing`
         : "shopify-app-pricing",
       reason: isRestrictedDevelopmentEnvironment(process.env)
         ? "Verified restricted development identity; billing untested"

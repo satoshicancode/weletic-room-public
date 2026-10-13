@@ -26,7 +26,7 @@ afterEach(() => {
   for (const name of names) {
     const value = original[name];
     if (value === undefined) delete process.env[name];
-    else process.env[name] = value;
+    else (process.env as any)[name] = value;
   }
 });
 
@@ -315,7 +315,9 @@ describe("dual-namespace environment variable resolution", () => {
       key: "logos/brand.png",
       bucket: "public",
     });
-    expect(signedUrl).toContain(`${process.env.AWS_ENDPOINT}/aws-public-bucket/logos/brand.png?`);
+    expect(signedUrl).toContain(
+      `${process.env.AWS_ENDPOINT}/aws-public-bucket/logos/brand.png?`,
+    );
   });
 
   it("falls back to default public and private bucket names when not set in env", () => {
@@ -327,7 +329,7 @@ describe("dual-namespace environment variable resolution", () => {
 
 describe("local development and custom test endpoint validation", () => {
   it("permits localhost, 127.0.0.1, and custom test endpoints in non-production", async () => {
-    process.env.NODE_ENV = "development";
+    (process.env as any).NODE_ENV = "development";
     process.env.STORAGE_PRIVATE_BUCKET = "private-fixture";
     process.env.STORAGE_ACCESS_KEY_ID = "fixture-key";
     process.env.STORAGE_SECRET_ACCESS_KEY = "fixture-secret";
@@ -345,28 +347,34 @@ describe("local development and custom test endpoint validation", () => {
 
     // 127.0.0.1:9002 (local SeaweedFS/S3 port)
     process.env.STORAGE_ENDPOINT = "http://127.0.0.1:9002";
-    await expect(storage.headPrivateR2Object("reviews/photo.webp")).resolves.not.toThrow();
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).resolves.not.toThrow();
     expect(fetch.mock.calls[0][0].url).toBe(
       "http://127.0.0.1:9002/private-fixture/reviews/photo.webp",
     );
 
     // localhost:9000
     process.env.STORAGE_ENDPOINT = "http://localhost:9000";
-    await expect(storage.headPrivateR2Object("reviews/photo.webp")).resolves.not.toThrow();
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).resolves.not.toThrow();
     expect(fetch.mock.calls[1][0].url).toBe(
       "http://localhost:9000/private-fixture/reviews/photo.webp",
     );
 
     // custom test endpoint test-storage
     process.env.STORAGE_ENDPOINT = "http://test-storage:9002";
-    await expect(storage.headPrivateR2Object("reviews/photo.webp")).resolves.not.toThrow();
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).resolves.not.toThrow();
     expect(fetch.mock.calls[2][0].url).toBe(
       "http://test-storage:9002/private-fixture/reviews/photo.webp",
     );
   });
 
   it("strictly enforces Cloudflare R2 endpoint regex and rejects local endpoints in production", async () => {
-    process.env.NODE_ENV = "production";
+    (process.env as any).NODE_ENV = "production";
     process.env.STORAGE_PRIVATE_BUCKET = "private-fixture";
     process.env.STORAGE_ACCESS_KEY_ID = "fixture-key";
     process.env.STORAGE_SECRET_ACCESS_KEY = "fixture-secret";
@@ -378,12 +386,16 @@ describe("local development and custom test endpoint validation", () => {
     process.env.STORAGE_ENDPOINT = "http://127.0.0.1:9002";
     await expect(
       storage.headPrivateR2Object("reviews/photo.webp"),
-    ).rejects.toThrow("Direct private R2 storage is not configured for reconciliation");
+    ).rejects.toThrow(
+      "Direct private R2 storage is not configured for reconciliation",
+    );
 
     process.env.STORAGE_ENDPOINT = "http://localhost:9000";
     await expect(
       storage.headPrivateR2Object("reviews/photo.webp"),
-    ).rejects.toThrow("Direct private R2 storage is not configured for reconciliation");
+    ).rejects.toThrow(
+      "Direct private R2 storage is not configured for reconciliation",
+    );
 
     // In production, direct R2 endpoint is accepted
     process.env.STORAGE_ENDPOINT = `https://${"c".repeat(32)}.r2.cloudflarestorage.com`;
@@ -396,7 +408,9 @@ describe("local development and custom test endpoint validation", () => {
         },
       }),
     );
-    await expect(storage.headPrivateR2Object("reviews/photo.webp")).resolves.not.toThrow();
+    await expect(
+      storage.headPrivateR2Object("reviews/photo.webp"),
+    ).resolves.not.toThrow();
   });
 });
 

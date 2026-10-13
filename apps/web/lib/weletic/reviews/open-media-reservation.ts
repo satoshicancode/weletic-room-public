@@ -1,18 +1,11 @@
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { createWeleticId } from "@/lib/weletic/ids";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { Prisma } from "@prisma/client";
-import {
-  forUpdateClause,
-  currentTimestampClause,
-} from "@/lib/prisma/sql-helpers";
 import { isCoreLaunch } from "../core-launch-policy";
-
-const effectiveForUpdate =
-  forUpdateClause.strings.join("").trim().length > 0
-    ? forUpdateClause
-    : process.env.NODE_ENV === "test" && !process.env.TEST_D1
-      ? Prisma.sql`FOR UPDATE`
-      : forUpdateClause;
 import { REVIEW_MAX_PHOTOS, ReviewError } from "./contracts";
 import type {
   OpenReviewPhotoInput,
@@ -20,6 +13,13 @@ import type {
 } from "./open-media-contract";
 import { OpenPhotoReconciliationRequired } from "./open-media-errors";
 import type { OpenReviewSubmissionScope } from "./open-submission-contract";
+
+const effectiveForUpdate =
+  forUpdateClause.strings.join("").trim().length > 0
+    ? forUpdateClause
+    : process.env.NODE_ENV === "test" && !process.env.TEST_D1
+      ? Prisma.sql`FOR UPDATE`
+      : forUpdateClause;
 
 type PhotoEvidence = ReturnType<typeof openReviewPhotoEvidence>;
 type ReservedPhoto = {

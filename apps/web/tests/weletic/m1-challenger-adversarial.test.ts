@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -9,11 +9,11 @@ vi.mock("@/lib/upstash", () => ({
   },
 }));
 
-import { findActiveDiscountCode } from "../../workers/queue-consumer/src/index";
 import { convertCurrencyWithFxRates } from "@/lib/analytics/convert-currency";
-import { isZeroDecimalCurrency } from "@dub/utils";
-import { deriveRateFromUsdTable, getAccountingFxQuote } from "@/lib/weletic/fx";
 import { redis } from "@/lib/upstash";
+import { getAccountingFxQuote } from "@/lib/weletic/fx";
+import { isZeroDecimalCurrency } from "@dub/utils";
+import { findActiveDiscountCode } from "../../workers/queue-consumer/src/index";
 
 // ============================================================================
 // SUITE 1: FIN-AUDIT-05 / WRK-AUDIT-06 Historical Coupon Attribution Boundaries
@@ -168,7 +168,9 @@ describe("CHALLENGER SUITE 1: FIN-AUDIT-05 / WRK-06 Historical Coupon Attributio
         findFirst: vi.fn(async ({ where }) => {
           expect(where.disabledAt).toBeNull();
           expect(where.OR).toBeUndefined();
-          return simulatePrismaDiscountFilter(mockRecord, where) ? mockRecord : null;
+          return simulatePrismaDiscountFilter(mockRecord, where)
+            ? mockRecord
+            : null;
         }),
       },
     };
@@ -217,7 +219,9 @@ describe("CHALLENGER SUITE 1: FIN-AUDIT-05 / WRK-06 Historical Coupon Attributio
           // When order timestamp is invalid, findActiveDiscountCode MUST fallback to disabledAt: null
           expect(where.disabledAt).toBeNull();
           expect(where.OR).toBeUndefined();
-          return simulatePrismaDiscountFilter(mockRecord, where) ? mockRecord : null;
+          return simulatePrismaDiscountFilter(mockRecord, where)
+            ? mockRecord
+            : null;
         }),
       },
     };
@@ -258,7 +262,9 @@ describe("CHALLENGER SUITE 1: FIN-AUDIT-05 / WRK-06 Historical Coupon Attributio
     const mockPrisma = {
       discountCode: {
         findFirst: vi.fn(async ({ where }) => {
-          return simulatePrismaDiscountFilter(mockRecord, where) ? mockRecord : null;
+          return simulatePrismaDiscountFilter(mockRecord, where)
+            ? mockRecord
+            : null;
         }),
       },
     };
@@ -294,7 +300,9 @@ describe("CHALLENGER SUITE 1: FIN-AUDIT-05 / WRK-06 Historical Coupon Attributio
     const mockPrisma = {
       discountCode: {
         findFirst: vi.fn(async ({ where }) => {
-          return simulatePrismaDiscountFilter(mockRecord, where) ? mockRecord : null;
+          return simulatePrismaDiscountFilter(mockRecord, where)
+            ? mockRecord
+            : null;
         }),
       },
     };
@@ -413,7 +421,10 @@ describe("CHALLENGER SUITE 1: FIN-AUDIT-05 / WRK-06 Historical Coupon Attributio
     expect(linkWithUndefined).not.toBeNull(); // Fails open!
 
     // Vulnerability Check B: orderCreatedAt is corrupted -> disabled link is NOT nulled
-    const linkWithCorrupted = resolveAttachedLink(attachedLink, "corrupted-date");
+    const linkWithCorrupted = resolveAttachedLink(
+      attachedLink,
+      "corrupted-date",
+    );
     expect(linkWithCorrupted).not.toBeNull(); // Fails open!
   });
 });
@@ -686,7 +697,11 @@ describe("CHALLENGER SUITE 2: FIN-AUDIT-06 & FIN-AUDIT-09 Multi-Currency Scaling
     const earningsCurrency = "EUR";
     const customRates = { EUR: "1.08" };
 
-    if (earnings > 0 && earningsCurrency.toUpperCase() !== "USD" && customRates) {
+    if (
+      earnings > 0 &&
+      earningsCurrency.toUpperCase() !== "USD" &&
+      customRates
+    ) {
       const { amount } = convertCurrencyWithFxRates({
         currency: earningsCurrency,
         amount: earnings,
@@ -734,7 +749,9 @@ describe("CHALLENGER SUITE 3: FIN-AUDIT-07 Redis Outage Resilience & Static Fall
   });
 
   it("3.2 Redis Timeout Outage: ETIMEDOUT during peak load falls back to static rates", async () => {
-    vi.mocked(redis.hget).mockRejectedValue(new Error("ETIMEDOUT: upstream redis cluster unresponsive"));
+    vi.mocked(redis.hget).mockRejectedValue(
+      new Error("ETIMEDOUT: upstream redis cluster unresponsive"),
+    );
     vi.mocked(redis.get).mockRejectedValue(new Error("ETIMEDOUT"));
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

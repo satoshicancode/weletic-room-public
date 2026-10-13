@@ -2,11 +2,7 @@ import {
   createLoyaltyRedemptionProvisioningSnapshot,
   getShopifyCustomerSelectionDigest,
 } from "@/lib/weletic/loyalty/redemption-provisioning-snapshot";
-import {
-  DEFAULT_STORE_CREDIT_RECONCILIATION_HORIZON_MS,
-  reconcilePendingStoreCreditRedemption,
-  reconcilePendingStoreCreditRedemptionsSweep,
-} from "@/lib/weletic/loyalty/store-credit-reconciliation";
+import { reconcilePendingStoreCreditRedemption } from "@/lib/weletic/loyalty/store-credit-reconciliation";
 import {
   WeleticRedemptionStatus,
   WeleticRewardArtifactKind,
@@ -238,6 +234,17 @@ describe("Round 2 Store Credit Reconciliation & Solvency Test Suite", () => {
     initialStatus = WeleticRedemptionStatus.provisioning,
     accountId = "account_r2_1",
     idempotencyToken = "idemp_tok_12345",
+  }: {
+    redemptionId?: string;
+    targetStoreId?: string;
+    amountMinor?: string;
+    pointsSpent?: bigint;
+    currency?: string;
+    createdAt?: Date;
+    remoteAttemptedAt?: string;
+    initialStatus?: WeleticRedemptionStatus | string;
+    accountId?: string;
+    idempotencyToken?: string;
   } = {}) {
     const shopper = {
       id: `shopper_${customerId}`,
@@ -257,9 +264,7 @@ describe("Round 2 Store Credit Reconciliation & Solvency Test Suite", () => {
 
     const selectionDigest = getShopifyCustomerSelectionDigest({
       storeId: targetStoreId,
-      selectionType: "logged_in_customer",
       shopifyCustomerId: customerId,
-      customerTags: [],
     });
 
     const snapshot = createLoyaltyRedemptionProvisioningSnapshot({
@@ -344,7 +349,10 @@ describe("Round 2 Store Credit Reconciliation & Solvency Test Suite", () => {
                             {
                               node: {
                                 id: "gid://shopify/StoreCreditAccountCreditTransaction/tx_100",
-                                amount: { amount: "10.00", currencyCode: "USD" },
+                                amount: {
+                                  amount: "10.00",
+                                  currencyCode: "USD",
+                                },
                                 createdAt: "2026-10-09T10:00:06.000Z",
                                 test: false,
                               },
@@ -433,7 +441,10 @@ describe("Round 2 Store Credit Reconciliation & Solvency Test Suite", () => {
                             {
                               node: {
                                 id: "gid://shopify/StoreCreditAccountCreditTransaction/tx_bound",
-                                amount: { amount: "10.00", currencyCode: "USD" },
+                                amount: {
+                                  amount: "10.00",
+                                  currencyCode: "USD",
+                                },
                                 createdAt: "2026-10-09T10:00:06.000Z",
                               },
                             },
@@ -634,7 +645,10 @@ describe("Round 2 Store Credit Reconciliation & Solvency Test Suite", () => {
                             {
                               node: {
                                 id: "gid://shopify/StoreCreditAccountCreditTransaction/tx_usd_wrong",
-                                amount: { amount: "5000.00", currencyCode: "USD" },
+                                amount: {
+                                  amount: "5000.00",
+                                  currencyCode: "USD",
+                                },
                                 createdAt: "2026-10-09T10:00:10.000Z",
                               },
                             },
@@ -681,7 +695,10 @@ describe("Round 2 Store Credit Reconciliation & Solvency Test Suite", () => {
                             {
                               node: {
                                 id: "gid://shopify/StoreCreditAccountCreditTransaction/tx_concurrent",
-                                amount: { amount: "10.00", currencyCode: "USD" },
+                                amount: {
+                                  amount: "10.00",
+                                  currencyCode: "USD",
+                                },
                                 createdAt: "2026-10-09T10:00:10.000Z",
                               },
                             },

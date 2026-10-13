@@ -1,32 +1,32 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import crypto from "node:crypto";
-import {
-  verifyShopifyWebhookSignature,
-  verifyHmacConstantTime,
-  verifyHmac,
-  timingSafeBufferEqual,
-} from "../../lib/weletic/shopify/webhook-signature";
-import {
-  handleWebhookIngress,
-  WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
-  SUPPORTED_WEBHOOK_TOPICS,
-  type WebhookQueueMessage,
-  type WebhookIngressEnv,
-} from "../../workers/webhook-ingress/src/index";
-import {
-  processQueueMessage,
-  handleQueueBatch,
-  findActiveDiscountCode,
-  extractOrderDiscountCodes,
-  type QueueConsumerEnv,
-  type QueueMessageItem,
-  type MessageBatch,
-} from "../../workers/queue-consumer/src/index";
 import { prisma } from "../../lib/prisma";
 import { resolveShopifyStoreByDomain } from "../../lib/weletic/shopify/store-resolver";
+import {
+  timingSafeBufferEqual,
+  verifyHmac,
+  verifyHmacConstantTime,
+  verifyShopifyWebhookSignature,
+} from "../../lib/weletic/shopify/webhook-signature";
+import {
+  extractOrderDiscountCodes,
+  findActiveDiscountCode,
+  handleQueueBatch,
+  processQueueMessage,
+  type MessageBatch,
+  type QueueConsumerEnv,
+  type QueueMessageItem,
+} from "../../workers/queue-consumer/src/index";
+import {
+  handleWebhookIngress,
+  SUPPORTED_WEBHOOK_TOPICS,
+  WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
+  type WebhookIngressEnv,
+  type WebhookQueueMessage,
+} from "../../workers/webhook-ingress/src/index";
 
 const PRIMARY_SECRET = "shpss_test_primary_secret_32_bytes_long_123456";
 const NEXT_SECRET = "shpss_test_rotation_secret_32_bytes_long_654321";
@@ -61,7 +61,11 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
       });
       expect(valid).toBe(true);
 
-      const positionalValid = verifyHmac(rawPayload, validSignature, PRIMARY_SECRET);
+      const positionalValid = verifyHmac(
+        rawPayload,
+        validSignature,
+        PRIMARY_SECRET,
+      );
       expect(positionalValid).toBe(true);
     });
 
@@ -87,7 +91,10 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
     });
 
     it("1.4 rejects mismatched signature or incorrect secret", () => {
-      const wrongSecretSignature = signPayload(rawPayload, "shpss_wrong_secret_12345678901234567890");
+      const wrongSecretSignature = signPayload(
+        rawPayload,
+        "shpss_wrong_secret_12345678901234567890",
+      );
       const valid = verifyHmacConstantTime({
         rawBodyBytes: rawPayload,
         signature: wrongSecretSignature,
@@ -238,7 +245,9 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
       // Graceful HTTP 200 acknowledgement without enqueuing
       expect(res.status).toBe(200);
       const text = await res.text();
-      expect(text).toContain("Unsupported topic: inventory_levels/update. Ignored.");
+      expect(text).toContain(
+        "Unsupported topic: inventory_levels/update. Ignored.",
+      );
       expect(mockQueue.send).not.toHaveBeenCalled();
     });
 
@@ -263,7 +272,8 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
         headers: {
           "x-shopify-topic": "orders/paid",
           "x-shopify-shop-domain": "yamax-brand-demo.myshopify.com",
-          "x-shopify-hmac-sha256": "invalid_signature_base64_44_chars_length_12345=",
+          "x-shopify-hmac-sha256":
+            "invalid_signature_base64_44_chars_length_12345=",
         },
         body: payload,
       });
@@ -327,7 +337,9 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
         method: "POST",
         headers: {
           "x-shopify-topic": "orders/paid",
-          "content-length": String(WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 1024),
+          "content-length": String(
+            WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 1024,
+          ),
         },
         body: "x",
       });
@@ -343,7 +355,11 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
 
     it("2.8 handles queue send failure gracefully with 500 status", async () => {
       const failingQueue: WebhookIngressEnv["ORDER_WEBHOOK_QUEUE"] = {
-        send: vi.fn().mockRejectedValue(new Error("Cloudflare Queue temporary rate limit")),
+        send: vi
+          .fn()
+          .mockRejectedValue(
+            new Error("Cloudflare Queue temporary rate limit"),
+          ),
       };
 
       const payload = JSON.stringify({ id: 777 });
@@ -533,7 +549,6 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
       await prisma.discountCode.delete({ where: { id: created.id } });
     });
 
-
     it("5.3 extracts discount codes from both discount_codes and discount_applications arrays", () => {
       const event = {
         discount_codes: [{ code: "welcome10" }, { code: "VIP20" }],
@@ -613,7 +628,10 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
       };
 
       // Mock resolveShopifyStoreByDomain to return a mock store so execution proceeds into dispatch
-      vi.spyOn(await import("../../lib/weletic/shopify/store-resolver"), "resolveShopifyStoreByDomain").mockResolvedValueOnce({
+      vi.spyOn(
+        await import("../../lib/weletic/shopify/store-resolver"),
+        "resolveShopifyStoreByDomain",
+      ).mockResolvedValueOnce({
         shopId: "shop_mock_1",
         primaryDomain: "store-error.myshopify.com",
         myshopifyDomain: "store-error.myshopify.com",
@@ -625,7 +643,10 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
       });
 
       // Mock recordWeleticOrder to simulate downstream processing error
-      vi.spyOn(await import("../../lib/weletic/commerce/record-order"), "recordWeleticOrder").mockRejectedValueOnce(
+      vi.spyOn(
+        await import("../../lib/weletic/commerce/record-order"),
+        "recordWeleticOrder",
+      ).mockRejectedValueOnce(
         new Error("Database lock conflict during settlement"),
       );
 
@@ -636,7 +657,9 @@ describe("Milestone 3 (R3): Shopify Webhook Ingress Worker & Async Queues with D
       const result = await processQueueMessage(dlqMsg, mockEnv);
 
       expect(result.status).toBe("failed");
-      expect(result.error).toContain("Database lock conflict during settlement");
+      expect(result.error).toContain(
+        "Database lock conflict during settlement",
+      );
 
       // Verify routing to DLQ
       expect(mockDLQ?.send).toHaveBeenCalledTimes(1);

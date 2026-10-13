@@ -1,18 +1,11 @@
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { createWeleticId } from "@/lib/weletic/ids";
 import { Prisma } from "@prisma/client";
-import {
-  forUpdateClause,
-  currentTimestampClause,
-} from "@/lib/prisma/sql-helpers";
 import { z } from "zod";
 import { isCoreLaunch } from "../core-launch-policy";
-
-const effectiveForUpdate =
-  forUpdateClause.strings.join("").trim().length > 0
-    ? forUpdateClause
-    : process.env.NODE_ENV === "test" && !process.env.TEST_D1
-      ? Prisma.sql`FOR UPDATE`
-      : forUpdateClause;
 import { ReviewError } from "./contracts";
 import { REVIEW_FLOW_HANDLES } from "./flow-contract";
 import { enqueueReviewFlowEvent } from "./flow-producer";
@@ -26,6 +19,13 @@ import {
 } from "./open-submission-contract";
 import { openReviewRateCountWhere } from "./open-submission-policy";
 import { withReviewMutation } from "./transaction";
+
+const effectiveForUpdate =
+  forUpdateClause.strings.join("").trim().length > 0
+    ? forUpdateClause
+    : process.env.NODE_ENV === "test" && !process.env.TEST_D1
+      ? Prisma.sql`FOR UPDATE`
+      : forUpdateClause;
 
 const identitySchema = z
   .object({

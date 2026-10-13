@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import { convertCurrencyWithFxRates } from "@/lib/analytics/convert-currency";
 import { isZeroDecimalCurrency } from "@dub/utils";
+import { describe, expect, it } from "vitest";
 
 describe("FIN-AUDIT-06: Tapfiliate Commission Zero-Decimal Scaling", () => {
   const fxRates = {

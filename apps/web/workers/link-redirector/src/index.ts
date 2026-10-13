@@ -1,8 +1,12 @@
-/// <reference types="@cloudflare/workers-types" />
+import type {
+  D1Database,
+  ExecutionContext,
+  KVNamespace,
+} from "../../../lib/weletic/cloudflare-types";
 import {
-  redirectRateLimiter,
-  getClientIp,
   createRateLimitResponse,
+  getClientIp,
+  redirectRateLimiter,
 } from "../../../lib/weletic/edge-rate-limiter";
 
 export interface LinkRecord {
@@ -48,7 +52,10 @@ export const ATTRIBUTION_COOKIE_MAX_AGE_SECONDS = 2592000; // 30 days
  * Builds canonical KV lookup key: link:${domain}:${key.toLowerCase()}
  */
 export function buildKvKey(domain: string, key: string): string {
-  const cleanDomain = domain.replace(/^www\./, "").split(":")[0].toLowerCase();
+  const cleanDomain = domain
+    .replace(/^www\./, "")
+    .split(":")[0]
+    .toLowerCase();
   return `link:${cleanDomain}:${key.toLowerCase()}`;
 }
 
@@ -120,7 +127,11 @@ export function resolveTargetUrl(options: {
   const normalizedCountry = country ? country.trim().toUpperCase() : "";
 
   // 1. Custom geo mapping override
-  if (customGeoMapping && normalizedCountry && customGeoMapping[normalizedCountry]) {
+  if (
+    customGeoMapping &&
+    normalizedCountry &&
+    customGeoMapping[normalizedCountry]
+  ) {
     return customGeoMapping[normalizedCountry];
   }
 
@@ -139,7 +150,10 @@ export function resolveTargetUrl(options: {
   // Strip any existing language/locale prefix (/ja, /vi, /en) to prevent nested paths like /vi/ja/...
   let cleanPathname = target.pathname;
   while (/^\/(?:ja|vi|en)(?:-[a-z]{2})?(?=\/|$)/i.test(cleanPathname)) {
-    cleanPathname = cleanPathname.replace(/^\/(?:ja|vi|en)(?:-[a-z]{2})?(?=\/|$)/i, "");
+    cleanPathname = cleanPathname.replace(
+      /^\/(?:ja|vi|en)(?:-[a-z]{2})?(?=\/|$)/i,
+      "",
+    );
   }
   if (!cleanPathname.startsWith("/")) {
     cleanPathname = `/${cleanPathname}`;
@@ -264,13 +278,9 @@ export async function handleLinkRedirection(
         // Auto-populate KV for subsequent sub-15ms hits (non-blocking via waitUntil)
         if (env.LINKS_KV) {
           const kvPutPromise = Promise.resolve(
-            env.LINKS_KV.put(
-              kvKey,
-              JSON.stringify(linkRecord),
-              {
-                expirationTtl: KV_EXPIRATION_TTL_SECONDS,
-              },
-            ),
+            env.LINKS_KV.put(kvKey, JSON.stringify(linkRecord), {
+              expirationTtl: KV_EXPIRATION_TTL_SECONDS,
+            }),
           ).catch((err) => {
             console.warn(
               `[Link Redirector] Non-blocking KV cache write failed for ${kvKey}:`,
@@ -299,13 +309,9 @@ export async function handleLinkRedirection(
         cachedAt: Date.now(),
       };
       const negativePutPromise = Promise.resolve(
-        env.LINKS_KV.put(
-          kvKey,
-          JSON.stringify(negativeSentinel),
-          {
-            expirationTtl: KV_NEGATIVE_CACHE_TTL_SECONDS,
-          },
-        ),
+        env.LINKS_KV.put(kvKey, JSON.stringify(negativeSentinel), {
+          expirationTtl: KV_NEGATIVE_CACHE_TTL_SECONDS,
+        }),
       ).catch((err) => {
         console.warn(
           `[Link Redirector] Non-blocking negative KV cache write failed for ${kvKey}:`,
@@ -390,7 +396,8 @@ export async function handleLinkRedirection(
 
         const bot = isBot(request);
         const qr = isQrScan(incomingUrl);
-        const conversionValue = Number(incomingUrl.searchParams.get("conversionValue")) || 0;
+        const conversionValue =
+          Number(incomingUrl.searchParams.get("conversionValue")) || 0;
 
         // Blob length clamping according to Cloudflare limits (LNK-05)
         const blobs = [

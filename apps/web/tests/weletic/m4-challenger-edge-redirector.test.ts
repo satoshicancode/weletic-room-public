@@ -1,31 +1,23 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import {
-  handleLinkRedirection,
   buildKvKey,
-  resolveTargetUrl,
+  handleLinkRedirection,
   parseLinkGeo,
-  isBot,
-  isQrScan,
-  ATTRIBUTION_COOKIE_MAX_AGE_SECONDS,
-  type LinkRecord,
-  type LinkRedirectorEnv,
   type AnalyticsEngineDataPointInput,
   type AnalyticsEngineDatasetBinding,
+  type LinkRecord,
+  type LinkRedirectorEnv,
 } from "../../workers/link-redirector/src/index";
 
 import {
-  buildPartnerClicksTimeseriesQuery,
   buildGeoDistributionQuery,
   buildLinkAnalyticsQuery,
-  buildDailyWorkspaceAggregationsQuery,
+  buildPartnerClicksTimeseriesQuery,
   executeAnalyticsEngineQuery,
-  escapeSqlString,
   formatSqlDate,
-  AnalyticsEngineError,
-  ANALYTICS_ENGINE_DATASET,
 } from "../../lib/analytics/analytics-engine";
 
 class MockKVNamespace {
@@ -228,10 +220,15 @@ describe("Milestone 4 (R4) Adversarial & Stress Challenge Suite", () => {
         disabledAt: null,
       };
 
-      await mockKV.put(buildKvKey("dub.sh", "legit-partner"), JSON.stringify(link));
+      await mockKV.put(
+        buildKvKey("dub.sh", "legit-partner"),
+        JSON.stringify(link),
+      );
 
       // Attacker attempts to pass via=attacker to steal attribution
-      const req = new Request("https://dub.sh/legit-partner?via=attacker_hijack");
+      const req = new Request(
+        "https://dub.sh/legit-partner?via=attacker_hijack",
+      );
       const res = await handleLinkRedirection(req, env);
 
       const loc = new URL(res.headers.get("Location")!);
@@ -269,7 +266,8 @@ describe("Milestone 4 (R4) Adversarial & Stress Challenge Suite", () => {
 
   describe("B. Analytics Engine SQL Injection & Stress Testing", () => {
     it("B.1 escapes complex SQL injection vectors in all query builders", () => {
-      const maliciousPartner = "p' UNION SELECT * FROM secret_table WHERE '1'='1";
+      const maliciousPartner =
+        "p' UNION SELECT * FROM secret_table WHERE '1'='1";
       const maliciousProject = "proj\\'; DROP TABLE links; --";
 
       const timeseriesQuery = buildPartnerClicksTimeseriesQuery({
@@ -279,8 +277,12 @@ describe("Milestone 4 (R4) Adversarial & Stress Challenge Suite", () => {
         endDate: "2026-10-02",
       });
 
-      expect(timeseriesQuery).toContain("index1 = 'proj\\\\''; DROP TABLE links; --'");
-      expect(timeseriesQuery).toContain("blob5 = 'p'' UNION SELECT * FROM secret_table WHERE ''1''=''1'");
+      expect(timeseriesQuery).toContain(
+        "index1 = 'proj\\\\''; DROP TABLE links; --'",
+      );
+      expect(timeseriesQuery).toContain(
+        "blob5 = 'p'' UNION SELECT * FROM secret_table WHERE ''1''=''1'",
+      );
 
       const geoQuery = buildGeoDistributionQuery({
         projectId: maliciousProject,
@@ -296,7 +298,9 @@ describe("Milestone 4 (R4) Adversarial & Stress Challenge Suite", () => {
     });
 
     it("B.2 strictly rejects invalid dates in formatSqlDate", () => {
-      expect(() => formatSqlDate("not-a-date")).toThrow("Invalid date provided");
+      expect(() => formatSqlDate("not-a-date")).toThrow(
+        "Invalid date provided",
+      );
       expect(() => formatSqlDate(NaN)).toThrow("Invalid date provided");
     });
 
@@ -312,7 +316,9 @@ describe("Milestone 4 (R4) Adversarial & Stress Challenge Suite", () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 403,
-        json: async () => ({ errors: [{ message: "Unauthorized account access" }] }),
+        json: async () => ({
+          errors: [{ message: "Unauthorized account access" }],
+        }),
       });
 
       await expect(
@@ -335,7 +341,10 @@ describe("Milestone 4 (R4) Adversarial & Stress Challenge Suite", () => {
         expiresAt: "2099-01-01T00:00:00.000Z",
       };
 
-      await mockKV.put(buildKvKey("dub.sh", "future-disabled"), JSON.stringify(disabledLink));
+      await mockKV.put(
+        buildKvKey("dub.sh", "future-disabled"),
+        JSON.stringify(disabledLink),
+      );
 
       const req = new Request("https://dub.sh/future-disabled");
       const res = await handleLinkRedirection(req, env);

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { execSync } from "child_process";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -123,8 +123,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: prismaMock,
 }));
 
-import { CommissionStatus, PayoutStatus, Prisma } from "@prisma/client";
-import { MUTABLE_PAYOUT_STATUSES } from "@/lib/constants/payouts";
+import { CommissionStatus, PayoutStatus } from "@prisma/client";
 import { POST as aggregateDueCommissionsPOST } from "../../app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route";
 
 function setupStatefulPrismaMock() {
@@ -141,9 +140,7 @@ function setupStatefulPrismaMock() {
     { holdingPeriodDays: 0, _count: { id: 1 } },
   ]);
 
-  prismaMock.partnerGroup.findMany.mockResolvedValue([
-    { id: "grp_0" },
-  ]);
+  prismaMock.partnerGroup.findMany.mockResolvedValue([{ id: "grp_0" }]);
 
   prismaMock.commission.findMany.mockImplementation(async (query: any) => {
     // 1. Claimed commissions query in aggregateDueCommissionsForPartner
@@ -255,52 +252,54 @@ function setupStatefulPrismaMock() {
     return { count: initialLen - payoutsTable.length };
   });
 
-  prismaMock.$executeRaw.mockImplementation(async (strings: any, ...values: any[]) => {
-    const rawSql = Array.isArray(strings)
-      ? strings.join("?")
-      : typeof strings === "string"
-        ? strings
-        : strings?.strings?.join("?") ?? "";
+  prismaMock.$executeRaw.mockImplementation(
+    async (strings: any, ...values: any[]) => {
+      const rawSql = Array.isArray(strings)
+        ? strings.join("?")
+        : typeof strings === "string"
+          ? strings
+          : strings?.strings?.join("?") ?? "";
 
-    capturedRawQueries.push({ sql: rawSql, values });
+      capturedRawQueries.push({ sql: rawSql, values });
 
-    if (rawSql.includes("UPDATE Commission")) {
-      const payoutId = values[1];
-      const targetIds = Array.isArray(values[2]?.values)
-        ? values[2].values
-        : Array.isArray(values[2])
-          ? values[2]
-          : [];
-      const partnerId = values[4];
+      if (rawSql.includes("UPDATE Commission")) {
+        const payoutId = values[1];
+        const targetIds = Array.isArray(values[2]?.values)
+          ? values[2].values
+          : Array.isArray(values[2])
+            ? values[2]
+            : [];
+        const partnerId = values[4];
 
-      let updated = 0;
-      for (const c of commissionsTable) {
-        if (
-          targetIds.includes(c.id) &&
-          c.partnerId === partnerId &&
-          c.status === CommissionStatus.pending
-        ) {
-          c.status = CommissionStatus.processed;
-          c.payoutId = payoutId;
-          updated++;
+        let updated = 0;
+        for (const c of commissionsTable) {
+          if (
+            targetIds.includes(c.id) &&
+            c.partnerId === partnerId &&
+            c.status === CommissionStatus.pending
+          ) {
+            c.status = CommissionStatus.processed;
+            c.payoutId = payoutId;
+            updated++;
+          }
         }
+        return updated;
       }
-      return updated;
-    }
 
-    if (rawSql.includes("UPDATE Payout")) {
-      const amount = values[0];
-      const payoutId = values[2];
+      if (rawSql.includes("UPDATE Payout")) {
+        const amount = values[0];
+        const payoutId = values[2];
 
-      const payout = payoutsTable.find((p) => p.id === payoutId);
-      if (payout) {
-        payout.amount = Number(amount);
+        const payout = payoutsTable.find((p) => p.id === payoutId);
+        if (payout) {
+          payout.amount = Number(amount);
+        }
+        return 1;
       }
+
       return 1;
-    }
-
-    return 1;
-  });
+    },
+  );
 }
 
 describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () => {
@@ -342,7 +341,9 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
       expect(response.status).toBe(200);
 
       // Verify UPDATE Commission query
-      const claimQuery = capturedRawQueries.find((q) => q.sql.includes("UPDATE Commission"));
+      const claimQuery = capturedRawQueries.find((q) =>
+        q.sql.includes("UPDATE Commission"),
+      );
       expect(claimQuery).toBeDefined();
       expect(claimQuery!.sql).not.toContain("INNER JOIN");
       expect(claimQuery!.sql).not.toContain("NOW()");
@@ -351,7 +352,9 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
       expect(claimQuery!.sql).toContain("SELECT 1 FROM Payout");
 
       // Verify UPDATE Payout query
-      const payoutQuery = capturedRawQueries.find((q) => q.sql.includes("UPDATE Payout"));
+      const payoutQuery = capturedRawQueries.find((q) =>
+        q.sql.includes("UPDATE Payout"),
+      );
       expect(payoutQuery).toBeDefined();
       expect(payoutQuery!.sql).not.toContain("NOW()");
       expect(payoutQuery!.sql).toContain("CURRENT_TIMESTAMP");
@@ -386,7 +389,9 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
         SELECT amount FROM Payout WHERE id = 'po_1';
       `;
 
-      const output = execSync(`sqlite3 :memory: "${sqliteScript}"`, { encoding: "utf-8" });
+      const output = execSync(`sqlite3 :memory: "${sqliteScript}"`, {
+        encoding: "utf-8",
+      });
       expect(output).toContain("processed|po_1");
       expect(output).toContain("10000");
 
@@ -397,7 +402,10 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
         UPDATE Commission c INNER JOIN Payout p ON p.id = c.payoutId SET c.status = 'processed', c.updatedAt = NOW() WHERE c.id = 'cm_1';
       `;
       expect(() => {
-        execSync(`sqlite3 :memory: "${legacyScript}"`, { encoding: "utf-8", stdio: "pipe" });
+        execSync(`sqlite3 :memory: "${legacyScript}"`, {
+          encoding: "utf-8",
+          stdio: "pipe",
+        });
       }).toThrow(/syntax error/);
     });
   });
@@ -429,18 +437,16 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
       );
 
       // Earner Partner: Net +10000
-      commissionsTable.push(
-        {
-          id: "cm_earner_sale",
-          createdAt: new Date("2026-10-01T02:00:00Z"),
-          amount: BigInt(15000),
-          earnings: BigInt(10000),
-          status: CommissionStatus.pending,
-          partnerId: "partner_earner",
-          programId: "prog_test",
-          payoutId: null,
-        },
-      );
+      commissionsTable.push({
+        id: "cm_earner_sale",
+        createdAt: new Date("2026-10-01T02:00:00Z"),
+        amount: BigInt(15000),
+        earnings: BigInt(10000),
+        status: CommissionStatus.pending,
+        partnerId: "partner_earner",
+        programId: "prog_test",
+        payoutId: null,
+      });
 
       const response = await (aggregateDueCommissionsPOST as any)({
         rawBody: JSON.stringify({ programId: "prog_test" }),
@@ -448,14 +454,24 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
       expect(response.status).toBe(200);
 
       // Debtor partner was rolled back and deleted
-      expect(payoutsTable.find((p) => p.partnerId === "partner_debtor")).toBeUndefined();
-      expect(commissionsTable.filter((c) => c.partnerId === "partner_debtor").every((c) => c.status === CommissionStatus.pending)).toBe(true);
+      expect(
+        payoutsTable.find((p) => p.partnerId === "partner_debtor"),
+      ).toBeUndefined();
+      expect(
+        commissionsTable
+          .filter((c) => c.partnerId === "partner_debtor")
+          .every((c) => c.status === CommissionStatus.pending),
+      ).toBe(true);
 
       // Earner partner received payout
-      const earnerPayout = payoutsTable.find((p) => p.partnerId === "partner_earner");
+      const earnerPayout = payoutsTable.find(
+        (p) => p.partnerId === "partner_earner",
+      );
       expect(earnerPayout).toBeDefined();
       expect(earnerPayout!.amount).toBe(10000);
-      expect(commissionsTable.find((c) => c.id === "cm_earner_sale")!.status).toBe(CommissionStatus.processed);
+      expect(
+        commissionsTable.find((c) => c.id === "cm_earner_sale")!.status,
+      ).toBe(CommissionStatus.processed);
     });
 
     it("terminates cleanly via defensive guard without infinite loop when no progress is made", async () => {
@@ -527,8 +543,12 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
       expect(payout1.amount).toBe(1_800_000_000);
 
       // First two commissions processed in payout 1
-      expect(commissionsTable.find((c) => c.id === "cm_cap_1")!.status).toBe(CommissionStatus.processed);
-      expect(commissionsTable.find((c) => c.id === "cm_cap_2")!.status).toBe(CommissionStatus.processed);
+      expect(commissionsTable.find((c) => c.id === "cm_cap_1")!.status).toBe(
+        CommissionStatus.processed,
+      );
+      expect(commissionsTable.find((c) => c.id === "cm_cap_2")!.status).toBe(
+        CommissionStatus.processed,
+      );
 
       // Remaining commission deferred in pending without rollback
       const c3 = commissionsTable.find((c) => c.id === "cm_cap_3")!;
@@ -557,10 +577,14 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
 
       // Critical assertion: Prior payout must NOT be wiped out
       expect(payoutsTable.length).toBeGreaterThan(0);
-      expect(payoutsTable[0].amount).toBeLessThanOrEqual(MAX_PAYOUT_AMOUNT_LIMIT);
+      expect(payoutsTable[0].amount).toBeLessThanOrEqual(
+        MAX_PAYOUT_AMOUNT_LIMIT,
+      );
 
       // Commissions were NOT rolled back to pending
-      const processedCount = commissionsTable.filter((c) => c.status === CommissionStatus.processed).length;
+      const processedCount = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.processed,
+      ).length;
       expect(processedCount).toBeGreaterThanOrEqual(3); // At least the first 3 commissions (1.8B) must be paid
     });
 
@@ -620,8 +644,12 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
       expect(existingPayout).toBeDefined();
       expect(existingPayout!.amount).toBe(1_700_000_000);
 
-      expect(commissionsTable.find((c) => c.id === "cm_topup_1")!.status).toBe(CommissionStatus.processed);
-      expect(commissionsTable.find((c) => c.id === "cm_topup_1")!.payoutId).toBe("po_existing");
+      expect(commissionsTable.find((c) => c.id === "cm_topup_1")!.status).toBe(
+        CommissionStatus.processed,
+      );
+      expect(
+        commissionsTable.find((c) => c.id === "cm_topup_1")!.payoutId,
+      ).toBe("po_existing");
 
       const deferred = commissionsTable.find((c) => c.id === "cm_topup_2")!;
       expect(deferred.status).toBe(CommissionStatus.pending);
@@ -661,12 +689,20 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
       expect(response.status).toBe(200);
 
       // Whale commission rolled back to pending and payout deleted
-      expect(commissionsTable.find((c) => c.id === "cm_whale")!.status).toBe(CommissionStatus.pending);
-      expect(commissionsTable.find((c) => c.id === "cm_whale")!.payoutId).toBeNull();
-      expect(payoutsTable.find((p) => p.partnerId === "partner_whale")).toBeUndefined();
+      expect(commissionsTable.find((c) => c.id === "cm_whale")!.status).toBe(
+        CommissionStatus.pending,
+      );
+      expect(
+        commissionsTable.find((c) => c.id === "cm_whale")!.payoutId,
+      ).toBeNull();
+      expect(
+        payoutsTable.find((p) => p.partnerId === "partner_whale"),
+      ).toBeUndefined();
 
       // Normal partner succeeded
-      const normalPayout = payoutsTable.find((p) => p.partnerId === "partner_normal");
+      const normalPayout = payoutsTable.find(
+        (p) => p.partnerId === "partner_normal",
+      );
       expect(normalPayout).toBeDefined();
       expect(normalPayout!.amount).toBe(50_000);
     });
@@ -702,7 +738,9 @@ describe("FIN-AUDIT-01, 02, 03: Genuine Payout Due Commissions Cron Suite", () =
 
       expect(payoutsTable.length).toBe(1);
       expect(payoutsTable[0].amount).toBe(2_000_000_000);
-      expect(commissionsTable.every((c) => c.status === CommissionStatus.processed)).toBe(true);
+      expect(
+        commissionsTable.every((c) => c.status === CommissionStatus.processed),
+      ).toBe(true);
     });
   });
 });

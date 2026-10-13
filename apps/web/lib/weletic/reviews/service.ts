@@ -30,8 +30,8 @@ import {
 } from "./flow-open-ownership";
 import { enqueueReviewFlowEvent } from "./flow-producer";
 import { reserveProductReviewIncentiveInTransaction } from "./incentive-claims";
-import { invalidateReviewIncentiveInTransaction } from "./incentive-invalidation";
 import { reviewParticipationContentDigest } from "./incentive-evidence";
+import { invalidateReviewIncentiveInTransaction } from "./incentive-invalidation";
 import { fulfillReviewPointsClaimInTransaction } from "./incentive-points";
 import {
   reviewModuleToggleSchema,
@@ -635,7 +635,11 @@ export async function moderateNativeReviewInTransaction({
     });
   }
   if (status === "published") {
-    if (review.request && review.request.incentivePolicyId !== null && review.request.orderId) {
+    if (
+      review.request &&
+      review.request.incentivePolicyId !== null &&
+      review.request.orderId
+    ) {
       if (generation) {
         const claim = await tx.weleticReviewIncentiveClaim.findUnique({
           where: {
@@ -680,7 +684,10 @@ export async function moderateNativeReviewInTransaction({
         reason: `review_${status}`,
       });
       if (result.status === "ignored")
-        throw new ReviewError("unavailable", "Reward ledger evidence is missing");
+        throw new ReviewError(
+          "unavailable",
+          "Reward ledger evidence is missing",
+        );
       await tx.weleticProductReview.update({
         where: { id: review.id },
         data: { rewardStatus: "reversed", rewardReason: `review_${status}` },

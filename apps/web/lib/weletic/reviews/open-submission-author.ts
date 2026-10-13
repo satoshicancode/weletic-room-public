@@ -54,7 +54,7 @@ export async function ensureOpenReviewAuthorInTransaction({
   `;
   if (
     settings.length !== 1 ||
-    ![true, 1, 1n].includes(settings[0].enabled as any)
+    ![true, 1, BigInt(1)].includes(settings[0].enabled as any)
   )
     throw new ReviewError("disabled", "Reviews are unavailable");
   const identities = deriveAllShopifyCustomerPrivacyIdentities({

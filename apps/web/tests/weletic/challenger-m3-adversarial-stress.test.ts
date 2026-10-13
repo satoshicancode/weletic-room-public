@@ -1,34 +1,28 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import crypto from "node:crypto";
+import { prisma } from "../../lib/prisma";
+import * as recordOrderModule from "../../lib/weletic/commerce/record-order";
+import * as storeResolverModule from "../../lib/weletic/shopify/store-resolver";
 import {
-  verifyShopifyWebhookSignature,
-  verifyHmacConstantTime,
-  verifyHmac,
   timingSafeBufferEqual,
+  verifyHmacConstantTime,
 } from "../../lib/weletic/shopify/webhook-signature";
+import {
+  findActiveDiscountCode,
+  handleQueueBatch,
+  processQueueMessage,
+  type MessageBatch,
+  type QueueMessageItem,
+} from "../../workers/queue-consumer/src/index";
 import {
   handleWebhookIngress,
   WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
-  SUPPORTED_WEBHOOK_TOPICS,
-  type WebhookQueueMessage,
   type WebhookIngressEnv,
+  type WebhookQueueMessage,
 } from "../../workers/webhook-ingress/src/index";
-import {
-  processQueueMessage,
-  handleQueueBatch,
-  findActiveDiscountCode,
-  extractOrderDiscountCodes,
-  type QueueConsumerEnv,
-  type QueueMessageItem,
-  type MessageBatch,
-} from "../../workers/queue-consumer/src/index";
-import { prisma } from "../../lib/prisma";
-import { resolveShopifyStoreByDomain } from "../../lib/weletic/shopify/store-resolver";
-import * as recordOrderModule from "../../lib/weletic/commerce/record-order";
-import * as storeResolverModule from "../../lib/weletic/shopify/store-resolver";
 
 const PRIMARY_SECRET = "shpss_adversarial_test_primary_secret_32_chars_123456";
 const NEXT_SECRET = "shpss_adversarial_test_rotation_secret_32_chars_654321";
@@ -264,7 +258,8 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
     // 1.7 Null byte attacks
     it("1.7 null byte injection: safely rejects signatures and payloads with null bytes", () => {
       // Null byte inside signature
-      const nullSig = validSignature.slice(0, 10) + "\0" + validSignature.slice(11);
+      const nullSig =
+        validSignature.slice(0, 10) + "\0" + validSignature.slice(11);
       expect(
         verifyHmacConstantTime({
           rawBodyBytes: rawPayload,
@@ -313,7 +308,10 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
     it("1.9 secret rotation matrix: verifies primary, next, and malformed rotation keys", () => {
       const sigPrimary = signPayload(rawPayload, PRIMARY_SECRET);
       const sigNext = signPayload(rawPayload, NEXT_SECRET);
-      const sigOther = signPayload(rawPayload, "shpss_unregistered_key_32_chars_12345678");
+      const sigOther = signPayload(
+        rawPayload,
+        "shpss_unregistered_key_32_chars_12345678",
+      );
 
       // Accepts either primary or next during rotation
       expect(
@@ -460,7 +458,9 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
     // 2.3 Payload Bounds: Actual body > 10MB without or spoofed Content-Length -> 413
     it("2.3 payload bounds: rejects streaming body exceeding 10MB limit with 413", async () => {
       // 10MB + 1 byte
-      const hugeBuffer = new Uint8Array(WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 1);
+      const hugeBuffer = new Uint8Array(
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 1,
+      );
       hugeBuffer.fill(65); // fill with 'A'
 
       const req = new Request("https://webhook.weletic.com/ingress", {
@@ -485,7 +485,9 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
 
     // 2.4 Payload Boundary: Exactly 10MB body passes size check
     it("2.4 payload bounds: exactly 10MB (10485760 bytes) is not rejected by size bound", async () => {
-      const exact10MbBuffer = new Uint8Array(WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES);
+      const exact10MbBuffer = new Uint8Array(
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
+      );
       exact10MbBuffer.fill(66);
 
       const signature = signPayload(exact10MbBuffer, PRIMARY_SECRET);
@@ -513,7 +515,14 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
 
     // 2.5 HTTP Methods: 405 Method Not Allowed on non-POST
     it("2.5 HTTP methods: rejects GET, PUT, DELETE, PATCH, OPTIONS with 405 Method Not Allowed", async () => {
-      const disallowedMethods = ["GET", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"];
+      const disallowedMethods = [
+        "GET",
+        "PUT",
+        "DELETE",
+        "PATCH",
+        "OPTIONS",
+        "HEAD",
+      ];
 
       for (const method of disallowedMethods) {
         const req = new Request("https://webhook.weletic.com/ingress", {
@@ -525,7 +534,9 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
           ORDER_WEBHOOK_QUEUE: mockQueue,
         });
 
-        expect(res.status, `Method ${method} was not rejected with 405`).toBe(405);
+        expect(res.status, `Method ${method} was not rejected with 405`).toBe(
+          405,
+        );
         expect(mockQueue.send).not.toHaveBeenCalled();
       }
     });
@@ -536,15 +547,18 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
       const signature = signPayload(payload, PRIMARY_SECRET);
 
       // Missing shop domain -> 400
-      const reqMissingDomain = new Request("https://webhook.weletic.com/ingress", {
-        method: "POST",
-        headers: {
-          "x-shopify-topic": "orders/paid",
-          "x-shopify-hmac-sha256": signature,
-          "content-type": "application/json",
+      const reqMissingDomain = new Request(
+        "https://webhook.weletic.com/ingress",
+        {
+          method: "POST",
+          headers: {
+            "x-shopify-topic": "orders/paid",
+            "x-shopify-hmac-sha256": signature,
+            "content-type": "application/json",
+          },
+          body: payload,
         },
-        body: payload,
-      });
+      );
       const res400 = await handleWebhookIngress(reqMissingDomain, {
         SHOPIFY_WEBHOOK_SECRET: PRIMARY_SECRET,
         ORDER_WEBHOOK_QUEUE: mockQueue,
@@ -581,7 +595,10 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
 
     it("3.1 batch duplicate delivery: 20 duplicate messages in queue batch record exactly one event", async () => {
       // Mock store resolver
-      vi.spyOn(storeResolverModule, "resolveShopifyStoreByDomain").mockResolvedValue({
+      vi.spyOn(
+        storeResolverModule,
+        "resolveShopifyStoreByDomain",
+      ).mockResolvedValue({
         shopId: testStoreId,
         storeId: testStoreId,
         primaryDomain: testShopDomain,
@@ -599,9 +616,8 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
 
       // Create 20 duplicate message items with identical webhookId
       const ackSpies: any[] = [];
-      const duplicateMessages: QueueMessageItem<WebhookQueueMessage>[] = Array.from(
-        { length: 20 },
-        (_, i) => {
+      const duplicateMessages: QueueMessageItem<WebhookQueueMessage>[] =
+        Array.from({ length: 20 }, (_, i) => {
           const ackFn = vi.fn();
           ackSpies.push(ackFn);
           return {
@@ -622,8 +638,7 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
             ack: ackFn,
             retry: vi.fn(),
           };
-        },
-      );
+        });
 
       const batch: MessageBatch<WebhookQueueMessage> = {
         queue: "ORDER_WEBHOOK_QUEUE",
@@ -713,7 +728,9 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
     it("4.1 Invariant 1: multi-domain store resolution normalizes protocol, case, and aliases", async () => {
       // 1. Normalize domain checks
       expect(
-        storeResolverModule.normalizeShopDomain("HTTPS://YAMAX-BRAND.MYSHOPIFY.COM/"),
+        storeResolverModule.normalizeShopDomain(
+          "HTTPS://YAMAX-BRAND.MYSHOPIFY.COM/",
+        ),
       ).toBe("yamax-brand.myshopify.com");
       expect(
         storeResolverModule.normalizeShopDomain("http://store.yamax.com/path"),
@@ -738,18 +755,20 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
         accessToken: "mock_token",
       };
 
-      vi.spyOn(storeResolverModule, "resolveShopifyStoreByDomain").mockImplementation(
-        async (domain) => {
-          const norm = storeResolverModule.normalizeShopDomain(domain);
-          if (norm === testShop || norm === `shop-${uniqueId}.yamax.com`) {
-            return storeMock;
-          }
-          return null;
-        },
-      );
+      vi.spyOn(
+        storeResolverModule,
+        "resolveShopifyStoreByDomain",
+      ).mockImplementation(async (domain) => {
+        const norm = storeResolverModule.normalizeShopDomain(domain);
+        if (norm === testShop || norm === `shop-${uniqueId}.yamax.com`) {
+          return storeMock;
+        }
+        return null;
+      });
 
       // Verify resolution across myshopifyDomain, primaryDomain, uppercase, and protocol
-      const res1 = await storeResolverModule.resolveShopifyStoreByDomain(testShop);
+      const res1 =
+        await storeResolverModule.resolveShopifyStoreByDomain(testShop);
       expect(res1?.storeId).toBe(storeId);
 
       const res2 = await storeResolverModule.resolveShopifyStoreByDomain(
@@ -800,12 +819,20 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
 
       try {
         // Query active code -> returns code
-        const foundActive = await findActiveDiscountCode(prisma, programId, activeCode);
+        const foundActive = await findActiveDiscountCode(
+          prisma,
+          programId,
+          activeCode,
+        );
         expect(foundActive).not.toBeNull();
         expect(foundActive?.code).toBe(activeCode);
 
         // Query soft-deleted code -> strictly returns null
-        const foundDisabled = await findActiveDiscountCode(prisma, programId, disabledCode);
+        const foundDisabled = await findActiveDiscountCode(
+          prisma,
+          programId,
+          disabledCode,
+        );
         expect(foundDisabled).toBeNull();
 
         // Downstream order simulation with soft-deleted discount
@@ -823,9 +850,10 @@ describe("Milestone 3 Challenger: Adversarial Stress Test Suite", () => {
           programId,
           accessToken: "token",
         };
-        vi.spyOn(storeResolverModule, "resolveShopifyStoreByDomain").mockResolvedValue(
-          storeMock,
-        );
+        vi.spyOn(
+          storeResolverModule,
+          "resolveShopifyStoreByDomain",
+        ).mockResolvedValue(storeMock);
 
         // Message with ONLY soft-deleted discount code
         const msgDisabled: QueueMessageItem<WebhookQueueMessage> = {

@@ -17,7 +17,10 @@ export default defineConfig({
   workers: 1,
   reporter: process.env.CI
     ? [["list"], ["html", { outputFolder: "playwright-report" }]]
-    : [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]],
+    : [
+        ["list"],
+        ["html", { outputFolder: "playwright-report", open: "never" }],
+      ],
   expect: {
     timeout: 30000,
   },

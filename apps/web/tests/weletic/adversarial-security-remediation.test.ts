@@ -1,12 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import {
-  appendPointsLedgerEntry,
-  reconcileAccountPoints,
-} from "@/lib/weletic/loyalty/ledger";
 import { releaseHoldingPeriodGrant } from "@/lib/weletic/loyalty/holding-period";
+import { reconcileAccountPoints } from "@/lib/weletic/loyalty/ledger";
 import {
-  provisionDiscountSaga,
   PreflightRedemptionDiscrepancyError,
+  provisionDiscountSaga,
 } from "@/lib/weletic/loyalty/saga";
 import {
   WeleticLoyaltyAccountStatus,
@@ -115,8 +112,12 @@ describe("Adversarial Hardening & Remediation Verification", () => {
         store: { id: storeId, projectId: "ws_adv_1" },
         program: { id: "prog_adv_1", storeId },
       };
-      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue(accountMock as any);
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue(accountMock as any);
+      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue(
+        accountMock as any,
+      );
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue(
+        accountMock as any,
+      );
 
       vi.mocked(prisma.weleticRewardDefinition.findUnique).mockResolvedValue({
         id: rewardDefinitionId,
@@ -199,8 +200,12 @@ describe("Adversarial Hardening & Remediation Verification", () => {
         store: { id: storeId, projectId: "ws_adv_1" },
         program: { id: "prog_adv_1", storeId },
       };
-      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue(accountMock as any);
-      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue(accountMock as any);
+      vi.mocked(prisma.weleticLoyaltyAccount.findFirst).mockResolvedValue(
+        accountMock as any,
+      );
+      vi.mocked(prisma.weleticLoyaltyAccount.findUnique).mockResolvedValue(
+        accountMock as any,
+      );
 
       vi.mocked(prisma.weleticRewardDefinition.findUnique).mockResolvedValue({
         id: rewardDefinitionId,
@@ -238,7 +243,9 @@ describe("Adversarial Hardening & Remediation Verification", () => {
             metadata: expect.objectContaining({
               quarantine: expect.objectContaining({
                 isQuarantined: true,
-                reason: expect.stringContaining("contains cross-tenant entries"),
+                reason: expect.stringContaining(
+                  "contains cross-tenant entries",
+                ),
               }),
             }),
           }),
@@ -259,8 +266,18 @@ describe("Adversarial Hardening & Remediation Verification", () => {
       } as any);
 
       vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([
-        { id: "e1", sequenceNumber: 1, pointsDelta: BigInt(100), balanceAfter: BigInt(100) },
-        { id: "e2", sequenceNumber: 1, pointsDelta: BigInt(100), balanceAfter: BigInt(200) }, // Duplicate sequence 1!
+        {
+          id: "e1",
+          sequenceNumber: 1,
+          pointsDelta: BigInt(100),
+          balanceAfter: BigInt(100),
+        },
+        {
+          id: "e2",
+          sequenceNumber: 1,
+          pointsDelta: BigInt(100),
+          balanceAfter: BigInt(200),
+        }, // Duplicate sequence 1!
       ] as any);
 
       await expect(reconcileAccountPoints(accountId)).rejects.toThrow(
@@ -294,8 +311,20 @@ describe("Adversarial Hardening & Remediation Verification", () => {
       } as any);
 
       vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([
-        { id: "e1", sequenceNumber: 1, storeId: "store_target", pointsDelta: BigInt(100), balanceAfter: BigInt(100) },
-        { id: "e2", sequenceNumber: 2, storeId: "alien_store", pointsDelta: BigInt(100), balanceAfter: BigInt(200) }, // Cross-tenant!
+        {
+          id: "e1",
+          sequenceNumber: 1,
+          storeId: "store_target",
+          pointsDelta: BigInt(100),
+          balanceAfter: BigInt(100),
+        },
+        {
+          id: "e2",
+          sequenceNumber: 2,
+          storeId: "alien_store",
+          pointsDelta: BigInt(100),
+          balanceAfter: BigInt(200),
+        }, // Cross-tenant!
       ] as any);
 
       await expect(reconcileAccountPoints(accountId)).rejects.toThrow(
@@ -329,7 +358,13 @@ describe("Adversarial Hardening & Remediation Verification", () => {
       } as any);
 
       vi.mocked(prisma.weleticPointsLedgerEntry.findMany).mockResolvedValue([
-        { id: "e1", sequenceNumber: 1, storeId: "store_target", pointsDelta: BigInt(100), balanceAfter: BigInt(100) },
+        {
+          id: "e1",
+          sequenceNumber: 1,
+          storeId: "store_target",
+          pointsDelta: BigInt(100),
+          balanceAfter: BigInt(100),
+        },
         {
           id: "e2",
           sequenceNumber: 2,
@@ -352,7 +387,9 @@ describe("Adversarial Hardening & Remediation Verification", () => {
             metadata: expect.objectContaining({
               quarantine: expect.objectContaining({
                 isQuarantined: true,
-                reason: expect.stringContaining("Illegal positive points delta"),
+                reason: expect.stringContaining(
+                  "Illegal positive points delta",
+                ),
               }),
             }),
           }),
@@ -389,7 +426,9 @@ describe("Adversarial Hardening & Remediation Verification", () => {
         ledgerVersion: 1,
       } as any);
 
-      vi.mocked(prisma.weleticPointsLedgerEntry.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.weleticPointsLedgerEntry.findFirst).mockResolvedValue(
+        null,
+      );
       vi.mocked(prisma.weleticPointsLedgerEntry.create).mockResolvedValue({
         id: "wpledger_matured_1",
         sequenceNumber: 2,
@@ -449,7 +488,9 @@ describe("Adversarial Hardening & Remediation Verification", () => {
         ledgerVersion: 1,
       } as any);
 
-      vi.mocked(prisma.weleticPointsLedgerEntry.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.weleticPointsLedgerEntry.findFirst).mockResolvedValue(
+        null,
+      );
       vi.mocked(prisma.weleticPointsLedgerEntry.create).mockResolvedValue({
         id: "wpledger_void_1",
         sequenceNumber: 2,

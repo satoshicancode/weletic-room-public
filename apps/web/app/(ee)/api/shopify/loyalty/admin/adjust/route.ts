@@ -110,9 +110,7 @@ export const POST = withWorkspace(
 
         if (typeof (tx as any).weleticPointsLedgerEntry?.count === "function") {
           const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          const dailyCount = await (
-            tx as any
-          ).weleticPointsLedgerEntry.count({
+          const dailyCount = await (tx as any).weleticPointsLedgerEntry.count({
             where: {
               storeId,
               entryType: WeleticPointsLedgerEntryType.MANUAL_ADJUSTMENT,

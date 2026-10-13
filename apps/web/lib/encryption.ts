@@ -126,7 +126,9 @@ function isKnownPlaintextToken(payload: string): boolean {
  */
 export function decryptOrPassthrough(payload: string): string {
   if (!payload || typeof payload !== "string") {
-    throw new Error("[decryptOrPassthrough] Payload must be a non-empty string");
+    throw new Error(
+      "[decryptOrPassthrough] Payload must be a non-empty string",
+    );
   }
 
   // 1. Fail closed on missing encryption key — never swallow configuration errors

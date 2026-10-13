@@ -28,7 +28,7 @@ function codeVariants(code: string) {
 async function findFreeSuffixedCode(programId: string, baseCode: string) {
   for (let n = 2; n < 2 + MAX_AUTO_CODE_SUFFIX_ATTEMPTS; n++) {
     const candidate = `${baseCode}${n}`;
-    let taken = null;
+    let taken: { id: string } | null = null;
     for (const variant of codeVariants(candidate)) {
       taken = await prisma.discountCode.findFirst({
         where: { programId, code: variant },

@@ -1,11 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { ratelimit } from "@/lib/upstash";
 import {
   readWeleticShopifyRequestBodyBytes,
   verifyWeleticShopifyRequest,
 } from "@/lib/weletic/shopify/service-auth";
 import { resolveShopifyStoreByDomain } from "@/lib/weletic/shopify/store-resolver";
-import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { Prisma } from "@prisma/client";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
@@ -110,9 +110,8 @@ export async function openReviewSubmissionRoute(
           ),
         )
       : null;
-    let resolution: Awaited<
-      ReturnType<typeof resolveShopifyStoreByDomain>
-    > = null;
+    let resolution: Awaited<ReturnType<typeof resolveShopifyStoreByDomain>> =
+      null;
     try {
       resolution = await resolveShopifyStoreByDomain(context.shop);
     } catch {
@@ -179,7 +178,7 @@ export async function openReviewSubmissionRoute(
           >`SELECT enabled, photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${store.id} ${forUpdateClause}`;
           if (
             settings.length !== 1 ||
-            ![true, 1, 1n].includes(settings[0].enabled as any)
+            ![true, 1, BigInt(1)].includes(settings[0].enabled as any)
           )
             throw new ReviewError("disabled", "Reviews are unavailable");
           const products = await tx.$queryRaw<
@@ -190,7 +189,9 @@ export async function openReviewSubmissionRoute(
           productTitle = products[0].title;
           if (
             policy.policy.photoUploadsEnabled &&
-            [true, 1, 1n].includes(settings[0].photoUploadsEnabled as any)
+            [true, 1, BigInt(1)].includes(
+              settings[0].photoUploadsEnabled as any,
+            )
           ) {
             try {
               requireReviewStorage();

@@ -1,7 +1,7 @@
 import {
-  registerServiceAuthRedisProvider,
   createD1NonceClient,
   createPrismaNonceClient,
+  registerServiceAuthRedisProvider,
   type RedisSetClient,
 } from "@weletic/contracts/shopify/service-auth";
 

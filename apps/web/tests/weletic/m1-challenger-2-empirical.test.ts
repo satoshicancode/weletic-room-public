@@ -115,7 +115,9 @@ describe("M1 Database Migration Challenger 2: Empirical Verification Suite", () 
     await prisma.$executeRawUnsafe(
       `DELETE FROM Discount WHERE id = '${testDiscountId}'`,
     );
-    await prisma.$executeRawUnsafe(`DELETE FROM Link WHERE id = '${testLinkId}'`);
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM Link WHERE id = '${testLinkId}'`,
+    );
     await prisma.$executeRawUnsafe(
       `DELETE FROM WeleticShopifyStore WHERE id = '${testStoreId}'`,
     );
@@ -268,13 +270,13 @@ describe("M1 Database Migration Challenger 2: Empirical Verification Suite", () 
         id: testDiscountId,
         programId: testProgramId,
         amount: 20,
-        type: "percentage",
+        type: "percentage" as const,
         maxDuration: null,
         description: null,
         couponId: null,
         couponTestId: null,
         autoProvisionEnabledAt: null,
-        provider: "stripe",
+        provider: "stripe" as const,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -355,13 +357,13 @@ describe("M1 Database Migration Challenger 2: Empirical Verification Suite", () 
         id: testDiscountId,
         programId: testProgramId,
         amount: 20,
-        type: "percentage",
+        type: "percentage" as const,
         maxDuration: null,
         description: null,
         couponId: null,
         couponTestId: null,
         autoProvisionEnabledAt: null,
-        provider: "stripe",
+        provider: "stripe" as const,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

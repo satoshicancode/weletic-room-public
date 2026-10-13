@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { addDays } from "date-fns";
 import { Prisma } from "@prisma/client";
+import { addDays } from "date-fns";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -22,7 +22,9 @@ const domainMocks = vi.hoisted(() => ({
   })),
   scheduleTierReview: vi.fn().mockResolvedValue(null),
   enqueueOutboxJob: vi.fn().mockResolvedValue({ id: "outbox_job_id" }),
-  calculateNextPointsExpiryDate: vi.fn().mockReturnValue(new Date("2027-01-01T00:00:00.000Z")),
+  calculateNextPointsExpiryDate: vi
+    .fn()
+    .mockReturnValue(new Date("2027-01-01T00:00:00.000Z")),
   hasCustomerRedactionTombstone: vi.fn().mockReturnValue(false),
   assertOperationalWrites: vi.fn().mockResolvedValue(undefined),
   assertInstallationGeneration: vi.fn().mockResolvedValue(undefined),
@@ -43,24 +45,32 @@ vi.mock("@/lib/weletic/loyalty/points-communication-producer", () => ({
 
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({
   enqueueOutboxJob: domainMocks.enqueueOutboxJob,
-  enqueueOutboxJobFromProgramTransaction: vi.fn().mockResolvedValue({ id: "outbox_tx_job_id" }),
+  enqueueOutboxJobFromProgramTransaction: vi
+    .fn()
+    .mockResolvedValue({ id: "outbox_tx_job_id" }),
 }));
 
 vi.mock("@/lib/weletic/loyalty/flow-trigger-outbox", () => ({
   enqueueFlowTriggerJob: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@/lib/weletic/loyalty/points-expiry-policy", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return {
-    ...actual,
-    calculateNextPointsExpiryDate: domainMocks.calculateNextPointsExpiryDate,
-    getPointsExpiryStageDate: vi.fn().mockReturnValue(new Date("2026-11-01T00:00:00.000Z")),
-  };
-});
+vi.mock(
+  "@/lib/weletic/loyalty/points-expiry-policy",
+  async (importOriginal) => {
+    const actual = await importOriginal<any>();
+    return {
+      ...actual,
+      calculateNextPointsExpiryDate: domainMocks.calculateNextPointsExpiryDate,
+      getPointsExpiryStageDate: vi
+        .fn()
+        .mockReturnValue(new Date("2026-11-01T00:00:00.000Z")),
+    };
+  },
+);
 
 vi.mock("@/lib/weletic/loyalty/shopper-privacy", () => ({
-  hasShopifyCustomerRedactionTombstone: domainMocks.hasCustomerRedactionTombstone,
+  hasShopifyCustomerRedactionTombstone:
+    domainMocks.hasCustomerRedactionTombstone,
 }));
 
 vi.mock("@/lib/weletic/loyalty/tier-review-scheduling", () => ({
@@ -78,14 +88,19 @@ vi.mock("@/lib/weletic/loyalty/vip-achievement-communication-producer", () => ({
   enqueueVipAchievementCommunication: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock("@/lib/weletic/shopify/store-compliance-state", async (importOriginal) => {
-  const actual = await importOriginal<any>();
-  return {
-    ...actual,
-    assertShopifyStoreAcceptsOperationalWrites: domainMocks.assertOperationalWrites,
-    assertShopifyStoreMatchesInstallationGeneration: domainMocks.assertInstallationGeneration,
-  };
-});
+vi.mock(
+  "@/lib/weletic/shopify/store-compliance-state",
+  async (importOriginal) => {
+    const actual = await importOriginal<any>();
+    return {
+      ...actual,
+      assertShopifyStoreAcceptsOperationalWrites:
+        domainMocks.assertOperationalWrites,
+      assertShopifyStoreMatchesInstallationGeneration:
+        domainMocks.assertInstallationGeneration,
+    };
+  },
+);
 
 vi.mock("@/lib/weletic/loyalty/merchant-write-fence", () => ({
   withActiveStoreLoyaltyMutation: async ({ operation }: any) => {
@@ -122,7 +137,11 @@ vi.mock("@/lib/prisma", () => {
     },
     weleticLoyaltyEarnGrant: {
       findUnique: vi.fn(),
-      create: vi.fn().mockImplementation((args) => Promise.resolve({ id: "grant_mock_id", ...args.data })),
+      create: vi
+        .fn()
+        .mockImplementation((args) =>
+          Promise.resolve({ id: "grant_mock_id", ...args.data }),
+        ),
       updateMany: vi.fn(),
     },
     weleticLoyaltyOrderLineEarn: {
@@ -160,15 +179,15 @@ vi.mock("@/lib/prisma", () => {
 });
 
 import { prisma } from "@/lib/prisma";
-import { evaluateTierMaintenanceCycle } from "@/lib/weletic/loyalty/tier-lifecycle";
 import { processOrderPointsEarn } from "@/lib/weletic/loyalty/earn";
 import { enqueuePointsExpiryLifecycleJobs } from "@/lib/weletic/loyalty/points-expiry-scheduler";
-import {
-  vipTierReviewSweepJob,
-  loyaltyPointsExpirationJob,
-  handleHttpTrigger,
-} from "../../../workers/cron-triggers/src/index";
+import { evaluateTierMaintenanceCycle } from "@/lib/weletic/loyalty/tier-lifecycle";
 import { enqueueTierReviewSweepJobs } from "@/lib/weletic/loyalty/tier-review-scheduling";
+import {
+  handleHttpTrigger,
+  loyaltyPointsExpirationJob,
+  vipTierReviewSweepJob,
+} from "../../../workers/cron-triggers/src/index";
 
 describe("Milestone 1: Loyalty Points & VIP Progression Defect & Fix Verifications", () => {
   beforeEach(() => {
@@ -187,7 +206,9 @@ describe("Milestone 1: Loyalty Points & VIP Progression Defect & Fix Verificatio
 
       const result = await vipTierReviewSweepJob(mockEnv);
 
-      expect(enqueueTierReviewSweepJobs).toHaveBeenCalledWith({ batchSize: 50 });
+      expect(enqueueTierReviewSweepJobs).toHaveBeenCalledWith({
+        batchSize: 50,
+      });
       expect(result).toEqual({
         programsScanned: 2,
         programsSkipped: 0,
@@ -207,7 +228,9 @@ describe("Milestone 1: Loyalty Points & VIP Progression Defect & Fix Verificatio
 
       await loyaltyPointsExpirationJob(mockEnv);
 
-      expect(enqueueTierReviewSweepJobs).toHaveBeenCalledWith({ batchSize: 50 });
+      expect(enqueueTierReviewSweepJobs).toHaveBeenCalledWith({
+        batchSize: 50,
+      });
     });
 
     it("handles tier-sweep via handleHttpTrigger route /api/cron/weletic/loyalty/tier-sweep", async () => {
@@ -440,7 +463,9 @@ describe("Milestone 1: Loyalty Points & VIP Progression Defect & Fix Verificatio
       };
     }
 
-    function baseLoyaltyProgram(earningRuleOverrides: Record<string, unknown> = {}) {
+    function baseLoyaltyProgram(
+      earningRuleOverrides: Record<string, unknown> = {},
+    ) {
       return {
         id: "prog_m1_earn",
         storeId,
@@ -477,7 +502,9 @@ describe("Milestone 1: Loyalty Points & VIP Progression Defect & Fix Verificatio
     }
 
     it("calculates points inclusive of tax and shipping when excludeTaxesAndShipping is false", async () => {
-      (prisma.weleticCommerceOrder.findUnique as any).mockResolvedValue(baseCommerceOrder());
+      (prisma.weleticCommerceOrder.findUnique as any).mockResolvedValue(
+        baseCommerceOrder(),
+      );
       (prisma.weleticLoyaltyProgram.findUnique as any).mockResolvedValue(
         baseLoyaltyProgram({ excludeTaxesAndShipping: false }),
       );
@@ -602,8 +629,10 @@ describe("Milestone 1: Loyalty Points & VIP Progression Defect & Fix Verificatio
       ]);
       (prisma.weleticLoyaltyProgram.findUnique as any).mockImplementation(
         (args: any) => {
-          if (args.where.storeId === "store_1") return Promise.resolve(store1Program);
-          if (args.where.storeId === "store_2") return Promise.resolve(store2Program);
+          if (args.where.storeId === "store_1")
+            return Promise.resolve(store1Program);
+          if (args.where.storeId === "store_2")
+            return Promise.resolve(store2Program);
           return Promise.resolve(null);
         },
       );
@@ -614,33 +643,37 @@ describe("Milestone 1: Loyalty Points & VIP Progression Defect & Fix Verificatio
       let store1QueriedTake = 0;
       let store2QueriedTake = 0;
 
-      (prisma.weleticLoyaltyAccount.findMany as any).mockImplementation((args: any) => {
-        if (args.where.storeId === "store_1") {
-          store1QueriedTake = args.take;
-          // Return quota accounts
-          return Array.from({ length: args.take }, (_, idx) => ({
-            id: `acc_store1_${idx}`,
-            storeId: "store_1",
-            pointsExpiryPolicyVersion: 0,
-            cachedPointsBalance: BigInt(100),
-            pointsExpireAt: new Date("2026-05-01T00:00:00.000Z"),
-            nextExpiryDate: new Date("2026-05-01T00:00:00.000Z"),
-          }));
-        } else if (args.where.storeId === "store_2") {
-          store2QueriedTake = args.take;
-          return Array.from({ length: args.take }, (_, idx) => ({
-            id: `acc_store2_${idx}`,
-            storeId: "store_2",
-            pointsExpiryPolicyVersion: 0,
-            cachedPointsBalance: BigInt(200),
-            pointsExpireAt: new Date("2026-05-01T00:00:00.000Z"),
-            nextExpiryDate: new Date("2026-05-01T00:00:00.000Z"),
-          }));
-        }
-        return [];
-      });
+      (prisma.weleticLoyaltyAccount.findMany as any).mockImplementation(
+        (args: any) => {
+          if (args.where.storeId === "store_1") {
+            store1QueriedTake = args.take;
+            // Return quota accounts
+            return Array.from({ length: args.take }, (_, idx) => ({
+              id: `acc_store1_${idx}`,
+              storeId: "store_1",
+              pointsExpiryPolicyVersion: 0,
+              cachedPointsBalance: BigInt(100),
+              pointsExpireAt: new Date("2026-05-01T00:00:00.000Z"),
+              nextExpiryDate: new Date("2026-05-01T00:00:00.000Z"),
+            }));
+          } else if (args.where.storeId === "store_2") {
+            store2QueriedTake = args.take;
+            return Array.from({ length: args.take }, (_, idx) => ({
+              id: `acc_store2_${idx}`,
+              storeId: "store_2",
+              pointsExpiryPolicyVersion: 0,
+              cachedPointsBalance: BigInt(200),
+              pointsExpireAt: new Date("2026-05-01T00:00:00.000Z"),
+              nextExpiryDate: new Date("2026-05-01T00:00:00.000Z"),
+            }));
+          }
+          return [];
+        },
+      );
 
-      (prisma.weleticLoyaltyAccount.updateMany as any).mockResolvedValue({ count: 1 });
+      (prisma.weleticLoyaltyAccount.updateMany as any).mockResolvedValue({
+        count: 1,
+      });
 
       const result = await enqueuePointsExpiryLifecycleJobs({ batchSize: 20 });
 

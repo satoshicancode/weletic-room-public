@@ -171,12 +171,18 @@ export const POST = withWorkspace(
       ) {
         return new Response(vercelResponse.error.message, { status: 422 });
       }
-    } else if (process.env.CLOUDFLARE_ZONE_ID && process.env.CLOUDFLARE_API_TOKEN) {
+    } else if (
+      process.env.CLOUDFLARE_ZONE_ID &&
+      process.env.CLOUDFLARE_API_TOKEN
+    ) {
       try {
         await addCustomHostnameToCloudflare(slug);
       } catch (err: any) {
         if (!err.message?.includes("already exists")) {
-          console.error("Failed to add custom hostname to Cloudflare for SaaS:", err);
+          console.error(
+            "Failed to add custom hostname to Cloudflare for SaaS:",
+            err,
+          );
         }
       }
     }

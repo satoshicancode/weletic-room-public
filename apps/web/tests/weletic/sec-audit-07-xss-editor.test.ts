@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  escapeHtml,
+  DEFAULT_YAMAX_ACCORDIONS,
+  DEFAULT_YAMAX_HERO,
   generateYamaxHeroHtml,
   generateYamaxMaterialCareHtml,
   generateYamaxSizeGuideHtml,
-  DEFAULT_YAMAX_ACCORDIONS,
-  DEFAULT_YAMAX_HERO,
 } from "../../ui/weletic/yamax-product-description-editor";
 
 describe("SEC-AUDIT-07: Yamax Product Description Editor XSS Neutralization", () => {
@@ -14,11 +13,13 @@ describe("SEC-AUDIT-07: Yamax Product Description Editor XSS Neutralization", ()
     const html = generateYamaxSizeGuideHtml(maliciousPayload);
 
     expect(html).not.toContain("<script>");
-    expect(html).toContain("&lt;script&gt;alert(&quot;XSS&quot;)&lt;/script&gt;");
+    expect(html).toContain(
+      "&lt;script&gt;alert(&quot;XSS&quot;)&lt;/script&gt;",
+    );
   });
 
   it("escapes event handler injection payloads in fitTip", () => {
-    const maliciousPayload = '<img src=x onerror=alert(document.cookie)>';
+    const maliciousPayload = "<img src=x onerror=alert(document.cookie)>";
     const html = generateYamaxSizeGuideHtml(maliciousPayload);
 
     expect(html).not.toContain("<img");
@@ -43,8 +44,8 @@ describe("SEC-AUDIT-07: Yamax Product Description Editor XSS Neutralization", ()
   it("escapes injection payloads in Material & Care accordion", () => {
     const maliciousAccordions = {
       ...DEFAULT_YAMAX_ACCORDIONS,
-      fabricComposition: '60% Nylon <script>alert(1)</script>',
-      washInstruction: 'Machine wash <img src=x onerror=alert(2)>',
+      fabricComposition: "60% Nylon <script>alert(1)</script>",
+      washInstruction: "Machine wash <img src=x onerror=alert(2)>",
     };
 
     const html = generateYamaxMaterialCareHtml(maliciousAccordions);
@@ -55,7 +56,9 @@ describe("SEC-AUDIT-07: Yamax Product Description Editor XSS Neutralization", ()
   });
 
   it("preserves standard safe formatting without altering legitimate text", () => {
-    const normalHtml = generateYamaxSizeGuideHtml(DEFAULT_YAMAX_ACCORDIONS.fitTip);
+    const normalHtml = generateYamaxSizeGuideHtml(
+      DEFAULT_YAMAX_ACCORDIONS.fitTip,
+    );
     expect(normalHtml).toContain(DEFAULT_YAMAX_ACCORDIONS.fitTip);
     expect(normalHtml).toContain("position: sticky; left: 0px;");
     expect(normalHtml).toContain("overflow-x: auto; max-width: 100%");
@@ -70,6 +73,8 @@ describe("SEC-AUDIT-07: Yamax Product Description Editor XSS Neutralization", ()
     const html = generateYamaxHeroHtml(maliciousHero);
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<b onmouseover");
-    expect(html).toContain("&lt;script&gt;alert(&quot;tagline&quot;)&lt;/script&gt;");
+    expect(html).toContain(
+      "&lt;script&gt;alert(&quot;tagline&quot;)&lt;/script&gt;",
+    );
   });
 });

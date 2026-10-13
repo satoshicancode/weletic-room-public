@@ -1,24 +1,24 @@
-/// <reference types="@cloudflare/workers-types" />
 import { timingSafeEqual } from "node:crypto";
 import {
-  prisma,
   createPrismaClient,
+  prisma,
   type ExtendedPrismaClient,
 } from "../../../lib/prisma";
-import { reconcilePendingStoreCreditRedemptionsSweep } from "../../../lib/weletic/loyalty/store-credit-reconciliation";
-import { processOutboxJobsBatch } from "../../../lib/weletic/loyalty/outbox";
-import { recoverStuckOrdersPaidWebhooks } from "../../../lib/weletic/shopify/orders-paid-recovery";
-import { enqueuePointsExpiryLifecycleJobs } from "../../../lib/weletic/loyalty/points-expiry-scheduler";
-import { enqueueRewardExpiryReminderJobs } from "../../../lib/weletic/loyalty/reward-expiry-scheduler";
-import { enqueueTierReviewSweepJobs } from "../../../lib/weletic/loyalty/tier-review-scheduling";
-import { listDueShopifySessionRenewals } from "../../../lib/weletic/shopify/session-renewal";
-import { syncWeleticShopifyCatalog } from "../../../lib/weletic/shopify/catalog-sync";
-import { resolveShopifyStoreByDomain } from "../../../lib/weletic/shopify/store-resolver";
+import type { D1Database } from "../../../lib/weletic/cloudflare-types";
 import {
+  createRateLimitResponse,
   cronRateLimiter,
   getClientIp,
-  createRateLimitResponse,
 } from "../../../lib/weletic/edge-rate-limiter";
+import { processOutboxJobsBatch } from "../../../lib/weletic/loyalty/outbox";
+import { enqueuePointsExpiryLifecycleJobs } from "../../../lib/weletic/loyalty/points-expiry-scheduler";
+import { enqueueRewardExpiryReminderJobs } from "../../../lib/weletic/loyalty/reward-expiry-scheduler";
+import { reconcilePendingStoreCreditRedemptionsSweep } from "../../../lib/weletic/loyalty/store-credit-reconciliation";
+import { enqueueTierReviewSweepJobs } from "../../../lib/weletic/loyalty/tier-review-scheduling";
+import { syncWeleticShopifyCatalog } from "../../../lib/weletic/shopify/catalog-sync";
+import { recoverStuckOrdersPaidWebhooks } from "../../../lib/weletic/shopify/orders-paid-recovery";
+import { listDueShopifySessionRenewals } from "../../../lib/weletic/shopify/session-renewal";
+import { resolveShopifyStoreByDomain } from "../../../lib/weletic/shopify/store-resolver";
 
 export const CRON_SCHEDULE_5_MIN = "*/5 * * * *";
 export const CRON_SCHEDULE_HOURLY = "0 * * * *";
@@ -132,7 +132,10 @@ export function initCronWorkerPrisma(env: CronWorkerEnv): ExtendedPrismaClient {
   }
   if (env.DB) {
     (globalThis as any).DB = env.DB;
-    if (!(globalThis as any).prisma || (globalThis as any).__boundD1 !== env.DB) {
+    if (
+      !(globalThis as any).prisma ||
+      (globalThis as any).__boundD1 !== env.DB
+    ) {
       (globalThis as any).prisma = createPrismaClient(env.DB);
       (globalThis as any).__boundD1 = env.DB;
     }
@@ -141,7 +144,9 @@ export function initCronWorkerPrisma(env: CronWorkerEnv): ExtendedPrismaClient {
   return (globalThis as any).prisma ?? prisma;
 }
 
-export function getActivePrismaClient(env: CronWorkerEnv): ExtendedPrismaClient {
+export function getActivePrismaClient(
+  env: CronWorkerEnv,
+): ExtendedPrismaClient {
   return initCronWorkerPrisma(env);
 }
 
@@ -154,9 +159,13 @@ export function getActivePrismaClient(env: CronWorkerEnv): ExtendedPrismaClient 
  * Sweeps pending store credit redemptions older than 60 seconds, querying Shopify/ledger
  * and transitioning records to settled or refunded.
  */
-export async function reconcileStoreCreditJob(
-  env: CronWorkerEnv,
-): Promise<{ scanned: number; confirmed: number; refunded: number; deferred: number; errors: number }> {
+export async function reconcileStoreCreditJob(env: CronWorkerEnv): Promise<{
+  scanned: number;
+  confirmed: number;
+  refunded: number;
+  deferred: number;
+  errors: number;
+}> {
   initCronWorkerPrisma(env);
   // If native D1 binding exists without Prisma initialized, check D1 records first
   if (env.DB?.prepare) {
@@ -216,7 +225,9 @@ export async function processLoyaltyOutboxJob(
 
   const processedCount = Array.isArray(outboxResult)
     ? outboxResult.length
-    : typeof outboxResult === "object" && outboxResult !== null && "processed" in outboxResult
+    : typeof outboxResult === "object" &&
+        outboxResult !== null &&
+        "processed" in outboxResult
       ? Number((outboxResult as { processed: unknown }).processed)
       : 0;
 
@@ -319,10 +330,12 @@ export async function recoverStalledWebhooksJob(
  * Scans active programs, enqueues points expiration warning/lifecycle jobs,
  * and queues reward expiration reminder notifications.
  */
-export async function loyaltyPointsExpirationJob(
-  env: CronWorkerEnv,
-): Promise<{
-  pointsLifecycle: { programsScanned: number; accountsReconciled: number; jobsEnqueued: number };
+export async function loyaltyPointsExpirationJob(env: CronWorkerEnv): Promise<{
+  pointsLifecycle: {
+    programsScanned: number;
+    accountsReconciled: number;
+    jobsEnqueued: number;
+  };
   rewardReminders: { scanned: number; enqueued: number };
 }> {
   initCronWorkerPrisma(env);
@@ -334,7 +347,11 @@ export async function loyaltyPointsExpirationJob(
 
     if (!activePrograms || activePrograms.count === 0) {
       return {
-        pointsLifecycle: { programsScanned: 0, accountsReconciled: 0, jobsEnqueued: 0 },
+        pointsLifecycle: {
+          programsScanned: 0,
+          accountsReconciled: 0,
+          jobsEnqueued: 0,
+        },
         rewardReminders: { scanned: 0, enqueued: 0 },
       };
     }
@@ -367,13 +384,16 @@ export async function renewShopifySessionsJob(
   env: CronWorkerEnv,
 ): Promise<{ scanned: number; dueJobs: number }> {
   initCronWorkerPrisma(env);
-  const appId = env.SHOPIFY_API_KEY?.trim() || process.env.SHOPIFY_API_KEY?.trim();
+  const appId =
+    env.SHOPIFY_API_KEY?.trim() || process.env.SHOPIFY_API_KEY?.trim();
   if (!appId) {
     // Graceful skip if Shopify API key is not configured in this environment
     return { scanned: 0, dueJobs: 0 };
   }
 
-  const scheduledAt = new Date(Math.floor(Date.now() / 60_000) * 60_000).toISOString();
+  const scheduledAt = new Date(
+    Math.floor(Date.now() / 60_000) * 60_000,
+  ).toISOString();
   const { jobs } = await listDueShopifySessionRenewals({
     scheduledAt,
     appId,
@@ -389,9 +409,7 @@ export async function renewShopifySessionsJob(
  * Job 2.3: VIP Tier Review Sweep
  * Sweeps expired VIP tier grace periods across active stores and enqueues TIER_REVIEW outbox jobs.
  */
-export async function vipTierReviewSweepJob(
-  env: CronWorkerEnv,
-): Promise<{
+export async function vipTierReviewSweepJob(env: CronWorkerEnv): Promise<{
   programsScanned: number;
   programsSkipped: number;
   accountsEvaluated: number;
@@ -459,9 +477,11 @@ export async function purgeExpiredNoncesJob(
  * Enforces Invariant 1 (Canonical Store Resolution) and Invariant 4 (Zero Hardcoding):
  * Dynamically queries all connected stores and reconciles catalog products/variants.
  */
-export async function syncMultiTenantCatalogJob(
-  env: CronWorkerEnv,
-): Promise<{ storesScanned: number; syncedWorkspaces: string[]; errors: Array<{ storeId: string; error: string }> }> {
+export async function syncMultiTenantCatalogJob(env: CronWorkerEnv): Promise<{
+  storesScanned: number;
+  syncedWorkspaces: string[];
+  errors: Array<{ storeId: string; error: string }>;
+}> {
   initCronWorkerPrisma(env);
   const activePrisma = getActivePrismaClient(env);
 
@@ -511,9 +531,12 @@ export async function syncMultiTenantCatalogJob(
  * 2. Balance integrity: SUM(pointsDelta) matches the latest balanceAfter.
  * 3. Zero negative balance violations.
  */
-export async function verifyDoubleEntryLedgerJob(
-  env: CronWorkerEnv,
-): Promise<{ verified: boolean; accountsAudited: number; discrepanciesCount: number; discrepancies: unknown[] }> {
+export async function verifyDoubleEntryLedgerJob(env: CronWorkerEnv): Promise<{
+  verified: boolean;
+  accountsAudited: number;
+  discrepanciesCount: number;
+  discrepancies: unknown[];
+}> {
   initCronWorkerPrisma(env);
   const activePrisma = getActivePrismaClient(env);
 
@@ -534,7 +557,12 @@ export async function verifyDoubleEntryLedgerJob(
       FROM WeleticPointsLedgerEntry e
       GROUP BY e.accountId
       LIMIT 100`,
-    ).all<{ accountId: string; entryCount: number; totalDelta: number; lastBalance: number }>();
+    ).all<{
+      accountId: string;
+      entryCount: number;
+      totalDelta: number;
+      lastBalance: number;
+    }>();
 
     const rows = auditQuery.results || [];
     const discrepancies: unknown[] = [];
@@ -754,7 +782,10 @@ export async function handleHttpTrigger(
     url.pathname === "/api/cron/weletic/loyalty/tier-sweep"
   ) {
     // 1. Edge Burst Rate Limiting (SEC-R4-04)
-    if (env.RATE_LIMIT_DISABLED !== true && env.RATE_LIMIT_DISABLED !== "true") {
+    if (
+      env.RATE_LIMIT_DISABLED !== true &&
+      env.RATE_LIMIT_DISABLED !== "true"
+    ) {
       const clientIp = getClientIp(request);
       if (clientIp) {
         const rlResult = cronRateLimiter.check(
@@ -858,10 +889,7 @@ const worker = {
     }
   },
 
-  async fetch(
-    request: Request,
-    env: CronWorkerEnv,
-  ): Promise<Response> {
+  async fetch(request: Request, env: CronWorkerEnv): Promise<Response> {
     initCronWorkerPrisma(env);
     return handleHttpTrigger(request, env);
   },

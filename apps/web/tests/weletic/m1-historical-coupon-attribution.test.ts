@@ -58,7 +58,9 @@ describe("FIN-AUDIT-05 / WRK-AUDIT-06: Historical Coupon Attribution", () => {
             if (cond.disabledAt?.gte) return disabledAt >= cond.disabledAt.gte;
             return false;
           });
-          return matches ? { id: "dc_1", code, partnerId: "partner_alice" } : null;
+          return matches
+            ? { id: "dc_1", code, partnerId: "partner_alice" }
+            : null;
         }),
       },
     };

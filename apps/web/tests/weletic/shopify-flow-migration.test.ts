@@ -29,7 +29,12 @@ describe("Shopify Flow migration preserves the native-review outbox contract", (
 
     const prismaLabels = prismaEnum[1]
       .split("\n")
-      .map((line) => line.replace(/\/\/.*$/, "").replace(/:.*$/, "").trim())
+      .map((line) =>
+        line
+          .replace(/\/\/.*$/, "")
+          .replace(/:.*$/, "")
+          .trim(),
+      )
       .filter(Boolean);
     const sqlLabels = Array.from(
       sqlEnum[1].matchAll(/'([^']+)'/g),

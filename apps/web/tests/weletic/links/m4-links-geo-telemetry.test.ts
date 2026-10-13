@@ -1,25 +1,18 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import {
-  handleLinkRedirection,
-  resolveTargetUrl,
-  buildKvKey,
-  type LinkRecord,
-  type LinkRedirectorEnv,
-  type AnalyticsEngineDataPointInput,
-} from "../../../workers/link-redirector/src/index";
-import {
-  evictLinkFromKv,
-  evictLinksBatchFromKv,
-  tombstoneLinkInKv,
-} from "../../../lib/weletic/link-kv-cache";
+import { archiveLink } from "../../../lib/api/links/archive-link";
 import { linkCache } from "../../../lib/api/links/cache";
 import { propagateBulkLinkChanges } from "../../../lib/api/links/propagate-bulk-link-changes";
-import { archiveLink } from "../../../lib/api/links/archive-link";
-import { prisma } from "../../../lib/prisma";
-import { redisGlobal } from "../../../lib/upstash";
+import { tombstoneLinkInKv } from "../../../lib/weletic/link-kv-cache";
+import {
+  buildKvKey,
+  handleLinkRedirection,
+  resolveTargetUrl,
+  type AnalyticsEngineDataPointInput,
+  type LinkRedirectorEnv,
+} from "../../../workers/link-redirector/src/index";
 
 // Mock Upstash Redis
 vi.mock("../../../lib/upstash", () => {
@@ -206,7 +199,10 @@ describe("Milestone 4 (M4) Comprehensive Audit Fixes Test Suite", () => {
   describe("LNK-01: KV Cache Sync on Active Link Mutations & Bulk Updates", () => {
     it("evicts KV cache on ANY active link modification in linkCache.set", async () => {
       const kvKey = buildKvKey("dub.sh", "active-link");
-      await mockKV.put(kvKey, JSON.stringify({ id: "1", url: "https://yamax.co/old" }));
+      await mockKV.put(
+        kvKey,
+        JSON.stringify({ id: "1", url: "https://yamax.co/old" }),
+      );
       expect(await mockKV.get(kvKey)).not.toBeNull();
 
       // Active link modification (disabledAt is null)
@@ -244,8 +240,18 @@ describe("Milestone 4 (M4) Comprehensive Audit Fixes Test Suite", () => {
 
     it("batch-evicts KV cache in propagateBulkLinkChanges for all updated links", async () => {
       const links = [
-        { id: "b1", domain: "dub.sh", key: "deal-1", url: "https://yamax.co/1" },
-        { id: "b2", domain: "dub.sh", key: "deal-2", url: "https://yamax.co/2" },
+        {
+          id: "b1",
+          domain: "dub.sh",
+          key: "deal-1",
+          url: "https://yamax.co/1",
+        },
+        {
+          id: "b2",
+          domain: "dub.sh",
+          key: "deal-2",
+          url: "https://yamax.co/2",
+        },
       ];
 
       for (const l of links) {
@@ -264,8 +270,18 @@ describe("Milestone 4 (M4) Comprehensive Audit Fixes Test Suite", () => {
 
     it("batch-evicts KV cache in linkCache.mset", async () => {
       const links = [
-        { id: "m1", domain: "dub.sh", key: "mset-1", url: "https://yamax.co/m1" },
-        { id: "m2", domain: "dub.sh", key: "mset-2", url: "https://yamax.co/m2" },
+        {
+          id: "m1",
+          domain: "dub.sh",
+          key: "mset-1",
+          url: "https://yamax.co/m1",
+        },
+        {
+          id: "m2",
+          domain: "dub.sh",
+          key: "mset-2",
+          url: "https://yamax.co/m2",
+        },
       ];
 
       for (const l of links) {
@@ -286,7 +302,10 @@ describe("Milestone 4 (M4) Comprehensive Audit Fixes Test Suite", () => {
   describe("LNK-02: Archived Link Invalidation & D1 Filtering", () => {
     it("invalidates Redis and evicts KV cache when link is archived via archiveLink", async () => {
       const kvKey = buildKvKey("dub.sh", "test-link");
-      await mockKV.put(kvKey, JSON.stringify({ id: "lnk_arch", url: "https://yamax.co" }));
+      await mockKV.put(
+        kvKey,
+        JSON.stringify({ id: "lnk_arch", url: "https://yamax.co" }),
+      );
 
       const result = await archiveLink({
         linkId: "lnk_arch",
@@ -312,7 +331,9 @@ describe("Milestone 4 (M4) Comprehensive Audit Fixes Test Suite", () => {
       const res = await handleLinkRedirection(req, env);
 
       expect(res.status).toBe(404);
-      expect(mockD1.lastQuery).toContain("AND (archived = 0 OR archived IS FALSE)");
+      expect(mockD1.lastQuery).toContain(
+        "AND (archived = 0 OR archived IS FALSE)",
+      );
     });
 
     it("returns 404 immediately if cached KV record has archived set to true", async () => {
@@ -449,16 +470,13 @@ describe("Milestone 4 (M4) Comprehensive Audit Fixes Test Suite", () => {
   // =========================================================================
   describe("LNK-04: Non-blocking Analytics Engine Telemetry", () => {
     it("schedules telemetry writing via ctx.waitUntil without delaying HTTP 302 response", async () => {
-      mockKV.store.set(
-        buildKvKey("dub.sh", "fast-redirect"),
-        {
-          value: JSON.stringify({
-            id: "lnk_telemetry_1",
-            projectId: "ws_telemetry",
-            url: "https://yamax.co/fast",
-          }),
-        },
-      );
+      mockKV.store.set(buildKvKey("dub.sh", "fast-redirect"), {
+        value: JSON.stringify({
+          id: "lnk_telemetry_1",
+          projectId: "ws_telemetry",
+          url: "https://yamax.co/fast",
+        }),
+      });
 
       const waitUntilTasks: Promise<any>[] = [];
       const mockCtx = {
@@ -481,15 +499,12 @@ describe("Milestone 4 (M4) Comprehensive Audit Fixes Test Suite", () => {
     });
 
     it("telemetry exceptions inside background execution do not block 302 redirect", async () => {
-      mockKV.store.set(
-        buildKvKey("dub.sh", "error-telemetry"),
-        {
-          value: JSON.stringify({
-            id: "lnk_err_1",
-            url: "https://yamax.co/err",
-          }),
-        },
-      );
+      mockKV.store.set(buildKvKey("dub.sh", "error-telemetry"), {
+        value: JSON.stringify({
+          id: "lnk_err_1",
+          url: "https://yamax.co/err",
+        }),
+      });
 
       // Force writeDataPoint to throw
       (env.CLICKS_ANALYTICS!.writeDataPoint as any) = vi.fn(() => {
@@ -522,16 +537,13 @@ describe("Milestone 4 (M4) Comprehensive Audit Fixes Test Suite", () => {
       const veryLongUrl = "https://yamax.co/" + "B".repeat(3000);
       const veryLongProjectId = "ws_" + "C".repeat(50);
 
-      mockKV.store.set(
-        buildKvKey("dub.sh", "long-payload"),
-        {
-          value: JSON.stringify({
-            id: "lnk_clamp",
-            projectId: veryLongProjectId,
-            url: veryLongUrl,
-          }),
-        },
-      );
+      mockKV.store.set(buildKvKey("dub.sh", "long-payload"), {
+        value: JSON.stringify({
+          id: "lnk_clamp",
+          projectId: veryLongProjectId,
+          url: veryLongUrl,
+        }),
+      });
 
       const req = new Request("https://dub.sh/long-payload", {
         headers: {

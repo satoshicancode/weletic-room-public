@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // Enforce D1 transaction-free semantics (no rollback, statement-level execution)
 process.env.WELETIC_D1_TX_SEMANTICS = "1";
@@ -8,17 +8,14 @@ import {
   withD1TransactionSemantics,
 } from "@/lib/prisma/d1-semantics";
 import {
-  deterministicWeleticId,
-  isUniqueViolation,
   createManyIgnoringDuplicates,
   createOrGetByUnique,
+  deterministicWeleticId,
+  isUniqueViolation,
 } from "@/lib/weletic/commerce/idempotent-writes";
-import {
-  healLedgerCache,
-  OptimisticConcurrencyError,
-} from "@/lib/weletic/loyalty/ledger";
 import { calculateRefundReversal } from "@/lib/weletic/commerce/record-refund";
-import { Prisma, WeleticPointsLedgerEntryType } from "@prisma/client";
+import { healLedgerCache } from "@/lib/weletic/loyalty/ledger";
+import { WeleticPointsLedgerEntryType } from "@prisma/client";
 
 describe("D1 Money Flows & Concurrency Semantics", () => {
   it("enforces D1 transaction-free semantics via environment flag", () => {
@@ -63,7 +60,9 @@ describe("D1 Money Flows & Concurrency Semantics", () => {
 
     it("identifies unique constraint violations across SQLite and Prisma error shapes", () => {
       expect(isUniqueViolation({ code: "P2002" })).toBe(true);
-      expect(isUniqueViolation(new Error("UNIQUE constraint failed: table.col"))).toBe(true);
+      expect(
+        isUniqueViolation(new Error("UNIQUE constraint failed: table.col")),
+      ).toBe(true);
       expect(isUniqueViolation(new Error("Some other error"))).toBe(false);
       expect(isUniqueViolation(null)).toBe(false);
     });
@@ -232,9 +231,9 @@ describe("D1 Money Flows & Concurrency Semantics", () => {
   describe("Refund & Reversal Proportional Calculations", () => {
     it("calculates exact proportional commission reversal for partial refunds", () => {
       const reversedCommission = calculateRefundReversal({
-        originalEarnings: BigInt(1000),   // $10.00
+        originalEarnings: BigInt(1000), // $10.00
         originalCommissionableAmount: BigInt(10000), // $100.00
-        refundedAmount: BigInt(2500),         // $25.00 (25%)
+        refundedAmount: BigInt(2500), // $25.00 (25%)
       });
 
       expect(reversedCommission).toBe(BigInt(250)); // $2.50 (25%)

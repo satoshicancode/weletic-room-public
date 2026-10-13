@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -31,20 +31,12 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-import { DubApiError } from "@/lib/api/errors";
 import { getDubAdminRole, withAdmin } from "@/lib/auth/admin";
 import {
-  isWorkspaceEligibleForDomainRegistration,
   DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES,
-  getEligibleDomainRegistrationWorkspaces,
+  isWorkspaceEligibleForDomainRegistration,
 } from "@/lib/dynadot/constants";
-import { assertE2EWorkspace } from "../../app/(ee)/api/e2e/guard";
-import {
-  DUB_WORKSPACE_ID,
-  ACME_WORKSPACE_ID,
-  NETWORK_WORKSPACE_ID,
-  NETWORK_PROGRAM_ID,
-} from "@dub/utils";
+import { DUB_WORKSPACE_ID } from "@dub/utils";
 
 function getRepoRootDir(): string {
   const current = process.cwd();
@@ -78,7 +70,9 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
 
     it("1.2: returns null for null or undefined userId without querying database", async () => {
       const roleNull = await getDubAdminRole(null as unknown as string);
-      const roleUndefined = await getDubAdminRole(undefined as unknown as string);
+      const roleUndefined = await getDubAdminRole(
+        undefined as unknown as string,
+      );
       expect(roleNull).toBeNull();
       expect(roleUndefined).toBeNull();
       expect(mockProjectUsersFindUnique).not.toHaveBeenCalled();
@@ -119,7 +113,9 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
     });
 
     it("1.7: withAdmin returns 401 Unauthorized when getDubAdminRole returns null", async () => {
-      mockGetSession.mockResolvedValueOnce({ user: { id: "unprivileged_user" } });
+      mockGetSession.mockResolvedValueOnce({
+        user: { id: "unprivileged_user" },
+      });
       mockProjectUsersFindUnique.mockResolvedValueOnce(null);
 
       const mockHandler = vi.fn().mockResolvedValue(new Response("OK"));
@@ -140,7 +136,9 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
       mockProjectUsersFindUnique.mockResolvedValueOnce({ role: "member" });
 
       const mockHandler = vi.fn().mockResolvedValue(new Response("OK"));
-      const wrapped = withAdmin(mockHandler, { requiredRoles: ["owner"] as any });
+      const wrapped = withAdmin(mockHandler, {
+        requiredRoles: ["owner"] as any,
+      });
 
       const fakeReq = new Request("https://app.dub.co/api/admin/danger-zone");
       const fakeParams = Promise.resolve({});
@@ -148,7 +146,9 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
       const response = await wrapped(fakeReq, { params: fakeParams });
       expect(response.status).toBe(403);
       const text = await response.text();
-      expect(text).toContain("Unauthorized: Missing required admin role(s): owner.");
+      expect(text).toContain(
+        "Unauthorized: Missing required admin role(s): owner.",
+      );
       expect(mockHandler).not.toHaveBeenCalled();
     });
   });
@@ -167,7 +167,11 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
         }),
       ).toBe(true);
 
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_random_unprivileged_free")).toBe(true);
+      expect(
+        DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(
+          "ws_random_unprivileged_free",
+        ),
+      ).toBe(true);
     });
 
     it("2.2: wildcard '*' with whitespace padding 'ws_1, * , ws_2' admits any workspace", () => {
@@ -180,19 +184,52 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
         }),
       ).toBe(true);
 
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_arbitrary_tenant")).toBe(true);
+      expect(
+        DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_arbitrary_tenant"),
+      ).toBe(true);
     });
 
     it("2.3: admits paid tiers (pro, business, enterprise, custom_paid) dynamically", () => {
-      expect(isWorkspaceEligibleForDomainRegistration({ id: "ws_paid_1", plan: "pro" })).toBe(true);
-      expect(isWorkspaceEligibleForDomainRegistration({ id: "ws_paid_2", plan: "business" })).toBe(true);
-      expect(isWorkspaceEligibleForDomainRegistration({ id: "ws_paid_3", plan: "enterprise" })).toBe(true);
-      expect(isWorkspaceEligibleForDomainRegistration({ id: "ws_paid_4", plan: "growth" })).toBe(true);
+      expect(
+        isWorkspaceEligibleForDomainRegistration({
+          id: "ws_paid_1",
+          plan: "pro",
+        }),
+      ).toBe(true);
+      expect(
+        isWorkspaceEligibleForDomainRegistration({
+          id: "ws_paid_2",
+          plan: "business",
+        }),
+      ).toBe(true);
+      expect(
+        isWorkspaceEligibleForDomainRegistration({
+          id: "ws_paid_3",
+          plan: "enterprise",
+        }),
+      ).toBe(true);
+      expect(
+        isWorkspaceEligibleForDomainRegistration({
+          id: "ws_paid_4",
+          plan: "growth",
+        }),
+      ).toBe(true);
     });
 
     it("2.4: strictly rejects free plan without feature flags or env whitelist", () => {
-      expect(isWorkspaceEligibleForDomainRegistration({ id: "ws_free_1", plan: "free" })).toBe(false);
-      expect(isWorkspaceEligibleForDomainRegistration({ id: "ws_free_2", plan: "free", flags: {} })).toBe(false);
+      expect(
+        isWorkspaceEligibleForDomainRegistration({
+          id: "ws_free_1",
+          plan: "free",
+        }),
+      ).toBe(false);
+      expect(
+        isWorkspaceEligibleForDomainRegistration({
+          id: "ws_free_2",
+          plan: "free",
+          flags: {},
+        }),
+      ).toBe(false);
       expect(
         isWorkspaceEligibleForDomainRegistration({
           id: "ws_free_3",
@@ -214,13 +251,23 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
 
     it("2.6: boundary cases: null, undefined, empty ID strictly return false", () => {
       expect(isWorkspaceEligibleForDomainRegistration(null as any)).toBe(false);
-      expect(isWorkspaceEligibleForDomainRegistration(undefined as any)).toBe(false);
+      expect(isWorkspaceEligibleForDomainRegistration(undefined as any)).toBe(
+        false,
+      );
       expect(isWorkspaceEligibleForDomainRegistration({ id: "" })).toBe(false);
-      expect(isWorkspaceEligibleForDomainRegistration({ id: "", plan: "enterprise" })).toBe(false);
+      expect(
+        isWorkspaceEligibleForDomainRegistration({
+          id: "",
+          plan: "enterprise",
+        }),
+      ).toBe(false);
     });
 
     it("2.7: DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES proxy behaves seamlessly like an Array", () => {
-      vi.stubEnv("DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES", "ws_alpha, ws_beta, ws_gamma");
+      vi.stubEnv(
+        "DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES",
+        "ws_alpha, ws_beta, ws_gamma",
+      );
 
       expect(Array.isArray(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES)).toBe(true);
       expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.length).toBe(3);
@@ -228,12 +275,24 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
       expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES[1]).toBe("ws_beta");
       expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES[2]).toBe("ws_gamma");
 
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_alpha")).toBe(true);
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_beta")).toBe(true);
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_delta")).toBe(false);
+      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_alpha")).toBe(
+        true,
+      );
+      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_beta")).toBe(
+        true,
+      );
+      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_delta")).toBe(
+        false,
+      );
 
-      const mapped = DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.map((id) => `prefix_${id}`);
-      expect(mapped).toEqual(["prefix_ws_alpha", "prefix_ws_beta", "prefix_ws_gamma"]);
+      const mapped = DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.map(
+        (id) => `prefix_${id}`,
+      );
+      expect(mapped).toEqual([
+        "prefix_ws_alpha",
+        "prefix_ws_beta",
+        "prefix_ws_gamma",
+      ]);
     });
 
     it("2.8: EMPIRICAL FINDING: DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(workspace.id) in routes does not check workspace.plan", () => {
@@ -242,12 +301,19 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
       // Since it passes only workspace.id, the proxy cannot evaluate workspace.plan.
       // Therefore, isWorkspaceEligibleForDomainRegistration is TRUE for enterprise,
       // but DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes is FALSE unless wildcard * or env list is set.
-      const paidWorkspace = { id: "ws_enterprise_tenant_999", plan: "enterprise" };
+      const paidWorkspace = {
+        id: "ws_enterprise_tenant_999",
+        plan: "enterprise",
+      };
 
-      expect(isWorkspaceEligibleForDomainRegistration(paidWorkspace)).toBe(true);
+      expect(isWorkspaceEligibleForDomainRegistration(paidWorkspace)).toBe(
+        true,
+      );
 
       // Without wildcard env var, .includes(workspace.id) returns false:
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(paidWorkspace.id)).toBe(false);
+      expect(
+        DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(paidWorkspace.id),
+      ).toBe(false);
     });
   });
 
@@ -275,6 +341,12 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
           if (entry.isDirectory()) {
+            if (
+              ["node_modules", "dist", ".wrangler", ".turbo", ".next"].includes(
+                entry.name,
+              )
+            )
+              continue;
             scan(fullPath);
           } else if (entry.isFile() && /\.(ts|tsx|js|mjs)$/.test(entry.name)) {
             const content = fs.readFileSync(fullPath, "utf8");
@@ -307,6 +379,12 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
           if (entry.isDirectory()) {
+            if (
+              ["node_modules", "dist", ".wrangler", ".turbo", ".next"].includes(
+                entry.name,
+              )
+            )
+              continue;
             scan(fullPath);
           } else if (entry.isFile() && /\.(ts|tsx|js|mjs)$/.test(entry.name)) {
             const content = fs.readFileSync(fullPath, "utf8");
@@ -337,6 +415,12 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
         for (const entry of entries) {
           const fullPath = path.join(dir, entry.name);
           if (entry.isDirectory()) {
+            if (
+              ["node_modules", "dist", ".wrangler", ".turbo", ".next"].includes(
+                entry.name,
+              )
+            )
+              continue;
             scan(fullPath);
           } else if (entry.isFile() && /\.(ts|tsx|js|mjs)$/.test(entry.name)) {
             const content = fs.readFileSync(fullPath, "utf8");
@@ -352,7 +436,10 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
     });
 
     it("3.4: verifies master constants in packages/utils/src/constants/main.ts use process.env lookups", () => {
-      const constantsPath = path.join(rootDir, "packages/utils/src/constants/main.ts");
+      const constantsPath = path.join(
+        rootDir,
+        "packages/utils/src/constants/main.ts",
+      );
       const code = fs.readFileSync(constantsPath, "utf8");
 
       expect(code).toContain("process.env.DUB_WORKSPACE_ID ??");
@@ -364,7 +451,10 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
     });
 
     it("3.5: verifies E2E guard enforces 404 in production unless ENABLE_E2E_ROUTES is true", () => {
-      const guardPath = path.join(rootDir, "apps/web/app/(ee)/api/e2e/guard.ts");
+      const guardPath = path.join(
+        rootDir,
+        "apps/web/app/(ee)/api/e2e/guard.ts",
+      );
       const code = fs.readFileSync(guardPath, "utf8");
 
       expect(code).toContain('process.env.NODE_ENV === "production"');
@@ -383,9 +473,13 @@ describe("Challenger M2_2: Adversarial Role Escalation, Dynamic Domains & Invari
       // GET scoped:
       expect(code).toContain("workspaceId: workspace.id");
       // POST scoped check:
-      expect(code).toContain("program: {\n            workspaceId: workspace.id,\n          }");
+      expect(code).toContain(
+        "program: {\n            workspaceId: workspace.id,\n          }",
+      );
       // DELETE scoped check:
-      expect(code).toContain("id: campaignId,\n        program: {\n          workspaceId: workspace.id,\n        }");
+      expect(code).toContain(
+        "id: campaignId,\n        program: {\n          workspaceId: workspace.id,\n        }",
+      );
     });
   });
 });

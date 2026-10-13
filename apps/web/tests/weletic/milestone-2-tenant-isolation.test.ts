@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -26,31 +26,31 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 import { DubApiError } from "@/lib/api/errors";
-import { assertE2EWorkspace } from "../../app/(ee)/api/e2e/guard";
 import { getDubAdminRole } from "@/lib/auth/admin";
 import {
-  isWorkspaceEligibleForDomainRegistration,
   DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES,
-  getEligibleDomainRegistrationWorkspaces,
+  isWorkspaceEligibleForDomainRegistration,
 } from "@/lib/dynadot/constants";
-import {
-  isRestrictedDevelopmentEnvironment,
-} from "../../../../infra/shopify-development/restricted-policy.mjs";
-import {
-  DUB_WORKSPACE_ID,
-  ACME_WORKSPACE_ID,
-  NETWORK_WORKSPACE_ID,
-  NETWORK_PROGRAM_ID,
-} from "@dub/utils";
 import { prisma } from "@/lib/prisma";
+import {
+  ACME_WORKSPACE_ID,
+  DUB_WORKSPACE_ID,
+  NETWORK_PROGRAM_ID,
+  NETWORK_WORKSPACE_ID,
+} from "@dub/utils";
 import fs from "node:fs";
 import path from "node:path";
+import { isRestrictedDevelopmentEnvironment } from "../../../../infra/shopify-development/restricted-policy.mjs";
+import { assertE2EWorkspace } from "../../app/(ee)/api/e2e/guard";
 
 function resolveWorkspaceFile(relativeFromRepoRoot: string): string {
   const currentDir = process.cwd();
   if (currentDir.endsWith("apps/web")) {
     if (relativeFromRepoRoot.startsWith("apps/web/")) {
-      return path.resolve(currentDir, relativeFromRepoRoot.replace(/^apps\/web\//, ""));
+      return path.resolve(
+        currentDir,
+        relativeFromRepoRoot.replace(/^apps\/web\//, ""),
+      );
     }
     return path.resolve(currentDir, "../../", relativeFromRepoRoot);
   }
@@ -177,7 +177,10 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
       mockNotificationEmailFindMany.mockResolvedValueOnce([]);
 
       // Simulate query from GET route
-      const searchParams = { campaignId: victimCampaignId, partnerId: "pt_123" };
+      const searchParams = {
+        campaignId: victimCampaignId,
+        partnerId: "pt_123",
+      };
       const whereClause = {
         ...(searchParams.campaignId && { campaignId: searchParams.campaignId }),
         ...(searchParams.partnerId && { partnerId: searchParams.partnerId }),
@@ -281,7 +284,10 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
     });
 
     it("admits arbitrary workspace when specified in DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES env var", () => {
-      vi.stubEnv("DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES", "ws_custom_tenant_1,ws_custom_tenant_2");
+      vi.stubEnv(
+        "DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES",
+        "ws_custom_tenant_1,ws_custom_tenant_2",
+      );
 
       expect(
         isWorkspaceEligibleForDomainRegistration({
@@ -315,15 +321,28 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
         }),
       ).toBe(true);
 
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("any_arbitrary_workspace_id")).toBe(true);
+      expect(
+        DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(
+          "any_arbitrary_workspace_id",
+        ),
+      ).toBe(true);
     });
 
     it("DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES proxy resolves dynamically at runtime", () => {
-      vi.stubEnv("DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES", "ws_runtime_1,ws_runtime_2");
+      vi.stubEnv(
+        "DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES",
+        "ws_runtime_1,ws_runtime_2",
+      );
 
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_runtime_1")).toBe(true);
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_runtime_2")).toBe(true);
-      expect(DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_runtime_unknown")).toBe(false);
+      expect(
+        DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_runtime_1"),
+      ).toBe(true);
+      expect(
+        DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_runtime_2"),
+      ).toBe(true);
+      expect(
+        DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes("ws_runtime_unknown"),
+      ).toBe(false);
     });
 
     it("verifies register route statically imports and invokes isWorkspaceEligibleForDomainRegistration", () => {
@@ -332,9 +351,15 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
       );
       const content = fs.readFileSync(registerRoutePath, "utf8");
 
-      expect(content).toContain("import { isWorkspaceEligibleForDomainRegistration } from \"@/lib/dynadot/constants\";");
-      expect(content).toContain("if (!isWorkspaceEligibleForDomainRegistration(workspace))");
-      expect(content).not.toContain("DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(workspace.id)");
+      expect(content).toContain(
+        'import { isWorkspaceEligibleForDomainRegistration } from "@/lib/dynadot/constants";',
+      );
+      expect(content).toContain(
+        "!isWorkspaceEligibleForDomainRegistration(workspace)",
+      );
+      expect(content).not.toContain(
+        "DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(workspace.id)",
+      );
     });
 
     it("verifies status route statically imports and invokes isWorkspaceEligibleForDomainRegistration", () => {
@@ -343,13 +368,23 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
       );
       const content = fs.readFileSync(statusRoutePath, "utf8");
 
-      expect(content).toContain("import { isWorkspaceEligibleForDomainRegistration } from \"@/lib/dynadot/constants\";");
-      expect(content).toContain("if (!isWorkspaceEligibleForDomainRegistration(workspace))");
-      expect(content).not.toContain("DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(workspace.id)");
+      expect(content).toContain(
+        'import { isWorkspaceEligibleForDomainRegistration } from "@/lib/dynadot/constants";',
+      );
+      expect(content).toContain(
+        "!isWorkspaceEligibleForDomainRegistration(workspace)",
+      );
+      expect(content).not.toContain(
+        "DOMAIN_REGISTRATION_ELIGIBLE_WORKSPACES.includes(workspace.id)",
+      );
     });
 
     it("enforces dynamic domain registration eligibility matching register route semantics", () => {
-      const checkRegisterRoute = (workspace: { id: string; plan?: string | null; flags?: Record<string, any> | null }) => {
+      const checkRegisterRoute = (workspace: {
+        id: string;
+        plan?: string | null;
+        flags?: Record<string, any> | null;
+      }) => {
         if (!isWorkspaceEligibleForDomainRegistration(workspace)) {
           throw new DubApiError({
             code: "forbidden",
@@ -360,9 +395,15 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
       };
 
       // Paid plans are admitted
-      expect(() => checkRegisterRoute({ id: "ws_paid_pro_tenant", plan: "pro" })).not.toThrow();
-      expect(() => checkRegisterRoute({ id: "ws_paid_biz_tenant", plan: "business" })).not.toThrow();
-      expect(() => checkRegisterRoute({ id: "ws_paid_ent_tenant", plan: "enterprise" })).not.toThrow();
+      expect(() =>
+        checkRegisterRoute({ id: "ws_paid_pro_tenant", plan: "pro" }),
+      ).not.toThrow();
+      expect(() =>
+        checkRegisterRoute({ id: "ws_paid_biz_tenant", plan: "business" }),
+      ).not.toThrow();
+      expect(() =>
+        checkRegisterRoute({ id: "ws_paid_ent_tenant", plan: "enterprise" }),
+      ).not.toThrow();
 
       // Feature flagged free workspace is admitted
       expect(() =>
@@ -374,7 +415,9 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
       ).not.toThrow();
 
       // Unflagged free workspace is rejected with 403 forbidden
-      expect(() => checkRegisterRoute({ id: "ws_unauthorized_free_tenant", plan: "free" })).toThrowError(DubApiError);
+      expect(() =>
+        checkRegisterRoute({ id: "ws_unauthorized_free_tenant", plan: "free" }),
+      ).toThrowError(DubApiError);
       try {
         checkRegisterRoute({ id: "ws_unauthorized_free_tenant", plan: "free" });
       } catch (error: any) {
@@ -386,7 +429,11 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
     });
 
     it("enforces dynamic domain registration eligibility matching status route semantics", () => {
-      const checkStatusRoute = (workspace: { id: string; plan?: string | null; flags?: Record<string, any> | null }) => {
+      const checkStatusRoute = (workspace: {
+        id: string;
+        plan?: string | null;
+        flags?: Record<string, any> | null;
+      }) => {
         if (!isWorkspaceEligibleForDomainRegistration(workspace)) {
           throw new DubApiError({
             code: "forbidden",
@@ -397,9 +444,15 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
       };
 
       // Paid plans are admitted
-      expect(() => checkStatusRoute({ id: "ws_paid_pro_tenant", plan: "pro" })).not.toThrow();
-      expect(() => checkStatusRoute({ id: "ws_paid_biz_tenant", plan: "business" })).not.toThrow();
-      expect(() => checkStatusRoute({ id: "ws_paid_ent_tenant", plan: "enterprise" })).not.toThrow();
+      expect(() =>
+        checkStatusRoute({ id: "ws_paid_pro_tenant", plan: "pro" }),
+      ).not.toThrow();
+      expect(() =>
+        checkStatusRoute({ id: "ws_paid_biz_tenant", plan: "business" }),
+      ).not.toThrow();
+      expect(() =>
+        checkStatusRoute({ id: "ws_paid_ent_tenant", plan: "enterprise" }),
+      ).not.toThrow();
 
       // Feature flagged free workspace is admitted
       expect(() =>
@@ -411,7 +464,9 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
       ).not.toThrow();
 
       // Unflagged free workspace is rejected with 403 forbidden
-      expect(() => checkStatusRoute({ id: "ws_unauthorized_free_tenant", plan: "free" })).toThrowError(DubApiError);
+      expect(() =>
+        checkStatusRoute({ id: "ws_unauthorized_free_tenant", plan: "free" }),
+      ).toThrowError(DubApiError);
       try {
         checkStatusRoute({ id: "ws_unauthorized_free_tenant", plan: "free" });
       } catch (error: any) {
@@ -428,7 +483,10 @@ describe("Milestone 2: Multi-Tenant Isolation, Zero IDOR & Invariant 4 Complianc
   // =========================================================================
   describe("SEC-R2-04: Dynamic E2E Cron Cleanup Workspace Target", () => {
     it("cron cleanup configuration supports dynamic workspace and user overrides", async () => {
-      vi.stubEnv("E2E_CLEANUP_WORKSPACE_ID", "ws_dynamically_targeted_for_cleanup");
+      vi.stubEnv(
+        "E2E_CLEANUP_WORKSPACE_ID",
+        "ws_dynamically_targeted_for_cleanup",
+      );
       vi.stubEnv("E2E_CLEANUP_USER_ID", "usr_dynamically_targeted_for_cleanup");
 
       const routeFilePath = resolveWorkspaceFile(

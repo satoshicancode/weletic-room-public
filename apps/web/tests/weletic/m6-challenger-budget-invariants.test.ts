@@ -1,28 +1,22 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import {
-  normalizeShopDomain,
   canonicalizeShopifyDomain,
+  normalizeShopDomain,
 } from "../../lib/weletic/shopify/store-resolver";
 import {
   handleLinkRedirection,
-  buildKvKey,
   type LinkRecord,
   type LinkRedirectorEnv,
 } from "../../workers/link-redirector/src/index";
 import {
-  findActiveDiscountCode,
   extractOrderDiscountCodes,
+  findActiveDiscountCode,
 } from "../../workers/queue-consumer/src/index";
-import {
-  addCustomHostnameToCloudflare,
-  extractSslValidationRecords,
-  CloudflareSaaSError,
-} from "../../lib/api/domains/cloudflare-saas";
 
 describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-Tenant Invariants", () => {
   // =========================================================================
@@ -38,7 +32,10 @@ describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-T
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           files.push(...getAllWorkerTsFiles(fullPath));
-        } else if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".toml"))) {
+        } else if (
+          entry.isFile() &&
+          (entry.name.endsWith(".ts") || entry.name.endsWith(".toml"))
+        ) {
           files.push(fullPath);
         }
       }
@@ -115,12 +112,26 @@ describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-T
   // =========================================================================
   describe("2. Invariant 1: Canonical Store Resolution Resilience on Boundary Cases", () => {
     it("handles whitespace padding, uppercase characters, and protocol prefixes", () => {
-      expect(normalizeShopDomain("   yamax.myshopify.com   ")).toBe("yamax.myshopify.com");
-      expect(normalizeShopDomain("YAMAX.MYSHOPIFY.COM")).toBe("yamax.myshopify.com");
-      expect(normalizeShopDomain("https://yamax.myshopify.com")).toBe("yamax.myshopify.com");
-      expect(normalizeShopDomain("http://yamax.myshopify.com/")).toBe("yamax.myshopify.com");
-      expect(normalizeShopDomain("https://yamax.myshopify.com/admin/oauth/authorize")).toBe("yamax.myshopify.com");
-      expect(normalizeShopDomain("  HTTPS://STORE.EXAMPLE.COM/PATH?QUERY=1  ")).toBe("store.example.com");
+      expect(normalizeShopDomain("   yamax.myshopify.com   ")).toBe(
+        "yamax.myshopify.com",
+      );
+      expect(normalizeShopDomain("YAMAX.MYSHOPIFY.COM")).toBe(
+        "yamax.myshopify.com",
+      );
+      expect(normalizeShopDomain("https://yamax.myshopify.com")).toBe(
+        "yamax.myshopify.com",
+      );
+      expect(normalizeShopDomain("http://yamax.myshopify.com/")).toBe(
+        "yamax.myshopify.com",
+      );
+      expect(
+        normalizeShopDomain(
+          "https://yamax.myshopify.com/admin/oauth/authorize",
+        ),
+      ).toBe("yamax.myshopify.com");
+      expect(
+        normalizeShopDomain("  HTTPS://STORE.EXAMPLE.COM/PATH?QUERY=1  "),
+      ).toBe("store.example.com");
     });
 
     it("handles empty, malformed, or null domains gracefully", () => {
@@ -128,8 +139,12 @@ describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-T
       expect(normalizeShopDomain("   ")).toBe("");
       expect(canonicalizeShopifyDomain("")).toBeNull();
       expect(canonicalizeShopifyDomain("not-a-shopify-domain.com")).toBeNull();
-      expect(canonicalizeShopifyDomain("invalid_subdomain!.myshopify.com")).toBeNull();
-      expect(canonicalizeShopifyDomain("valid-store-123.myshopify.com")).toBe("valid-store-123.myshopify.com");
+      expect(
+        canonicalizeShopifyDomain("invalid_subdomain!.myshopify.com"),
+      ).toBeNull();
+      expect(canonicalizeShopifyDomain("valid-store-123.myshopify.com")).toBe(
+        "valid-store-123.myshopify.com",
+      );
     });
   });
 
@@ -213,7 +228,9 @@ describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-T
       const response = await handleLinkRedirection(request, env);
 
       expect(response.status).toBe(302);
-      expect(response.headers.get("Location")).toContain("https://yamax.co/products/leggings");
+      expect(response.headers.get("Location")).toContain(
+        "https://yamax.co/products/leggings",
+      );
       expect(response.headers.get("Location")).toContain("via=active-deal");
     });
 
@@ -309,43 +326,47 @@ describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-T
      * - Cloudflare for SaaS: 100 Custom Hostnames Free per zone ($0.10/hostname-mo overage)
      * - Workers Analytics Engine: 10M datapoints/mo included ($0.25/M overage)
      */
-    function calculateCloudflareMonthlyCost(usage: CloudflareUsage): CostBreakdown {
-      const baseWorkersPaid = 5.00;
+    function calculateCloudflareMonthlyCost(
+      usage: CloudflareUsage,
+    ): CostBreakdown {
+      const baseWorkersPaid = 5.0;
 
       // D1: Average order generates ~3 rows in D1; ledger reconciliation reads ~10k rows/day
       const d1StorageGb = Math.max(0, usage.monthlyOrders * 0.00001); // 100k orders = 1GB
       const d1StorageCost = d1StorageGb > 10 ? (d1StorageGb - 10) * 0.75 : 0;
       const d1ReadsCost = 0; // Under 25B rows/mo
       const d1Writes = usage.monthlyOrders * 4;
-      const d1WritesCost = d1Writes > 50_000_000 ? ((d1Writes - 50_000_000) / 1_000_000) * 1.00 : 0;
+      const d1WritesCost =
+        d1Writes > 50_000_000 ? ((d1Writes - 50_000_000) / 1_000_000) * 1.0 : 0;
 
       // KV Reads: 1 per link click
-      const kvReadsCost = usage.monthlyClicks > 10_000_000
-        ? Math.ceil((usage.monthlyClicks - 10_000_000) / 1_000_000) * 0.50
-        : 0;
+      const kvReadsCost =
+        usage.monthlyClicks > 10_000_000
+          ? Math.ceil((usage.monthlyClicks - 10_000_000) / 1_000_000) * 0.5
+          : 0;
       const kvWritesCost = 0; // Link creation is << 1M/mo
 
       // R2 Storage: 10GB included, $0.015/GB overage
-      const r2StorageCost = usage.r2StorageGb > 10
-        ? (usage.r2StorageGb - 10) * 0.015
-        : 0;
+      const r2StorageCost =
+        usage.r2StorageGb > 10 ? (usage.r2StorageGb - 10) * 0.015 : 0;
       const r2OperationsCost = 0; // Within 1M / 10M free tiers
 
       // Queues: 1 order = 1 enqueue + 1 dequeue = 2 operations
       const queueOperations = usage.monthlyOrders * 2;
-      const queuesOpsCost = queueOperations > 1_000_000
-        ? ((queueOperations - 1_000_000) / 1_000_000) * 0.40
-        : 0;
+      const queuesOpsCost =
+        queueOperations > 1_000_000
+          ? ((queueOperations - 1_000_000) / 1_000_000) * 0.4
+          : 0;
 
       // Analytics Engine: 1 datapoint per link click
-      const analyticsEngineCost = usage.monthlyClicks > 10_000_000
-        ? ((usage.monthlyClicks - 10_000_000) / 1_000_000) * 0.25
-        : 0;
+      const analyticsEngineCost =
+        usage.monthlyClicks > 10_000_000
+          ? ((usage.monthlyClicks - 10_000_000) / 1_000_000) * 0.25
+          : 0;
 
       // Cloudflare for SaaS: 100 free hostnames
-      const saasHostnamesCost = usage.customHostnames > 100
-        ? (usage.customHostnames - 100) * 0.10
-        : 0;
+      const saasHostnamesCost =
+        usage.customHostnames > 100 ? (usage.customHostnames - 100) * 0.1 : 0;
 
       const totalMonthlyCost =
         baseWorkersPaid +
@@ -385,7 +406,7 @@ describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-T
       };
 
       const cost = calculateCloudflareMonthlyCost(baseline);
-      expect(cost.totalMonthlyCost).toBe(5.00);
+      expect(cost.totalMonthlyCost).toBe(5.0);
       expect(cost.saasHostnamesCost).toBe(0);
       expect(cost.queuesOpsCost).toBe(0);
       expect(cost.kvReadsCost).toBe(0);
@@ -416,7 +437,7 @@ describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-T
       };
 
       const cost = calculateCloudflareMonthlyCost(highScale);
-      expect(cost.totalMonthlyCost).toBe(5.60);
+      expect(cost.totalMonthlyCost).toBe(5.6);
       expect(cost.queuesOpsCost).toBe(0); // 400k ops < 1M ops
       expect(cost.saasHostnamesCost).toBe(0); // 90 < 100 free hostnames
     });
@@ -432,12 +453,15 @@ describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-T
       const cost = calculateCloudflareMonthlyCost(extremeSurge);
       // Legacy stack for this volume would exceed $1,200.00/mo
       // Cloudflare total: 5.00 + 0 + 7.50 + 2.85 + 0.40 + 3.75 + 2.00 = $21.50/mo
-      expect(cost.totalMonthlyCost).toBeLessThan(25.00);
-      expect(cost.totalMonthlyCost).toBe(21.50);
+      expect(cost.totalMonthlyCost).toBeLessThan(25.0);
+      expect(cost.totalMonthlyCost).toBe(21.5);
 
       // Slashes legacy cost by >97%
-      const legacyEquivalentCost = 650.00;
-      const savingsPercent = ((legacyEquivalentCost - cost.totalMonthlyCost) / legacyEquivalentCost) * 100;
+      const legacyEquivalentCost = 650.0;
+      const savingsPercent =
+        ((legacyEquivalentCost - cost.totalMonthlyCost) /
+          legacyEquivalentCost) *
+        100;
       expect(savingsPercent).toBeGreaterThan(96);
     });
 
@@ -456,7 +480,7 @@ describe("Milestone 6 Adversarial Challenge: Budget Boundaries, Quotas & Multi-T
         r2StorageGb: 1,
         customHostnames: 105,
       });
-      expect(overQuota.saasHostnamesCost).toBe(0.50); // 5 * $0.10
+      expect(overQuota.saasHostnamesCost).toBe(0.5); // 5 * $0.10
     });
   });
 });

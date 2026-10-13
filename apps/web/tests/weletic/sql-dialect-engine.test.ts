@@ -1,8 +1,8 @@
+import { createPrismaClient } from "@/lib/prisma";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createPrismaClient } from "@/lib/prisma";
 
 /**
  * Runs MySQL-flavoured raw SQL through the real native SQLite engine via the
@@ -51,7 +51,9 @@ describe("createPrismaClient SQL dialect extension (real SQLite engine)", () => 
 
   it("answers `SELECT CURRENT_TIMESTAMP(3) AS now` with a Date", async () => {
     const before = Date.now();
-    const [clock] = await prisma.$queryRaw<Array<{ now: Date }>>`SELECT CURRENT_TIMESTAMP(3) AS now`;
+    const [clock] = await prisma.$queryRaw<
+      Array<{ now: Date }>
+    >`SELECT CURRENT_TIMESTAMP(3) AS now`;
     expect(clock.now).toBeInstanceOf(Date);
     expect(clock.now.getTime()).toBeGreaterThanOrEqual(before - 5);
     expect(clock.now.getTime()).toBeLessThanOrEqual(Date.now() + 5);
@@ -84,7 +86,10 @@ describe("createPrismaClient SQL dialect extension (real SQLite engine)", () => 
       UPDATE lease SET expiresAt = DATE_SUB(CURRENT_TIMESTAMP(3), INTERVAL 6 MINUTE) WHERE id = 'dead'`;
     const [row] = await prisma.$queryRaw<Array<{ expiresAt: Date | number }>>`
       SELECT expiresAt FROM lease WHERE id = 'dead'`;
-    const expTime = row.expiresAt instanceof Date ? row.expiresAt.getTime() : Number(row.expiresAt);
+    const expTime =
+      row.expiresAt instanceof Date
+        ? row.expiresAt.getTime()
+        : Number(row.expiresAt);
     expect(expTime).toBeLessThan(Date.now() - 300_000);
   });
 
@@ -93,12 +98,17 @@ describe("createPrismaClient SQL dialect extension (real SQLite engine)", () => 
       UPDATE lease SET expiresAt = TIMESTAMPADD(SECOND, -1, CURRENT_TIMESTAMP(3)) WHERE id = 'dead'`;
     const [row] = await prisma.$queryRaw<Array<{ expiresAt: Date | number }>>`
       SELECT expiresAt FROM lease WHERE id = 'dead'`;
-    const expTime = row.expiresAt instanceof Date ? row.expiresAt.getTime() : Number(row.expiresAt);
+    const expTime =
+      row.expiresAt instanceof Date
+        ? row.expiresAt.getTime()
+        : Number(row.expiresAt);
     expect(expTime).toBeLessThan(Date.now());
   });
 
   it("executes UTC_TIMESTAMP(3) query and returns Date", async () => {
-    const [clock] = await prisma.$queryRaw<Array<{ now: Date }>>`SELECT UTC_TIMESTAMP(3) AS now`;
+    const [clock] = await prisma.$queryRaw<
+      Array<{ now: Date }>
+    >`SELECT UTC_TIMESTAMP(3) AS now`;
     expect(clock.now).toBeInstanceOf(Date);
   });
 
@@ -121,7 +131,9 @@ describe("createPrismaClient SQL dialect extension (real SQLite engine)", () => 
     expect(row).toBeUndefined();
 
     // Now query where metadata IS object:
-    const [match] = await prisma.$queryRaw<Array<{ id: string; status: string }>>`
+    const [match] = await prisma.$queryRaw<
+      Array<{ id: string; status: string }>
+    >`
       SELECT id, JSON_UNQUOTE(JSON_EXTRACT(metadata, ${path})) AS status
       FROM doc
       WHERE COALESCE(JSON_CONTAINS_PATH(metadata, 'one', ${path}), 0) = 1
@@ -133,7 +145,9 @@ describe("createPrismaClient SQL dialect extension (real SQLite engine)", () => 
   });
 
   it("executes LEAST, CHAR_LENGTH, and BINARY against real SQLite engine", async () => {
-    const [res] = await prisma.$queryRaw<Array<{ lowest: bigint | number; len: bigint | number }>>`
+    const [res] = await prisma.$queryRaw<
+      Array<{ lowest: bigint | number; len: bigint | number }>
+    >`
       SELECT LEAST(50, 100) AS lowest, CHAR_LENGTH('weletic') AS len
       FROM doc WHERE BINARY id = BINARY 'd1' ORDER BY BINARY id`;
     expect(Number(res.lowest)).toBe(50);
@@ -151,7 +165,9 @@ describe("createPrismaClient SQL dialect extension (real SQLite engine)", () => 
   });
 
   it("executes multi-arg and nested LEAST against real SQLite engine", async () => {
-    const [res] = await prisma.$queryRaw<Array<{ val1: number | bigint; val2: number | bigint }>>`
+    const [res] = await prisma.$queryRaw<
+      Array<{ val1: number | bigint; val2: number | bigint }>
+    >`
       SELECT LEAST(10, 5, 20) AS val1, LEAST(100, LEAST(50, 25)) AS val2 FROM doc WHERE id = 'd1'`;
     expect(Number(res.val1)).toBe(5);
     expect(Number(res.val2)).toBe(25);
@@ -169,4 +185,3 @@ describe("createPrismaClient SQL dialect extension (real SQLite engine)", () => 
     expect(rows.map((r) => r.id)).toEqual(["d2"]);
   });
 });
-

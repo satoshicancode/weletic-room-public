@@ -1,42 +1,33 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import {
-  scheduledHandler,
-  handleHttpTrigger,
-  executeIsolatedJob,
-  reconcileStoreCreditJob,
-  processLoyaltyOutboxJob,
-  recoverStalledWebhooksJob,
-  loyaltyPointsExpirationJob,
-  renewShopifySessionsJob,
-  syncMultiTenantCatalogJob,
-  verifyDoubleEntryLedgerJob,
-  CRON_SCHEDULE_5_MIN,
-  CRON_SCHEDULE_HOURLY,
-  CRON_SCHEDULE_DAILY,
-  type CronWorkerEnv,
-} from "../../workers/cron-triggers/src/index";
-import {
   addCustomHostnameToCloudflare,
-  getCustomHostnameFromCloudflare,
-  deleteCustomHostnameFromCloudflare,
-  verifyCustomHostname,
-  extractSslValidationRecords,
-  isCloudflareSaaSConfigured,
-  getCloudflareSaaSConfig,
   CloudflareSaaSError,
+  deleteCustomHostnameFromCloudflare,
+  extractSslValidationRecords,
+  getCustomHostnameFromCloudflare,
+  verifyCustomHostname,
 } from "../../lib/api/domains/cloudflare-saas";
-import * as storeCreditReconciliationModule from "../../lib/weletic/loyalty/store-credit-reconciliation";
+import { prisma } from "../../lib/prisma";
 import * as outboxModule from "../../lib/weletic/loyalty/outbox";
-import * as ordersPaidRecoveryModule from "../../lib/weletic/shopify/orders-paid-recovery";
 import * as pointsExpirySchedulerModule from "../../lib/weletic/loyalty/points-expiry-scheduler";
 import * as rewardExpirySchedulerModule from "../../lib/weletic/loyalty/reward-expiry-scheduler";
-import * as sessionRenewalModule from "../../lib/weletic/shopify/session-renewal";
+import * as storeCreditReconciliationModule from "../../lib/weletic/loyalty/store-credit-reconciliation";
 import * as catalogSyncModule from "../../lib/weletic/shopify/catalog-sync";
+import * as ordersPaidRecoveryModule from "../../lib/weletic/shopify/orders-paid-recovery";
+import * as sessionRenewalModule from "../../lib/weletic/shopify/session-renewal";
 import * as storeResolverModule from "../../lib/weletic/shopify/store-resolver";
-import { prisma } from "../../lib/prisma";
+import {
+  CRON_SCHEDULE_5_MIN,
+  CRON_SCHEDULE_HOURLY,
+  executeIsolatedJob,
+  handleHttpTrigger,
+  scheduledHandler,
+  syncMultiTenantCatalogJob,
+  type CronWorkerEnv,
+} from "../../workers/cron-triggers/src/index";
 
 describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () => {
   const originalEnv = { ...process.env };
@@ -75,14 +66,22 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
   // =========================================================================
   describe("1. Error Cascading & Job Isolation Stress Tests", () => {
     it("isolates Store Credit Sweep failure: remaining jobs in 5-min cycle execute successfully", async () => {
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockRejectedValue(new Error("Shopify GraphQL Timeout (ETIMEDOUT: 504 Gateway Timeout)"));
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockRejectedValue(
+        new Error("Shopify GraphQL Timeout (ETIMEDOUT: 504 Gateway Timeout)"),
+      );
 
-      const outboxSpy = vi.spyOn(outboxModule, "processOutboxJobsBatch")
+      const outboxSpy = vi
+        .spyOn(outboxModule, "processOutboxJobsBatch")
         .mockResolvedValue({ processed: 14 } as any);
 
-      const webhookRecoverySpy = vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([{ id: "wh_recov_1", webhookId: "wh_1", status: "completed" }]);
+      const webhookRecoverySpy = vi
+        .spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks")
+        .mockResolvedValue([
+          { id: "wh_recov_1", webhookId: "wh_1", status: "completed" },
+        ]);
 
       const report = await scheduledHandler(
         { cron: CRON_SCHEDULE_5_MIN, scheduledTime: Date.now() },
@@ -96,26 +95,42 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
       expect(report.successCount).toBe(2);
       expect(report.errorCount).toBe(1);
 
-      const failedJob = report.jobs.find((j) => j.name === "store-credit-reconciliation");
+      const failedJob = report.jobs.find(
+        (j) => j.name === "store-credit-reconciliation",
+      );
       expect(failedJob?.status).toBe("error");
       expect(failedJob?.error).toContain("Shopify GraphQL Timeout");
 
       const okJob1 = report.jobs.find((j) => j.name === "loyalty-outbox");
       expect(okJob1?.status).toBe("success");
 
-      const okJob2 = report.jobs.find((j) => j.name === "stalled-webhooks-recovery");
+      const okJob2 = report.jobs.find(
+        (j) => j.name === "stalled-webhooks-recovery",
+      );
       expect(okJob2?.status).toBe("success");
     });
 
     it("isolates Outbox Flush failure: credit sweep and webhook recovery succeed", async () => {
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockResolvedValue({ scanned: 5, confirmed: 5, refunded: 0, deferred: 0, errors: 0, details: [] });
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockResolvedValue({
+        scanned: 5,
+        confirmed: 5,
+        refunded: 0,
+        deferred: 0,
+        errors: 0,
+        details: [],
+      });
 
-      vi.spyOn(outboxModule, "processOutboxJobsBatch")
-        .mockRejectedValue(new Error("D1 locked: SQLITE_BUSY: database is locked"));
+      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockRejectedValue(
+        new Error("D1 locked: SQLITE_BUSY: database is locked"),
+      );
 
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([]);
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const report = await scheduledHandler(
         { cron: CRON_SCHEDULE_5_MIN, scheduledTime: Date.now() },
@@ -131,14 +146,19 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
     });
 
     it("survives total sub-task crash (3 out of 3 fail) without crashing the Worker isolate", async () => {
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockRejectedValue(new Error("Downstream service unreachable"));
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockRejectedValue(new Error("Downstream service unreachable"));
 
-      vi.spyOn(outboxModule, "processOutboxJobsBatch")
-        .mockRejectedValue(new Error("Worker out of memory"));
+      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockRejectedValue(
+        new Error("Worker out of memory"),
+      );
 
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks")
-        .mockRejectedValue(new Error("Corrupted webhook buffer"));
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockRejectedValue(new Error("Corrupted webhook buffer"));
 
       const report = await scheduledHandler(
         { cron: CRON_SCHEDULE_5_MIN, scheduledTime: Date.now() },
@@ -153,20 +173,33 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
     });
 
     it("isolates session renewal crash in hourly cycle: points expiration still executes", async () => {
-      const pointsSpy = vi.spyOn(pointsExpirySchedulerModule, "enqueuePointsExpiryLifecycleJobs")
-        .mockResolvedValue({ programsScanned: 2, programsSkipped: 0, accountsReconciled: 4, accountsScheduled: 1, jobsEnqueued: 1 });
-      vi.spyOn(rewardExpirySchedulerModule, "enqueueRewardExpiryReminderJobs")
+      const pointsSpy = vi
+        .spyOn(pointsExpirySchedulerModule, "enqueuePointsExpiryLifecycleJobs")
         .mockResolvedValue({
-          programsScanned: 1,
-          rewardsScanned: 1,
-          jobsEnqueued: 0,
-          alreadyQueued: 0,
-          ineligible: 0,
-          programFailures: [],
+          programsScanned: 2,
+          programsSkipped: 0,
+          accountsReconciled: 4,
+          accountsScheduled: 1,
+          jobsEnqueued: 1,
         });
+      vi.spyOn(
+        rewardExpirySchedulerModule,
+        "enqueueRewardExpiryReminderJobs",
+      ).mockResolvedValue({
+        programsScanned: 1,
+        rewardsScanned: 1,
+        jobsEnqueued: 0,
+        alreadyQueued: 0,
+        ineligible: 0,
+        programFailures: [],
+      });
 
-      vi.spyOn(sessionRenewalModule, "listDueShopifySessionRenewals")
-        .mockRejectedValue(new Error("Shopify Admin App uninstalled or invalid client secret"));
+      vi.spyOn(
+        sessionRenewalModule,
+        "listDueShopifySessionRenewals",
+      ).mockRejectedValue(
+        new Error("Shopify Admin App uninstalled or invalid client secret"),
+      );
 
       const report = await scheduledHandler(
         { cron: CRON_SCHEDULE_HOURLY, scheduledTime: Date.now() },
@@ -177,34 +210,61 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
       expect(report.successCount).toBe(2);
       expect(report.errorCount).toBe(1);
 
-      const failed = report.jobs.find((j) => j.name === "shopify-session-renewal");
+      const failed = report.jobs.find(
+        (j) => j.name === "shopify-session-renewal",
+      );
       expect(failed?.status).toBe("error");
       expect(failed?.error).toContain("Shopify Admin App uninstalled");
 
-      const success = report.jobs.find((j) => j.name === "loyalty-points-expiration");
+      const success = report.jobs.find(
+        (j) => j.name === "loyalty-points-expiration",
+      );
       expect(success?.status).toBe("success");
     });
 
     it("multi-tenant catalog sync sweep isolates individual tenant failures", async () => {
       const mockStores = [
-        { id: "store_good_1", projectId: "ws_good_1", shopDomain: "brand-alpha.myshopify.com" },
-        { id: "store_bad_2", projectId: "ws_bad_2", shopDomain: "brand-beta.myshopify.com" },
-        { id: "store_good_3", projectId: "ws_good_3", shopDomain: "brand-gamma.myshopify.com" },
+        {
+          id: "store_good_1",
+          projectId: "ws_good_1",
+          shopDomain: "brand-alpha.myshopify.com",
+        },
+        {
+          id: "store_bad_2",
+          projectId: "ws_bad_2",
+          shopDomain: "brand-beta.myshopify.com",
+        },
+        {
+          id: "store_good_3",
+          projectId: "ws_good_3",
+          shopDomain: "brand-gamma.myshopify.com",
+        },
       ];
 
-      vi.spyOn(prisma.weleticShopifyStore, "findMany").mockResolvedValue(mockStores as any);
-      vi.spyOn(storeResolverModule, "resolveShopifyStoreByDomain").mockImplementation(async (domain) => {
+      vi.spyOn(prisma.weleticShopifyStore, "findMany").mockResolvedValue(
+        mockStores as any,
+      );
+      vi.spyOn(
+        storeResolverModule,
+        "resolveShopifyStoreByDomain",
+      ).mockImplementation(async (domain) => {
         const store = mockStores.find((s) => s.shopDomain === domain);
         return store ? (store as any) : null;
       });
 
-      const catalogSyncSpy = vi.spyOn(catalogSyncModule, "syncWeleticShopifyCatalog")
-        .mockImplementation(async ({ workspaceId }) => {
+      const catalogSyncSpy = vi
+        .spyOn(catalogSyncModule, "syncWeleticShopifyCatalog")
+        .mockImplementation((async ({ workspaceId }: any) => {
           if (workspaceId === "ws_bad_2") {
-            throw new Error("Shopify 429 Too Many Requests: API rate limit exceeded");
+            throw new Error(
+              "Shopify 429 Too Many Requests: API rate limit exceeded",
+            );
           }
-          return { created: 1, updated: 0, deleted: 0 };
-        });
+          return {
+            runId: "mock_run",
+            stats: { products: 1, variants: 0, markets: 0, marketPrices: 0 },
+          } as any;
+        }) as any);
 
       const result = await syncMultiTenantCatalogJob({});
 
@@ -218,18 +278,30 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
 
     it("Invariant 1: skips store and records error when resolveShopifyStoreByDomain returns null", async () => {
       vi.spyOn(prisma.weleticShopifyStore, "findMany").mockResolvedValue([
-        { id: "store_orphan", projectId: "ws_orphan", shopDomain: "unresolvable-store.myshopify.com" } as any,
+        {
+          id: "store_orphan",
+          projectId: "ws_orphan",
+          shopDomain: "unresolvable-store.myshopify.com",
+        } as any,
       ]);
 
-      vi.spyOn(storeResolverModule, "resolveShopifyStoreByDomain").mockResolvedValue(null);
-      const catalogSyncSpy = vi.spyOn(catalogSyncModule, "syncWeleticShopifyCatalog");
+      vi.spyOn(
+        storeResolverModule,
+        "resolveShopifyStoreByDomain",
+      ).mockResolvedValue(null);
+      const catalogSyncSpy = vi.spyOn(
+        catalogSyncModule,
+        "syncWeleticShopifyCatalog",
+      );
 
       const result = await syncMultiTenantCatalogJob({});
 
       expect(catalogSyncSpy).not.toHaveBeenCalled();
       expect(result.syncedWorkspaces).toHaveLength(0);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].error).toContain("Unable to canonically resolve store for domain: unresolvable-store.myshopify.com");
+      expect(result.errors[0].error).toContain(
+        "Unable to canonically resolve store for domain: unresolvable-store.myshopify.com",
+      );
     });
 
     it("handles unusual thrown types (string, non-error object, synchronous throw)", async () => {
@@ -288,10 +360,24 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
     });
 
     it("handles whitespace-padded cron schedules by trimming correctly", async () => {
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockResolvedValue({ scanned: 0, confirmed: 0, refunded: 0, deferred: 0, errors: 0, details: [] });
-      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({ processed: 0 } as any);
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks").mockResolvedValue([]);
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockResolvedValue({
+        scanned: 0,
+        confirmed: 0,
+        refunded: 0,
+        deferred: 0,
+        errors: 0,
+        details: [],
+      });
+      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({
+        processed: 0,
+      } as any);
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const report = await scheduledHandler(
         { cron: "   */5 * * * *   ", scheduledTime: Date.now() },
@@ -313,17 +399,17 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
 
     it("rejects unauthorized trigger requests with 401 across adversarial auth headers", async () => {
       const adversarialHeaders = [
-        undefined,                                     // Missing header
-        "",                                            // Empty header
-        "Bearer",                                      // Missing token
-        "Bearer ",                                     // Empty token with space
-        `bearer ${SECRET}`,                            // Lowercase scheme
-        `Basic ${SECRET}`,                             // Basic auth scheme
-        `Token ${SECRET}`,                             // Token scheme
-        `Bearer ${SECRET}_extra`,                      // Suffix attack
-        `Bearer invalid_token`,                        // Invalid token
-        `Bearer ' OR '1'='1' --`,                      // SQL injection token
-        `Bearer  ${SECRET}`,                           // Double whitespace between scheme and token
+        undefined, // Missing header
+        "", // Empty header
+        "Bearer", // Missing token
+        "Bearer ", // Empty token with space
+        `bearer ${SECRET}`, // Lowercase scheme
+        `Basic ${SECRET}`, // Basic auth scheme
+        `Token ${SECRET}`, // Token scheme
+        `Bearer ${SECRET}_extra`, // Suffix attack
+        `Bearer invalid_token`, // Invalid token
+        `Bearer ' OR '1'='1' --`, // SQL injection token
+        `Bearer  ${SECRET}`, // Double whitespace between scheme and token
       ];
 
       for (const authHeader of adversarialHeaders) {
@@ -332,7 +418,9 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
           headers["Authorization"] = authHeader;
         }
 
-        const req = new Request("http://localhost/trigger?cron=5min", { headers });
+        const req = new Request("http://localhost/trigger?cron=5min", {
+          headers,
+        });
         const res = await handleHttpTrigger(req, securedEnv);
 
         expect(res.status).toBe(401);
@@ -342,10 +430,24 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
     });
 
     it("accepts valid bearer authorization on /trigger", async () => {
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockResolvedValue({ scanned: 0, confirmed: 0, refunded: 0, deferred: 0, errors: 0, details: [] });
-      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({ processed: 0 } as any);
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks").mockResolvedValue([]);
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockResolvedValue({
+        scanned: 0,
+        confirmed: 0,
+        refunded: 0,
+        deferred: 0,
+        errors: 0,
+        details: [],
+      });
+      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({
+        processed: 0,
+      } as any);
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const req = new Request("http://localhost/trigger?cron=5min", {
         headers: { Authorization: `Bearer ${SECRET}` },
@@ -359,10 +461,17 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
     });
 
     it("returns HTTP 207 Multi-Status on /trigger when one or more jobs fail", async () => {
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockRejectedValue(new Error("Simulated credit reconciliation failure"));
-      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({ processed: 0 } as any);
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks").mockResolvedValue([]);
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockRejectedValue(new Error("Simulated credit reconciliation failure"));
+      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({
+        processed: 0,
+      } as any);
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const req = new Request("http://localhost/trigger?cron=5min", {
         headers: { Authorization: `Bearer ${SECRET}` },
@@ -376,10 +485,24 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
     });
 
     it("handles corrupt or non-JSON POST body gracefully and falls back to default 5-min cron", async () => {
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockResolvedValue({ scanned: 0, confirmed: 0, refunded: 0, deferred: 0, errors: 0, details: [] });
-      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({ processed: 0 } as any);
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks").mockResolvedValue([]);
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockResolvedValue({
+        scanned: 0,
+        confirmed: 0,
+        refunded: 0,
+        deferred: 0,
+        errors: 0,
+        details: [],
+      });
+      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({
+        processed: 0,
+      } as any);
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       // 1. Malformed JSON string
       const corruptReq = new Request("http://localhost/trigger", {
@@ -404,7 +527,10 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
         },
         body: JSON.stringify({ cron: 12345 }),
       });
-      const invalidTypeRes = await handleHttpTrigger(invalidTypeReq, securedEnv);
+      const invalidTypeRes = await handleHttpTrigger(
+        invalidTypeReq,
+        securedEnv,
+      );
       expect(invalidTypeRes.status).toBe(200);
       const invalidTypeBody = await invalidTypeRes.json();
       expect(invalidTypeBody.cron).toBe(CRON_SCHEDULE_5_MIN);
@@ -446,16 +572,28 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
     });
 
     it("rejects empty or whitespace-only domain names", async () => {
-      await expect(addCustomHostnameToCloudflare("")).rejects.toThrow("Domain name must not be empty");
-      await expect(addCustomHostnameToCloudflare("   ")).rejects.toThrow("Domain name must not be empty");
+      await expect(addCustomHostnameToCloudflare("")).rejects.toThrow(
+        "Domain name must not be empty",
+      );
+      await expect(addCustomHostnameToCloudflare("   ")).rejects.toThrow(
+        "Domain name must not be empty",
+      );
     });
 
     it("rejects empty or whitespace-only hostnameOrId in queries and deletions", async () => {
-      await expect(getCustomHostnameFromCloudflare("")).rejects.toThrow("hostnameOrId must not be empty");
-      await expect(getCustomHostnameFromCloudflare("   ")).rejects.toThrow("hostnameOrId must not be empty");
+      await expect(getCustomHostnameFromCloudflare("")).rejects.toThrow(
+        "hostnameOrId must not be empty",
+      );
+      await expect(getCustomHostnameFromCloudflare("   ")).rejects.toThrow(
+        "hostnameOrId must not be empty",
+      );
 
-      await expect(deleteCustomHostnameFromCloudflare("")).rejects.toThrow("hostnameOrId must not be empty");
-      await expect(deleteCustomHostnameFromCloudflare("   ")).rejects.toThrow("hostnameOrId must not be empty");
+      await expect(deleteCustomHostnameFromCloudflare("")).rejects.toThrow(
+        "hostnameOrId must not be empty",
+      );
+      await expect(deleteCustomHostnameFromCloudflare("   ")).rejects.toThrow(
+        "hostnameOrId must not be empty",
+      );
     });
 
     it("handles punycode / internationalized domain names (IDN)", async () => {
@@ -515,13 +653,13 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
         ssl: {
           status: "pending_validation",
           validation_records: [
-            { txt_name: "valid.name", txt_value: null },      // Missing value
-            { txt_name: null, txt_value: "valid.value" },      // Missing name
-            { cname: "alias.com", cname_target: null },        // Missing target
-            { cname: null, cname_target: "target.com" },       // Missing cname
-            { http_url: "http://test.com", http_body: null },  // Missing body
-            { http_url: null, http_body: "body" },             // Missing url
-            { txt_name: "_valid.txt", txt_value: "valid_val" },// Fully valid TXT
+            { txt_name: "valid.name", txt_value: null }, // Missing value
+            { txt_name: null, txt_value: "valid.value" }, // Missing name
+            { cname: "alias.com", cname_target: null }, // Missing target
+            { cname: null, cname_target: "target.com" }, // Missing cname
+            { http_url: "http://test.com", http_body: null }, // Missing body
+            { http_url: null, http_body: "body" }, // Missing url
+            { txt_name: "_valid.txt", txt_value: "valid_val" }, // Fully valid TXT
           ],
         },
       };
@@ -568,11 +706,16 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
       const fetchSpy = vi.fn().mockResolvedValue({
         ok: false,
         status: 404,
-        json: async () => ({ success: false, errors: [{ code: 1001, message: "Custom hostname not found" }] }),
+        json: async () => ({
+          success: false,
+          errors: [{ code: 1001, message: "Custom hostname not found" }],
+        }),
       });
       global.fetch = fetchSpy;
 
-      const verification = await verifyCustomHostname("non-existent-domain.com");
+      const verification = await verifyCustomHostname(
+        "non-existent-domain.com",
+      );
       expect(verification.verified).toBe(false);
       expect(verification.status).toBe("not_found");
       expect(verification.sslStatus).toBe("not_found");
@@ -603,15 +746,17 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
         }),
       });
 
-      await expect(addCustomHostnameToCloudflare("shop.brand.com")).rejects.toThrow(
-        CloudflareSaaSError,
-      );
+      await expect(
+        addCustomHostnameToCloudflare("shop.brand.com"),
+      ).rejects.toThrow(CloudflareSaaSError);
 
       try {
         await addCustomHostnameToCloudflare("shop.brand.com");
       } catch (err: any) {
         expect(err.statusCode).toBe(401);
-        expect(err.errors).toEqual([{ code: 10000, message: "Authentication error" }]);
+        expect(err.errors).toEqual([
+          { code: 10000, message: "Authentication error" },
+        ]);
       }
     });
 
@@ -622,13 +767,18 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
         statusText: "Internal Server Error",
         json: async () => ({
           success: false,
-          errors: [{ code: 9999, message: "Internal server error in custom hostnames service" }],
+          errors: [
+            {
+              code: 9999,
+              message: "Internal server error in custom hostnames service",
+            },
+          ],
         }),
       });
 
-      await expect(getCustomHostnameFromCloudflare("shop.brand.com")).rejects.toThrow(
-        CloudflareSaaSError,
-      );
+      await expect(
+        getCustomHostnameFromCloudflare("shop.brand.com"),
+      ).rejects.toThrow(CloudflareSaaSError);
     });
 
     it("handles 404 in deleteCustomHostnameFromCloudflare by checking existence first for domain names", async () => {
@@ -639,7 +789,9 @@ describe("Milestone 5 Adversarial Stress Testing & Error Cascading Suite", () =>
         json: async () => ({ success: false, errors: [] }),
       });
 
-      const res = await deleteCustomHostnameFromCloudflare("nonexistent.brand.com");
+      const res = await deleteCustomHostnameFromCloudflare(
+        "nonexistent.brand.com",
+      );
       expect(res.deleted).toBe(false);
       expect(res.id).toBe("nonexistent.brand.com");
     });

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { linkCache } from "./cache";
 import { evictLinkFromKv } from "@/lib/weletic/link-kv-cache";
 import { waitUntil } from "@vercel/functions";
+import { linkCache } from "./cache";
 
 export async function archiveLink({
   linkId,

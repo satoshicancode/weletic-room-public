@@ -1,14 +1,14 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  createKVNonceClient,
   createD1NonceClient,
-  verifyWeleticShopifyRequest,
-  setServiceAuthRedisClient,
+  createKVNonceClient,
   resetServiceAuthNonceCache,
-  type KVNamespaceLike,
+  setServiceAuthRedisClient,
+  verifyWeleticShopifyRequest,
   type D1DatabaseLike,
+  type KVNamespaceLike,
 } from "@weletic/contracts/shopify/service-auth";
 import crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("SEC-AUDIT-03: Cloudflare Native Distributed Nonce Providers & Replay Protection", () => {
   const secret = "a".repeat(32);
@@ -38,11 +38,17 @@ describe("SEC-AUDIT-03: Cloudflare Native Distributed Nonce Providers & Replay P
     const nonce = `kv-nonce-${crypto.randomUUID()}`;
 
     // Attempt 1: New nonce succeeds
-    const res1 = await kvClient.set(`test:${nonce}`, "1", { nx: true, ex: 720 });
+    const res1 = await kvClient.set(`test:${nonce}`, "1", {
+      nx: true,
+      ex: 720,
+    });
     expect(res1).toBe("OK");
 
     // Attempt 2: Replay of same nonce on another node using shared KV is rejected
-    const res2 = await kvClient.set(`test:${nonce}`, "1", { nx: true, ex: 720 });
+    const res2 = await kvClient.set(`test:${nonce}`, "1", {
+      nx: true,
+      ex: 720,
+    });
     expect(res2).toBeNull();
   });
 
@@ -56,7 +62,9 @@ describe("SEC-AUDIT-03: Cloudflare Native Distributed Nonce Providers & Replay P
               async run() {
                 const [key, expiresAt] = values as [string, number];
                 if (d1Table.has(key)) {
-                  const err: any = new Error("UNIQUE constraint failed: ServiceAuthNonce.nonceKey");
+                  const err: any = new Error(
+                    "UNIQUE constraint failed: ServiceAuthNonce.nonceKey",
+                  );
                   throw err;
                 }
                 d1Table.set(key, expiresAt);
@@ -77,11 +85,17 @@ describe("SEC-AUDIT-03: Cloudflare Native Distributed Nonce Providers & Replay P
     const nonce = `d1-nonce-${crypto.randomUUID()}`;
 
     // 1st attempt: Insert succeeds
-    const res1 = await d1Client.set(`test:${nonce}`, "1", { nx: true, ex: 720 });
+    const res1 = await d1Client.set(`test:${nonce}`, "1", {
+      nx: true,
+      ex: 720,
+    });
     expect(res1).toBe("OK");
 
     // 2nd attempt: Insert collides on UNIQUE constraint -> returns null
-    const res2 = await d1Client.set(`test:${nonce}`, "1", { nx: true, ex: 720 });
+    const res2 = await d1Client.set(`test:${nonce}`, "1", {
+      nx: true,
+      ex: 720,
+    });
     expect(res2).toBeNull();
   });
 

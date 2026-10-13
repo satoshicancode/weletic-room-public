@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { execSync } from "child_process";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -124,12 +124,8 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 import { CommissionStatus, PayoutStatus, Prisma } from "@prisma/client";
-import { MUTABLE_PAYOUT_STATUSES } from "../../lib/constants/payouts";
 import { POST as aggregateDueCommissionsPOST } from "../../app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route";
-import {
-  isRetriableSqliteError,
-  withFinancialTransactionRetry,
-} from "../../lib/weletic/sqlite-retry";
+import { withFinancialTransactionRetry } from "../../lib/weletic/sqlite-retry";
 
 function setupStatefulPrismaMock() {
   queryCount = 0;
@@ -144,9 +140,7 @@ function setupStatefulPrismaMock() {
     { holdingPeriodDays: 0, _count: { id: 1 } },
   ]);
 
-  prismaMock.partnerGroup.findMany.mockResolvedValue([
-    { id: "grp_stress_0" },
-  ]);
+  prismaMock.partnerGroup.findMany.mockResolvedValue([{ id: "grp_stress_0" }]);
 
   // Dynamic commission querying with pagination and partner exclusion
   prismaMock.commission.findMany.mockImplementation(async (query: any) => {
@@ -266,50 +260,52 @@ function setupStatefulPrismaMock() {
   });
 
   // Dynamic $executeRaw handler for both Commission claim and Payout update
-  prismaMock.$executeRaw.mockImplementation(async (strings: any, ...values: any[]) => {
-    const rawSql = Array.isArray(strings)
-      ? strings.join("?")
-      : typeof strings === "string"
-        ? strings
-        : strings?.strings?.join("?") ?? "";
+  prismaMock.$executeRaw.mockImplementation(
+    async (strings: any, ...values: any[]) => {
+      const rawSql = Array.isArray(strings)
+        ? strings.join("?")
+        : typeof strings === "string"
+          ? strings
+          : strings?.strings?.join("?") ?? "";
 
-    if (rawSql.includes("UPDATE Commission")) {
-      const payoutId = values[1];
-      const targetIds = Array.isArray(values[2]?.values)
-        ? values[2].values
-        : Array.isArray(values[2])
-          ? values[2]
-          : [];
-      const partnerId = values[4];
+      if (rawSql.includes("UPDATE Commission")) {
+        const payoutId = values[1];
+        const targetIds = Array.isArray(values[2]?.values)
+          ? values[2].values
+          : Array.isArray(values[2])
+            ? values[2]
+            : [];
+        const partnerId = values[4];
 
-      let updated = 0;
-      for (const c of commissionsTable) {
-        if (
-          targetIds.includes(c.id) &&
-          c.partnerId === partnerId &&
-          c.status === CommissionStatus.pending
-        ) {
-          c.status = CommissionStatus.processed;
-          c.payoutId = payoutId;
-          updated++;
+        let updated = 0;
+        for (const c of commissionsTable) {
+          if (
+            targetIds.includes(c.id) &&
+            c.partnerId === partnerId &&
+            c.status === CommissionStatus.pending
+          ) {
+            c.status = CommissionStatus.processed;
+            c.payoutId = payoutId;
+            updated++;
+          }
         }
+        return updated;
       }
-      return updated;
-    }
 
-    if (rawSql.includes("UPDATE Payout")) {
-      const amount = values[0];
-      const payoutId = values[2];
+      if (rawSql.includes("UPDATE Payout")) {
+        const amount = values[0];
+        const payoutId = values[2];
 
-      const payout = payoutsTable.find((p) => p.id === payoutId);
-      if (payout) {
-        payout.amount = Number(amount);
+        const payout = payoutsTable.find((p) => p.id === payoutId);
+        if (payout) {
+          payout.amount = Number(amount);
+        }
+        return 1;
       }
+
       return 1;
-    }
-
-    return 1;
-  });
+    },
+  );
 }
 
 describe("Adversarial M1 Stress Harness: Empirical Bug Hunting", () => {
@@ -588,11 +584,17 @@ describe("Adversarial M1 Stress Harness: Empirical Bug Hunting", () => {
       // Remaining 6 commissions stay safely in pending without rollback.
       expect(payoutsTable.length).toBe(1);
       expect(payoutsTable[0].amount).toBe(2_000_000_000);
-      expect(payoutsTable[0].amount).toBeLessThanOrEqual(MAX_PAYOUT_AMOUNT_LIMIT);
+      expect(payoutsTable[0].amount).toBeLessThanOrEqual(
+        MAX_PAYOUT_AMOUNT_LIMIT,
+      );
 
-      const processed = commissionsTable.filter((c) => c.status === CommissionStatus.processed);
+      const processed = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.processed,
+      );
       expect(processed.length).toBe(4);
-      const pending = commissionsTable.filter((c) => c.status === CommissionStatus.pending);
+      const pending = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.pending,
+      );
       expect(pending.length).toBe(6);
       expect(pending.every((c) => c.payoutId === null)).toBe(true);
     });
@@ -644,9 +646,15 @@ describe("Adversarial M1 Stress Harness: Empirical Bug Hunting", () => {
       // jpy_3 safely remains pending.
       expect(payoutsTable.length).toBe(1);
       expect(payoutsTable[0].amount).toBe(2_000_000_000);
-      expect(payoutsTable[0].amount).toBeLessThanOrEqual(MAX_PAYOUT_AMOUNT_LIMIT);
-      expect(commissionsTable.find((c) => c.id === "jpy_3")?.status).toBe(CommissionStatus.pending);
-      expect(commissionsTable.find((c) => c.id === "jpy_3")?.payoutId).toBeNull();
+      expect(payoutsTable[0].amount).toBeLessThanOrEqual(
+        MAX_PAYOUT_AMOUNT_LIMIT,
+      );
+      expect(commissionsTable.find((c) => c.id === "jpy_3")?.status).toBe(
+        CommissionStatus.pending,
+      );
+      expect(
+        commissionsTable.find((c) => c.id === "jpy_3")?.payoutId,
+      ).toBeNull();
     });
 
     it("Stress 2C: Single massive commission exceeding 2.14B units (3 Billion JPY) safely rolls back via hard overflow guard without crashing", async () => {
@@ -684,8 +692,12 @@ describe("Adversarial M1 Stress Harness: Empirical Bug Hunting", () => {
       expect(response.status).toBe(200);
 
       // The massive whale commission was rolled back and deleted
-      expect(commissionsTable.find((c) => c.id === "single_huge_comm")?.status).toBe(CommissionStatus.pending);
-      expect(commissionsTable.find((c) => c.id === "single_huge_comm")?.payoutId).toBe(null);
+      expect(
+        commissionsTable.find((c) => c.id === "single_huge_comm")?.status,
+      ).toBe(CommissionStatus.pending);
+      expect(
+        commissionsTable.find((c) => c.id === "single_huge_comm")?.payoutId,
+      ).toBe(null);
 
       // Normal partner payout succeeded!
       expect(payoutsTable.length).toBe(1);
@@ -754,7 +766,9 @@ describe("Adversarial M1 Stress Harness: Empirical Bug Hunting", () => {
       // Payout remains intact at 1.9B, and m_4 remains pending.
       expect(payoutsTable.length).toBe(1);
       expect(payoutsTable[0].amount).toBe(1_900_000_000);
-      expect(commissionsTable.find((c) => c.id === "m_4")?.status).toBe(CommissionStatus.pending);
+      expect(commissionsTable.find((c) => c.id === "m_4")?.status).toBe(
+        CommissionStatus.pending,
+      );
       expect(commissionsTable.find((c) => c.id === "m_4")?.payoutId).toBeNull();
     });
   });
@@ -834,10 +848,13 @@ describe("Adversarial M1 Stress Harness: Empirical Bug Hunting", () => {
 
     it("Stress 3C: Fatal non-retriable error (e.g. Prisma P2002 Unique Constraint violation) fails fast on attempt 1", async () => {
       let attempts = 0;
-      const fatalErr = new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
-        code: "P2002",
-        clientVersion: "6.19.1",
-      });
+      const fatalErr = new Prisma.PrismaClientKnownRequestError(
+        "Unique constraint failed",
+        {
+          code: "P2002",
+          clientVersion: "6.19.1",
+        },
+      );
 
       const op = vi.fn(async () => {
         attempts++;

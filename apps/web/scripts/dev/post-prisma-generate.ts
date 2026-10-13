@@ -1,18 +1,21 @@
-import { ALL_ENUMS } from "../../lib/types/enums";
-import path from "path";
 import fs from "fs";
 import { createRequire } from "module";
+import path from "path";
+import { ALL_ENUMS } from "../../lib/types/enums";
 
 function generateStaticJsInjection(): string {
-  let injection = "\n// --- SQLite / D1 Explicit Static Enum Augmentation ---\n";
+  let injection =
+    "\n// --- SQLite / D1 Explicit Static Enum Augmentation ---\n";
   injection += "const _injectedEnums = " + JSON.stringify(ALL_ENUMS) + ";\n";
   injection += "if (typeof module !== 'undefined' && module.exports) {\n";
   injection += "  Object.assign(module.exports, _injectedEnums);\n";
-  injection += "  module.exports.$Enums = Object.assign(module.exports.$Enums || {}, _injectedEnums);\n";
+  injection +=
+    "  module.exports.$Enums = Object.assign(module.exports.$Enums || {}, _injectedEnums);\n";
   injection += "}\n";
   injection += "if (typeof exports !== 'undefined') {\n";
   injection += "  Object.assign(exports, _injectedEnums);\n";
-  injection += "  exports.$Enums = Object.assign(exports.$Enums || {}, _injectedEnums);\n";
+  injection +=
+    "  exports.$Enums = Object.assign(exports.$Enums || {}, _injectedEnums);\n";
   injection += "}\n";
 
   // Emit explicit static assignments for cjs-module-lexer / ESM named export discovery
@@ -74,7 +77,7 @@ export function augmentPrismaClientWithEnums() {
     targetFiles.push(
       path.join(dotPrismaDir, "index.js"),
       path.join(dotPrismaDir, "default.js"),
-      path.join(dotPrismaDir, "index-browser.js")
+      path.join(dotPrismaDir, "index-browser.js"),
     );
   }
 
@@ -113,7 +116,7 @@ export function augmentPrismaClientWithEnums() {
       if (!dts.includes("export namespace $Enums")) {
         dts = dts.replace(
           "export namespace Prisma {",
-          "export namespace Prisma {\n" + enumDts
+          "export namespace Prisma {\n" + enumDts,
         );
       }
 
@@ -144,12 +147,12 @@ export function augmentPrismaClientWithEnums() {
           if (headerIdx !== -1) {
             const scalarsIdx = dts.indexOf(
               "scalars: $Extensions.GetPayloadResult<{",
-              headerIdx
+              headerIdx,
             );
             if (scalarsIdx !== -1) {
               const scalarsEnd = dts.indexOf(
                 '}, ExtArgs["result"]',
-                scalarsIdx
+                scalarsIdx,
               );
               if (scalarsEnd !== -1) {
                 const beforeScalars = dts.slice(0, scalarsIdx);
@@ -159,13 +162,15 @@ export function augmentPrismaClientWithEnums() {
                 // Replace scalar type
                 scalarsBlock = scalarsBlock.replace(
                   new RegExp(
-                    "([ \t]+" + field + ": )string(\\s*\\|\\s*null)?([ \t]*\r?\n)"
+                    "([ \t]+" +
+                      field +
+                      ": )string(\\s*\\|\\s*null)?([ \t]*\r?\n)",
                   ),
                   (m, prefix, isNullable, suffix) => {
                     return `${prefix}Prisma.$Enums.${enumName}${
                       isNullable ? " | null" : ""
                     }${suffix}`;
-                  }
+                  },
                 );
 
                 dts = beforeScalars + scalarsBlock + afterScalars;
@@ -176,12 +181,23 @@ export function augmentPrismaClientWithEnums() {
       }
 
       // Allow skipDuplicates: boolean in index.d.ts (handled by runtime createMany extension)
-      dts = dts.replace(/skipDuplicates\?: never;/g, "skipDuplicates?: boolean;");
-
-      // Add programId_partnerId alias to ProgramApplicationEventWhereUniqueInput (handled by runtime query extension)
       dts = dts.replace(
-        "export type ProgramApplicationEventWhereUniqueInput = {",
-        "export type ProgramApplicationEventWhereUniqueInput = {\n    programId_partnerId?: Prisma.ProgramApplicationEventPartnerIdProgramIdCompoundUniqueInput;\n"
+        /skipDuplicates\?: never;/g,
+        "skipDuplicates?: boolean;",
+      );
+      dts = dts.replace(
+        /(export type \w+CreateManyArgs<[^>]*> = \{)/g,
+        "$1\n    skipDuplicates?: boolean;",
+      );
+
+      // Add programId_partnerId alias to WhereUniqueInputs (handled by runtime query extension)
+      dts = dts.replace(
+        /(partnerId_programId\?: (?:ProgramApplicationEvent|DiscoveredPartner|ProgramEnrollment)PartnerIdProgramIdCompoundUniqueInput;?)/g,
+        "$1\n    programId_partnerId?: any;",
+      );
+      dts = dts.replace(
+        /(export type (?:ProgramApplicationEvent|DiscoveredPartner|ProgramEnrollment)WhereUniqueInput = Prisma\.AtLeast<\{[\s\S]*?\}, "id" \| "partnerId_programId")>/g,
+        '$1 | "programId_partnerId">',
       );
 
       fs.writeFileSync(dotPrismaIndexDts, dts);

@@ -1,8 +1,8 @@
-import { Prisma, type WeleticShopifyPendingInstallation } from "@prisma/client";
 import {
-  forUpdateClause,
   currentTimestampClause,
+  forUpdateClause,
 } from "@/lib/prisma/sql-helpers";
+import { Prisma, type WeleticShopifyPendingInstallation } from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import {
   assertFreshInstallationStatusIdentity,

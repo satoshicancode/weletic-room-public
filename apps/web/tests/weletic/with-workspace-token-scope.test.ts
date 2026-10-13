@@ -14,14 +14,21 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("next/headers", () => ({
-  headers: vi.fn(async () => new Headers({ Authorization: "Bearer dub_testkey" })),
+  headers: vi.fn(
+    async () => new Headers({ Authorization: "Bearer dub_testkey" }),
+  ),
 }));
 
 vi.mock("@vercel/functions", () => ({ waitUntil: vi.fn() }));
 
 vi.mock("@/lib/axiom/server", () => ({
   withAxiomBodyLog: (handler: any) => handler,
-  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), flush: vi.fn(async () => {}) },
+  logger: {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    flush: vi.fn(async () => {}),
+  },
   toErrorFields: (e: unknown) => ({ message: String(e) }),
 }));
 
@@ -29,7 +36,9 @@ vi.mock("@/lib/api-logs/capture-request-log", () => ({
   captureRequestLog: vi.fn(async () => {}),
 }));
 
-vi.mock("@/lib/edge-config", () => ({ getFeatureFlags: vi.fn(async () => ({})) }));
+vi.mock("@/lib/edge-config", () => ({
+  getFeatureFlags: vi.fn(async () => ({})),
+}));
 
 vi.mock("@/lib/auth/token-cache", () => ({
   tokenCache: { get: vi.fn(async () => null), set: vi.fn(async () => {}) },
@@ -50,7 +59,12 @@ vi.mock("@/lib/prisma", () => ({
         projectId: "ws_1",
         installationId: null,
         project: { plan: "business", trialEndsAt: null },
-        user: { id: "user_machine", name: "Machine", email: "m@x.test", isMachine: state.isMachine },
+        user: {
+          id: "user_machine",
+          name: "Machine",
+          email: "m@x.test",
+          isMachine: state.isMachine,
+        },
       })),
       update: vi.fn(async () => ({})),
     },
@@ -59,7 +73,9 @@ vi.mock("@/lib/prisma", () => ({
         id: "ws_1",
         slug: "acme",
         plan: "business",
-        users: [{ role: "owner", defaultFolderId: null, workspacePreferences: null }],
+        users: [
+          { role: "owner", defaultFolderId: null, workspacePreferences: null },
+        ],
       })),
     },
   },
@@ -74,9 +90,12 @@ function call(handlerOptions: Parameters<typeof withWorkspace>[1]) {
     requiredPlan: ["business"],
     ...handlerOptions,
   }) as any;
-  const req = new NextRequest("https://api.test/api/weletic/commission-rules?workspaceId=ws_1", {
-    method: "POST",
-  });
+  const req = new NextRequest(
+    "https://api.test/api/weletic/commission-rules?workspaceId=ws_1",
+    {
+      method: "POST",
+    },
+  );
   return { handler, run: () => route(req, { params: Promise.resolve({}) }) };
 }
 
@@ -107,13 +126,19 @@ describe("withWorkspace: restricted token scope enforcement on role-only routes"
   });
 
   it("still enforces scopes through requiredPermissions (unchanged behavior)", async () => {
-    const denied = call({ requiredPermissions: ["links.write"], requiredRoles: ["owner"] });
+    const denied = call({
+      requiredPermissions: ["links.write"],
+      requiredRoles: ["owner"],
+    });
     expect((await denied.run()).status).toBe(403);
     expect(denied.handler).not.toHaveBeenCalled();
 
     state.scopes = "links.write";
     workspaceAuthCache.clear();
-    const allowed = call({ requiredPermissions: ["links.write"], requiredRoles: ["owner"] });
+    const allowed = call({
+      requiredPermissions: ["links.write"],
+      requiredRoles: ["owner"],
+    });
     expect((await allowed.run()).status).toBe(200);
   });
 

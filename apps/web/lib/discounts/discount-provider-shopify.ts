@@ -1,5 +1,6 @@
 import { decryptOrPassthrough } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { ShopifyCredentialUnavailableError } from "@/lib/weletic/shopify/credential-errors";
 import { readShopifyCredentialSource } from "@/lib/weletic/shopify/credential-source";
 import {
@@ -8,7 +9,6 @@ import {
 } from "@/lib/weletic/shopify/store-resolver";
 import { SHOPIFY_INTEGRATION_ID, nanoid } from "@dub/utils";
 import { Discount, Prisma, Project } from "@prisma/client";
-import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import {
   ShopifyAdminGraphqlError,
   shopifyAdminGraphql,

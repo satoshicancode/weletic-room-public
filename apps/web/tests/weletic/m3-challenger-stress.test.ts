@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -39,14 +39,13 @@ vi.mock("next/cache", () => ({
 }));
 
 import {
-  handleLinkRedirection,
   buildKvKey,
+  handleLinkRedirection,
   type LinkRecord,
   type LinkRedirectorEnv,
 } from "../../workers/link-redirector/src/index";
 
 import {
-  evictLinkFromKv,
   evictLinksBatchFromKv,
   tombstoneLinkInKv,
 } from "../../lib/weletic/link-kv-cache";
@@ -64,7 +63,9 @@ class StressMockKVNamespace {
   public deleteCallCount = 0;
   public putDelayMs = 0;
   public shouldRejectPut = false;
-  public putRejectError = new Error("Simulated Cloudflare KV Put Failure / Network Timeout");
+  public putRejectError = new Error(
+    "Simulated Cloudflare KV Put Failure / Network Timeout",
+  );
 
   async get(key: string, type?: string) {
     this.getCallCount++;
@@ -111,11 +112,14 @@ class StressMockD1Database {
           const [domain, key] = params;
 
           // SQLite LOWER(key) = LOWER(?) simulation
-          const isCaseInsensitiveQuery = query.includes("LOWER(key) = LOWER(?)");
+          const isCaseInsensitiveQuery = query.includes(
+            "LOWER(key) = LOWER(?)",
+          );
           const activeOnly = query.includes("disabledAt IS NULL");
 
           const match = this.rows.find((r) => {
-            const domainMatches = r.domain.toLowerCase() === domain.toLowerCase();
+            const domainMatches =
+              r.domain.toLowerCase() === domain.toLowerCase();
             const keyMatches = isCaseInsensitiveQuery
               ? r.key.toLowerCase() === key.toLowerCase()
               : r.key === key;
@@ -237,7 +241,9 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       expect(errorThrown).toBe(false);
       expect(res).not.toBeNull();
       expect(res!.status).toBe(302);
-      expect(res!.headers.get("Location")).toContain("https://yamax.co/resilient");
+      expect(res!.headers.get("Location")).toContain(
+        "https://yamax.co/resilient",
+      );
 
       // Verify that background task caught the error and did NOT reject unhandled
       expect(backgroundTasks.length).toBe(1);
@@ -270,7 +276,11 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       const tStart = performance.now();
       const responses = await Promise.all(
         Array.from({ length: count }, (_, i) =>
-          handleLinkRedirection(new Request(`https://dub.sh/burst-${i}`), env, mockCtx),
+          handleLinkRedirection(
+            new Request(`https://dub.sh/burst-${i}`),
+            env,
+            mockCtx,
+          ),
         ),
       );
       const totalElapsed = performance.now() - tStart;
@@ -298,9 +308,15 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
         disabledAt: null,
       });
 
-      const res = await handleLinkRedirection(new Request("https://dub.sh/direct-await"), env);
+      const res = await handleLinkRedirection(
+        new Request("https://dub.sh/direct-await"),
+        env,
+      );
       expect(res.status).toBe(302);
-      const cached = await mockKV.get(buildKvKey("dub.sh", "direct-await"), "json");
+      const cached = await mockKV.get(
+        buildKvKey("dub.sh", "direct-await"),
+        "json",
+      );
       expect(cached).not.toBeNull();
       expect(cached.id).toBe("link_no_ctx");
     });
@@ -324,7 +340,10 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       await mockKV.put(kvKey, JSON.stringify(activeLinkRecord));
 
       // Initial request hits KV -> HTTP 302
-      const res1 = await handleLinkRedirection(new Request(`https://dub.sh/${slug}`), env);
+      const res1 = await handleLinkRedirection(
+        new Request(`https://dub.sh/${slug}`),
+        env,
+      );
       expect(res1.status).toBe(302);
 
       // Step 2: In D1, link record is marked soft-deleted
@@ -356,7 +375,10 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       }
 
       // Step 4: Subsequent redirect request must return 404 Not Found (Invariant 2)
-      const res2 = await handleLinkRedirection(new Request(`https://dub.sh/${slug}`), env);
+      const res2 = await handleLinkRedirection(
+        new Request(`https://dub.sh/${slug}`),
+        env,
+      );
       expect(res2.status).toBe(404);
       expect(res2.headers.get("Location")).toBeNull();
     });
@@ -366,15 +388,21 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       const kvKey = buildKvKey("dub.sh", slug);
 
       // Seed active in KV
-      await mockKV.put(kvKey, JSON.stringify({
-        id: "lnk_to_delete",
-        projectId: "ws_yamax",
-        url: "https://yamax.co/to-delete",
-        disabledAt: null,
-      }));
+      await mockKV.put(
+        kvKey,
+        JSON.stringify({
+          id: "lnk_to_delete",
+          projectId: "ws_yamax",
+          url: "https://yamax.co/to-delete",
+          disabledAt: null,
+        }),
+      );
 
       // Initial redirect is 302
-      const res1 = await handleLinkRedirection(new Request(`https://dub.sh/${slug}`), env);
+      const res1 = await handleLinkRedirection(
+        new Request(`https://dub.sh/${slug}`),
+        env,
+      );
       expect(res1.status).toBe(302);
 
       // Call linkCache.delete
@@ -384,7 +412,10 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       expect(mockKV.store.has(kvKey)).toBe(false);
 
       // Subsequent redirect returns 404
-      const res2 = await handleLinkRedirection(new Request(`https://dub.sh/${slug}`), env);
+      const res2 = await handleLinkRedirection(
+        new Request(`https://dub.sh/${slug}`),
+        env,
+      );
       expect(res2.status).toBe(404);
     });
 
@@ -396,7 +427,10 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
         disabledAt: new Date(),
       });
 
-      const res = await handleLinkRedirection(new Request(`https://dub.sh/${slug}`), env);
+      const res = await handleLinkRedirection(
+        new Request(`https://dub.sh/${slug}`),
+        env,
+      );
       expect(res.status).toBe(404);
       expect(mockD1.queryCount).toBe(0); // Zero D1 round-trips!
     });
@@ -418,7 +452,10 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       // KV is empty
       expect(mockKV.store.has(kvKey)).toBe(false);
 
-      const res = await handleLinkRedirection(new Request(`https://dub.sh/${slug}`), env);
+      const res = await handleLinkRedirection(
+        new Request(`https://dub.sh/${slug}`),
+        env,
+      );
       expect(res.status).toBe(404);
 
       // Ensure KV was NOT repopulated with stale link data
@@ -437,7 +474,10 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       ];
 
       for (const link of batchLinks) {
-        await mockKV.put(buildKvKey(link.domain, link.key), JSON.stringify({ id: link.key, url: "https://yamax.co" }));
+        await mockKV.put(
+          buildKvKey(link.domain, link.key),
+          JSON.stringify({ id: link.key, url: "https://yamax.co" }),
+        );
       }
 
       const outcome = await evictLinksBatchFromKv(batchLinks);
@@ -445,7 +485,10 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
 
       for (const link of batchLinks) {
         expect(mockKV.store.has(buildKvKey(link.domain, link.key))).toBe(false);
-        const res = await handleLinkRedirection(new Request(`https://dub.sh/${link.key}`), env);
+        const res = await handleLinkRedirection(
+          new Request(`https://dub.sh/${link.key}`),
+          env,
+        );
         expect(res.status).toBe(404);
       }
     });
@@ -467,11 +510,11 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
 
       // Test all permutations against D1 (KV is empty initially)
       const casingVariations = [
-        "summer-sale",    // lowercase
-        "SUMMER-SALE",    // uppercase
-        "Summer-Sale",    // original
-        "sUmMeR-sAlE",    // alternating 1
-        "SuMmEr-SaLe",    // alternating 2
+        "summer-sale", // lowercase
+        "SUMMER-SALE", // uppercase
+        "Summer-Sale", // original
+        "sUmMeR-sAlE", // alternating 1
+        "SuMmEr-SaLe", // alternating 2
       ];
 
       for (const variant of casingVariations) {
@@ -479,7 +522,9 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
         const res = await handleLinkRedirection(req, env);
 
         expect(res.status, `Failed for variant: ${variant}`).toBe(302);
-        expect(res.headers.get("Location")).toContain("https://yamax.co/summer-collection");
+        expect(res.headers.get("Location")).toContain(
+          "https://yamax.co/summer-collection",
+        );
         expect(res.headers.get("Location")).toContain(`via=${variant}`);
       }
 
@@ -490,7 +535,10 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
 
       // Reset D1 query count to verify subsequent request hits KV directly
       const initialD1Queries = mockD1.queryCount;
-      const resKvHit = await handleLinkRedirection(new Request("https://dub.sh/SUMMER-SALE"), env);
+      const resKvHit = await handleLinkRedirection(
+        new Request("https://dub.sh/SUMMER-SALE"),
+        env,
+      );
       expect(resKvHit.status).toBe(302);
       expect(mockD1.queryCount).toBe(initialD1Queries); // Zero additional D1 queries!
     });
@@ -506,17 +554,24 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       });
 
       const permutations = [
-        "yamax-flow",     // lowercase
-        "YAMAX-FLOW",     // uppercase
-        "yamax-FLOW",     // exact original
-        "YaMaX-fLoW",     // alternating
-        "YAMAX-flow",     // inverted
+        "yamax-flow", // lowercase
+        "YAMAX-FLOW", // uppercase
+        "yamax-FLOW", // exact original
+        "YaMaX-fLoW", // alternating
+        "YAMAX-flow", // inverted
       ];
 
       for (const p of permutations) {
-        const res = await handleLinkRedirection(new Request(`https://dub.sh/${p}`), env);
-        expect(res.status, `Permutation "${p}" failed to resolve 302`).toBe(302);
-        expect(res.headers.get("Location")).toContain("https://yamax.co/products/flow-tank");
+        const res = await handleLinkRedirection(
+          new Request(`https://dub.sh/${p}`),
+          env,
+        );
+        expect(res.status, `Permutation "${p}" failed to resolve 302`).toBe(
+          302,
+        );
+        expect(res.headers.get("Location")).toContain(
+          "https://yamax.co/products/flow-tank",
+        );
       }
     });
 
@@ -530,11 +585,19 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
         disabledAt: null,
       });
 
-      const resUpper = await handleLinkRedirection(new Request("https://dub.sh/FLASH-PROMO"), env);
+      const resUpper = await handleLinkRedirection(
+        new Request("https://dub.sh/FLASH-PROMO"),
+        env,
+      );
       expect(resUpper.status).toBe(302);
-      expect(resUpper.headers.get("Location")).toContain("https://yamax.co/flash");
+      expect(resUpper.headers.get("Location")).toContain(
+        "https://yamax.co/flash",
+      );
 
-      const resTitle = await handleLinkRedirection(new Request("https://dub.sh/Flash-Promo"), env);
+      const resTitle = await handleLinkRedirection(
+        new Request("https://dub.sh/Flash-Promo"),
+        env,
+      );
       expect(resTitle.status).toBe(302);
     });
 
@@ -558,7 +621,9 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       for (const u of urls) {
         const res = await handleLinkRedirection(new Request(u), env);
         expect(res.status, `Failed for URL: ${u}`).toBe(302);
-        expect(res.headers.get("Location")).toContain("https://yamax.co/domain-test");
+        expect(res.headers.get("Location")).toContain(
+          "https://yamax.co/domain-test",
+        );
       }
     });
 
@@ -580,8 +645,14 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       ];
 
       for (const t of tests) {
-        const res = await handleLinkRedirection(new Request(`https://dub.sh/${t}`), env);
-        expect(res.status, `Expected 404 for soft-deleted link variant "${t}"`).toBe(404);
+        const res = await handleLinkRedirection(
+          new Request(`https://dub.sh/${t}`),
+          env,
+        );
+        expect(
+          res.status,
+          `Expected 404 for soft-deleted link variant "${t}"`,
+        ).toBe(404);
       }
     });
   });
@@ -592,7 +663,8 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
   describe("Challenge 4: Cloudflare Queue Resource Name & Runbook Consistency", () => {
     const repoRoot = path.resolve(__dirname, "../../../..");
     const workersDir = path.join(repoRoot, "apps/web/workers");
-    const runbookPath = "/Users/hironguyen/teamwork_projects/cloudflare_native_launch/CLOUDFLARE_NATIVE_MIGRATION_REPORT.md";
+    const runbookPath =
+      "/Users/hironguyen/teamwork_projects/cloudflare_native_launch/CLOUDFLARE_NATIVE_MIGRATION_REPORT.md";
 
     const workerTomlPaths = [
       path.join(workersDir, "webhook-ingress/wrangler.toml"),
@@ -612,7 +684,10 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
       const discoveredQueues: Set<string> = new Set();
 
       for (const tomlPath of workerTomlPaths) {
-        expect(fs.existsSync(tomlPath), `Missing wrangler.toml at ${tomlPath}`).toBe(true);
+        expect(
+          fs.existsSync(tomlPath),
+          `Missing wrangler.toml at ${tomlPath}`,
+        ).toBe(true);
         const content = fs.readFileSync(tomlPath, "utf-8");
 
         // Extract producer/consumer queue names
@@ -625,7 +700,8 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
         }
 
         // Extract DLQ queue names
-        const dlqLines = content.match(/^\s*dead_letter_queue\s*=\s*"([^"]+)"/gm) || [];
+        const dlqLines =
+          content.match(/^\s*dead_letter_queue\s*=\s*"([^"]+)"/gm) || [];
         for (const line of dlqLines) {
           const match = line.match(/"([^"]+)"/);
           if (match) {
@@ -646,12 +722,19 @@ describe("M3 Gate 1 Challenger: Adversarial Link-Redirector, KV Eviction & Queue
     });
 
     it("4.2 [Runbook Equivalence]: all configured queues match the exact creation commands in the migration runbook", () => {
-      expect(fs.existsSync(runbookPath), `Runbook not found at ${runbookPath}`).toBe(true);
+      expect(
+        fs.existsSync(runbookPath),
+        `Runbook not found at ${runbookPath}`,
+      ).toBe(true);
       const runbookContent = fs.readFileSync(runbookPath, "utf-8");
 
       // Extract all `wrangler queues create <queue-name>` commands
-      const runbookQueueMatches = runbookContent.match(/wrangler queues create\s+([a-zA-Z0-9_-]+)/g) || [];
-      const runbookCreatedQueues = runbookQueueMatches.map((m) => m.replace(/wrangler queues create\s+/, "").trim());
+      const runbookQueueMatches =
+        runbookContent.match(/wrangler queues create\s+([a-zA-Z0-9_-]+)/g) ||
+        [];
+      const runbookCreatedQueues = runbookQueueMatches.map((m) =>
+        m.replace(/wrangler queues create\s+/, "").trim(),
+      );
 
       expect(runbookCreatedQueues).toContain("order-webhook-queue");
       expect(runbookCreatedQueues).toContain("order-webhook-dlq");

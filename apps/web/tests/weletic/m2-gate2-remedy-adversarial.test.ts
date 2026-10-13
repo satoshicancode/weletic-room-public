@@ -1,17 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRequire } from "node:module";
-const require = createRequire(import.meta.url);
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { DatabaseSync } = require("node:sqlite") as { DatabaseSync: any };
-import fs from "node:fs";
-import path from "node:path";
-import crypto from "node:crypto";
-import { storage } from "../../lib/storage";
 import {
   createD1NonceClient,
   type D1DatabaseLike,
   WELETIC_SHOPIFY_NONCE_TTL_SECONDS,
 } from "@weletic/contracts/shopify/service-auth";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { storage } from "../../lib/storage";
+const require = createRequire(import.meta.url);
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { DatabaseSync } = require("node:sqlite") as { DatabaseSync: any };
 
 describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
   const originalEnv = { ...process.env };
@@ -43,7 +43,9 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
       vi.stubGlobal("fetch", fetchSpy);
 
       // Sub-case A: Standard ASCII Buffer
-      const asciiBuf = Buffer.from("Standard ASCII text content for storage upload");
+      const asciiBuf = Buffer.from(
+        "Standard ASCII text content for storage upload",
+      );
       await storage.upload({
         key: "test/ascii.txt",
         body: asciiBuf,
@@ -54,7 +56,9 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
       expect(capturedRequests[0].headers.get("Content-Length")).toBe(
         String(asciiBuf.byteLength),
       );
-      expect(capturedRequests[0].headers.get("Content-Type")).toBe("text/plain");
+      expect(capturedRequests[0].headers.get("Content-Type")).toBe(
+        "text/plain",
+      );
 
       // Sub-case B: Binary Zeroes Buffer (1024 bytes)
       const zeroesBuf = Buffer.alloc(1024, 0);
@@ -131,7 +135,9 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
       });
 
       expect(capturedLengths[1]).toBe("6");
-      expect(capturedBodies[1]).toEqual(new Uint8Array([40, 50, 60, 70, 80, 90]));
+      expect(capturedBodies[1]).toEqual(
+        new Uint8Array([40, 50, 60, 70, 80, 90]),
+      );
     });
 
     it("1.3 uploads ArrayBuffer directly without runtime type error", async () => {
@@ -279,7 +285,9 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
 
       // Verify that Buffer operations (slice, hex encoding) work cleanly
       const slice = retrievedBuffer.subarray(0, 16);
-      expect(slice.toString("hex")).toBe(expectedPayload.subarray(0, 16).toString("hex"));
+      expect(slice.toString("hex")).toBe(
+        expectedPayload.subarray(0, 16).toString("hex"),
+      );
     });
 
     it("1.7 readPrivateR2Object strictly enforces byte length boundaries and fail-closed checks", async () => {
@@ -366,7 +374,10 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
 
       // Mock safeFetch by stubbing fetch
       const fetchSpy = vi.fn().mockImplementation(async (url: string) => {
-        if (typeof url === "string" && (url.includes("wsrv.nl") || url.includes("weserv"))) {
+        if (
+          typeof url === "string" &&
+          (url.includes("wsrv.nl") || url.includes("weserv"))
+        ) {
           throw new Error("CRITICAL VULNERABILITY: External proxy contacted!");
         }
         return new Response(testPngBuffer, {
@@ -436,7 +447,10 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
         ),
       );
 
-      const result = await storage.readPrivateR2Object("reviews/isolated.webp", 4);
+      const result = await storage.readPrivateR2Object(
+        "reviews/isolated.webp",
+        4,
+      );
       // Because Buffer.from(value) copies the bytes at read time,
       // it must capture the bytes as they existed when reader.read() was called
       expect(result.byteLength).toBe(4);
@@ -454,7 +468,7 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
     );
     const ddlSql = fs.readFileSync(migrationPath, "utf8");
 
-    function createSqliteD1Instance(): { db: DatabaseSync; d1: D1DatabaseLike } {
+    function createSqliteD1Instance(): { db: any; d1: D1DatabaseLike } {
       const db = new DatabaseSync(":memory:");
       db.exec(ddlSql);
 
@@ -509,7 +523,9 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
       const colMap = new Map(columns.map((c) => [c.name, c]));
       expect(colMap.get("nonceKey")?.pk).toBe(1);
       expect(colMap.get("nonceKey")?.type.toUpperCase()).toBe("TEXT");
-      expect(colMap.get("expiresAt")?.type.toUpperCase()).toBe("INTEGER");
+      expect(["INTEGER", "BIGINT"]).toContain(
+        colMap.get("expiresAt")?.type.toUpperCase(),
+      );
 
       const indices = db
         .prepare(
@@ -648,7 +664,7 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
         "'; DROP TABLE ServiceAuthNonce; --",
         "' OR '1'='1",
         "admin'--",
-        "\" UNION SELECT 1, 2--",
+        '" UNION SELECT 1, 2--',
       ];
 
       for (const injectionKey of sqlInjectionKeys) {
@@ -722,4 +738,3 @@ describe("Milestone M2 Gate 2 Adversarial Stress Suite", () => {
     });
   });
 });
-

@@ -249,7 +249,10 @@ export const POST = withCron(async ({ rawBody }) => {
 
       // FIN-AUDIT-02: Defensive termination guard. If no partners were processed into payouts
       // AND no new partners were excluded, break to prevent an infinite loop.
-      if (batchProcessed === 0 && excludedPartnerIds.size === previousExcludedCount) {
+      if (
+        batchProcessed === 0 &&
+        excludedPartnerIds.size === previousExcludedCount
+      ) {
         console.log(
           `No forward progress made for holding period days: ${holdingPeriodDays}. Breaking...`,
         );
@@ -307,7 +310,10 @@ async function aggregateDueCommissionsForPartner({
 
   for (const c of sortedCommissions) {
     const nextCumulative = cumulative + c.earnings;
-    if (cumulative > BigInt(0) && nextCumulative > BigInt(MAX_PAYOUT_AMOUNT_LIMIT)) {
+    if (
+      cumulative > BigInt(0) &&
+      nextCumulative > BigInt(MAX_PAYOUT_AMOUNT_LIMIT)
+    ) {
       console.warn(
         `[aggregateDueCommissionsForPartner] Capping commissions for partner ${partnerId} at ${cumulative} to avoid Int32 overflow. Remaining ${sortedCommissions.length - eligibleCommissions.length} commissions deferred.`,
       );
@@ -318,7 +324,8 @@ async function aggregateDueCommissionsForPartner({
     eligibleCommissions.push(c);
   }
 
-  wasCapped = wasCapped || eligibleCommissions.length < sortedCommissions.length;
+  wasCapped =
+    wasCapped || eligibleCommissions.length < sortedCommissions.length;
 
   // Defensive guard: If existing pending payout cannot accommodate any new commissions,
   // safely defer all incoming commissions without throwing TypeError on empty eligible array.
@@ -331,7 +338,8 @@ async function aggregateDueCommissionsForPartner({
 
   const commissionIds = eligibleCommissions.map((c) => c.id);
   const periodStart = eligibleCommissions[0].createdAt;
-  const periodEnd = eligibleCommissions[eligibleCommissions.length - 1].createdAt;
+  const periodEnd =
+    eligibleCommissions[eligibleCommissions.length - 1].createdAt;
 
   let payoutToUse = existingPendingPayout
     ? { id: existingPendingPayout.id }

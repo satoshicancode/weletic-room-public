@@ -2,7 +2,6 @@ import {
   generateUnsubscribeToken,
   verifyUnsubscribeToken,
 } from "@/lib/email/unsubscribe-token";
-import * as crypto from "crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("Unsubscribe Token Cryptography & Verification (SEC-AUDIT-08)", () => {
@@ -25,7 +24,9 @@ describe("Unsubscribe Token Cryptography & Verification (SEC-AUDIT-08)", () => {
 
     const [encodedEmail, signature] = parts;
     expect(signature).toHaveLength(24);
-    expect(Buffer.from(encodedEmail, "base64url").toString("utf-8")).toBe(email);
+    expect(Buffer.from(encodedEmail, "base64url").toString("utf-8")).toBe(
+      email,
+    );
   });
 
   it("successfully verifies authentic token and returns lowercase email", () => {
@@ -37,7 +38,8 @@ describe("Unsubscribe Token Cryptography & Verification (SEC-AUDIT-08)", () => {
   it("returns null when signature is corrupted (matching length of 24 chars)", () => {
     const token = generateUnsubscribeToken(email);
     const [encodedEmail, signature] = token.split(".");
-    const corruptedSig = signature.slice(0, 23) + (signature[23] === "a" ? "b" : "a");
+    const corruptedSig =
+      signature.slice(0, 23) + (signature[23] === "a" ? "b" : "a");
     const tamperedToken = `${encodedEmail}.${corruptedSig}`;
 
     expect(verifyUnsubscribeToken(tamperedToken)).toBeNull();

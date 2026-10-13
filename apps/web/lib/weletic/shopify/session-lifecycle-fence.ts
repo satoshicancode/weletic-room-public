@@ -1,8 +1,8 @@
-import { Prisma } from "@prisma/client";
 import {
-  forUpdateClause,
   currentTimestampClause,
+  forUpdateClause,
 } from "@/lib/prisma/sql-helpers";
+import { Prisma } from "@prisma/client";
 import { deriveAllShopifyShopPrivacyIdentities } from "./privacy-identity";
 
 export class SessionCredentialWriteBlockedError extends Error {}

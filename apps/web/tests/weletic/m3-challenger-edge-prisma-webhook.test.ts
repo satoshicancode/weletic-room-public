@@ -1,30 +1,30 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { prisma, createPrismaClient } from "../../lib/prisma";
-import { prismaEdge } from "../../lib/prisma/edge";
+import { prisma } from "../../lib/prisma";
 import {
-  initQueueConsumerPrisma,
-  processQueueMessage,
-  handleQueueBatch,
-  type QueueConsumerEnv,
-  type QueueMessageItem,
-} from "../../workers/queue-consumer/src/index";
-import {
+  CRON_SCHEDULE_5_MIN,
   initCronWorkerPrisma,
   recoverStalledWebhooksJob,
   scheduledHandler,
-  CRON_SCHEDULE_5_MIN,
   type CronWorkerEnv,
   type QueueSender,
 } from "../../workers/cron-triggers/src/index";
+import {
+  initQueueConsumerPrisma,
+  processQueueMessage,
+  type QueueConsumerEnv,
+  type QueueMessageItem,
+} from "../../workers/queue-consumer/src/index";
 
 function createMockD1Database(mockRows: any[] = []) {
   const statement = {
     bind: vi.fn().mockReturnThis(),
-    all: vi.fn().mockResolvedValue({ results: mockRows, success: true, meta: {} }),
-    raw: vi.fn().mockResolvedValue(mockRows.map(r => Object.values(r))),
+    all: vi
+      .fn()
+      .mockResolvedValue({ results: mockRows, success: true, meta: {} }),
+    raw: vi.fn().mockResolvedValue(mockRows.map((r) => Object.values(r))),
     run: vi.fn().mockResolvedValue({ success: true, meta: { changes: 1 } }),
     first: vi.fn().mockResolvedValue(mockRows[0] ?? null),
   };
@@ -109,7 +109,9 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
       const mockD1 = createMockD1Database();
       const env: QueueConsumerEnv = { DB: mockD1 as any };
 
-      const instances = Array.from({ length: 20 }, () => initQueueConsumerPrisma(env));
+      const instances = Array.from({ length: 20 }, () =>
+        initQueueConsumerPrisma(env),
+      );
 
       // All returned instances should be strictly identical (cached)
       const first = instances[0];
@@ -164,7 +166,9 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
       expect(mockUserFindMany).toHaveBeenCalledTimes(1);
 
       prisma.project.findUnique({ where: { id: "p1" } });
-      expect(mockProjectFindUnique).toHaveBeenCalledWith({ where: { id: "p1" } });
+      expect(mockProjectFindUnique).toHaveBeenCalledWith({
+        where: { id: "p1" },
+      });
 
       prisma.customer.count();
       expect(mockCustomerCount).toHaveBeenCalledTimes(1);
@@ -202,7 +206,7 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
       // 2. Batch array transaction
       const p1 = Promise.resolve("query1");
       const p2 = Promise.resolve("query2");
-      const batchResult = await prisma.$transaction([p1, p2]);
+      const batchResult = await (prisma.$transaction as any)([p1, p2]);
       expect(batchResult).toEqual(["query1", "query2"]);
     });
 
@@ -292,11 +296,18 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
         },
       };
 
-      const updatedRecords: Array<{ id: string; status?: string; error?: string }> = [];
+      const updatedRecords: Array<{
+        id: string;
+        status?: string;
+        error?: string;
+      }> = [];
 
       const mockD1: any = {
         prepare(query: string) {
-          if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("SELECT") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind: vi.fn().mockReturnThis(),
               async all() {
@@ -325,13 +336,20 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
               },
             };
           }
-          if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("UPDATE") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind(...args: any[]) {
-                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                const id = args[args.length - 1];
                 return {
                   async run() {
-                    updatedRecords.push({ id, status: "failed", error: "Orphaned event: associated store not found" });
+                    updatedRecords.push({
+                      id,
+                      status: "failed",
+                      error: "Orphaned event: associated store not found",
+                    });
                     return { success: true };
                   },
                 };
@@ -340,8 +358,12 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
           }
           return {
             bind: vi.fn().mockReturnThis(),
-            async all() { return { results: [] }; },
-            async run() { return { success: true }; },
+            async all() {
+              return { results: [] };
+            },
+            async run() {
+              return { success: true };
+            },
           };
         },
       };
@@ -351,8 +373,10 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
         ORDER_WEBHOOK_QUEUE: mockQueue,
       };
 
-      vi.spyOn(await import("../../lib/weletic/shopify/orders-paid-recovery"), "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([]);
+      vi.spyOn(
+        await import("../../lib/weletic/shopify/orders-paid-recovery"),
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const result = await recoverStalledWebhooksJob(env);
 
@@ -362,7 +386,10 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
 
       // Both orphaned records marked failed
       expect(updatedRecords).toHaveLength(2);
-      expect(updatedRecords.map((r) => r.id)).toEqual(["evt_orphan_A", "evt_orphan_B"]);
+      expect(updatedRecords.map((r) => r.id)).toEqual([
+        "evt_orphan_A",
+        "evt_orphan_B",
+      ]);
     });
 
     it("2.2 Valid events: canonical shopDomain placed into ORDER_WEBHOOK_QUEUE, not storeId", async () => {
@@ -377,7 +404,10 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
 
       const mockD1: any = {
         prepare(query: string) {
-          if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("SELECT") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind: vi.fn().mockReturnThis(),
               async all() {
@@ -390,17 +420,23 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
                       storeId: "store_internal_db_uuid_12345",
                       shopDomain: "yamax-active.myshopify.com",
                       attempts: 0,
-                      payload: JSON.stringify({ id: 501, total_price: "12000" }),
+                      payload: JSON.stringify({
+                        id: 501,
+                        total_price: "12000",
+                      }),
                     },
                   ],
                 };
               },
             };
           }
-          if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("UPDATE") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind(...args: any[]) {
-                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                const id = args[args.length - 1];
                 return {
                   async run() {
                     updatedRecords.push(id);
@@ -412,8 +448,12 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
           }
           return {
             bind: vi.fn().mockReturnThis(),
-            async all() { return { results: [] }; },
-            async run() { return { success: true }; },
+            async all() {
+              return { results: [] };
+            },
+            async run() {
+              return { success: true };
+            },
           };
         },
       };
@@ -423,8 +463,10 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
         ORDER_WEBHOOK_QUEUE: mockQueue,
       };
 
-      vi.spyOn(await import("../../lib/weletic/shopify/orders-paid-recovery"), "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([]);
+      vi.spyOn(
+        await import("../../lib/weletic/shopify/orders-paid-recovery"),
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const result = await recoverStalledWebhooksJob(env);
 
@@ -510,7 +552,10 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
 
       const simulatedD1: any = {
         prepare(query: string) {
-          if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("SELECT") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind: vi.fn().mockReturnThis(),
               async all() {
@@ -522,10 +567,14 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
               },
             };
           }
-          if (query.includes("UPDATE WeleticShopifyWebhookEvent SET status = 'failed'")) {
+          if (
+            query.includes(
+              "UPDATE WeleticShopifyWebhookEvent SET status = 'failed'",
+            )
+          ) {
             return {
               bind(...args: any[]) {
-                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                const id = args[args.length - 1];
                 return {
                   async run() {
                     const row = dbEvents.find((e) => e.id === id);
@@ -539,10 +588,14 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
               },
             };
           }
-          if (query.includes("UPDATE WeleticShopifyWebhookEvent SET attempts = attempts + 1")) {
+          if (
+            query.includes(
+              "UPDATE WeleticShopifyWebhookEvent SET attempts = attempts + 1",
+            )
+          ) {
             return {
               bind(...args: any[]) {
-                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                const id = args[args.length - 1];
                 return {
                   async run() {
                     const row = dbEvents.find((e) => e.id === id);
@@ -560,8 +613,12 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
           }
           return {
             bind: vi.fn().mockReturnThis(),
-            async all() { return { results: [] }; },
-            async run() { return { success: true }; },
+            async all() {
+              return { results: [] };
+            },
+            async run() {
+              return { success: true };
+            },
           };
         },
       };
@@ -571,8 +628,10 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
         ORDER_WEBHOOK_QUEUE: mockQueue,
       };
 
-      vi.spyOn(await import("../../lib/weletic/shopify/orders-paid-recovery"), "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([]);
+      vi.spyOn(
+        await import("../../lib/weletic/shopify/orders-paid-recovery"),
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       // Execute 12 consecutive recovery cycles (each recovers up to 10 events)
       let totalReEnqueued = 0;
@@ -610,7 +669,9 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
     it("2.4 Queue producer failure isolation: cron worker cycle reports error without unhandled crash", async () => {
       const failingQueue: QueueSender = {
         async send() {
-          throw new Error("Cloudflare Queue rate limit exceeded / transient error");
+          throw new Error(
+            "Cloudflare Queue rate limit exceeded / transient error",
+          );
         },
       };
 
@@ -632,18 +693,27 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
       };
 
       // Spies for other jobs in 5-min cron
-      vi.spyOn(await import("../../lib/weletic/loyalty/store-credit-reconciliation"), "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockResolvedValue({ scanned: 0, confirmed: 0, refunded: 0, deferred: 0, errors: 0 } as any);
-      vi.spyOn(await import("../../lib/weletic/loyalty/outbox"), "processOutboxJobsBatch")
-        .mockResolvedValue({ processed: 0 } as any);
-      vi.spyOn(await import("../../lib/weletic/shopify/orders-paid-recovery"), "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([]);
+      vi.spyOn(
+        await import("../../lib/weletic/loyalty/store-credit-reconciliation"),
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockResolvedValue({
+        scanned: 0,
+        confirmed: 0,
+        refunded: 0,
+        deferred: 0,
+        errors: 0,
+      } as any);
+      vi.spyOn(
+        await import("../../lib/weletic/loyalty/outbox"),
+        "processOutboxJobsBatch",
+      ).mockResolvedValue({ processed: 0 } as any);
+      vi.spyOn(
+        await import("../../lib/weletic/shopify/orders-paid-recovery"),
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       // scheduledHandler executes the 5-min cycle containing recoverStalledWebhooksJob
-      const report = await scheduledHandler(
-        { cron: CRON_SCHEDULE_5_MIN },
-        env,
-      );
+      const report = await scheduledHandler({ cron: CRON_SCHEDULE_5_MIN }, env);
 
       // The cycle itself must NOT throw; it should report job results
       expect(report.jobs).toHaveLength(3);
@@ -665,26 +735,30 @@ describe("Milestone 3 Challenger: Adversarial Edge Prisma & Webhook Recovery Str
       const customDomain = "shop.yamax-sportswear.com";
 
       // Mock resolveShopifyStoreByDomain to handle custom domain
-      vi.spyOn(await import("../../lib/weletic/shopify/store-resolver"), "resolveShopifyStoreByDomain")
-        .mockImplementation(async (domain) => {
-          if (domain === customDomain) {
-            return {
-              shopId: "shop_custom_tenant",
-              primaryDomain: customDomain,
-              myshopifyDomain: "yamax-internal.myshopify.com",
-              allDomains: [customDomain, "yamax-internal.myshopify.com"],
-              workspaceId: "ws_custom_tenant",
-              programId: "prog_custom_tenant",
-              accessToken: "token_custom",
-              storeId: "store_custom_db_id",
-            };
-          }
-          return null;
-        });
+      vi.spyOn(
+        await import("../../lib/weletic/shopify/store-resolver"),
+        "resolveShopifyStoreByDomain",
+      ).mockImplementation(async (domain) => {
+        if (domain === customDomain) {
+          return {
+            shopId: "shop_custom_tenant",
+            primaryDomain: customDomain,
+            myshopifyDomain: "yamax-internal.myshopify.com",
+            allDomains: [customDomain, "yamax-internal.myshopify.com"],
+            workspaceId: "ws_custom_tenant",
+            programId: "prog_custom_tenant",
+            accessToken: "token_custom",
+            storeId: "store_custom_db_id",
+          };
+        }
+        return null;
+      });
 
       // Mock recordWeleticOrder to simulate 5th failure
-      vi.spyOn(await import("../../lib/weletic/commerce/record-order"), "recordWeleticOrder")
-        .mockRejectedValue(new Error("Downstream billing API failure"));
+      vi.spyOn(
+        await import("../../lib/weletic/commerce/record-order"),
+        "recordWeleticOrder",
+      ).mockRejectedValue(new Error("Downstream billing API failure"));
 
       const dlqDispatched: any[] = [];
       const mockDlq: QueueSender = {

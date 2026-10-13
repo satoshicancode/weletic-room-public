@@ -1,18 +1,21 @@
-/// <reference types="@cloudflare/workers-types" />
+import {
+  createPrismaClient,
+  prisma,
+  type ExtendedPrismaClient,
+} from "../../../lib/prisma";
+import type {
+  D1Database,
+  ExecutionContext,
+} from "../../../lib/weletic/cloudflare-types";
+import { recordWeleticOrder } from "../../../lib/weletic/commerce/record-order";
+import { recordWeleticRefund } from "../../../lib/weletic/commerce/record-refund";
 import {
   resolveShopifyStoreByDomain,
   type ResolvedShopifyStore,
 } from "../../../lib/weletic/shopify/store-resolver";
-import { recordWeleticOrder } from "../../../lib/weletic/commerce/record-order";
-import { recordWeleticRefund } from "../../../lib/weletic/commerce/record-refund";
-import {
-  prisma,
-  createPrismaClient,
-  type ExtendedPrismaClient,
-} from "../../../lib/prisma";
 import type {
-  WebhookQueueMessage,
   QueueSender,
+  WebhookQueueMessage,
 } from "../../webhook-ingress/src/index";
 
 export interface QueueMessageItem<T = any> {
@@ -118,10 +121,7 @@ export async function findActiveDiscountCode(
     where: {
       programId,
       code,
-      OR: [
-        { disabledAt: null },
-        { disabledAt: { gte: orderDate } },
-      ],
+      OR: [{ disabledAt: null }, { disabledAt: { gte: orderDate } }],
     },
     include: {
       link: true,
@@ -364,10 +364,15 @@ async function dispatchTopic(
   }
 }
 
-export function initQueueConsumerPrisma(env: QueueConsumerEnv): ExtendedPrismaClient {
+export function initQueueConsumerPrisma(
+  env: QueueConsumerEnv,
+): ExtendedPrismaClient {
   if (env.DB) {
     (globalThis as any).DB = env.DB;
-    if (!(globalThis as any).prisma || (globalThis as any).__boundD1 !== env.DB) {
+    if (
+      !(globalThis as any).prisma ||
+      (globalThis as any).__boundD1 !== env.DB
+    ) {
       (globalThis as any).prisma = createPrismaClient(env.DB);
       (globalThis as any).__boundD1 = env.DB;
     }

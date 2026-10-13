@@ -125,7 +125,13 @@ export function formatSqlDate(date: Date | string | number): string {
 export function buildPartnerClicksTimeseriesQuery(
   options: PartnerTimeseriesQueryOptions,
 ): string {
-  const { projectId, partnerId, startDate, endDate, intervalDays = 1 } = options;
+  const {
+    projectId,
+    partnerId,
+    startDate,
+    endDate,
+    intervalDays = 1,
+  } = options;
 
   const conditions: string[] = [
     `index1 = '${escapeSqlString(projectId)}'`,
@@ -160,7 +166,14 @@ export function buildPartnerClicksTimeseriesQuery(
 export function buildGeoDistributionQuery(
   options: GeoDistributionQueryOptions,
 ): string {
-  const { projectId, partnerId, linkId, startDate, endDate, limit = 50 } = options;
+  const {
+    projectId,
+    partnerId,
+    linkId,
+    startDate,
+    endDate,
+    limit = 50,
+  } = options;
 
   const conditions: string[] = [`index1 = '${escapeSqlString(projectId)}'`];
 
@@ -336,7 +349,10 @@ export async function executeAnalyticsEngineQuery<T = Record<string, unknown>>(
   return {
     data: jsonResult.data || [],
     meta: jsonResult.meta || [],
-    rows: typeof jsonResult.rows === "number" ? jsonResult.rows : jsonResult.data?.length || 0,
+    rows:
+      typeof jsonResult.rows === "number"
+        ? jsonResult.rows
+        : jsonResult.data?.length || 0,
     rows_before_limit_at_least: jsonResult.rows_before_limit_at_least,
   };
 }
@@ -394,9 +410,10 @@ export async function fetchDailyWorkspaceAggregations(
   config?: AnalyticsEngineConfig,
 ): Promise<DailyWorkspaceAggregationRow[]> {
   const query = buildDailyWorkspaceAggregationsQuery(options);
-  const result = await executeAnalyticsEngineQuery<DailyWorkspaceAggregationRow>(
-    query,
-    config,
-  );
+  const result =
+    await executeAnalyticsEngineQuery<DailyWorkspaceAggregationRow>(
+      query,
+      config,
+    );
   return result.data;
 }

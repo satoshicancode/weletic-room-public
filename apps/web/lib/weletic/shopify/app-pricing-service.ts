@@ -22,7 +22,6 @@ import {
   hasFreshRestrictedDevelopmentAccess,
   hasRestrictedDevelopmentConfiguration,
   permitsRestrictedDevelopmentIdentity,
-  RESTRICTED_DEVELOPMENT,
 } from "./restricted-development";
 import { lockShopifySessionLifecycle } from "./session-lifecycle-fence";
 import {
@@ -281,10 +280,11 @@ export async function assertFreshInstallationSubscription(
   ) {
     let targetShop = expectedShop?.trim();
     if (!targetShop) {
-      const pendingRecord = await tx.weleticShopifyPendingInstallation.findUnique({
-        where: { id: pendingInstallationId },
-        include: { mappedStore: true },
-      });
+      const pendingRecord =
+        await tx.weleticShopifyPendingInstallation.findUnique({
+          where: { id: pendingInstallationId },
+          include: { mappedStore: true },
+        });
       targetShop =
         pendingRecord?.mappedStore?.shopDomain ??
         getRestrictedDevelopmentConfig(process.env).shop;
@@ -305,12 +305,7 @@ export async function assertFreshInstallationSubscription(
       pending.uninstalledAt ||
       pending.redactedAt ||
       (pending.expiresAt && pending.expiresAt <= now) ||
-      !hasFreshRestrictedDevelopmentAccess(
-        row,
-        targetShop,
-        generation,
-        now,
-      )
+      !hasFreshRestrictedDevelopmentAccess(row, targetShop, generation, now)
     )
       throw fail();
     if (pending.mappedStoreId) {
@@ -503,8 +498,8 @@ export async function reconcileSubscribedInstallation(
         revision,
         operator:
           result.status === "restricted_development"
-            ? (process.env.WELETIC_RESTRICTED_OPERATOR ??
-              `restricted-${process.env.WELETIC_RESTRICTED_DEV_STORE ?? "dev-store"}-testing`)
+            ? process.env.WELETIC_RESTRICTED_OPERATOR ??
+              `restricted-${process.env.WELETIC_RESTRICTED_DEV_STORE ?? "dev-store"}-testing`
             : "shopify-app-pricing",
         reason:
           result.status === "restricted_development"

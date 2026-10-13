@@ -7,7 +7,10 @@ import {
 } from "@/lib/weletic/loyalty/response";
 import { createShopifyDerivedPrivacyDigest } from "@/lib/weletic/shopify/privacy-identity";
 import { verifyWeleticShopifyRequest } from "@/lib/weletic/shopify/service-auth";
-import { resolveShopifyStoreByDomain } from "@/lib/weletic/shopify/store-resolver";
+import {
+  resolveShopifyStoreByDomain,
+  type ResolvedShopifyStore,
+} from "@/lib/weletic/shopify/store-resolver";
 
 export const dynamic = "force-dynamic";
 const headers = {
@@ -61,7 +64,7 @@ export async function GET(request: Request) {
       { headers },
     );
   try {
-    let store = null;
+    let store: ResolvedShopifyStore | null = null;
     try {
       store = await resolveShopifyStoreByDomain(shop);
     } catch {
@@ -83,7 +86,9 @@ export async function GET(request: Request) {
               where: {
                 OR: [
                   { shopDomain: shop },
-                  ...(matchingProject ? [{ projectId: matchingProject.id }] : []),
+                  ...(matchingProject
+                    ? [{ projectId: matchingProject.id }]
+                    : []),
                 ],
               },
               select: { id: true },

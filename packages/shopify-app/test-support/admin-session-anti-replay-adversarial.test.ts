@@ -1,17 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  verifyWeleticInternalRequest,
-  recordInternalNonce,
   clearInternalNonceCacheForTest,
-  WELETIC_INTERNAL_TIMESTAMP_HEADER,
-  WELETIC_INTERNAL_SIGNATURE_HEADER,
-  WELETIC_REQUEST_ID_HEADER,
+  recordInternalNonce,
+  verifyWeleticInternalRequest,
   WELETIC_INTERNAL_MAX_CLOCK_SKEW_MS,
   WELETIC_INTERNAL_NONCE_TTL_SECONDS,
+  WELETIC_INTERNAL_SIGNATURE_HEADER,
+  WELETIC_INTERNAL_TIMESTAMP_HEADER,
+  WELETIC_REQUEST_ID_HEADER,
 } from "../app/weletic-api.server";
-import { adminSessionResponse } from "../app/admin-session-response.server";
-import type { Session } from "@shopify/shopify-api";
 
 describe("Adversarial Anti-Replay & Boundary Verification (@weletic/shopify-app)", () => {
   const secret = "s".repeat(32);
@@ -46,7 +44,10 @@ describe("Adversarial Anti-Replay & Boundary Verification (@weletic/shopify-app)
         ? `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}\n${requestId}`
         : `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}`;
 
-    const signature = crypto.createHmac("sha256", customSecret).update(canonical).digest("hex");
+    const signature = crypto
+      .createHmac("sha256", customSecret)
+      .update(canonical)
+      .digest("hex");
 
     const headersMap = new Map<string, string>();
     headersMap.set(WELETIC_INTERNAL_TIMESTAMP_HEADER.toLowerCase(), timestamp);
@@ -76,7 +77,9 @@ describe("Adversarial Anti-Replay & Boundary Verification (@weletic/shopify-app)
       // Launch 100 concurrent recordInternalNonce calls simultaneously
       const results = await Promise.all(
         Array.from({ length: concurrency }, () =>
-          Promise.resolve().then(() => recordInternalNonce(targetRequestId, now)),
+          Promise.resolve().then(() =>
+            recordInternalNonce(targetRequestId, now),
+          ),
         ),
       );
 
@@ -290,7 +293,9 @@ describe("Adversarial Anti-Replay & Boundary Verification (@weletic/shopify-app)
     });
 
     it("rejects XSS payload in requestId: <script>alert(1)</script>", () => {
-      const req = createSignedRequest({ requestId: "<script>alert(1)</script>" });
+      const req = createSignedRequest({
+        requestId: "<script>alert(1)</script>",
+      });
       const isValid = verifyWeleticInternalRequest({
         request: req,
         secret,
@@ -385,7 +390,9 @@ describe("Adversarial Anti-Replay & Boundary Verification (@weletic/shopify-app)
     });
 
     it("rejects integer overflow timestamp exceeding Number.MAX_SAFE_INTEGER", () => {
-      const req = createSignedRequest({ timestamp: "99999999999999999999999999" });
+      const req = createSignedRequest({
+        timestamp: "99999999999999999999999999",
+      });
       const isValid = verifyWeleticInternalRequest({
         request: req,
         secret,

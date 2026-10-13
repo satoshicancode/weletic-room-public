@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import { createPrismaClient } from "@/lib/prisma";
+import { describe, it, vi } from "vitest";
 
 describe("Prisma client query extensions", () => {
   it("normalizes programId_partnerId to partnerId_programId", async () => {
@@ -22,7 +22,7 @@ describe("Prisma client query extensions", () => {
     });
 
     // Invoke through the extended client's internal hook
-    const ext = (prisma as any);
+    const ext = prisma as any;
     if (ext.programEnrollment?.findUnique) {
       try {
         await ext.programEnrollment.findUnique({

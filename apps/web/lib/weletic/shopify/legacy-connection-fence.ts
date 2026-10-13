@@ -1,9 +1,9 @@
 import { DubApiError } from "@/lib/api/errors";
-import { Prisma } from "@prisma/client";
 import {
-  forUpdateClause,
   currentTimestampClause,
+  forUpdateClause,
 } from "@/lib/prisma/sql-helpers";
+import { Prisma } from "@prisma/client";
 import { ShopifyCredentialUnavailableError } from "./credential-errors";
 import { readPendingInstallation } from "./installation-admission";
 import { deriveAllShopifyShopPrivacyIdentities } from "./privacy-identity";

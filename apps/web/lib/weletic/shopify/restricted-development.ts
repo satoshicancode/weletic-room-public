@@ -27,7 +27,9 @@ export function permitsRestrictedDevelopmentIdentity(
   const cfg = getRestrictedDevelopmentConfig(env);
   const stores = getRestrictedDevelopmentStores(env);
   const shopMatches =
-    stores.length > 0 ? stores.includes(identity.shop) : identity.shop === cfg.shop;
+    stores.length > 0
+      ? stores.includes(identity.shop)
+      : identity.shop === cfg.shop;
 
   return (
     isRestrictedDevelopmentEnvironment(env) &&

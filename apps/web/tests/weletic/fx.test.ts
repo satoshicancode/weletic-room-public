@@ -1,6 +1,6 @@
-import { deriveRateFromUsdTable, getAccountingFxQuote } from "@/lib/weletic/fx";
 import { redis } from "@/lib/upstash";
-import { describe, expect, test, vi, beforeEach } from "vitest";
+import { deriveRateFromUsdTable, getAccountingFxQuote } from "@/lib/weletic/fx";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 vi.mock("@/lib/upstash", () => ({
   redis: {
@@ -31,8 +31,12 @@ describe("Weletic FX derivation", () => {
   });
 
   test("FIN-AUDIT-07: Successfully returns static fallback quote when Redis throws network error", async () => {
-    vi.mocked(redis.hget).mockRejectedValue(new Error("Redis connection timed out"));
-    vi.mocked(redis.get).mockRejectedValue(new Error("Redis connection timed out"));
+    vi.mocked(redis.hget).mockRejectedValue(
+      new Error("Redis connection timed out"),
+    );
+    vi.mocked(redis.get).mockRejectedValue(
+      new Error("Redis connection timed out"),
+    );
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -73,10 +77,12 @@ describe("Weletic FX derivation", () => {
   });
 
   test("FIN-AUDIT-07: Uses Redis live rates when Redis responds successfully", async () => {
-    vi.mocked(redis.hget).mockImplementation(async (_key: string, field: string) => {
-      if (field === "JPY") return "160.5";
-      return null;
-    });
+    vi.mocked(redis.hget).mockImplementation(
+      async (_key: string, field: string) => {
+        if (field === "JPY") return "160.5";
+        return null;
+      },
+    );
     const asOf = new Date().toISOString();
     vi.mocked(redis.get).mockResolvedValue(asOf);
 

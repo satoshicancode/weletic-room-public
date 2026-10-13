@@ -1,21 +1,21 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import { prisma } from "../../lib/prisma";
 import { prismaEdge } from "../../lib/prisma/edge";
 import {
-  initQueueConsumerPrisma,
-  processQueueMessage,
-  type QueueConsumerEnv,
-  type QueueMessageItem,
-} from "../../workers/queue-consumer/src/index";
-import {
   initCronWorkerPrisma,
   recoverStalledWebhooksJob,
   type CronWorkerEnv,
   type QueueSender,
 } from "../../workers/cron-triggers/src/index";
+import {
+  initQueueConsumerPrisma,
+  processQueueMessage,
+  type QueueConsumerEnv,
+  type QueueMessageItem,
+} from "../../workers/queue-consumer/src/index";
 
 describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK-AUDIT-01 & WRK-AUDIT-02)", () => {
   const originalPrisma = (globalThis as any).prisma;
@@ -136,7 +136,10 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
           if (query.includes("SELECT")) {
             executedSelectQuery = query;
           }
-          if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("SELECT") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind: vi.fn().mockReturnThis(),
               async all() {
@@ -156,10 +159,13 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
               },
             };
           }
-          if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("UPDATE") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind(...args: any[]) {
-                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                const id = args[args.length - 1];
                 executedUpdates.push([id]);
                 return {
                   async run() {
@@ -171,8 +177,12 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
           }
           return {
             bind: vi.fn().mockReturnThis(),
-            async all() { return { results: [] }; },
-            async run() { return { success: true }; },
+            async all() {
+              return { results: [] };
+            },
+            async run() {
+              return { success: true };
+            },
           };
         },
       };
@@ -182,8 +192,10 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
         ORDER_WEBHOOK_QUEUE: mockQueue,
       };
 
-      vi.spyOn(await import("../../lib/weletic/shopify/orders-paid-recovery"), "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([]);
+      vi.spyOn(
+        await import("../../lib/weletic/shopify/orders-paid-recovery"),
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const result = await recoverStalledWebhooksJob(env);
 
@@ -197,8 +209,12 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
       // CRITICAL ASSERTION: The message must contain shopDomain, NOT storeId
       expect(enqueuedMessages).toHaveLength(1);
       expect(enqueuedMessages[0].webhookId).toBe("wh_shopify_stalled_101");
-      expect(enqueuedMessages[0].shopDomain).toBe("yamax-flagship.myshopify.com");
-      expect(enqueuedMessages[0].shopDomain).not.toBe("store_db_internal_pk_999");
+      expect(enqueuedMessages[0].shopDomain).toBe(
+        "yamax-flagship.myshopify.com",
+      );
+      expect(enqueuedMessages[0].shopDomain).not.toBe(
+        "store_db_internal_pk_999",
+      );
 
       // Verify attempt increment
       expect(executedUpdates).toHaveLength(1);
@@ -216,7 +232,10 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
       const executedUpdates: any[] = [];
       const mockD1: any = {
         prepare(query: string) {
-          if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("SELECT") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind: vi.fn().mockReturnThis(),
               async all() {
@@ -236,10 +255,13 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
               },
             };
           }
-          if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("UPDATE") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind(...args: any[]) {
-                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                const id = args[args.length - 1];
                 executedUpdates.push([id]);
                 return {
                   async run() {
@@ -251,8 +273,12 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
           }
           return {
             bind: vi.fn().mockReturnThis(),
-            async all() { return { results: [] }; },
-            async run() { return { success: true }; },
+            async all() {
+              return { results: [] };
+            },
+            async run() {
+              return { success: true };
+            },
           };
         },
       };
@@ -262,8 +288,10 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
         ORDER_WEBHOOK_QUEUE: mockQueue,
       };
 
-      vi.spyOn(await import("../../lib/weletic/shopify/orders-paid-recovery"), "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([]);
+      vi.spyOn(
+        await import("../../lib/weletic/shopify/orders-paid-recovery"),
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const result = await recoverStalledWebhooksJob(env);
 
@@ -280,25 +308,31 @@ describe("Milestone 3: Edge Prisma Client Binding & Webhook Recovery Domain (WRK
       const reEnqueuedShopDomain = "valid-tenant.myshopify.com";
 
       // Mock resolveShopifyStoreByDomain to return store when canonical domain is supplied
-      vi.spyOn(await import("../../lib/weletic/shopify/store-resolver"), "resolveShopifyStoreByDomain")
-        .mockImplementation(async (domain) => {
-          if (domain === reEnqueuedShopDomain) {
-            return {
-              shopId: "shop_canon_1",
-              primaryDomain: reEnqueuedShopDomain,
-              myshopifyDomain: reEnqueuedShopDomain,
-              allDomains: [reEnqueuedShopDomain],
-              workspaceId: "ws_canon_1",
-              programId: "prog_canon_1",
-              accessToken: "token_mock",
-              storeId: "store_db_internal_pk_999",
-            };
-          }
-          return null;
-        });
+      vi.spyOn(
+        await import("../../lib/weletic/shopify/store-resolver"),
+        "resolveShopifyStoreByDomain",
+      ).mockImplementation(async (domain) => {
+        if (domain === reEnqueuedShopDomain) {
+          return {
+            shopId: "shop_canon_1",
+            primaryDomain: reEnqueuedShopDomain,
+            myshopifyDomain: reEnqueuedShopDomain,
+            allDomains: [reEnqueuedShopDomain],
+            workspaceId: "ws_canon_1",
+            programId: "prog_canon_1",
+            accessToken: "token_mock",
+            storeId: "store_db_internal_pk_999",
+          };
+        }
+        return null;
+      });
 
       // Mock recordWeleticOrder
-      const recordOrderSpy = vi.spyOn(await import("../../lib/weletic/commerce/record-order"), "recordWeleticOrder")
+      const recordOrderSpy = vi
+        .spyOn(
+          await import("../../lib/weletic/commerce/record-order"),
+          "recordWeleticOrder",
+        )
         .mockResolvedValueOnce({} as any);
 
       const testWebhookId = `wh_recov_${Date.now()}_${Math.random().toString(36).substring(2)}`;

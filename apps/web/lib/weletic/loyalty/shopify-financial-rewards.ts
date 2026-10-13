@@ -535,8 +535,7 @@ export async function createShopifyStoreCredit({
   assertFinancialRewardScope({ credentials, rewardType: "store_credit" });
   try {
     const effectiveNote =
-      note ??
-      (redemptionId ? `Weletic Redemption [${redemptionId}]` : null);
+      note ?? (redemptionId ? `Weletic Redemption [${redemptionId}]` : null);
 
     const data = await shopifyAdminGraphqlRequest<{
       storeCreditAccountCredit: {
@@ -693,7 +692,10 @@ export async function debitShopifyStoreCredit({
     }
   }
 
-  const expectedAmount = minorUnitsToDecimal(effectiveAmountMinor, currencyCode);
+  const expectedAmount = minorUnitsToDecimal(
+    effectiveAmountMinor,
+    currencyCode,
+  );
   try {
     const data = await shopifyAdminGraphqlRequest<{
       storeCreditAccountDebit: {
@@ -830,8 +832,7 @@ export async function auditShopifyCustomerStoreCreditTransactions({
     const acc = accEdge.node;
     for (const txEdge of acc.transactions.edges) {
       const rawNode = txEdge.node as any;
-      const rawNote =
-        rawNode.note ?? rawNode.balanceTransaction?.note ?? null;
+      const rawNote = rawNode.note ?? rawNode.balanceTransaction?.note ?? null;
       const txItem: ShopifyCustomerStoreCreditTransaction = {
         id: txEdge.node.id,
         accountId: acc.id,

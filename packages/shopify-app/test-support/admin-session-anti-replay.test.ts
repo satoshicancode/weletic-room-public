@@ -1,14 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import type { Session } from "@shopify/shopify-api";
 import crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { adminSessionResponse } from "../app/admin-session-response.server";
 import {
-  verifyWeleticInternalRequest,
   clearInternalNonceCacheForTest,
-  WELETIC_INTERNAL_TIMESTAMP_HEADER,
+  verifyWeleticInternalRequest,
   WELETIC_INTERNAL_SIGNATURE_HEADER,
+  WELETIC_INTERNAL_TIMESTAMP_HEADER,
   WELETIC_REQUEST_ID_HEADER,
 } from "../app/weletic-api.server";
-import { adminSessionResponse } from "../app/admin-session-response.server";
-import type { Session } from "@shopify/shopify-api";
 
 describe("SEC-R1-01: Shopify App Internal Admin Session Anti-Replay", () => {
   const secret = "a".repeat(32);
@@ -37,7 +37,10 @@ describe("SEC-R1-01: Shopify App Internal Admin Session Anti-Replay", () => {
     requestId?: string;
   } = {}) {
     const canonical = `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}\n${requestId}`;
-    const signature = crypto.createHmac("sha256", secret).update(canonical).digest("hex");
+    const signature = crypto
+      .createHmac("sha256", secret)
+      .update(canonical)
+      .digest("hex");
 
     const headers = new Headers();
     headers.set(WELETIC_INTERNAL_TIMESTAMP_HEADER, timestamp);
@@ -119,7 +122,10 @@ describe("SEC-R1-01: Shopify App Internal Admin Session Anti-Replay", () => {
     const timestamp = String(Date.now());
     const path = `/api/internal/admin-session?shop=${shop}`;
     const canonical = `${timestamp}\nGET\n${path}\n`;
-    const signature = crypto.createHmac("sha256", secret).update(canonical).digest("hex");
+    const signature = crypto
+      .createHmac("sha256", secret)
+      .update(canonical)
+      .digest("hex");
 
     const headers = new Headers();
     headers.set(WELETIC_INTERNAL_TIMESTAMP_HEADER, timestamp);

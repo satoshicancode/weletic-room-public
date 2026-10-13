@@ -179,7 +179,11 @@ export interface D1DatabaseLike {
  */
 export function createKVNonceClient(kv: KVNamespaceLike): RedisSetClient {
   return {
-    async set(key: string, value: string, opts?: { nx?: boolean; ex?: number }) {
+    async set(
+      key: string,
+      value: string,
+      opts?: { nx?: boolean; ex?: number },
+    ) {
       if (opts?.nx) {
         const existing = await kv.get(key);
         if (existing !== null) {
@@ -198,16 +202,29 @@ export interface PrismaNonceClientLike {
   serviceAuthNonce: {
     // expiresAt is a BigInt column (epoch ms). Prisma accepts number | bigint on
     // write and returns bigint on read.
-    create(args: { data: { nonceKey: string; expiresAt: number | bigint } }): Promise<unknown>;
-    findUnique?(args: { where: { nonceKey: string } }): Promise<{ expiresAt: number | bigint } | null>;
-    update?(args: { where: { nonceKey: string }; data: { expiresAt: number | bigint } }): Promise<unknown>;
+    create(args: {
+      data: { nonceKey: string; expiresAt: number | bigint };
+    }): Promise<unknown>;
+    findUnique?(args: {
+      where: { nonceKey: string };
+    }): Promise<{ expiresAt: number | bigint } | null>;
+    update?(args: {
+      where: { nonceKey: string };
+      data: { expiresAt: number | bigint };
+    }): Promise<unknown>;
   };
 }
 
 /** Creates a RedisSetClient adapter backed by Prisma (model ServiceAuthNonce) */
-export function createPrismaNonceClient(client: PrismaNonceClientLike): RedisSetClient {
+export function createPrismaNonceClient(
+  client: PrismaNonceClientLike,
+): RedisSetClient {
   return {
-    async set(key: string, value: string, opts?: { nx?: boolean; ex?: number }) {
+    async set(
+      key: string,
+      value: string,
+      opts?: { nx?: boolean; ex?: number },
+    ) {
       const nowMs = Date.now();
       const expiresAt =
         nowMs + (opts?.ex ?? WELETIC_SHOPIFY_NONCE_TTL_SECONDS) * 1000;
@@ -224,7 +241,10 @@ export function createPrismaNonceClient(client: PrismaNonceClientLike): RedisSet
           msg.includes("constraint") ||
           msg.includes("Unique constraint");
         if (isConstraint) {
-          if (client.serviceAuthNonce.findUnique && client.serviceAuthNonce.update) {
+          if (
+            client.serviceAuthNonce.findUnique &&
+            client.serviceAuthNonce.update
+          ) {
             try {
               const existing = await client.serviceAuthNonce.findUnique({
                 where: { nonceKey: key },
@@ -251,7 +271,11 @@ export function createPrismaNonceClient(client: PrismaNonceClientLike): RedisSet
 /** Creates a RedisSetClient adapter backed by Cloudflare D1 (SQLite) */
 export function createD1NonceClient(db: D1DatabaseLike): RedisSetClient {
   return {
-    async set(key: string, value: string, opts?: { nx?: boolean; ex?: number }) {
+    async set(
+      key: string,
+      value: string,
+      opts?: { nx?: boolean; ex?: number },
+    ) {
       const nowMs = Date.now();
       const expiresAt =
         nowMs + (opts?.ex ?? WELETIC_SHOPIFY_NONCE_TTL_SECONDS) * 1000;

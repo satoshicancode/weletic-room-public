@@ -20,7 +20,9 @@ describe("SEC-AUDIT-06: Storage SSRF Defense & wsrv.nl Proxy Elimination", () =>
   it("never invokes wsrv.nl proxy even when width/height options are provided", async () => {
     const fetchSpy = vi.fn().mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("wsrv.nl")) {
-        throw new Error("Adversarial violation: external wsrv.nl proxy invoked!");
+        throw new Error(
+          "Adversarial violation: external wsrv.nl proxy invoked!",
+        );
       }
       return Promise.resolve(
         new Response(new Uint8Array([137, 80, 78, 71]), {

@@ -1,44 +1,40 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import {
-  scheduledHandler,
-  handleHttpTrigger,
+  addCustomHostnameToCloudflare,
+  CloudflareSaaSError,
+  deleteCustomHostnameFromCloudflare,
+  extractSslValidationRecords,
+  getCloudflareSaaSConfig,
+  getCustomHostnameFromCloudflare,
+  isCloudflareSaaSConfigured,
+  verifyCustomHostname,
+} from "../../lib/api/domains/cloudflare-saas";
+import { prisma } from "../../lib/prisma";
+import * as outboxModule from "../../lib/weletic/loyalty/outbox";
+import * as pointsExpirySchedulerModule from "../../lib/weletic/loyalty/points-expiry-scheduler";
+import * as rewardExpirySchedulerModule from "../../lib/weletic/loyalty/reward-expiry-scheduler";
+import * as storeCreditReconciliationModule from "../../lib/weletic/loyalty/store-credit-reconciliation";
+import * as catalogSyncModule from "../../lib/weletic/shopify/catalog-sync";
+import * as ordersPaidRecoveryModule from "../../lib/weletic/shopify/orders-paid-recovery";
+import * as sessionRenewalModule from "../../lib/weletic/shopify/session-renewal";
+import * as storeResolverModule from "../../lib/weletic/shopify/store-resolver";
+import worker, {
+  CRON_SCHEDULE_5_MIN,
+  CRON_SCHEDULE_DAILY,
+  CRON_SCHEDULE_HOURLY,
   executeIsolatedJob,
-  reconcileStoreCreditJob,
-  processLoyaltyOutboxJob,
-  recoverStalledWebhooksJob,
+  handleHttpTrigger,
   loyaltyPointsExpirationJob,
-  renewShopifySessionsJob,
+  recoverStalledWebhooksJob,
+  scheduledHandler,
   syncMultiTenantCatalogJob,
   verifyDoubleEntryLedgerJob,
-  CRON_SCHEDULE_5_MIN,
-  CRON_SCHEDULE_HOURLY,
-  CRON_SCHEDULE_DAILY,
   type CronWorkerEnv,
   type QueueSender,
 } from "../../workers/cron-triggers/src/index";
-import worker from "../../workers/cron-triggers/src/index";
-import {
-  addCustomHostnameToCloudflare,
-  getCustomHostnameFromCloudflare,
-  deleteCustomHostnameFromCloudflare,
-  verifyCustomHostname,
-  extractSslValidationRecords,
-  isCloudflareSaaSConfigured,
-  getCloudflareSaaSConfig,
-  CloudflareSaaSError,
-} from "../../lib/api/domains/cloudflare-saas";
-import * as storeCreditReconciliationModule from "../../lib/weletic/loyalty/store-credit-reconciliation";
-import * as outboxModule from "../../lib/weletic/loyalty/outbox";
-import * as ordersPaidRecoveryModule from "../../lib/weletic/shopify/orders-paid-recovery";
-import * as pointsExpirySchedulerModule from "../../lib/weletic/loyalty/points-expiry-scheduler";
-import * as rewardExpirySchedulerModule from "../../lib/weletic/loyalty/reward-expiry-scheduler";
-import * as sessionRenewalModule from "../../lib/weletic/shopify/session-renewal";
-import * as catalogSyncModule from "../../lib/weletic/shopify/catalog-sync";
-import * as storeResolverModule from "../../lib/weletic/shopify/store-resolver";
-import { prisma } from "../../lib/prisma";
 
 describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custom Hostnames", () => {
   const originalEnv = { ...process.env };
@@ -126,7 +122,7 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       });
 
       it("fails closed with CloudflareSaaSError in production when credentials are unconfigured", async () => {
-        process.env.NODE_ENV = "production";
+        (process.env as any).NODE_ENV = "production";
         const domain = "production-domain.com";
 
         await expect(addCustomHostnameToCloudflare(domain)).rejects.toThrow(
@@ -135,9 +131,9 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
         await expect(getCustomHostnameFromCloudflare(domain)).rejects.toThrow(
           CloudflareSaaSError,
         );
-        await expect(deleteCustomHostnameFromCloudflare(domain)).rejects.toThrow(
-          CloudflareSaaSError,
-        );
+        await expect(
+          deleteCustomHostnameFromCloudflare(domain),
+        ).rejects.toThrow(CloudflareSaaSError);
       });
     });
 
@@ -200,7 +196,9 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
 
         expect(fetchSpy).toHaveBeenCalledTimes(1);
         const [url, init] = fetchSpy.mock.calls[0];
-        expect(url).toBe(`https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/custom_hostnames`);
+        expect(url).toBe(
+          `https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/custom_hostnames`,
+        );
         expect(init.method).toBe("POST");
         expect(init.headers["Authorization"]).toBe(`Bearer ${API_TOKEN}`);
 
@@ -278,24 +276,33 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
         const domain = "store.runclub.org";
         const hostId = "host_runclub_123";
 
-        const fetchSpy = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-          if (init?.method === "DELETE") {
+        const fetchSpy = vi
+          .fn()
+          .mockImplementation((url: string, init?: RequestInit) => {
+            if (init?.method === "DELETE") {
+              return Promise.resolve({
+                ok: true,
+                status: 200,
+                json: async () => ({ success: true, result: { id: hostId } }),
+              });
+            }
+            // GET lookup
             return Promise.resolve({
               ok: true,
               status: 200,
-              json: async () => ({ success: true, result: { id: hostId } }),
+              json: async () => ({
+                success: true,
+                result: [
+                  {
+                    id: hostId,
+                    hostname: domain,
+                    status: "active",
+                    ssl: { status: "active" },
+                  },
+                ],
+              }),
             });
-          }
-          // GET lookup
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: async () => ({
-              success: true,
-              result: [{ id: hostId, hostname: domain, status: "active", ssl: { status: "active" } }],
-            }),
           });
-        });
         global.fetch = fetchSpy;
 
         const result = await deleteCustomHostnameFromCloudflare(domain);
@@ -344,7 +351,8 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
               },
               {
                 status: "pending",
-                http_url: "http://affiliate.yamax.com/.well-known/pki-validation/ca.txt",
+                http_url:
+                  "http://affiliate.yamax.com/.well-known/pki-validation/ca.txt",
                 http_body: "body-token-xyz-987",
               },
             ],
@@ -372,7 +380,9 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
         expect(cnameRecord?.value).toBe("fallback.weletic.com");
 
         expect(httpRecord).toBeDefined();
-        expect(httpRecord?.name).toBe("http://affiliate.yamax.com/.well-known/pki-validation/ca.txt");
+        expect(httpRecord?.name).toBe(
+          "http://affiliate.yamax.com/.well-known/pki-validation/ca.txt",
+        );
         expect(httpRecord?.value).toBe("body-token-xyz-987");
       });
     });
@@ -383,9 +393,12 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
   // =========================================================================
   describe("2. Task Isolation Engine: Error Containment & Resilience", () => {
     it("successfully runs healthy jobs and captures duration", async () => {
-      const result = await executeIsolatedJob("sample-healthy-task", async () => {
-        return { count: 42 };
-      });
+      const result = await executeIsolatedJob(
+        "sample-healthy-task",
+        async () => {
+          return { count: 42 };
+        },
+      );
 
       expect(result.name).toBe("sample-healthy-task");
       expect(result.status).toBe("success");
@@ -444,12 +457,27 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
     const mockEnv: CronWorkerEnv = {};
 
     it("routes '*/5 * * * *' to store credit sweep, outbox, and stalled webhooks recovery", async () => {
-      const creditSpy = vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockResolvedValue({ scanned: 10, confirmed: 5, refunded: 2, deferred: 3, errors: 0, details: [] });
-      const outboxSpy = vi.spyOn(outboxModule, "processOutboxJobsBatch")
+      const creditSpy = vi
+        .spyOn(
+          storeCreditReconciliationModule,
+          "reconcilePendingStoreCreditRedemptionsSweep",
+        )
+        .mockResolvedValue({
+          scanned: 10,
+          confirmed: 5,
+          refunded: 2,
+          deferred: 3,
+          errors: 0,
+          details: [],
+        });
+      const outboxSpy = vi
+        .spyOn(outboxModule, "processOutboxJobsBatch")
         .mockResolvedValue({ processed: 8 } as any);
-      const webhookRecoverySpy = vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([{ id: "wh_1", webhookId: "wh_ev_1", status: "completed" }]);
+      const webhookRecoverySpy = vi
+        .spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks")
+        .mockResolvedValue([
+          { id: "wh_1", webhookId: "wh_ev_1", status: "completed" },
+        ]);
 
       const report = await scheduledHandler(
         { cron: CRON_SCHEDULE_5_MIN, scheduledTime: Date.now() },
@@ -472,9 +500,17 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
     });
 
     it("routes '0 * * * *' to loyalty points expiration and expiring session renewal", async () => {
-      const pointsExpirySpy = vi.spyOn(pointsExpirySchedulerModule, "enqueuePointsExpiryLifecycleJobs")
-        .mockResolvedValue({ programsScanned: 3, programsSkipped: 0, accountsReconciled: 12, accountsScheduled: 5, jobsEnqueued: 5 });
-      const rewardExpirySpy = vi.spyOn(rewardExpirySchedulerModule, "enqueueRewardExpiryReminderJobs")
+      const pointsExpirySpy = vi
+        .spyOn(pointsExpirySchedulerModule, "enqueuePointsExpiryLifecycleJobs")
+        .mockResolvedValue({
+          programsScanned: 3,
+          programsSkipped: 0,
+          accountsReconciled: 12,
+          accountsScheduled: 5,
+          jobsEnqueued: 5,
+        });
+      const rewardExpirySpy = vi
+        .spyOn(rewardExpirySchedulerModule, "enqueueRewardExpiryReminderJobs")
         .mockResolvedValue({
           programsScanned: 2,
           rewardsScanned: 15,
@@ -483,10 +519,13 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
           ineligible: 0,
           programFailures: [],
         });
-      const sessionRenewalSpy = vi.spyOn(sessionRenewalModule, "listDueShopifySessionRenewals")
+      const sessionRenewalSpy = vi
+        .spyOn(sessionRenewalModule, "listDueShopifySessionRenewals")
         .mockResolvedValue({ jobs: [], nextCursor: null });
 
-      const envWithKey: CronWorkerEnv = { SHOPIFY_API_KEY: "shopify_app_client_id_test" };
+      const envWithKey: CronWorkerEnv = {
+        SHOPIFY_API_KEY: "shopify_app_client_id_test",
+      };
 
       const report = await scheduledHandler(
         { cron: CRON_SCHEDULE_HOURLY, scheduledTime: Date.now() },
@@ -506,7 +545,9 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
         "shopify-session-renewal",
         "purge-expired-nonces",
       ]);
-      const expiryJob = report.jobs.find((j) => j.name === "loyalty-points-expiration");
+      const expiryJob = report.jobs.find(
+        (j) => j.name === "loyalty-points-expiration",
+      );
       expect(expiryJob?.data).toEqual({
         pointsLifecycle: {
           programsScanned: 3,
@@ -521,23 +562,27 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
     });
 
     it("loyaltyPointsExpirationJob correctly binds real sweep result structures", async () => {
-      vi.spyOn(pointsExpirySchedulerModule, "enqueuePointsExpiryLifecycleJobs")
-        .mockResolvedValue({
-          programsScanned: 5,
-          programsSkipped: 1,
-          accountsReconciled: 40,
-          accountsScheduled: 10,
-          jobsEnqueued: 10,
-        });
-      vi.spyOn(rewardExpirySchedulerModule, "enqueueRewardExpiryReminderJobs")
-        .mockResolvedValue({
-          programsScanned: 2,
-          rewardsScanned: 25,
-          jobsEnqueued: 7,
-          alreadyQueued: 1,
-          ineligible: 0,
-          programFailures: [],
-        });
+      vi.spyOn(
+        pointsExpirySchedulerModule,
+        "enqueuePointsExpiryLifecycleJobs",
+      ).mockResolvedValue({
+        programsScanned: 5,
+        programsSkipped: 1,
+        accountsReconciled: 40,
+        accountsScheduled: 10,
+        jobsEnqueued: 10,
+      });
+      vi.spyOn(
+        rewardExpirySchedulerModule,
+        "enqueueRewardExpiryReminderJobs",
+      ).mockResolvedValue({
+        programsScanned: 2,
+        rewardsScanned: 25,
+        jobsEnqueued: 7,
+        alreadyQueued: 1,
+        ineligible: 0,
+        programFailures: [],
+      });
 
       const result = await loyaltyPointsExpirationJob({});
 
@@ -555,27 +600,44 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
     it("routes '0 2 * * *' to multi-tenant catalog sync sweep and double-entry ledger audit", async () => {
       // Mock prisma stores query
       vi.spyOn(prisma.weleticShopifyStore, "findMany").mockResolvedValue([
-        { id: "store_tenant_1", projectId: "ws_tenant_1", shopDomain: "brand1.myshopify.com" } as any,
+        {
+          id: "store_tenant_1",
+          projectId: "ws_tenant_1",
+          shopDomain: "brand1.myshopify.com",
+        } as any,
       ]);
-      vi.spyOn(storeResolverModule, "resolveShopifyStoreByDomain").mockResolvedValue({
+      vi.spyOn(
+        storeResolverModule,
+        "resolveShopifyStoreByDomain",
+      ).mockResolvedValue({
         id: "store_tenant_1",
         projectId: "ws_tenant_1",
         shopDomain: "brand1.myshopify.com",
       } as any);
-      const catalogSyncSpy = vi.spyOn(catalogSyncModule, "syncWeleticShopifyCatalog").mockResolvedValue({
-        created: 2,
-        updated: 1,
-        deleted: 0,
-      } as any);
+      const catalogSyncSpy = vi
+        .spyOn(catalogSyncModule, "syncWeleticShopifyCatalog")
+        .mockResolvedValue({
+          created: 2,
+          updated: 1,
+          deleted: 0,
+        } as any);
 
       // Mock prisma loyalty accounts
       vi.spyOn(prisma.weleticLoyaltyAccount, "findMany").mockResolvedValue([
         {
           id: "acc_1",
-          cachedPointsBalance: 150n,
+          cachedPointsBalance: BigInt(150),
           ledgerEntries: [
-            { sequenceNumber: 1, pointsDelta: 100n, balanceAfter: 100n },
-            { sequenceNumber: 2, pointsDelta: 50n, balanceAfter: 150n },
+            {
+              sequenceNumber: 1,
+              pointsDelta: BigInt(100),
+              balanceAfter: BigInt(100),
+            },
+            {
+              sequenceNumber: 2,
+              pointsDelta: BigInt(50),
+              balanceAfter: BigInt(150),
+            },
           ],
         } as any,
       ]);
@@ -585,7 +647,9 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
         mockEnv,
       );
 
-      expect(catalogSyncSpy).toHaveBeenCalledWith({ workspaceId: "ws_tenant_1" });
+      expect(catalogSyncSpy).toHaveBeenCalledWith({
+        workspaceId: "ws_tenant_1",
+      });
       expect(report.cron).toBe(CRON_SCHEDULE_DAILY);
       expect(report.jobs).toHaveLength(2);
       expect(report.successCount).toBe(2);
@@ -631,16 +695,31 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
     });
 
     it("executes 5-minute cycle on GET /trigger?cron=*/5 * * * *", async () => {
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockResolvedValue({ scanned: 2, confirmed: 1, refunded: 0, deferred: 1, errors: 0, details: [] });
-      vi.spyOn(outboxModule, "processOutboxJobsBatch")
-        .mockResolvedValue({ processed: 0 } as any);
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks")
-        .mockResolvedValue([]);
-
-      const req = new Request(`http://localhost/trigger?cron=${encodeURIComponent(CRON_SCHEDULE_5_MIN)}`, {
-        headers: authHeaders,
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockResolvedValue({
+        scanned: 2,
+        confirmed: 1,
+        refunded: 0,
+        deferred: 1,
+        errors: 0,
+        details: [],
       });
+      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({
+        processed: 0,
+      } as any);
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
+
+      const req = new Request(
+        `http://localhost/trigger?cron=${encodeURIComponent(CRON_SCHEDULE_5_MIN)}`,
+        {
+          headers: authHeaders,
+        },
+      );
       const res = await handleHttpTrigger(req, mockEnv);
 
       expect(res.status).toBe(200);
@@ -651,17 +730,27 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
     });
 
     it("executes hourly cycle via POST /trigger with JSON body", async () => {
-      vi.spyOn(pointsExpirySchedulerModule, "enqueuePointsExpiryLifecycleJobs")
-        .mockResolvedValue({ programsScanned: 1, programsSkipped: 0, accountsReconciled: 0, accountsScheduled: 0, jobsEnqueued: 0 });
-      vi.spyOn(rewardExpirySchedulerModule, "enqueueRewardExpiryReminderJobs")
-        .mockResolvedValue({
-          programsScanned: 0,
-          rewardsScanned: 0,
-          jobsEnqueued: 0,
-          alreadyQueued: 0,
-          ineligible: 0,
-          programFailures: [],
-        });
+      vi.spyOn(
+        pointsExpirySchedulerModule,
+        "enqueuePointsExpiryLifecycleJobs",
+      ).mockResolvedValue({
+        programsScanned: 1,
+        programsSkipped: 0,
+        accountsReconciled: 0,
+        accountsScheduled: 0,
+        jobsEnqueued: 0,
+      });
+      vi.spyOn(
+        rewardExpirySchedulerModule,
+        "enqueueRewardExpiryReminderJobs",
+      ).mockResolvedValue({
+        programsScanned: 0,
+        rewardsScanned: 0,
+        jobsEnqueued: 0,
+        alreadyQueued: 0,
+        ineligible: 0,
+        programFailures: [],
+      });
 
       const req = new Request("http://localhost/trigger", {
         method: "POST",
@@ -677,7 +766,9 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
     });
 
     it("enforces authentication when CRON_SECRET is configured", async () => {
-      const securedEnv: CronWorkerEnv = { CRON_SECRET: "cron_secret_auth_token_999" };
+      const securedEnv: CronWorkerEnv = {
+        CRON_SECRET: "cron_secret_auth_token_999",
+      };
 
       // Request without auth header
       const unauthReq = new Request("http://localhost/trigger?cron=5min");
@@ -695,27 +786,51 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       const validReq = new Request("http://localhost/trigger?cron=5min", {
         headers: { Authorization: "Bearer cron_secret_auth_token_999" },
       });
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockResolvedValue({ scanned: 0, confirmed: 0, refunded: 0, deferred: 0, errors: 0, details: [] });
-      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({ processed: 0 } as any);
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks").mockResolvedValue([]);
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockResolvedValue({
+        scanned: 0,
+        confirmed: 0,
+        refunded: 0,
+        deferred: 0,
+        errors: 0,
+        details: [],
+      });
+      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({
+        processed: 0,
+      } as any);
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const validRes = await handleHttpTrigger(validReq, securedEnv);
       expect(validRes.status).toBe(200);
     });
 
     it("supports cron aliases 'hourly' and 'daily' via GET /trigger", async () => {
-      vi.spyOn(pointsExpirySchedulerModule, "enqueuePointsExpiryLifecycleJobs")
-        .mockResolvedValue({ programsScanned: 0, programsSkipped: 0, accountsReconciled: 0, accountsScheduled: 0, jobsEnqueued: 0 });
-      vi.spyOn(rewardExpirySchedulerModule, "enqueueRewardExpiryReminderJobs")
-        .mockResolvedValue({
-          programsScanned: 0,
-          rewardsScanned: 0,
-          jobsEnqueued: 0,
-          alreadyQueued: 0,
-          ineligible: 0,
-          programFailures: [],
-        });
+      vi.spyOn(
+        pointsExpirySchedulerModule,
+        "enqueuePointsExpiryLifecycleJobs",
+      ).mockResolvedValue({
+        programsScanned: 0,
+        programsSkipped: 0,
+        accountsReconciled: 0,
+        accountsScheduled: 0,
+        jobsEnqueued: 0,
+      });
+      vi.spyOn(
+        rewardExpirySchedulerModule,
+        "enqueueRewardExpiryReminderJobs",
+      ).mockResolvedValue({
+        programsScanned: 0,
+        rewardsScanned: 0,
+        jobsEnqueued: 0,
+        alreadyQueued: 0,
+        ineligible: 0,
+        programFailures: [],
+      });
 
       const hourlyReq = new Request("http://localhost/trigger?cron=hourly", {
         headers: authHeaders,
@@ -756,7 +871,10 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       const executedUpdates: any[] = [];
       const mockD1: any = {
         prepare(query: string) {
-          if (query.includes("SELECT") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("SELECT") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind: vi.fn().mockReturnThis(),
               async all() {
@@ -776,10 +894,13 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
               },
             };
           }
-          if (query.includes("UPDATE") && query.includes("WeleticShopifyWebhookEvent")) {
+          if (
+            query.includes("UPDATE") &&
+            query.includes("WeleticShopifyWebhookEvent")
+          ) {
             return {
               bind(...args: any[]) {
-                const id = typeof args[0] === "string" ? args[0] : args[args.length - 1];
+                const id = args[args.length - 1];
                 executedUpdates.push([id]);
                 return {
                   async run() {
@@ -791,13 +912,20 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
           }
           return {
             bind: vi.fn().mockReturnThis(),
-            async all() { return { results: [] }; },
-            async run() { return { success: true }; },
+            async all() {
+              return { results: [] };
+            },
+            async run() {
+              return { success: true };
+            },
           };
         },
       };
 
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks").mockResolvedValue([]);
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       const env: CronWorkerEnv = {
         DB: mockD1,
@@ -822,10 +950,18 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       vi.spyOn(prisma.weleticLoyaltyAccount, "findMany").mockResolvedValue([
         {
           id: "acc_healthy",
-          cachedPointsBalance: 500n,
+          cachedPointsBalance: BigInt(500),
           ledgerEntries: [
-            { sequenceNumber: 1, pointsDelta: 200n, balanceAfter: 200n },
-            { sequenceNumber: 2, pointsDelta: 300n, balanceAfter: 500n },
+            {
+              sequenceNumber: 1,
+              pointsDelta: BigInt(200),
+              balanceAfter: BigInt(200),
+            },
+            {
+              sequenceNumber: 2,
+              pointsDelta: BigInt(300),
+              balanceAfter: BigInt(500),
+            },
           ],
         } as any,
       ]);
@@ -842,10 +978,18 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       vi.spyOn(prisma.weleticLoyaltyAccount, "findMany").mockResolvedValue([
         {
           id: "acc_gap",
-          cachedPointsBalance: 200n,
+          cachedPointsBalance: BigInt(200),
           ledgerEntries: [
-            { sequenceNumber: 1, pointsDelta: 100n, balanceAfter: 100n },
-            { sequenceNumber: 3, pointsDelta: 100n, balanceAfter: 200n }, // Missing sequence 2!
+            {
+              sequenceNumber: 1,
+              pointsDelta: BigInt(100),
+              balanceAfter: BigInt(100),
+            },
+            {
+              sequenceNumber: 3,
+              pointsDelta: BigInt(100),
+              balanceAfter: BigInt(200),
+            }, // Missing sequence 2!
           ],
         } as any,
       ]);
@@ -854,7 +998,9 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
 
       expect(result.verified).toBe(false);
       expect(result.discrepanciesCount).toBeGreaterThan(0);
-      const gapDiscrepancy: any = result.discrepancies.find((d: any) => d.type === "sequence_gap");
+      const gapDiscrepancy: any = result.discrepancies.find(
+        (d: any) => d.type === "sequence_gap",
+      );
       expect(gapDiscrepancy).toBeDefined();
       expect(gapDiscrepancy.expected).toBe(2);
       expect(gapDiscrepancy.found).toBe(3);
@@ -864,10 +1010,18 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       vi.spyOn(prisma.weleticLoyaltyAccount, "findMany").mockResolvedValue([
         {
           id: "acc_bad_math",
-          cachedPointsBalance: 999n,
+          cachedPointsBalance: BigInt(999),
           ledgerEntries: [
-            { sequenceNumber: 1, pointsDelta: 100n, balanceAfter: 100n },
-            { sequenceNumber: 2, pointsDelta: 50n, balanceAfter: 999n }, // 100 + 50 should be 150, not 999!
+            {
+              sequenceNumber: 1,
+              pointsDelta: BigInt(100),
+              balanceAfter: BigInt(100),
+            },
+            {
+              sequenceNumber: 2,
+              pointsDelta: BigInt(50),
+              balanceAfter: BigInt(999),
+            }, // 100 + 50 should be 150, not 999!
           ],
         } as any,
       ]);
@@ -876,7 +1030,9 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
 
       expect(result.verified).toBe(false);
       expect(result.discrepanciesCount).toBeGreaterThan(0);
-      const mathDiscrepancy: any = result.discrepancies.find((d: any) => d.type === "balance_mismatch");
+      const mathDiscrepancy: any = result.discrepancies.find(
+        (d: any) => d.type === "balance_mismatch",
+      );
       expect(mathDiscrepancy).toBeDefined();
       expect(mathDiscrepancy.runningBalance).toBe("150");
       expect(mathDiscrepancy.recordedBalance).toBe("999");
@@ -886,10 +1042,18 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       vi.spyOn(prisma.weleticLoyaltyAccount, "findMany").mockResolvedValue([
         {
           id: "acc_cached_drift",
-          cachedPointsBalance: 900n, // Stale cache! Running balance is 500n.
+          cachedPointsBalance: BigInt(900), // Stale cache! Running balance is 500n.
           ledgerEntries: [
-            { sequenceNumber: 1, pointsDelta: 200n, balanceAfter: 200n },
-            { sequenceNumber: 2, pointsDelta: 300n, balanceAfter: 500n },
+            {
+              sequenceNumber: 1,
+              pointsDelta: BigInt(200),
+              balanceAfter: BigInt(200),
+            },
+            {
+              sequenceNumber: 2,
+              pointsDelta: BigInt(300),
+              balanceAfter: BigInt(500),
+            },
           ],
         } as any,
       ]);
@@ -926,7 +1090,9 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
             };
           }
           return {
-            async all() { return { results: [] }; },
+            async all() {
+              return { results: [] };
+            },
           };
         },
       };
@@ -947,17 +1113,25 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
   describe("7. Invariants Compliance (Invariants 1 & 4)", () => {
     it("Invariant 1: dynamically resolves stores via resolveShopifyStoreByDomain during catalog reconciliation", async () => {
       vi.spyOn(prisma.weleticShopifyStore, "findMany").mockResolvedValue([
-        { id: "store_aliased", projectId: "ws_tenant_alias", shopDomain: "yamaxdev.myshopify.com" } as any,
+        {
+          id: "store_aliased",
+          projectId: "ws_tenant_alias",
+          shopDomain: "yamaxdev.myshopify.com",
+        } as any,
       ]);
 
-      const resolverSpy = vi.spyOn(storeResolverModule, "resolveShopifyStoreByDomain")
+      const resolverSpy = vi
+        .spyOn(storeResolverModule, "resolveShopifyStoreByDomain")
         .mockResolvedValue({
           id: "store_aliased",
           projectId: "ws_tenant_alias",
           shopDomain: "yamaxdev.myshopify.com",
         } as any);
 
-      vi.spyOn(catalogSyncModule, "syncWeleticShopifyCatalog").mockResolvedValue({
+      vi.spyOn(
+        catalogSyncModule,
+        "syncWeleticShopifyCatalog",
+      ).mockResolvedValue({
         created: 0,
         updated: 0,
         deleted: 0,
@@ -971,21 +1145,40 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
 
     it("Invariant 4: iterates across all multi-tenant stores without hardcoding store names or workspace IDs", async () => {
       const mockStores = [
-        { id: "store_1", projectId: "ws_1", shopDomain: "tenant-one.myshopify.com" },
-        { id: "store_2", projectId: "ws_2", shopDomain: "tenant-two.myshopify.com" },
-        { id: "store_3", projectId: "ws_3", shopDomain: "tenant-three.myshopify.com" },
+        {
+          id: "store_1",
+          projectId: "ws_1",
+          shopDomain: "tenant-one.myshopify.com",
+        },
+        {
+          id: "store_2",
+          projectId: "ws_2",
+          shopDomain: "tenant-two.myshopify.com",
+        },
+        {
+          id: "store_3",
+          projectId: "ws_3",
+          shopDomain: "tenant-three.myshopify.com",
+        },
       ];
 
-      vi.spyOn(prisma.weleticShopifyStore, "findMany").mockResolvedValue(mockStores as any);
-      vi.spyOn(storeResolverModule, "resolveShopifyStoreByDomain").mockImplementation(async (domain) => {
+      vi.spyOn(prisma.weleticShopifyStore, "findMany").mockResolvedValue(
+        mockStores as any,
+      );
+      vi.spyOn(
+        storeResolverModule,
+        "resolveShopifyStoreByDomain",
+      ).mockImplementation(async (domain) => {
         const store = mockStores.find((s) => s.shopDomain === domain);
         return store ? (store as any) : null;
       });
-      const catalogSyncSpy = vi.spyOn(catalogSyncModule, "syncWeleticShopifyCatalog").mockResolvedValue({
-        created: 1,
-        updated: 0,
-        deleted: 0,
-      } as any);
+      const catalogSyncSpy = vi
+        .spyOn(catalogSyncModule, "syncWeleticShopifyCatalog")
+        .mockResolvedValue({
+          created: 1,
+          updated: 0,
+          deleted: 0,
+        } as any);
 
       const result = await syncMultiTenantCatalogJob({});
 
@@ -1000,10 +1193,24 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
   // =========================================================================
   describe("8. Cloudflare Worker Default Export", () => {
     it("handles scheduled event through worker.scheduled with ExecutionContext", async () => {
-      vi.spyOn(storeCreditReconciliationModule, "reconcilePendingStoreCreditRedemptionsSweep")
-        .mockResolvedValue({ scanned: 0, confirmed: 0, refunded: 0, deferred: 0, errors: 0, details: [] });
-      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({ processed: 0 } as any);
-      vi.spyOn(ordersPaidRecoveryModule, "recoverStuckOrdersPaidWebhooks").mockResolvedValue([]);
+      vi.spyOn(
+        storeCreditReconciliationModule,
+        "reconcilePendingStoreCreditRedemptionsSweep",
+      ).mockResolvedValue({
+        scanned: 0,
+        confirmed: 0,
+        refunded: 0,
+        deferred: 0,
+        errors: 0,
+        details: [],
+      });
+      vi.spyOn(outboxModule, "processOutboxJobsBatch").mockResolvedValue({
+        processed: 0,
+      } as any);
+      vi.spyOn(
+        ordersPaidRecoveryModule,
+        "recoverStuckOrdersPaidWebhooks",
+      ).mockResolvedValue([]);
 
       let waitedPromise: Promise<any> | null = null;
       const ctx = {
@@ -1013,15 +1220,19 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       };
 
       await worker.scheduled(
-        { cron: CRON_SCHEDULE_5_MIN, scheduledTime: Date.now(), noRetry: () => {} },
+        {
+          cron: CRON_SCHEDULE_5_MIN,
+          scheduledTime: Date.now(),
+          noRetry: () => {},
+        },
         {},
         ctx,
       );
 
       expect(waitedPromise).not.toBeNull();
-      const report = await waitedPromise;
-      expect(report.cron).toBe(CRON_SCHEDULE_5_MIN);
-      expect(report.successCount).toBe(3);
+      const report: any = await waitedPromise;
+      expect(report?.cron).toBe(CRON_SCHEDULE_5_MIN);
+      expect(report?.successCount).toBe(3);
     });
 
     it("handles fetch request through worker.fetch", async () => {

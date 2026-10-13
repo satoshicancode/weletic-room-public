@@ -1,41 +1,42 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import {
   handleWebhookIngress,
-  readLimitedBody,
   WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
   type WebhookIngressEnv,
 } from "../../workers/webhook-ingress/src/index";
 
 import {
-  handleLinkRedirection,
   buildKvKey,
+  handleLinkRedirection,
   KV_NEGATIVE_CACHE_TTL_SECONDS,
   type LinkRedirectorEnv,
-  type NegativeCacheSentinel,
 } from "../../workers/link-redirector/src/index";
 
 import {
-  verifyWeleticShopifyRequest,
-  createPrismaNonceClient,
   createD1NonceClient,
-  signWeleticShopifyRequest,
+  createPrismaNonceClient,
   readWeleticShopifyRequestBodyBytes,
-  WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
-  WELETIC_SHOPIFY_TIMESTAMP_HEADER,
-  WELETIC_SHOPIFY_SIGNATURE_HEADER,
-  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
   resetServiceAuthNonceCache,
+  signWeleticShopifyRequest,
+  verifyWeleticShopifyRequest,
+  WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
+  WELETIC_SHOPIFY_SIGNATURE_HEADER,
+  WELETIC_SHOPIFY_TIMESTAMP_HEADER,
 } from "@weletic/contracts/shopify/service-auth";
 
-import { getSessionCookieDomain } from "../../lib/auth/session-cookie";
-import { authOptions } from "../../lib/auth/options";
 import { assertE2EWorkspace } from "../../app/(ee)/api/e2e/guard";
 import { DubApiError } from "../../lib/api/errors";
-import { webhookRateLimiter, redirectRateLimiter } from "../../lib/weletic/edge-rate-limiter";
+import { authOptions } from "../../lib/auth/options";
+import { getSessionCookieDomain } from "../../lib/auth/session-cookie";
+import {
+  redirectRateLimiter,
+  webhookRateLimiter,
+} from "../../lib/weletic/edge-rate-limiter";
 
 const TEST_SECRET = "shpss_test_shopify_webhook_secret_32bytes_12345";
 const SERVICE_SECRET = "weletic_internal_service_secret_32bytes_min_length_ok";
@@ -79,12 +80,15 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       // Create a valid JSON body padded to exactly 128KB
       const baseObj = { order_id: 12345, note: "" };
       const baseStr = JSON.stringify(baseObj);
-      const paddingNeeded = WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES - baseStr.length;
+      const paddingNeeded =
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES - baseStr.length;
       baseObj.note = "A".repeat(paddingNeeded);
       const exactJson = JSON.stringify(baseObj);
       const exactBytes = Buffer.from(exactJson, "utf8");
 
-      expect(exactBytes.byteLength).toBe(WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES);
+      expect(exactBytes.byteLength).toBe(
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
+      );
 
       const signature = signWebhook(exactBytes, TEST_SECRET);
       const req = new Request("https://webhook.weletic.com/ingress", {
@@ -118,7 +122,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
         ORDER_WEBHOOK_QUEUE: mockQueue,
       };
 
-      const oversizedBytes = new Uint8Array(WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 1);
+      const oversizedBytes = new Uint8Array(
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 1,
+      );
       oversizedBytes.fill(0x61);
       const signature = signWebhook(oversizedBytes, TEST_SECRET);
 
@@ -263,7 +269,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
         DB: mockDb,
       };
 
-      const req1 = new Request("https://link.weletic.com/non-existent-promo-slug");
+      const req1 = new Request(
+        "https://link.weletic.com/non-existent-promo-slug",
+      );
       const res1 = await handleLinkRedirection(req1, env);
       expect(res1.status).toBe(404);
 
@@ -271,7 +279,10 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       expect(mockD1First).toHaveBeenCalledTimes(1);
 
       // Verify negative cache sentinel was stored in KV with 60s TTL
-      const canonicalKey = buildKvKey("link.weletic.com", "non-existent-promo-slug");
+      const canonicalKey = buildKvKey(
+        "link.weletic.com",
+        "non-existent-promo-slug",
+      );
       expect(mockKv.put).toHaveBeenCalledWith(
         canonicalKey,
         expect.stringContaining('"notFound":true'),
@@ -282,7 +293,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       mockD1First.mockClear();
 
       // Subsequent identical request must hit KV negative cache and return 404 WITHOUT calling D1
-      const req2 = new Request("https://link.weletic.com/non-existent-promo-slug");
+      const req2 = new Request(
+        "https://link.weletic.com/non-existent-promo-slug",
+      );
       const res2 = await handleLinkRedirection(req2, env);
       expect(res2.status).toBe(404);
       expect(mockD1First).not.toHaveBeenCalled();
@@ -334,7 +347,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       expect(encodedKvKey).toBe("link:link.weletic.com:flash sale");
 
       // Unicode slug: Japanese hiragana '/%E3%81%82%E3%81%8D' -> decodes to 'あき'
-      const reqUnicode = new Request("https://link.weletic.com/%E3%81%82%E3%81%8D");
+      const reqUnicode = new Request(
+        "https://link.weletic.com/%E3%81%82%E3%81%8D",
+      );
       await handleLinkRedirection(reqUnicode, env);
       const unicodeKvKey = buildKvKey("link.weletic.com", "あき");
       expect(unicodeKvKey).toBe("link:link.weletic.com:あき");
@@ -350,19 +365,29 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       const table = new Map<string, { nonceKey: string; expiresAt: number }>();
       const mockPrisma = {
         serviceAuthNonce: {
-          create: vi.fn(async ({ data }: { data: { nonceKey: string; expiresAt: number } }) => {
-            // Emulate atomic DB constraint
-            if (table.has(data.nonceKey)) {
-              const err: any = new Error("Unique constraint failed on the fields: (`nonceKey`)");
-              err.code = "P2002";
-              throw err;
-            }
-            table.set(data.nonceKey, { ...data });
-            return { id: "n_1", ...data };
-          }),
-          findUnique: vi.fn(async ({ where }: { where: { nonceKey: string } }) => {
-            return table.get(where.nonceKey) ?? null;
-          }),
+          create: vi.fn(
+            async ({
+              data,
+            }: {
+              data: { nonceKey: string; expiresAt: number };
+            }) => {
+              // Emulate atomic DB constraint
+              if (table.has(data.nonceKey)) {
+                const err: any = new Error(
+                  "Unique constraint failed on the fields: (`nonceKey`)",
+                );
+                err.code = "P2002";
+                throw err;
+              }
+              table.set(data.nonceKey, { ...data });
+              return { id: "n_1", ...data };
+            },
+          ),
+          findUnique: vi.fn(
+            async ({ where }: { where: { nonceKey: string } }) => {
+              return table.get(where.nonceKey) ?? null;
+            },
+          ),
           update: vi.fn(async ({ where, data }: any) => {
             const existing = table.get(where.nonceKey);
             if (!existing) throw new Error("Not found");
@@ -404,7 +429,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
                   if (query.includes("INSERT INTO ServiceAuthNonce")) {
                     const [nonceKey, expiresAt] = args;
                     if (d1Rows.has(nonceKey)) {
-                      throw new Error("UNIQUE constraint failed: ServiceAuthNonce.nonceKey");
+                      throw new Error(
+                        "UNIQUE constraint failed: ServiceAuthNonce.nonceKey",
+                      );
                     }
                     d1Rows.set(nonceKey, { nonceKey, expiresAt });
                     return { success: true, meta: { changes: 1 } };
@@ -417,7 +444,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
                   return { success: true };
                 },
                 first: async () => {
-                  if (query.includes("SELECT expiresAt FROM ServiceAuthNonce")) {
+                  if (
+                    query.includes("SELECT expiresAt FROM ServiceAuthNonce")
+                  ) {
                     const [nonceKey] = args;
                     return d1Rows.get(nonceKey) || null;
                   }
@@ -447,7 +476,10 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       const now = Date.now();
       const requestId = "req_concurrent_e2e_burst_777";
       const timestamp = String(now);
-      const body = JSON.stringify({ action: "session_token_exchange", shop: "test.myshopify.com" });
+      const body = JSON.stringify({
+        action: "session_token_exchange",
+        shop: "test.myshopify.com",
+      });
       const path = "/api/internal/shopify/sessions";
 
       const signature = signWeleticShopifyRequest({
@@ -462,13 +494,15 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       // Stateful in-memory redis provider
       const redisStore = new Map<string, string>();
       const mockRedisClient = {
-        set: vi.fn(async (key: string, val: string, opts?: { nx?: boolean }) => {
-          if (opts?.nx && redisStore.has(key)) {
-            return null;
-          }
-          redisStore.set(key, val);
-          return "OK";
-        }),
+        set: vi.fn(
+          async (key: string, val: string, opts?: { nx?: boolean }) => {
+            if (opts?.nx && redisStore.has(key)) {
+              return null;
+            }
+            redisStore.set(key, val);
+            return "OK";
+          },
+        ),
       };
 
       const makeRequest = () =>
@@ -533,7 +567,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       const mockRedis = { set: vi.fn().mockResolvedValue("OK") };
 
       // Exactly at past boundary (now - 300,000 ms) -> VALID
-      const pastBoundaryReq = createSignedReq(now - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS);
+      const pastBoundaryReq = createSignedReq(
+        now - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+      );
       const resPastBoundary = await verifyWeleticShopifyRequest({
         request: pastBoundaryReq,
         body,
@@ -544,7 +580,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       expect(resPastBoundary).toBe(true);
 
       // Past boundary + 1 ms (now - 300,001 ms) -> REJECTED
-      const pastOverReq = createSignedReq(now - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS - 1);
+      const pastOverReq = createSignedReq(
+        now - WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS - 1,
+      );
       const resPastOver = await verifyWeleticShopifyRequest({
         request: pastOverReq,
         body,
@@ -555,7 +593,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       expect(resPastOver).toBe(false);
 
       // Exactly at future boundary (now + 300,000 ms) -> VALID
-      const futureBoundaryReq = createSignedReq(now + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS);
+      const futureBoundaryReq = createSignedReq(
+        now + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+      );
       const resFutureBoundary = await verifyWeleticShopifyRequest({
         request: futureBoundaryReq,
         body,
@@ -566,7 +606,9 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       expect(resFutureBoundary).toBe(true);
 
       // Future boundary + 1 ms (now + 300,001 ms) -> REJECTED
-      const futureOverReq = createSignedReq(now + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 1);
+      const futureOverReq = createSignedReq(
+        now + WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS + 1,
+      );
       const resFutureOver = await verifyWeleticShopifyRequest({
         request: futureOverReq,
         body,
@@ -586,8 +628,8 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
         "NaN",
         "invalid_timestamp",
         "1700000000.5", // Float
-        "-1000",        // Negative
-        "1e15",         // Exponential notation
+        "-1000", // Negative
+        "1e15", // Exponential notation
         "",
         " ",
       ];
@@ -640,7 +682,14 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
         },
         body,
       });
-      expect(await verifyWeleticShopifyRequest({ request: reqShort, body, now, secret: SERVICE_SECRET })).toBe(false);
+      expect(
+        await verifyWeleticShopifyRequest({
+          request: reqShort,
+          body,
+          now,
+          secret: SERVICE_SECRET,
+        }),
+      ).toBe(false);
 
       // 2. Signature with 65 chars
       const longSig = validSignature + "a";
@@ -653,7 +702,14 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
         },
         body,
       });
-      expect(await verifyWeleticShopifyRequest({ request: reqLong, body, now, secret: SERVICE_SECRET })).toBe(false);
+      expect(
+        await verifyWeleticShopifyRequest({
+          request: reqLong,
+          body,
+          now,
+          secret: SERVICE_SECRET,
+        }),
+      ).toBe(false);
 
       // 3. Signature with exactly 64 hex characters but 1 bit flipped at the end
       const lastChar = validSignature[validSignature.length - 1];
@@ -669,7 +725,14 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
         },
         body,
       });
-      expect(await verifyWeleticShopifyRequest({ request: reqFlipped, body, now, secret: SERVICE_SECRET })).toBe(false);
+      expect(
+        await verifyWeleticShopifyRequest({
+          request: reqFlipped,
+          body,
+          now,
+          secret: SERVICE_SECRET,
+        }),
+      ).toBe(false);
     });
   });
 
@@ -690,18 +753,40 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       expect(getSessionCookieDomain({ hostOnly: true })).toBeUndefined();
 
       // Preview environment
-      expect(getSessionCookieDomain({ vercelEnv: "preview", appDomain: "app.weletic.com" })).toBeUndefined();
-      expect(getSessionCookieDomain({ nextPublicVercelEnv: "preview", appDomain: "app.weletic.com" })).toBeUndefined();
-      expect(getSessionCookieDomain({ vercelUrl: "weletic-preview-git-feature.vercel.app" })).toBeUndefined();
+      expect(
+        getSessionCookieDomain({
+          vercelEnv: "preview",
+          appDomain: "app.weletic.com",
+        }),
+      ).toBeUndefined();
+      expect(
+        getSessionCookieDomain({
+          nextPublicVercelEnv: "preview",
+          appDomain: "app.weletic.com",
+        }),
+      ).toBeUndefined();
+      expect(
+        getSessionCookieDomain({
+          vercelUrl: "weletic-preview-git-feature.vercel.app",
+        }),
+      ).toBeUndefined();
 
       // Localhost & IP addresses
-      expect(getSessionCookieDomain({ appDomain: "localhost" })).toBeUndefined();
-      expect(getSessionCookieDomain({ appDomain: "127.0.0.1" })).toBeUndefined();
-      expect(getSessionCookieDomain({ appDomain: "192.168.1.10" })).toBeUndefined();
+      expect(
+        getSessionCookieDomain({ appDomain: "localhost" }),
+      ).toBeUndefined();
+      expect(
+        getSessionCookieDomain({ appDomain: "127.0.0.1" }),
+      ).toBeUndefined();
+      expect(
+        getSessionCookieDomain({ appDomain: "192.168.1.10" }),
+      ).toBeUndefined();
 
       // Verifies NEXTAUTH_COOKIE_HOST_ONLY env var
       process.env.NEXTAUTH_COOKIE_HOST_ONLY = "true";
-      expect(getSessionCookieDomain({ appDomain: "app.weletic.com" })).toBeUndefined();
+      expect(
+        getSessionCookieDomain({ appDomain: "app.weletic.com" }),
+      ).toBeUndefined();
     });
 
     it("3.3 Subdomain Isolation: A rogue tenant subdomain cannot toss or read host-only cookies of sibling tenants", () => {
@@ -710,20 +795,26 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
       delete process.env.NEXTAUTH_CROSS_SUBDOMAIN_COOKIES;
       process.env.NEXTAUTH_COOKIE_HOST_ONLY = "true";
 
-      const tenant1CookieDomain = getSessionCookieDomain({ appDomain: "tenant1.weletic.com" });
-      const tenant2CookieDomain = getSessionCookieDomain({ appDomain: "tenant2.weletic.com" });
+      const tenant1CookieDomain = getSessionCookieDomain({
+        appDomain: "tenant1.weletic.com",
+      });
+      const tenant2CookieDomain = getSessionCookieDomain({
+        appDomain: "tenant2.weletic.com",
+      });
 
       expect(tenant1CookieDomain).toBeUndefined();
       expect(tenant2CookieDomain).toBeUndefined();
     });
 
     it("3.4 Production E2E Route Gating: /api/e2e/* endpoints throw HTTP 404 (not_found) when ENABLE_E2E_ROUTES is unset", () => {
-      process.env.NODE_ENV = "production";
+      (process.env as any).NODE_ENV = "production";
       delete process.env.ENABLE_E2E_ROUTES;
 
       const dummyWorkspace = { id: "ws_acme_test" };
 
-      expect(() => assertE2EWorkspace(dummyWorkspace)).toThrowError(DubApiError);
+      expect(() => assertE2EWorkspace(dummyWorkspace)).toThrowError(
+        DubApiError,
+      );
       try {
         assertE2EWorkspace(dummyWorkspace);
       } catch (err: any) {
@@ -733,12 +824,14 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
     });
 
     it("3.5 Production E2E Route Gating: Falsy values ('false', '0', '') for ENABLE_E2E_ROUTES still throw 404", () => {
-      process.env.NODE_ENV = "production";
+      (process.env as any).NODE_ENV = "production";
       const dummyWorkspace = { id: "ws_acme_test" };
 
       for (const falsyVal of ["false", "0", "", "undefined"]) {
         process.env.ENABLE_E2E_ROUTES = falsyVal;
-        expect(() => assertE2EWorkspace(dummyWorkspace)).toThrowError(DubApiError);
+        expect(() => assertE2EWorkspace(dummyWorkspace)).toThrowError(
+          DubApiError,
+        );
         try {
           assertE2EWorkspace(dummyWorkspace);
         } catch (err: any) {
@@ -748,15 +841,19 @@ describe("Empirical Challenger M5_1: Cross-Milestone Boundary & Penetration Test
     });
 
     it("3.6 Production E2E Route Gating: When ENABLE_E2E_ROUTES is 'true', only ACME workspace is permitted", () => {
-      process.env.NODE_ENV = "production";
+      (process.env as any).NODE_ENV = "production";
       process.env.ENABLE_E2E_ROUTES = "true";
       process.env.E2E_WORKSPACE_ID = "ws_acme_permitted";
 
       // Permitted workspace succeeds without error
-      expect(() => assertE2EWorkspace({ id: "ws_acme_permitted" })).not.toThrow();
+      expect(() =>
+        assertE2EWorkspace({ id: "ws_acme_permitted" }),
+      ).not.toThrow();
 
       // Unauthorized workspace throws 403 forbidden
-      expect(() => assertE2EWorkspace({ id: "ws_attacker_workspace" })).toThrowError(DubApiError);
+      expect(() =>
+        assertE2EWorkspace({ id: "ws_attacker_workspace" }),
+      ).toThrowError(DubApiError);
       try {
         assertE2EWorkspace({ id: "ws_attacker_workspace" });
       } catch (err: any) {

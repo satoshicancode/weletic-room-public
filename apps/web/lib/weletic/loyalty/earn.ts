@@ -15,7 +15,6 @@ import {
   appendPointsLedgerEntryWithReceipt,
   OptimisticConcurrencyError,
 } from "@/lib/weletic/loyalty/ledger";
-import { isRetriableSqliteError } from "@/lib/weletic/sqlite-retry";
 import { allocateReversalAcrossRemainingLines } from "@/lib/weletic/loyalty/line-reversal-allocation";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
@@ -31,6 +30,7 @@ import {
   assertShopifyStoreAcceptsOperationalWrites,
   assertShopifyStoreMatchesInstallationGeneration,
 } from "@/lib/weletic/shopify/store-compliance-state";
+import { isRetriableSqliteError } from "@/lib/weletic/sqlite-retry";
 import { nanoid } from "@dub/utils";
 import {
   Prisma,
@@ -437,7 +437,11 @@ export function doesOrderLineMatchRuleConditions({
     productTags?: unknown;
   };
 }): boolean {
-  if (!conditions || typeof conditions !== "object" || Array.isArray(conditions)) {
+  if (
+    !conditions ||
+    typeof conditions !== "object" ||
+    Array.isArray(conditions)
+  ) {
     return true;
   }
 
@@ -457,8 +461,9 @@ export function doesOrderLineMatchRuleConditions({
     const lineTags: string[] = Array.isArray(rawLineTags)
       ? rawLineTags.map((t: unknown) => String(t).trim().toLowerCase())
       : [];
-    const hasTagMatch = targetTags.some((tag: unknown) =>
-      typeof tag === "string" && lineTags.includes(tag.trim().toLowerCase()),
+    const hasTagMatch = targetTags.some(
+      (tag: unknown) =>
+        typeof tag === "string" && lineTags.includes(tag.trim().toLowerCase()),
     );
     if (!hasTagMatch) return false;
   }
@@ -502,7 +507,9 @@ export function doesOrderLineMatchRuleConditions({
 
   if (targetProductIds && targetProductIds.length > 0) {
     const linePid = line.productId ? String(line.productId).trim() : null;
-    const lineExternalId = line.lineExternalId ? String(line.lineExternalId).trim() : null;
+    const lineExternalId = line.lineExternalId
+      ? String(line.lineExternalId).trim()
+      : null;
     const hasProductMatch = targetProductIds.some((pid: unknown) => {
       if (typeof pid !== "string") return false;
       const cleanPid = pid.trim();
@@ -526,7 +533,13 @@ export function doesOrderLineMatchRuleConditions({
 
   if (targetSkus && targetSkus.length > 0) {
     const lineSku = line.sku ? String(line.sku).trim().toLowerCase() : null;
-    if (!lineSku || !targetSkus.some((s: unknown) => typeof s === "string" && s.trim().toLowerCase() === lineSku)) {
+    if (
+      !lineSku ||
+      !targetSkus.some(
+        (s: unknown) =>
+          typeof s === "string" && s.trim().toLowerCase() === lineSku,
+      )
+    ) {
       return false;
     }
   }
@@ -541,7 +554,11 @@ export function doesShopperMatchRuleConditions({
   conditions: unknown;
   shopper: { tags?: unknown };
 }): boolean {
-  if (!conditions || typeof conditions !== "object" || Array.isArray(conditions)) {
+  if (
+    !conditions ||
+    typeof conditions !== "object" ||
+    Array.isArray(conditions)
+  ) {
     return true;
   }
   const cond = conditions as Record<string, unknown>;
@@ -557,8 +574,10 @@ export function doesShopperMatchRuleConditions({
       : typeof rawTags === "string"
         ? rawTags.split(",").map((t: string) => t.trim().toLowerCase())
         : [];
-    return targetCustomerTags.some((tag: unknown) =>
-      typeof tag === "string" && shopperTags.includes(tag.trim().toLowerCase()),
+    return targetCustomerTags.some(
+      (tag: unknown) =>
+        typeof tag === "string" &&
+        shopperTags.includes(tag.trim().toLowerCase()),
     );
   }
   return true;
@@ -2754,12 +2773,12 @@ export async function processOrderPointsEarn({
 
   const orderTax =
     currency === order.shopCurrency
-      ? (order.shopTax ?? BigInt(0))
-      : (order.presentmentTax ?? order.shopTax ?? BigInt(0));
+      ? order.shopTax ?? BigInt(0)
+      : order.presentmentTax ?? order.shopTax ?? BigInt(0);
   const orderShipping =
     currency === order.shopCurrency
-      ? (order.shopShipping ?? BigInt(0))
-      : (order.presentmentShipping ?? order.shopShipping ?? BigInt(0));
+      ? order.shopShipping ?? BigInt(0)
+      : order.presentmentShipping ?? order.shopShipping ?? BigInt(0);
 
   const taxAndShippingAmount =
     includeTaxesAndShipping && merchandiseEligibleSubtotal > BigInt(0)

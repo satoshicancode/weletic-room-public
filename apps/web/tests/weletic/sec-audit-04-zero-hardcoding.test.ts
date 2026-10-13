@@ -1,8 +1,6 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import {
-  isRestrictedDevelopmentEnvironment,
-} from "../../../../infra/shopify-development/restricted-policy.mjs";
 import { permitsRestrictedDevelopmentIdentity } from "@/lib/weletic/shopify/restricted-development";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { isRestrictedDevelopmentEnvironment } from "../../../../infra/shopify-development/restricted-policy.mjs";
 
 describe("SEC-AUDIT-04: Multi-Tenant Zero Hardcoding Invariant 4 Compliance", () => {
   const generation = "11111111-1111-4111-8111-111111111111";
@@ -65,7 +63,9 @@ describe("SEC-AUDIT-04: Multi-Tenant Zero Hardcoding Invariant 4 Compliance", ()
       installationGeneration: generationId,
     };
 
-    expect(permitsRestrictedDevelopmentIdentity(unauthorizedIdentity)).toBe(false);
+    expect(permitsRestrictedDevelopmentIdentity(unauthorizedIdentity)).toBe(
+      false,
+    );
   });
 
   it("static code inspection confirms zero occurrences of montdev.myshopify.com and app id literal in runtime files", async () => {

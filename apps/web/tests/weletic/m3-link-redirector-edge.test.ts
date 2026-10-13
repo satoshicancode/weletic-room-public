@@ -1,18 +1,18 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import {
-  handleLinkRedirection,
-  buildKvKey,
-  type LinkRecord,
-  type LinkRedirectorEnv,
-} from "../../workers/link-redirector/src/index";
 import {
   evictLinkFromKv,
   evictLinksBatchFromKv,
   tombstoneLinkInKv,
 } from "../../lib/weletic/link-kv-cache";
+import {
+  buildKvKey,
+  handleLinkRedirection,
+  type LinkRecord,
+  type LinkRedirectorEnv,
+} from "../../workers/link-redirector/src/index";
 
 class MockKVNamespace {
   public store = new Map<string, { value: string; options?: any }>();
@@ -239,7 +239,10 @@ describe("Milestone 3 (M3): Link Redirector Remediation Test Suite (WRK-AUDIT-03
       ];
 
       for (const l of links) {
-        await mockKV.put(buildKvKey(l.domain, l.key), JSON.stringify({ id: l.key, url: "https://yamax.co" }));
+        await mockKV.put(
+          buildKvKey(l.domain, l.key),
+          JSON.stringify({ id: l.key, url: "https://yamax.co" }),
+        );
       }
 
       const result = await evictLinksBatchFromKv(links);

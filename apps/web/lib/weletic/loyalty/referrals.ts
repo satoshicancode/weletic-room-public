@@ -8,7 +8,6 @@ import {
 } from "@/lib/weletic/loyalty/ledger";
 import type { LoyaltyMaintenancePermit } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { withActiveStoreLoyaltyMutation } from "@/lib/weletic/loyalty/merchant-write-fence";
-import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { lockLoyaltyProgramRow } from "@/lib/weletic/loyalty/program-write-fence";
 import {
@@ -37,6 +36,7 @@ import {
   assertShopifyStoreAcceptsOperationalWrites,
   assertShopifyStoreMatchesInstallationGeneration,
 } from "@/lib/weletic/shopify/store-compliance-state";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import { nanoid } from "@dub/utils";
 import {
   Prisma,

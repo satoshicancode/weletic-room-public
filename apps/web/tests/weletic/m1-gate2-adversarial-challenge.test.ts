@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import { execSync } from "child_process";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -125,12 +125,9 @@ vi.mock("@/lib/prisma", () => ({
   prisma: prismaMock,
 }));
 
-import { CommissionStatus, PayoutStatus, Prisma } from "@prisma/client";
+import { CommissionStatus, PayoutStatus } from "@prisma/client";
 import { POST as aggregateDueCommissionsPOST } from "../../app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route";
-import {
-  isRetriableSqliteError,
-  withFinancialTransactionRetry,
-} from "../../lib/weletic/sqlite-retry";
+import { withFinancialTransactionRetry } from "../../lib/weletic/sqlite-retry";
 
 function setupStatefulPrismaMock() {
   queryCount = 0;
@@ -145,9 +142,7 @@ function setupStatefulPrismaMock() {
     { holdingPeriodDays: 0, _count: { id: 1 } },
   ]);
 
-  prismaMock.partnerGroup.findMany.mockResolvedValue([
-    { id: "grp_stress_0" },
-  ]);
+  prismaMock.partnerGroup.findMany.mockResolvedValue([{ id: "grp_stress_0" }]);
 
   // Dynamic commission querying with pagination and partner exclusion
   prismaMock.commission.findMany.mockImplementation(async (query: any) => {
@@ -269,50 +264,52 @@ function setupStatefulPrismaMock() {
   });
 
   // Dynamic $executeRaw handler for both Commission claim and Payout update
-  prismaMock.$executeRaw.mockImplementation(async (strings: any, ...values: any[]) => {
-    const rawSql = Array.isArray(strings)
-      ? strings.join("?")
-      : typeof strings === "string"
-        ? strings
-        : strings?.strings?.join("?") ?? "";
+  prismaMock.$executeRaw.mockImplementation(
+    async (strings: any, ...values: any[]) => {
+      const rawSql = Array.isArray(strings)
+        ? strings.join("?")
+        : typeof strings === "string"
+          ? strings
+          : strings?.strings?.join("?") ?? "";
 
-    if (rawSql.includes("UPDATE Commission")) {
-      const payoutId = values[1];
-      const targetIds = Array.isArray(values[2]?.values)
-        ? values[2].values
-        : Array.isArray(values[2])
-          ? values[2]
-          : [];
-      const partnerId = values[4];
+      if (rawSql.includes("UPDATE Commission")) {
+        const payoutId = values[1];
+        const targetIds = Array.isArray(values[2]?.values)
+          ? values[2].values
+          : Array.isArray(values[2])
+            ? values[2]
+            : [];
+        const partnerId = values[4];
 
-      let updated = 0;
-      for (const c of commissionsTable) {
-        if (
-          targetIds.includes(c.id) &&
-          c.partnerId === partnerId &&
-          c.status === CommissionStatus.pending
-        ) {
-          c.status = CommissionStatus.processed;
-          c.payoutId = payoutId;
-          updated++;
+        let updated = 0;
+        for (const c of commissionsTable) {
+          if (
+            targetIds.includes(c.id) &&
+            c.partnerId === partnerId &&
+            c.status === CommissionStatus.pending
+          ) {
+            c.status = CommissionStatus.processed;
+            c.payoutId = payoutId;
+            updated++;
+          }
         }
+        return updated;
       }
-      return updated;
-    }
 
-    if (rawSql.includes("UPDATE Payout")) {
-      const amount = values[0];
-      const payoutId = values[2];
+      if (rawSql.includes("UPDATE Payout")) {
+        const amount = values[0];
+        const payoutId = values[2];
 
-      const payout = payoutsTable.find((p) => p.id === payoutId);
-      if (payout) {
-        payout.amount = Number(amount);
+        const payout = payoutsTable.find((p) => p.id === payoutId);
+        if (payout) {
+          payout.amount = Number(amount);
+        }
+        return 1;
       }
+
       return 1;
-    }
-
-    return 1;
-  });
+    },
+  );
 }
 
 describe("Milestone M1 Gate 2 Adversarial Stress Testing", () => {
@@ -363,8 +360,12 @@ describe("Milestone M1 Gate 2 Adversarial Stress Testing", () => {
       expect(p1.amount).toBeLessThanOrEqual(MAX_INT32);
       expect(p1.status).toBe("pending");
 
-      const processedRun1 = commissionsTable.filter((c) => c.status === CommissionStatus.processed);
-      const pendingRun1 = commissionsTable.filter((c) => c.status === CommissionStatus.pending);
+      const processedRun1 = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.processed,
+      );
+      const pendingRun1 = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.pending,
+      );
       expect(processedRun1.length).toBe(4);
       expect(pendingRun1.length).toBe(6);
       expect(processedRun1.every((c) => c.payoutId === p1.id)).toBe(true);
@@ -385,8 +386,12 @@ describe("Milestone M1 Gate 2 Adversarial Stress Testing", () => {
       expect(p2.id).not.toBe(p1.id);
       expect(p1.amount).toBe(2_000_000_000); // p1 remains intact
 
-      const processedRun2 = commissionsTable.filter((c) => c.status === CommissionStatus.processed);
-      const pendingRun2 = commissionsTable.filter((c) => c.status === CommissionStatus.pending);
+      const processedRun2 = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.processed,
+      );
+      const pendingRun2 = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.pending,
+      );
       expect(processedRun2.length).toBe(8);
       expect(pendingRun2.length).toBe(2);
       expect(processedRun2.filter((c) => c.payoutId === p2.id).length).toBe(4);
@@ -403,8 +408,12 @@ describe("Milestone M1 Gate 2 Adversarial Stress Testing", () => {
       expect(p3.amount).toBe(1_000_000_000);
       expect(p3.amount).toBeLessThanOrEqual(MAX_INT32);
 
-      const processedRun3 = commissionsTable.filter((c) => c.status === CommissionStatus.processed);
-      const pendingRun3 = commissionsTable.filter((c) => c.status === CommissionStatus.pending);
+      const processedRun3 = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.processed,
+      );
+      const pendingRun3 = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.pending,
+      );
       expect(processedRun3.length).toBe(10);
       expect(pendingRun3.length).toBe(0);
 
@@ -467,7 +476,10 @@ describe("Milestone M1 Gate 2 Adversarial Stress Testing", () => {
       expect(payoutsTable.length).toBe(1);
       const p1 = payoutsTable[0];
       expect(p1.amount).toBe(1_800_000_000);
-      expect(commissionsTable.filter((c) => c.status === CommissionStatus.pending).length).toBe(2);
+      expect(
+        commissionsTable.filter((c) => c.status === CommissionStatus.pending)
+          .length,
+      ).toBe(2);
 
       // CRON RUN 2: p1 is still pending (amount = 1.8B < 2.0B).
       // existingPendingPayout is p1.
@@ -479,7 +491,10 @@ describe("Milestone M1 Gate 2 Adversarial Stress Testing", () => {
 
       expect(payoutsTable.length).toBe(1);
       expect(payoutsTable[0].amount).toBe(1_800_000_000);
-      expect(commissionsTable.filter((c) => c.status === CommissionStatus.pending).length).toBe(2);
+      expect(
+        commissionsTable.filter((c) => c.status === CommissionStatus.pending)
+          .length,
+      ).toBe(2);
 
       // Now simulate invoice settlement: merchant funds invoice, p1 transitions to "processing"
       p1.status = "processing";
@@ -492,8 +507,14 @@ describe("Milestone M1 Gate 2 Adversarial Stress Testing", () => {
       expect(payoutsTable.length).toBe(2);
       const p2 = payoutsTable[1];
       expect(p2.amount).toBe(1_000_000_000);
-      expect(commissionsTable.filter((c) => c.status === CommissionStatus.pending).length).toBe(0);
-      expect(commissionsTable.filter((c) => c.status === CommissionStatus.processed).length).toBe(3);
+      expect(
+        commissionsTable.filter((c) => c.status === CommissionStatus.pending)
+          .length,
+      ).toBe(0);
+      expect(
+        commissionsTable.filter((c) => c.status === CommissionStatus.processed)
+          .length,
+      ).toBe(3);
     });
 
     it("1.3 Multi-Partner Fair Queueing: 1 whale with 5.0B VND does not starve 5 small earners ($10 each) across runs", async () => {
@@ -538,7 +559,9 @@ describe("Milestone M1 Gate 2 Adversarial Stress Testing", () => {
       expect(whaleP1?.amount).toBe(2_000_000_000);
 
       for (let i = 0; i < 5; i++) {
-        const smallP = payoutsTable.find((p) => p.partnerId === `small_partner_${i}`);
+        const smallP = payoutsTable.find(
+          (p) => p.partnerId === `small_partner_${i}`,
+        );
         expect(smallP?.amount).toBe(1_000);
       }
     });
@@ -802,12 +825,18 @@ describe("Milestone M1 Gate 2 Adversarial Stress Testing", () => {
       expect(payoutsTable[0].amount).toBe(5000);
 
       // All 5 commissions are processed and linked to that payout
-      const processed = commissionsTable.filter((c) => c.status === CommissionStatus.processed);
+      const processed = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.processed,
+      );
       expect(processed.length).toBe(5);
-      expect(processed.every((c) => c.payoutId === payoutsTable[0].id)).toBe(true);
+      expect(processed.every((c) => c.payoutId === payoutsTable[0].id)).toBe(
+        true,
+      );
 
       // Zero commissions remain pending
-      const pending = commissionsTable.filter((c) => c.status === CommissionStatus.pending);
+      const pending = commissionsTable.filter(
+        (c) => c.status === CommissionStatus.pending,
+      );
       expect(pending.length).toBe(0);
     });
 

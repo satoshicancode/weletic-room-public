@@ -3,13 +3,9 @@ import {
   calculateTierReviewWindow,
   evaluateTierMaintenanceCycle,
 } from "@/lib/weletic/loyalty/tier-lifecycle";
-import {
-  enqueueTierReviewSweepJobs,
-  scheduleTierReviewAfterQualifyingActivity,
-} from "@/lib/weletic/loyalty/tier-review-scheduling";
+import { enqueueTierReviewSweepJobs } from "@/lib/weletic/loyalty/tier-review-scheduling";
 import {
   WeleticLoyaltyTierChangeReason,
-  WeleticPointsLedgerEntryType,
   WeleticVipMilestoneMode,
 } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -150,8 +146,7 @@ vi.mock("@/lib/prisma", () => ({
                 return true;
               if (
                 cond.tierExpiresAt &&
-                a.tierExpiresAt?.getTime() ===
-                  cond.tierExpiresAt.getTime() &&
+                a.tierExpiresAt?.getTime() === cond.tierExpiresAt.getTime() &&
                 cond.id?.gt &&
                 a.id > cond.id.gt
               )
@@ -589,15 +584,23 @@ describe("Round 2 VIP Tier Review Scheduling & Dormant VIP Expiration Test Suite
   describe("Tier Review Window Calculation Edge Cases", () => {
     it("calculates ROLLING_12M precisely as past 365 days window", () => {
       const now = new Date("2026-10-09T15:30:00Z");
-      const { startDate, endDate } = calculateTierReviewWindow("ROLLING_12M", now);
+      const { startDate, endDate } = calculateTierReviewWindow(
+        "ROLLING_12M",
+        now,
+      );
 
       expect(endDate.getTime()).toBe(now.getTime());
-      expect(startDate.getTime()).toBe(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      expect(startDate.getTime()).toBe(
+        now.getTime() - 365 * 24 * 60 * 60 * 1000,
+      );
     });
 
     it("calculates CALENDAR_YEAR precisely as Jan 1 00:00:00.000 to Dec 31 23:59:59.999 UTC", () => {
       const now = new Date("2026-06-15T08:00:00Z");
-      const { startDate, endDate } = calculateTierReviewWindow("CALENDAR_YEAR", now);
+      const { startDate, endDate } = calculateTierReviewWindow(
+        "CALENDAR_YEAR",
+        now,
+      );
 
       expect(startDate.toISOString()).toBe("2026-01-01T00:00:00.000Z");
       expect(endDate.toISOString()).toBe("2026-12-31T23:59:59.999Z");

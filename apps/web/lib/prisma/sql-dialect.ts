@@ -467,7 +467,10 @@ function splitClock(text: string, now: Date): ClockPiece[] {
 }
 
 /** Rewrites a `Prisma.Sql` (tagged-template) statement. */
-export function rewriteSql(sql: Prisma.Sql, now: Date = new Date()): Prisma.Sql {
+export function rewriteSql(
+  sql: Prisma.Sql,
+  now: Date = new Date(),
+): Prisma.Sql {
   const strings = [...sql.strings];
   const values = [...sql.values];
   if (isDdl(strings[0] ?? "")) return sql;
@@ -569,7 +572,10 @@ export function rewriteSql(sql: Prisma.Sql, now: Date = new Date()): Prisma.Sql 
   }
   newStrings.push(current);
 
-  return Prisma.sql(newStrings as unknown as TemplateStringsArray, ...newValues);
+  return Prisma.sql(
+    newStrings as unknown as TemplateStringsArray,
+    ...newValues,
+  );
 }
 
 /** Rewrites an `$queryRawUnsafe` / `$executeRawUnsafe` argument list. */

@@ -97,7 +97,9 @@ async function readJson(response: Response) {
 export function PosLoyaltyModal() {
   const customerId = shopify.cart.current.value.customer?.id;
   const [summary, setSummary] = useState<PosSummary | null>(null);
-  const [customerBindingToken, setCustomerBindingToken] = useState<string | null>(null);
+  const [customerBindingToken, setCustomerBindingToken] = useState<
+    string | null
+  >(null);
   const [loading, setLoading] = useState(Boolean(customerId));
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);

@@ -1,5 +1,5 @@
-import { Prisma } from "@prisma/client";
 import { OptimisticConcurrencyError } from "@/lib/weletic/loyalty/ledger";
+import { Prisma } from "@prisma/client";
 
 export interface TransactionRetryConfig {
   maxRetries?: number;
@@ -10,7 +10,9 @@ export interface TransactionRetryConfig {
   isRetryable?: (error: unknown) => boolean;
 }
 
-const DEFAULT_RETRY_CONFIG: Required<Omit<TransactionRetryConfig, "isRetryable">> & {
+const DEFAULT_RETRY_CONFIG: Required<
+  Omit<TransactionRetryConfig, "isRetryable">
+> & {
   isRetryable?: (error: unknown) => boolean;
 } = {
   maxRetries: 4, // 5 total attempts

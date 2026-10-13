@@ -1,5 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/stripe", () => ({
@@ -12,13 +11,13 @@ vi.mock("@/lib/stripe", () => ({
 
 import { authOptions } from "@/lib/auth/options";
 import { getSessionCookieDomain } from "@/lib/auth/session-cookie";
-import { POST as stripeWebhookHandler } from "../../app/(ee)/api/stripe/webhook/route";
-import {
-  verifySignature as verifyPayPalSignature,
-  PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS,
-} from "../../app/(ee)/api/paypal/webhook/verify-signature";
-import { POST as payPalWebhookHandler } from "../../app/(ee)/api/paypal/webhook/route";
 import { stripe } from "@/lib/stripe";
+import { POST as payPalWebhookHandler } from "../../app/(ee)/api/paypal/webhook/route";
+import {
+  PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS,
+  verifySignature as verifyPayPalSignature,
+} from "../../app/(ee)/api/paypal/webhook/verify-signature";
+import { POST as stripeWebhookHandler } from "../../app/(ee)/api/stripe/webhook/route";
 
 describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Verification", () => {
   const originalEnv = { ...process.env };
@@ -49,7 +48,9 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
     it("1.2 defaults to host-only cookie (domain: undefined) adhering to RFC 6265bis", () => {
       // By default, domain MUST be undefined so user agents bind the cookie strictly to the origin host.
       // This eliminates subdomain cookie tossing where an insecure/compromised subdomain sets Domain=.apex.
-      expect(authOptions.cookies?.sessionToken?.options?.domain).toBeUndefined();
+      expect(
+        authOptions.cookies?.sessionToken?.options?.domain,
+      ).toBeUndefined();
     });
 
     it("1.3 simulates cookie tossing resistance: host-only vs domain-scoped cookie collision", () => {
@@ -81,7 +82,8 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
       expect(emittedHostCookie).toContain("SameSite=lax");
 
       // Attacker cookie from rogue.weletic.com attempting to inject domain-level cookie
-      const attackerTossedCookie = "next-auth.session-token=evil_token; Domain=.weletic.com; Path=/";
+      const attackerTossedCookie =
+        "next-auth.session-token=evil_token; Domain=.weletic.com; Path=/";
       expect(attackerTossedCookie).toContain("Domain=.weletic.com");
 
       // Under RFC 6265bis, host-only cookies cannot be overwritten by a parent/subdomain domain-attribute
@@ -132,11 +134,22 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
       // and tenant B accesses via "https://affiliate.acme-brand.co.uk".
       // If authOptions had hardcoded or apex-derived domain (e.g. ".weletic.com"),
       // the browser on "https://yamax.com" would REJECT the Set-Cookie header per RFC 6265 Section 5.3 Step 5!
-      function rfc6265DomainMatch(requestHost: string, cookieDomain: string | undefined): boolean {
+      function rfc6265DomainMatch(
+        requestHost: string,
+        cookieDomain: string | undefined,
+      ): boolean {
         if (!cookieDomain) return true; // host-only matches the requestHost exactly
-        const cleanCookieDomain = cookieDomain.startsWith(".") ? cookieDomain.slice(1) : cookieDomain;
-        if (requestHost.toLowerCase() === cleanCookieDomain.toLowerCase()) return true;
-        if (requestHost.toLowerCase().endsWith("." + cleanCookieDomain.toLowerCase())) return true;
+        const cleanCookieDomain = cookieDomain.startsWith(".")
+          ? cookieDomain.slice(1)
+          : cookieDomain;
+        if (requestHost.toLowerCase() === cleanCookieDomain.toLowerCase())
+          return true;
+        if (
+          requestHost
+            .toLowerCase()
+            .endsWith("." + cleanCookieDomain.toLowerCase())
+        )
+          return true;
         return false;
       }
 
@@ -148,7 +161,8 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
         "custom.sub.brand.com.vn",
       ];
 
-      const currentDomainSetting = authOptions.cookies?.sessionToken?.options?.domain; // undefined (host-only)
+      const currentDomainSetting =
+        authOptions.cookies?.sessionToken?.options?.domain; // undefined (host-only)
 
       for (const host of tenantHosts) {
         // With current host-only setting: ALWAYS matches and valid
@@ -265,7 +279,9 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
     it("3.5 returns HTTP 400 Bad Request on cryptographic signature mismatch", async () => {
       process.env.STRIPE_WEBHOOK_SECRET = "whsec_test_12345";
       vi.mocked(stripe.webhooks.constructEvent).mockImplementationOnce(() => {
-        throw new Error("No signatures found matching the expected signature for payload");
+        throw new Error(
+          "No signatures found matching the expected signature for payload",
+        );
       });
 
       const req = new Request("https://app.weletic.com/api/stripe/webhook", {
@@ -279,7 +295,9 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
       const res = await stripeWebhookHandler(req);
       expect(res.status).toBe(400);
       const text = await res.text();
-      expect(text).toContain("Webhook Error: No signatures found matching the expected signature for payload");
+      expect(text).toContain(
+        "Webhook Error: No signatures found matching the expected signature for payload",
+      );
     });
 
     it("3.6 gracefully skips unsupported webhook event types with HTTP 200", async () => {
@@ -312,7 +330,8 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
         "paypal-transmission-id": "trans_123",
         "paypal-transmission-sig": "c2ln",
         "paypal-transmission-time": new Date().toISOString(),
-        "paypal-cert-url": "https://api.paypal.com/v1/notifications/certs/CERT-123",
+        "paypal-cert-url":
+          "https://api.paypal.com/v1/notifications/certs/CERT-123",
       };
 
       const requiredKeys = Object.keys(validHeaders);
@@ -360,7 +379,8 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
           "paypal-transmission-id": "trans_123",
           "paypal-transmission-sig": "c2ln",
           "paypal-transmission-time": timeStamp,
-          "paypal-cert-url": "https://api.paypal.com/v1/notifications/certs/CERT-123",
+          "paypal-cert-url":
+            "https://api.paypal.com/v1/notifications/certs/CERT-123",
         });
 
         const res = await verifyPayPalSignature({
@@ -382,7 +402,8 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
           "paypal-transmission-id": "trans_123",
           "paypal-transmission-sig": "c2ln",
           "paypal-transmission-time": timeStamp,
-          "paypal-cert-url": "https://api.paypal.com/v1/notifications/certs/CERT-123",
+          "paypal-cert-url":
+            "https://api.paypal.com/v1/notifications/certs/CERT-123",
         });
 
         // We observe whether timestamp drift check passed or failed before network cert fetch.
@@ -395,7 +416,9 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
       }
 
       // Past drift > 300s: MUST REJECT
-      const pastStale = await testDrift(-(PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS + 1));
+      const pastStale = await testDrift(
+        -(PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS + 1),
+      );
       expect(pastStale).toBe(false);
 
       // Future drift > 300s: MUST REJECT
@@ -455,7 +478,8 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
           "paypal-transmission-id": "trans_stale",
           "paypal-transmission-sig": "invalid_sig",
           "paypal-transmission-time": staleTimestamp,
-          "paypal-cert-url": "https://api.paypal.com/v1/notifications/certs/CERT-123",
+          "paypal-cert-url":
+            "https://api.paypal.com/v1/notifications/certs/CERT-123",
         },
         body: JSON.stringify({ event_type: "PAYMENT.PAYOUTS-ITEM.SUCCEEDED" }),
       });
@@ -463,7 +487,9 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
       const res = await payPalWebhookHandler(req);
       expect(res.status).toBe(400);
       const text = await res.text();
-      expect(text).toContain('Webhook error: "Webhook handler failed. View logs."');
+      expect(text).toContain(
+        'Webhook error: "Webhook handler failed. View logs."',
+      );
     });
 
     it("4.6 PayPal webhook POST route rejects missing required headers with HTTP 400", async () => {
@@ -478,7 +504,9 @@ describe("Milestone 1 Challenger M1_2: Adversarial Session & Webhook Contract Ve
       const res = await payPalWebhookHandler(req);
       expect(res.status).toBe(400);
       const text = await res.text();
-      expect(text).toContain('Webhook error: "Webhook handler failed. View logs."');
+      expect(text).toContain(
+        'Webhook error: "Webhook handler failed. View logs."',
+      );
     });
   });
 });

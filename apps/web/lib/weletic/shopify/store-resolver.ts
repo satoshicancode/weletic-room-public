@@ -2,12 +2,12 @@ import { decrypt, decryptOrPassthrough } from "@/lib/encryption";
 import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { integrationCredentialsSchema } from "@/lib/integrations/shopify/schema";
 import { prisma } from "@/lib/prisma";
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { Prisma } from "@prisma/client";
-import {
-  forUpdateClause,
-  currentTimestampClause,
-} from "@/lib/prisma/sql-helpers";
 import { createHash } from "crypto";
 import { readShopifyCredentialSource } from "./credential-source";
 import { advanceLegacyShopifySessionRevision } from "./session-coordination";

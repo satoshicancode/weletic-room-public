@@ -238,8 +238,12 @@ export async function provisionFinancialRewardReservation({
     reservation.redemption.metadata,
   );
   const rawStatus = (reservation.redemption as any).status;
-  const metadataStatus = (reservation.redemption.metadata as Record<string, unknown> | null)?.status;
-  const metadataState = (reservation.redemption.metadata as Record<string, unknown> | null)?.state;
+  const metadataStatus = (
+    reservation.redemption.metadata as Record<string, unknown> | null
+  )?.status;
+  const metadataState = (
+    reservation.redemption.metadata as Record<string, unknown> | null
+  )?.state;
   const isPendingRemoteConfirmation =
     rawStatus === "PENDING_REMOTE_CONFIRMATION" ||
     metadataStatus === "PENDING_REMOTE_CONFIRMATION" ||
@@ -252,8 +256,7 @@ export async function provisionFinancialRewardReservation({
       success: true,
       redemptionId: reservation.redemption.id,
       discountCode: reservation.redemption.shopifyDiscountCode,
-      shopifyDiscountId:
-        reservation.redemption.shopifyStoreCreditTransactionId,
+      shopifyDiscountId: reservation.redemption.shopifyStoreCreditTransactionId,
       status: WeleticRedemptionStatus.provisioning,
       pointsSpent: reservation.effectivePointsCost,
       balanceAfter: reservation.balanceAfter,

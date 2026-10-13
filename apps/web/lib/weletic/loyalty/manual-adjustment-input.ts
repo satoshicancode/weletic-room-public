@@ -10,7 +10,8 @@ export function validateManualAdjustmentInput(input: {
   pointsDelta?: unknown;
   reason?: unknown;
 }) {
-  const { accountId, shopperId, shopifyCustomerId, pointsDelta, reason } = input;
+  const { accountId, shopperId, shopifyCustomerId, pointsDelta, reason } =
+    input;
   const customerIdentifier =
     typeof shopifyCustomerId === "number" &&
     Number.isSafeInteger(shopifyCustomerId) &&

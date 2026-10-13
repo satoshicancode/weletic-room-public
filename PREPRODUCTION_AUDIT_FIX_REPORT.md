@@ -13,9 +13,11 @@
 ## 1. Executive Summary & Production Readiness Verdict
 
 ### 1.1 Executive Summary
+
 A comprehensive pre-production audit and multi-milestone remediation program was executed across the Weletic Room monorepo. Weletic Room is a production embedded Shopify application forked from Dub and enhanced with live catalog synchronization, loyalty & VIP rewards, store credit saga settlement, and line-level affiliate commission attribution.
 
 Over the course of Milestones M1, M2, M3, and M4:
+
 - **28 defect, vulnerability, and architectural findings** across financial calculation, cryptographic security, multi-tenant data isolation, Cloudflare Workers runtime coordination, and embedded UI were rigorously catalogued, investigated, and remediated in place directly on `main`.
 - **4 Architectural Invariants** defined in `.agents/rules/shopify_sync_invariants.md` (Multi-Domain Identity Resolution, Soft-Delete Coherence, Daemon Lifecycle Isolation, and Zero-Hardcoding Multi-Tenancy) were verified to be strictly enforced without exception.
 - All non-portable MySQL dialect dependencies (`UPDATE ... JOIN`, `NOW()`, `MATCH ... AGAINST`) were eliminated in favor of standard ANSI SQL compatible with Cloudflare D1 and SQLite.
@@ -23,12 +25,14 @@ Over the course of Milestones M1, M2, M3, and M4:
 - The Cloudflare Workers fleet (`webhook-ingress`, `queue-consumer`, `link-redirector`, `cron-triggers`) was stabilized with dynamic ES Proxy binding for Prisma D1, non-blocking background KV writes (<15ms redirect P99 SLA), dead-letter queues (DLQ), and automated stalled-webhook recovery.
 
 ### 1.2 Monorepo Quality & Regression Summary
+
 - **Weletic Test Suites (`apps/web/tests/weletic/`)**: **720 test files passed (720/720, 100%)**, **11,345 automated tests passed (11,345/11,351, 6 skipped, 0 failed)**.
 - **Embedded Shopify App Suite (`@weletic/shopify-app`)**: **21 test files passed (21/21, 100%)**, **342 tests passed (342/342, 0 failed)**.
 - **Static Analysis (ESLint 8.48.0)**: **0 errors, 0 warnings** across all modified runtime modules and test files.
 - **Type Safety (TypeScript 5.4.4)**: **0 compilation errors** in `@weletic/contracts`, **0 compilation errors** in `@weletic/shopify-app`, and **0 errors** across all modified Weletic libraries, workers, and route handlers.
 
 ### 1.3 Production Readiness Verdict
+
 **FINAL VERDICT: APPROVED FOR PRODUCTION LAUNCH.**  
 All critical and high severity blockers have been eliminated with genuine business logic and validated by independent adversarial challenger and forensic integrity gates. Zero facades, zero dummy tests, and zero hardcoded credentials remain in the codebase.
 
@@ -36,36 +40,36 @@ All critical and high severity blockers have been eliminated with genuine busine
 
 ## 2. Comprehensive Inventory of Catalogued & Remediated Defects
 
-| # | Finding ID | Severity | Area | File(s) Affected | Status | Milestone |
-|---|------------|:--------:|------|------------------|:------:|:---------:|
-| 1 | **FIN-AUDIT-01** | Critical | Financial / SQL | `apps/web/app/(ee)/api/cron/payouts/charge-succeeded/route.ts` | Remediated | M1 |
-| 2 | **FIN-AUDIT-02** | High | Financial / Payout | `apps/web/app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route.ts` | Remediated | M1 |
-| 3 | **FIN-AUDIT-03** | High | Financial / Overflow | `apps/web/app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route.ts` | Remediated | M1 |
-| 4 | **FIN-AUDIT-04 / WRK-AUDIT-02** | Critical | Workers / Sync | `apps/web/workers/cron-triggers/src/index.ts` | Remediated | M3 |
-| 5 | **FIN-AUDIT-05 / WRK-AUDIT-06** | High | Invariant 2 / Coupons | `apps/web/app/(ee)/api/shopify/integration/webhook/orders-paid.ts` | Remediated | M1 |
-| 6 | **FIN-AUDIT-06** | High | Currency / Scaling | `apps/web/lib/tapfiliate/import-commissions.ts` | Remediated | M1 |
-| 7 | **FIN-AUDIT-07** | Medium | Resilience / FX | `apps/web/lib/weletic/fx.ts` | Remediated | M1 |
-| 8 | **FIN-AUDIT-08** | Medium | Concurrency / OCC | `apps/web/lib/weletic/commerce/record-order.ts`, `record-refund.ts` | Remediated | M1 |
-| 9 | **FIN-AUDIT-09** | Medium | Currency / FX | `apps/web/lib/firstpromoter/import-commissions.ts` | Remediated | M1 |
-| 10 | **FIN-AUDIT-10** | Medium | SQLite / Concurrency | `apps/web/lib/weletic/sqlite-retry.ts` | Remediated | M1 |
-| 11 | **FIN-AUDIT-11** | Low | Security / Time | `apps/web/app/(ee)/api/shopify/integration/webhook/orders-paid.ts` | Remediated | M1 |
-| 12 | **SEC-AUDIT-01** | High | Security / Timing | `apps/web/lib/integrations/slack/verify-request.ts` | Remediated | M2 |
-| 13 | **SEC-AUDIT-02** | High | Security / Timing | `apps/web/app/(ee)/api/hubspot/webhook/route.ts` | Remediated | M2 |
-| 14 | **SEC-AUDIT-03** | High | Security / Replay | `packages/contracts/src/shopify/service-auth.ts`, `apps/web/d1/migrations/0001_service_auth_nonce.sql` | Remediated | M2 |
-| 15 | **SEC-AUDIT-04** | High | Invariant 4 / Tenant | `apps/web/lib/weletic/shopify/restricted-development.ts`, `infra/shopify-development/restricted-policy.mjs` | Remediated | M2 |
-| 16 | **SEC-AUDIT-05** | Medium | Crypto / Truncation | `apps/web/lib/encryption.ts` | Remediated | M2 |
-| 17 | **SEC-AUDIT-06** | Medium | Security / SSRF | `apps/web/lib/storage.ts` | Remediated | M2 |
-| 18 | **SEC-AUDIT-07** | Medium | Security / XSS | `apps/web/ui/weletic/yamax-product-description-editor.tsx` | Remediated | M2 |
-| 19 | **SEC-AUDIT-08** | Low | Crypto / Timing | `apps/web/lib/email/unsubscribe-token.ts` | Remediated | M2 |
-| 20 | **WRK-AUDIT-01** | Critical | Cloudflare / Prisma | `apps/web/lib/prisma/index.ts`, `apps/web/lib/prisma/edge.ts`, `workers/queue-consumer/`, `workers/cron-triggers/` | Remediated | M3 |
-| 21 | **WRK-AUDIT-03** | Medium | Cloudflare / Latency | `apps/web/workers/link-redirector/src/index.ts` | Remediated | M3 |
-| 22 | **WRK-AUDIT-04** | Medium | Cloudflare / Queues | `apps/web/workers/webhook-ingress/wrangler.toml`, `workers/queue-consumer/wrangler.toml` | Remediated | M3 |
-| 23 | **WRK-AUDIT-05** | Low | Documentation / TOML | `CLOUDFLARE_NATIVE_MIGRATION_REPORT.md` | Remediated | M3 |
-| 24 | **WRK-AUDIT-07** | Medium | Invariant 2 / KV Cache | `apps/web/lib/weletic/link-kv-cache.ts`, `apps/web/lib/api/links/cache.ts` | Remediated | M3 |
-| 25 | **WRK-AUDIT-08** | Low | Routing / Case | `apps/web/workers/link-redirector/src/index.ts` | Remediated | M3 |
-| 26 | **WRK-AUDIT-09** | Info/Pass | Architecture / Boundaries | `packages/shopify-app/` reverse relative imports | Verified Clean | M3 |
-| 27 | **E2E-REGRESSION** | Quality | Quality Assurance | Full monorepo Weletic and Shopify test execution | Remediated & Passed | M4 |
-| 28 | **REPORT-DELIVERY** | Handover | Governance | `PREPRODUCTION_AUDIT_FIX_REPORT.md` master documentation | Authored | M4 |
+| #   | Finding ID                      | Severity  | Area                      | File(s) Affected                                                                                                   |       Status        | Milestone |
+| --- | ------------------------------- | :-------: | ------------------------- | ------------------------------------------------------------------------------------------------------------------ | :-----------------: | :-------: |
+| 1   | **FIN-AUDIT-01**                | Critical  | Financial / SQL           | `apps/web/app/(ee)/api/cron/payouts/charge-succeeded/route.ts`                                                     |     Remediated      |    M1     |
+| 2   | **FIN-AUDIT-02**                |   High    | Financial / Payout        | `apps/web/app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route.ts`                                    |     Remediated      |    M1     |
+| 3   | **FIN-AUDIT-03**                |   High    | Financial / Overflow      | `apps/web/app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route.ts`                                    |     Remediated      |    M1     |
+| 4   | **FIN-AUDIT-04 / WRK-AUDIT-02** | Critical  | Workers / Sync            | `apps/web/workers/cron-triggers/src/index.ts`                                                                      |     Remediated      |    M3     |
+| 5   | **FIN-AUDIT-05 / WRK-AUDIT-06** |   High    | Invariant 2 / Coupons     | `apps/web/app/(ee)/api/shopify/integration/webhook/orders-paid.ts`                                                 |     Remediated      |    M1     |
+| 6   | **FIN-AUDIT-06**                |   High    | Currency / Scaling        | `apps/web/lib/tapfiliate/import-commissions.ts`                                                                    |     Remediated      |    M1     |
+| 7   | **FIN-AUDIT-07**                |  Medium   | Resilience / FX           | `apps/web/lib/weletic/fx.ts`                                                                                       |     Remediated      |    M1     |
+| 8   | **FIN-AUDIT-08**                |  Medium   | Concurrency / OCC         | `apps/web/lib/weletic/commerce/record-order.ts`, `record-refund.ts`                                                |     Remediated      |    M1     |
+| 9   | **FIN-AUDIT-09**                |  Medium   | Currency / FX             | `apps/web/lib/firstpromoter/import-commissions.ts`                                                                 |     Remediated      |    M1     |
+| 10  | **FIN-AUDIT-10**                |  Medium   | SQLite / Concurrency      | `apps/web/lib/weletic/sqlite-retry.ts`                                                                             |     Remediated      |    M1     |
+| 11  | **FIN-AUDIT-11**                |    Low    | Security / Time           | `apps/web/app/(ee)/api/shopify/integration/webhook/orders-paid.ts`                                                 |     Remediated      |    M1     |
+| 12  | **SEC-AUDIT-01**                |   High    | Security / Timing         | `apps/web/lib/integrations/slack/verify-request.ts`                                                                |     Remediated      |    M2     |
+| 13  | **SEC-AUDIT-02**                |   High    | Security / Timing         | `apps/web/app/(ee)/api/hubspot/webhook/route.ts`                                                                   |     Remediated      |    M2     |
+| 14  | **SEC-AUDIT-03**                |   High    | Security / Replay         | `packages/contracts/src/shopify/service-auth.ts`, `apps/web/d1/migrations/0001_service_auth_nonce.sql`             |     Remediated      |    M2     |
+| 15  | **SEC-AUDIT-04**                |   High    | Invariant 4 / Tenant      | `apps/web/lib/weletic/shopify/restricted-development.ts`, `infra/shopify-development/restricted-policy.mjs`        |     Remediated      |    M2     |
+| 16  | **SEC-AUDIT-05**                |  Medium   | Crypto / Truncation       | `apps/web/lib/encryption.ts`                                                                                       |     Remediated      |    M2     |
+| 17  | **SEC-AUDIT-06**                |  Medium   | Security / SSRF           | `apps/web/lib/storage.ts`                                                                                          |     Remediated      |    M2     |
+| 18  | **SEC-AUDIT-07**                |  Medium   | Security / XSS            | `apps/web/ui/weletic/yamax-product-description-editor.tsx`                                                         |     Remediated      |    M2     |
+| 19  | **SEC-AUDIT-08**                |    Low    | Crypto / Timing           | `apps/web/lib/email/unsubscribe-token.ts`                                                                          |     Remediated      |    M2     |
+| 20  | **WRK-AUDIT-01**                | Critical  | Cloudflare / Prisma       | `apps/web/lib/prisma/index.ts`, `apps/web/lib/prisma/edge.ts`, `workers/queue-consumer/`, `workers/cron-triggers/` |     Remediated      |    M3     |
+| 21  | **WRK-AUDIT-03**                |  Medium   | Cloudflare / Latency      | `apps/web/workers/link-redirector/src/index.ts`                                                                    |     Remediated      |    M3     |
+| 22  | **WRK-AUDIT-04**                |  Medium   | Cloudflare / Queues       | `apps/web/workers/webhook-ingress/wrangler.toml`, `workers/queue-consumer/wrangler.toml`                           |     Remediated      |    M3     |
+| 23  | **WRK-AUDIT-05**                |    Low    | Documentation / TOML      | `CLOUDFLARE_NATIVE_MIGRATION_REPORT.md`                                                                            |     Remediated      |    M3     |
+| 24  | **WRK-AUDIT-07**                |  Medium   | Invariant 2 / KV Cache    | `apps/web/lib/weletic/link-kv-cache.ts`, `apps/web/lib/api/links/cache.ts`                                         |     Remediated      |    M3     |
+| 25  | **WRK-AUDIT-08**                |    Low    | Routing / Case            | `apps/web/workers/link-redirector/src/index.ts`                                                                    |     Remediated      |    M3     |
+| 26  | **WRK-AUDIT-09**                | Info/Pass | Architecture / Boundaries | `packages/shopify-app/` reverse relative imports                                                                   |   Verified Clean    |    M3     |
+| 27  | **E2E-REGRESSION**              |  Quality  | Quality Assurance         | Full monorepo Weletic and Shopify test execution                                                                   | Remediated & Passed |    M4     |
+| 28  | **REPORT-DELIVERY**             | Handover  | Governance                | `PREPRODUCTION_AUDIT_FIX_REPORT.md` master documentation                                                           |      Authored       |    M4     |
 
 ---
 
@@ -74,6 +78,7 @@ All critical and high severity blockers have been eliminated with genuine busine
 All remediations were designed, implemented, and audited in strict accordance with the four architectural invariants specified in `.agents/rules/shopify_sync_invariants.md`:
 
 ### Invariant 1: Shopify Store Identity & Webhook Resolution
+
 - **Rule**: Always resolve incoming Shopify requests (webhooks, callbacks, auth, cron reconciliation) using canonical resolver (`resolveShopifyStoreByDomain`) rather than direct strict string matching on `shopifyStoreId`. Support multiple domain aliases (`myshopifyDomain`, `primaryDomain`, custom domains) seamlessly pointing to the same workspace without hardcoded domain checks.
 - **Verification Evidence**:
   - In `apps/web/workers/cron-triggers/src/index.ts` (remediation WRK-AUDIT-02), `recoverStalledWebhooksJob` was corrected to perform `LEFT JOIN WeleticShopifyStore s ON e.storeId = s.id` and select `s.shopDomain`. The re-enqueued message payload explicitly delivers `{ ...event, shopDomain: event.shopDomain }`.
@@ -81,6 +86,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   - Verified by `tests/weletic/m3-edge-prisma-webhook-recovery.test.ts` (test 2.1 & 2.3).
 
 ### Invariant 2: Soft-Delete Coherence Invariant
+
 - **Rule**: Whenever soft deletion (`disabledAt`) is used for relational records (e.g. `DiscountCode`, `Link`):
   1. **API Queries**: Include `where: { disabledAt: null }` in all Prisma relation queries and endpoints returning active collections.
   2. **UI Tables**: Filter out records where `disabledAt !== null` unless explicitly rendering an audit/history view.
@@ -93,6 +99,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   - Verified by `tests/weletic/m1-historical-coupon-attribution.test.ts` (5 tests passing) and `tests/weletic/m3-link-redirector-edge.test.ts` (7 tests passing).
 
 ### Invariant 3: Background Daemon Lifecycle
+
 - **Rule**: When updating backend utilities that are consumed by long-running background workers (such as sync pollers or cron daemons), always isolate execution contexts and provide resilient client bindings.
 - **Verification Evidence**:
   - In `apps/web/lib/prisma/index.ts` and `apps/web/lib/prisma/edge.ts` (remediation WRK-AUDIT-01), the static Prisma client was replaced with an ES `Proxy` that dynamically delegates to `globalThis.prisma ?? getFallbackClient()`.
@@ -100,6 +107,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   - Verified by `tests/weletic/m3-edge-prisma-webhook-recovery.test.ts` (tests 1.1–1.5).
 
 ### Invariant 4: Multi-Tenant Architecture & Zero-Hardcoding Invariants
+
 - **Rule**: NEVER hardcode specific store domains (e.g. `yamaxdev.myshopify.com`, `montdev.myshopify.com`), workspace IDs, user IDs, or static collection IDs in application logic, fallback handlers, GraphQL queries, or discount providers. Universal auto-provisioning must be applied. Always derive store domains, access tokens, and accounting currencies directly from authenticated tenant records.
 - **Verification Evidence**:
   - In `infra/shopify-development/restricted-policy.mjs` and `apps/web/lib/weletic/shopify/restricted-development.ts` (remediation SEC-AUDIT-04), all static references to `montdev.myshopify.com` and public app ID `c7d49cebb06e445db345bb200f966a03` were removed. Dynamic getters `getRestrictedDevelopmentStores(env)` and `getRestrictedDevelopmentConfig(env)` parse arbitrary tenant domains from `SHOPIFY_RESTRICTED_DEV_STORES`.
@@ -114,6 +122,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
 ### 4.1 Financial, Payout, Attribution & Currency Logic (FIN-01 to FIN-11)
 
 #### FIN-AUDIT-01: MySQL Raw SQL in Invoice Charge Payout Cron
+
 - **Severity**: Critical
 - **Affected File**: `apps/web/app/(ee)/api/cron/payouts/charge-succeeded/route.ts:59-66`
 - **Fail-Before Behavior**:
@@ -146,6 +155,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/adversarial-m1-stress.test.ts` (Stress 4C: passes against SQLite `:memory:`).
 
 #### FIN-AUDIT-02: Batch Head-of-Line Blocking on Negative Partner Balances
+
 - **Severity**: High
 - **Affected File**: `apps/web/app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route.ts`
 - **Fail-Before Behavior**:
@@ -156,6 +166,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/fin02-negative-payout-prevention.test.ts` (25/25 tests passing).
 
 #### FIN-AUDIT-03: Payout.amount 32-Bit Integer Overflow & Greedy Multi-Batch Capping
+
 - **Severity**: High
 - **Affected File**: `apps/web/app/(ee)/api/cron/payouts/aggregate-due-commissions/process/route.ts`
 - **Fail-Before Behavior**:
@@ -170,6 +181,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/payout-due-commissions-cron.test.ts tests/weletic/adversarial-m1-stress.test.ts` (23/23 tests passing).
 
 #### FIN-AUDIT-05 / WRK-AUDIT-06: Historical Coupon Attribution Temporal Invariant
+
 - **Severity**: High
 - **Affected File**: `apps/web/app/(ee)/api/shopify/integration/webhook/orders-paid.ts`
 - **Fail-Before Behavior**:
@@ -183,6 +195,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/m1-historical-coupon-attribution.test.ts` (5/5 tests passing).
 
 #### FIN-AUDIT-06: Tapfiliate Commission Zero-Decimal Double-Scaling
+
 - **Severity**: High
 - **Affected File**: `apps/web/lib/tapfiliate/import-commissions.ts:202-211`
 - **Fail-Before Behavior**:
@@ -202,6 +215,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/tapfiliate-import.test.ts` (passes JPY, VND, USD tests).
 
 #### FIN-AUDIT-07: Unhandled Redis Exceptions in FX Rate Quotes Crashing Orders/Refunds
+
 - **Severity**: Medium
 - **Affected File**: `apps/web/lib/weletic/fx.ts:54-95`
 - **Fail-Before Behavior**:
@@ -212,6 +226,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/fx.test.ts` (passes with Redis offline).
 
 #### FIN-AUDIT-08: In-Memory Lock Fallback Fails Isolation on Multi-Worker Edge Runtime
+
 - **Severity**: Medium
 - **Affected File**: `apps/web/lib/weletic/commerce/record-order.ts`, `record-refund.ts`
 - **Fail-Before Behavior**:
@@ -222,6 +237,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/refund-concurrency.test.ts` (10 scenarios passing).
 
 #### FIN-AUDIT-09: FirstPromoter Import Missing FX Currency Conversion
+
 - **Severity**: Medium
 - **Affected File**: `apps/web/lib/firstpromoter/import-commissions.ts:235-255`
 - **Fail-Before Behavior**:
@@ -232,6 +248,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/fin09-firstpromoter-fx.test.ts` (passes).
 
 #### FIN-AUDIT-10: Missing SQLITE_BUSY Transaction Retry in Financial Operations
+
 - **Severity**: Medium
 - **Affected File**: `apps/web/lib/weletic/sqlite-retry.ts`
 - **Fail-Before Behavior**:
@@ -242,6 +259,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/fin10-sqlite-busy-retry.test.ts` (9/9 tests passing).
 
 #### FIN-AUDIT-11: Webhook Attribution Fallback Timestamp Unsafe on Corrupted Date
+
 - **Severity**: Low
 - **Affected File**: `apps/web/app/(ee)/api/shopify/integration/webhook/orders-paid.ts:255-275`
 - **Fail-Before Behavior**:
@@ -256,6 +274,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
 ### 4.2 Security, HMAC, Timing, Replay, SSRF, XSS & Zero-Hardcoding (SEC-01 to SEC-08)
 
 #### SEC-AUDIT-01: Slack Webhook Signature Timing Attack & Clock Skew Bypass
+
 - **Severity**: High
 - **Affected File**: `apps/web/lib/integrations/slack/verify-request.ts`
 - **Fail-Before Behavior**:
@@ -268,6 +287,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/sec-audit-01-slack-verify.test.ts` (13/13 tests passing).
 
 #### SEC-AUDIT-02: HubSpot Webhook Timing Side-Channel
+
 - **Severity**: High
 - **Affected File**: `apps/web/app/(ee)/api/hubspot/webhook/route.ts`
 - **Fail-Before Behavior**:
@@ -280,6 +300,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/sec-audit-02-hubspot-webhook.test.ts` (7/7 tests passing).
 
 #### SEC-AUDIT-03: Serverless Service-Auth Replay Protection & D1 Nonce Store
+
 - **Severity**: High
 - **Affected Files**: `packages/contracts/src/shopify/service-auth.ts`, `apps/web/d1/migrations/0001_service_auth_nonce.sql`
 - **Fail-Before Behavior**:
@@ -292,6 +313,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/sec-audit-03-edge-nonce-replay.test.ts` (3/3 tests passing).
 
 #### SEC-AUDIT-04: Shopify Restricted Development Multi-Tenant Invariant 4 Compliance
+
 - **Severity**: High
 - **Affected Files**: `infra/shopify-development/restricted-policy.mjs`, `apps/web/lib/weletic/shopify/restricted-development.ts`
 - **Fail-Before Behavior**:
@@ -302,6 +324,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/sec-audit-04-zero-hardcoding.test.ts` (3/3 tests passing).
 
 #### SEC-AUDIT-05: Secret Decryption Hardening & Ciphertext Truncation Validation
+
 - **Severity**: Medium
 - **Affected File**: `apps/web/lib/encryption.ts`
 - **Fail-Before Behavior**:
@@ -312,6 +335,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/sec-audit-05-encryption-hardening.test.ts` (6/6 tests passing).
 
 #### SEC-AUDIT-06: Storage SSRF Defense & wsrv.nl Proxy Elimination
+
 - **Severity**: Medium
 - **Affected File**: `apps/web/lib/storage.ts`
 - **Fail-Before Behavior**:
@@ -323,6 +347,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/sec-audit-06-ssrf-storage.test.ts` (5/5 tests passing).
 
 #### SEC-AUDIT-07: Yamax Product Description Editor XSS Neutralization
+
 - **Severity**: Medium
 - **Affected File**: `apps/web/ui/weletic/yamax-product-description-editor.tsx`
 - **Fail-Before Behavior**:
@@ -333,6 +358,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/sec-audit-07-xss-editor.test.ts` (6/6 tests passing).
 
 #### SEC-AUDIT-08: Unsubscribe Token Length-Check Side Channel
+
 - **Severity**: Low
 - **Affected File**: `apps/web/lib/email/unsubscribe-token.ts`
 - **Fail-Before Behavior**:
@@ -347,6 +373,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
 ### 4.3 Cloudflare Workers, Edge Prisma, Webhook Recovery & KV Redirection (WRK-01 to WRK-09)
 
 #### WRK-AUDIT-01: Edge Prisma Client Dynamic Proxy & Runtime Binding
+
 - **Severity**: Critical
 - **Affected Files**: `apps/web/lib/prisma/index.ts`, `apps/web/lib/prisma/edge.ts`, `apps/web/workers/queue-consumer/src/index.ts`, `apps/web/workers/cron-triggers/src/index.ts`
 - **Fail-Before Behavior**:
@@ -358,6 +385,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/m3-edge-prisma-webhook-recovery.test.ts` (tests 1.1–1.5 passing).
 
 #### WRK-AUDIT-02: Stalled Webhook Recovery Canonical Domain Resolution
+
 - **Severity**: Critical
 - **Affected File**: `apps/web/workers/cron-triggers/src/index.ts:175-225`
 - **Fail-Before Behavior**:
@@ -368,6 +396,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/m3-edge-prisma-webhook-recovery.test.ts` (tests 2.1–2.3 passing).
 
 #### WRK-AUDIT-03: Non-Blocking KV Cache Write in Link Redirector (<15ms SLA)
+
 - **Severity**: Medium
 - **Affected File**: `apps/web/workers/link-redirector/src/index.ts`
 - **Fail-Before Behavior**:
@@ -378,6 +407,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/m3-link-redirector-edge.test.ts` (tests 2.1–2.2 passing).
 
 #### WRK-AUDIT-04 & WRK-AUDIT-05: Queue Naming Standardization & Runbook Normalization
+
 - **Severity**: Medium / Low
 - **Affected Files**: `apps/web/workers/*/wrangler.toml`, `CLOUDFLARE_NATIVE_MIGRATION_REPORT.md`
 - **Fail-Before Behavior**:
@@ -388,6 +418,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/m3-wrangler-queue-integrity.test.ts` (4/4 tests passing).
 
 #### WRK-AUDIT-07: Invariant 2 Soft-Delete KV Cache Eviction
+
 - **Severity**: Medium
 - **Affected Files**: `apps/web/lib/weletic/link-kv-cache.ts`, `apps/web/lib/api/links/cache.ts`
 - **Fail-Before Behavior**:
@@ -398,6 +429,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/m3-link-redirector-edge.test.ts` (tests 3.1–3.3 passing).
 
 #### WRK-AUDIT-08: Case-Insensitive SQLite D1 Fallback Link Lookup
+
 - **Severity**: Low
 - **Affected File**: `apps/web/workers/link-redirector/src/index.ts`
 - **Fail-Before Behavior**:
@@ -408,6 +440,7 @@ All remediations were designed, implemented, and audited in strict accordance wi
   `pnpm --filter web test tests/weletic/m3-link-redirector-edge.test.ts` (test 1.1 passing).
 
 #### WRK-AUDIT-09: Architecture Boundary Verification of @weletic/shopify-app
+
 - **Severity**: Info / Pass
 - **Affected Package**: `packages/shopify-app/`
 - **Verification Finding**:
@@ -435,19 +468,21 @@ TOTAL TESTS EXECUTED                          741   11,687        0         6   
 
 ### 5.2 Static Code Analysis & Type Safety
 
-| Tool / Check | Target Scope | Command Executed | Errors | Warnings | Verdict |
-|---|---|---|:---:|:---:|:---:|
-| **ESLint 8.48.0** | All modified files & Weletic modules | `pnpm --filter web exec eslint lib/weletic/ ui/weletic/ workers/ ...` | 0 | 0 | **PASS** |
-| **TypeScript 5.4.4** | Shared Contracts | `pnpm --filter contracts typecheck` | 0 | 0 | **PASS** |
-| **TypeScript 5.4.4** | Embedded Shopify App | `pnpm --filter @weletic/shopify-app typecheck` | 0 | 0 | **PASS** |
-| **TypeScript 5.4.4** | Web Core & Workers | Modified files in `apps/web` (`tsc --noEmit`) | 0 | 0 | **PASS** |
+| Tool / Check         | Target Scope                         | Command Executed                                                      | Errors | Warnings | Verdict  |
+| -------------------- | ------------------------------------ | --------------------------------------------------------------------- | :----: | :------: | :------: |
+| **ESLint 8.48.0**    | All modified files & Weletic modules | `pnpm --filter web exec eslint lib/weletic/ ui/weletic/ workers/ ...` |   0    |    0     | **PASS** |
+| **TypeScript 5.4.4** | Shared Contracts                     | `pnpm --filter contracts typecheck`                                   |   0    |    0     | **PASS** |
+| **TypeScript 5.4.4** | Embedded Shopify App                 | `pnpm --filter @weletic/shopify-app typecheck`                        |   0    |    0     | **PASS** |
+| **TypeScript 5.4.4** | Web Core & Workers                   | Modified files in `apps/web` (`tsc --noEmit`)                         |   0    |    0     | **PASS** |
 
 ---
 
 ## 6. Deployment & Operational Runbook Verification
 
 ### 6.1 Cloudflare Edge Fleet Deployment Sequence
+
 To prevent version skew between callers and verifiers during production rollout:
+
 1. **Cloudflare D1 Migrations**:
    Apply DDL migration `apps/web/d1/migrations/0001_service_auth_nonce.sql` to provision the `ServiceAuthNonce` replay table.
 2. **Cloudflare Queues Provisioning**:
@@ -463,6 +498,7 @@ To prevent version skew between callers and verifiers during production rollout:
    Deploy `packages/shopify-app` to Shopify hosting.
 
 ### 6.2 Key Operational Safeguards
+
 - **Zero Egress Cost R2 Storage**: Assets uploaded via `apps/web/lib/storage.ts` use S3-compatible R2 endpoints, eliminating egress fees.
 - **Fail-Closed Security**: Decryption and service authentication fail closed if keys or verification nonces cannot be validated.
 - **Automatic Recovery**: Webhooks delayed in queue are recovered every 5 minutes by `cron-triggers` with exponential backoff and a maximum of 5 retry attempts before escalating to the Dead-Letter Queue (DLQ).
@@ -474,6 +510,7 @@ To prevent version skew between callers and verifiers during production rollout:
 ## 7. Sign-Off & Attestation (Round 1)
 
 The undersigned Master Quality Worker certifies that:
+
 1. All 28 findings have been genuinely resolved with real production logic and verified via automated test suites.
 2. No shortcuts, fake facades, hardcoded test strings, or cheat mechanisms exist in the source code.
 3. The Weletic Room codebase is fully compliant with Invariants 1, 2, 3, and 4 and is production ready.
@@ -490,20 +527,21 @@ Following the user directive `Thực hiện lại một lần nữa.`, an exhaus
 
 ### 8.1 Catalogued Round 2 Findings & Fixes
 
-| Finding ID | Domain | Severity | File Location | Summary & Root Cause | Resolution Strategy |
-|---|---|---|---|---|---|
-| **FIN-12 / LOY-01** | Loyalty / Flow | **High** | `apps/web/lib/weletic/loyalty/points-expiry-scheduler.ts` | `FlowTriggerPayloadSchema` Zod validation crash when scheduling points expiry events; schema strictly enforces `SHOPIFY_FLOW_TRIGGER_HANDLES.POINTS_EXPIRING_SOON` and positive integer balance. Accounts with 0 balance or non-enum urgency crashed the outbox worker. | Switched to canonical handle `POINTS_EXPIRING_SOON`, added positive balance guard (`account.cachedPointsBalance > 0`), and mapped urgency strictly to `"warning" \| "last_chance"`. |
-| **CRON-01 / VIP-01** | VIP / Cron | **High** | `apps/web/workers/cron-triggers/src/index.ts` | The Cloudflare Cron Worker omitted the VIP Tier Review Sweep daemon (`enqueueTierReviewSweepJobs`), causing 30-day soft downgrade grace periods and VIP tier evaluations to stall indefinitely without Vercel cron. | Integrated `enqueueTierReviewSweepJobs({ batchSize: 50 })` into the hourly cron trigger sweep (`loyaltyPointsExpirationJob`) while maintaining exact return interfaces. |
-| **CRON-02 / FIN-13** | Ledger / Cron | **Medium** | `apps/web/workers/cron-triggers/src/index.ts` | False-positive ledger discrepancy audit in D1 SQL aggregate query: `MAX(balanceAfter)` returned peak historical balance instead of the latest entry, falsely flagging accounts that redeemed points as discrepancies against `SUM(pointsDelta)`. | Replaced `MAX(balanceAfter)` with a correlated subquery `(SELECT balanceAfter FROM WeleticPointsLedgerEntry sub WHERE sub.accountId = e.accountId ORDER BY sub.sequenceNumber DESC LIMIT 1)` to fetch the true latest balance. |
-| **LINK-01 / SYNC-07** | Links / KV | **High** | `apps/web/lib/api/links/cache.ts` | `linkCache.set` only evicted KV when `link.disabledAt` was truthy, leaving stale destination URLs in KV cache for up to 24h on active link updates. In `linkCache.mset`, `evictLinksBatchFromKv` was imported but never invoked. | Unconditionally call `evictLinkFromKv` in `set()` on all link updates, and execute `waitUntil(evictLinksBatchFromKv(...))` in `mset()` for bulk operations. |
-| **LINK-02 / REDIR-01** | Routing / Edge | **High** | `apps/web/workers/link-redirector/src/index.ts` | `resolveTargetUrl` caused nested locale path corruption (e.g. `/ja/en-us/...` or `/ja/ja/...`) when destination URLs already had language prefixes, and threw an unhandled `TypeError` on protocol-relative or malformed URL inputs. | Implemented safe URL parsing with protocol fallback and regex-based locale prefix normalization (`replace(/^\/(?:[a-z]{2}(?:-[a-z]{2})?)(?=\/|$)/i, "")`) before applying `/ja` or `/vi`. |
-| **DISC-01 / SYNC-08** | Discounts / Workspaces | **High** | `apps/web/lib/discounts/delete-discount-code.ts` & `apps/web/app/(ee)/api/cron/discount-codes/disable/route.ts` | `delete-discount-code` queried `prisma.project.findUnique({ where: { defaultProgramId: discountCode.programId } })`. If a workspace had multiple programs and the code belonged to a non-default program, the workspace lookup returned null and remote code disabling on Shopify/Stripe was skipped. | Resolved workspace via `prisma.program.findUnique({ where: { id: discountCode.programId }, select: { workspace: true } })` across direct, fallback, and QStash cron routes. |
-| **DISC-02 / SYNC-09** | Discounts / Soft-Delete | **Medium** | `apps/web/lib/rewardful/import-affiliate-coupons.ts` & `apps/web/lib/api/partner-profile/get-partner-for-program.ts` | Invariant 2 violation: `existingDiscountCodes` query and partner profile `discountCodes` relation lacked `where: { disabledAt: null }`, preventing re-import of soft-deleted affiliate coupons and exposing disabled codes to the partner portal. | Added `disabledAt: null` filter to both Prisma queries, guaranteeing clean isolation between active and soft-deleted discount codes. |
-| **LOY-02 / FIN-14** | Ledger / Solvency | **High** | `apps/web/lib/weletic/loyalty/ledger.ts` | Ledger assertion checked `pendingAfter < 0` and `lifetimeEarned < 0`, but omitted an available points invariant check when `entryType === REDEEM_REWARD`, exposing the ledger to race-condition overdrafts if concurrent redemptions occurred. | Added strict guard: `if (entryType === WeleticPointsLedgerEntryType.REDEEM_REWARD && balanceAfter < BigInt(0)) throw new OptimisticConcurrencyError(...)`. |
+| Finding ID             | Domain                  | Severity   | File Location                                                                                                        | Summary & Root Cause                                                                                                                                                                                                                                                                                  | Resolution Strategy                                                                                                                                                                                                            |
+| ---------------------- | ----------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| **FIN-12 / LOY-01**    | Loyalty / Flow          | **High**   | `apps/web/lib/weletic/loyalty/points-expiry-scheduler.ts`                                                            | `FlowTriggerPayloadSchema` Zod validation crash when scheduling points expiry events; schema strictly enforces `SHOPIFY_FLOW_TRIGGER_HANDLES.POINTS_EXPIRING_SOON` and positive integer balance. Accounts with 0 balance or non-enum urgency crashed the outbox worker.                               | Switched to canonical handle `POINTS_EXPIRING_SOON`, added positive balance guard (`account.cachedPointsBalance > 0`), and mapped urgency strictly to `"warning" \| "last_chance"`.                                            |
+| **CRON-01 / VIP-01**   | VIP / Cron              | **High**   | `apps/web/workers/cron-triggers/src/index.ts`                                                                        | The Cloudflare Cron Worker omitted the VIP Tier Review Sweep daemon (`enqueueTierReviewSweepJobs`), causing 30-day soft downgrade grace periods and VIP tier evaluations to stall indefinitely without Vercel cron.                                                                                   | Integrated `enqueueTierReviewSweepJobs({ batchSize: 50 })` into the hourly cron trigger sweep (`loyaltyPointsExpirationJob`) while maintaining exact return interfaces.                                                        |
+| **CRON-02 / FIN-13**   | Ledger / Cron           | **Medium** | `apps/web/workers/cron-triggers/src/index.ts`                                                                        | False-positive ledger discrepancy audit in D1 SQL aggregate query: `MAX(balanceAfter)` returned peak historical balance instead of the latest entry, falsely flagging accounts that redeemed points as discrepancies against `SUM(pointsDelta)`.                                                      | Replaced `MAX(balanceAfter)` with a correlated subquery `(SELECT balanceAfter FROM WeleticPointsLedgerEntry sub WHERE sub.accountId = e.accountId ORDER BY sub.sequenceNumber DESC LIMIT 1)` to fetch the true latest balance. |
+| **LINK-01 / SYNC-07**  | Links / KV              | **High**   | `apps/web/lib/api/links/cache.ts`                                                                                    | `linkCache.set` only evicted KV when `link.disabledAt` was truthy, leaving stale destination URLs in KV cache for up to 24h on active link updates. In `linkCache.mset`, `evictLinksBatchFromKv` was imported but never invoked.                                                                      | Unconditionally call `evictLinkFromKv` in `set()` on all link updates, and execute `waitUntil(evictLinksBatchFromKv(...))` in `mset()` for bulk operations.                                                                    |
+| **LINK-02 / REDIR-01** | Routing / Edge          | **High**   | `apps/web/workers/link-redirector/src/index.ts`                                                                      | `resolveTargetUrl` caused nested locale path corruption (e.g. `/ja/en-us/...` or `/ja/ja/...`) when destination URLs already had language prefixes, and threw an unhandled `TypeError` on protocol-relative or malformed URL inputs.                                                                  | Implemented safe URL parsing with protocol fallback and regex-based locale prefix normalization (`replace(/^\/(?:[a-z]{2}(?:-[a-z]{2})?)(?=\/                                                                                  | $)/i, "")`) before applying `/ja`or`/vi`. |
+| **DISC-01 / SYNC-08**  | Discounts / Workspaces  | **High**   | `apps/web/lib/discounts/delete-discount-code.ts` & `apps/web/app/(ee)/api/cron/discount-codes/disable/route.ts`      | `delete-discount-code` queried `prisma.project.findUnique({ where: { defaultProgramId: discountCode.programId } })`. If a workspace had multiple programs and the code belonged to a non-default program, the workspace lookup returned null and remote code disabling on Shopify/Stripe was skipped. | Resolved workspace via `prisma.program.findUnique({ where: { id: discountCode.programId }, select: { workspace: true } })` across direct, fallback, and QStash cron routes.                                                    |
+| **DISC-02 / SYNC-09**  | Discounts / Soft-Delete | **Medium** | `apps/web/lib/rewardful/import-affiliate-coupons.ts` & `apps/web/lib/api/partner-profile/get-partner-for-program.ts` | Invariant 2 violation: `existingDiscountCodes` query and partner profile `discountCodes` relation lacked `where: { disabledAt: null }`, preventing re-import of soft-deleted affiliate coupons and exposing disabled codes to the partner portal.                                                     | Added `disabledAt: null` filter to both Prisma queries, guaranteeing clean isolation between active and soft-deleted discount codes.                                                                                           |
+| **LOY-02 / FIN-14**    | Ledger / Solvency       | **High**   | `apps/web/lib/weletic/loyalty/ledger.ts`                                                                             | Ledger assertion checked `pendingAfter < 0` and `lifetimeEarned < 0`, but omitted an available points invariant check when `entryType === REDEEM_REWARD`, exposing the ledger to race-condition overdrafts if concurrent redemptions occurred.                                                        | Added strict guard: `if (entryType === WeleticPointsLedgerEntryType.REDEEM_REWARD && balanceAfter < BigInt(0)) throw new OptimisticConcurrencyError(...)`.                                                                     |
 
 ### 8.2 Automated Verification Evidence (Round 2)
 
 All Round 2 remediations were verified using dedicated automated tests with zero mocks of business logic:
+
 - **`apps/web/tests/weletic/round2-audit-fixes.test.ts`**: 9/9 passing tests (proving LINK-01, LINK-02, FIN-12, LOY-01).
 - **`apps/web/tests/weletic/loyalty-occ-concurrency.test.ts`**: 9/9 passing tests (proving LOY-02 overdraw rejection under concurrent redemptions).
 - **`apps/web/tests/weletic/m5-cron-triggers-cloudflare-saas.test.ts` & `m5-cron-triggers-adversarial.test.ts`**: 64/64 passing tests (proving CRON-01 tier review scheduling and CRON-02 D1 SQL ledger correlation).
@@ -515,6 +553,7 @@ All Round 2 remediations were verified using dedicated automated tests with zero
 ### 8.3 Final Certification & Pre-Production Clearance
 
 With Round 1 (28 findings) and Round 2 (8 findings) fully resolved, independently tested, and validated:
+
 1. **Total Findings Remediated**: 36 verified production fixes across all monorepo workspaces and Cloudflare Workers.
 2. **Architectural Invariants**: Invariants 1, 2, 3, and 4 in `.agents/rules/shopify_sync_invariants.md` are 100% enforced with zero hardcoded tenant identifiers.
 3. **Deployment Readiness**: The codebase is stable, verified, and certified ready for immediate production deployment.
@@ -522,4 +561,3 @@ With Round 1 (28 findings) and Round 2 (8 findings) fully resolved, independentl
 **Master Quality Engineer**: `Deep Pre-Production Auditor`  
 **Certification Date**: October 9, 2026  
 **Final Verdict**: **VERIFIED & CERTIFIED (PRODUCTION READY)**
-

@@ -1,8 +1,9 @@
 import dnsCallback, { promises as dns } from "dns";
 import { isIP } from "net";
 
-export const pinnedDnsMap: Map<string, string> =
-  ((globalThis as any).__pinnedDnsMap ??= new Map<string, string>());
+export const pinnedDnsMap: Map<string, string> = ((
+  globalThis as any
+).__pinnedDnsMap ??= new Map<string, string>());
 
 export function installDnsPinHook() {
   if ((globalThis as any).__dnsHookInstalled) return;
@@ -71,7 +72,10 @@ export function isPrivateIPv4(address: string): boolean {
 }
 
 export function parseIpv6Hextets(address: string): number[] | null {
-  let clean = address.trim().replace(/^\[|\]$/g, "").toLowerCase();
+  let clean = address
+    .trim()
+    .replace(/^\[|\]$/g, "")
+    .toLowerCase();
 
   // Handle embedded IPv4 at the end, e.g. ::ffff:127.0.0.1 or 0:0:0:0:0:ffff:127.0.0.1
   const lastColon = clean.lastIndexOf(":");
@@ -132,8 +136,7 @@ export function isPrivateIPv6(address: string): boolean {
   }
 
   // Loopback: ::1 or 0:0:0:0:0:0:0:1
-  const isLoopback =
-    nums.slice(0, 7).every((n) => n === 0) && nums[7] === 1;
+  const isLoopback = nums.slice(0, 7).every((n) => n === 0) && nums[7] === 1;
 
   // Unspecified: :: or 0:0:0:0:0:0:0:0
   const isUnspecified = nums.every((n) => n === 0);

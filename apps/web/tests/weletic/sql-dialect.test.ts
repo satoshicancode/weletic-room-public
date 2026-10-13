@@ -1,11 +1,11 @@
-import { Prisma } from "@prisma/client";
-import { describe, expect, it } from "vitest";
 import {
   matchClockOnlyQuery,
   rewriteSql,
   rewriteUnsafe,
   stripForUpdate,
 } from "@/lib/prisma/sql-dialect";
+import { Prisma } from "@prisma/client";
+import { describe, expect, it } from "vitest";
 
 const NOW = new Date("2026-10-12T03:00:00.000Z");
 
@@ -49,7 +49,9 @@ describe("sql-dialect: tagged Prisma.Sql", () => {
     const sql = Prisma.sql`SELECT 'CURRENT_TIMESTAMP' AS lbl, ${1} AS n`;
     const out = rewriteSql(sql, NOW);
     expect(out.values).toEqual([1]);
-    expect(out.strings.join("?")).toBe("SELECT 'CURRENT_TIMESTAMP' AS lbl, ? AS n");
+    expect(out.strings.join("?")).toBe(
+      "SELECT 'CURRENT_TIMESTAMP' AS lbl, ? AS n",
+    );
   });
 
   it("leaves DDL untouched", () => {
@@ -65,7 +67,10 @@ describe("sql-dialect: tagged Prisma.Sql", () => {
   it("is stateless across consecutive calls (clock token at end of a fragment)", () => {
     // A clock token at the very end of a statement used to leave a stale
     // global-regex lastIndex that made the *next* query skip its rewrite.
-    rewriteSql(Prisma.sql`SELECT 1 WHERE a > ${1} AND b > CURRENT_TIMESTAMP(3)`, NOW);
+    rewriteSql(
+      Prisma.sql`SELECT 1 WHERE a > ${1} AND b > CURRENT_TIMESTAMP(3)`,
+      NOW,
+    );
     const out = rewriteSql(
       Prisma.sql`UPDATE T SET e = CURRENT_TIMESTAMP(3) WHERE id = ${"x"}`,
       NOW,
@@ -102,7 +107,10 @@ describe("sql-dialect: unsafe raw queries", () => {
 
   it("ignores `?` and clock tokens inside literals", () => {
     const out = rewriteUnsafe(
-      ["SELECT '?' AS q, 'NOW()' AS n, x FROM T WHERE y = ? AND z < NOW()", "Y"],
+      [
+        "SELECT '?' AS q, 'NOW()' AS n, x FROM T WHERE y = ? AND z < NOW()",
+        "Y",
+      ],
       NOW,
     );
     expect(out).toEqual([
@@ -122,9 +130,13 @@ describe("sql-dialect: unsafe raw queries", () => {
 
 describe("sql-dialect: clock-only query", () => {
   it("detects SELECT CURRENT_TIMESTAMP(3) AS now", () => {
-    expect(matchClockOnlyQuery("SELECT CURRENT_TIMESTAMP(3) AS now")).toBe("now");
+    expect(matchClockOnlyQuery("SELECT CURRENT_TIMESTAMP(3) AS now")).toBe(
+      "now",
+    );
     expect(matchClockOnlyQuery("  select now() as ts ; ")).toBe("ts");
-    expect(matchClockOnlyQuery("SELECT CURRENT_TIMESTAMP(3) AS now, 1 AS x")).toBeNull();
+    expect(
+      matchClockOnlyQuery("SELECT CURRENT_TIMESTAMP(3) AS now, 1 AS x"),
+    ).toBeNull();
     expect(matchClockOnlyQuery("SELECT id FROM T")).toBeNull();
   });
 });
@@ -170,7 +182,9 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     const deltaMs = 300_000;
     const raw = Prisma.sql`UPDATE T SET expiresAt = TIMESTAMPADD(MICROSECOND, ${deltaMs * 1000}, CURRENT_TIMESTAMP(3))`;
     const rewritten = rewriteSql(raw, NOW);
-    expect(rewritten.strings.join("?")).toContain(`(${NOW.getTime()} + round(? / 1000))`);
+    expect(rewritten.strings.join("?")).toContain(
+      `(${NOW.getTime()} + round(? / 1000))`,
+    );
     expect(rewritten.values).toEqual([deltaMs * 1000]);
   });
 
@@ -178,7 +192,9 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     const raw = Prisma.sql`SELECT id FROM T WHERE expiresAt > UTC_TIMESTAMP(3)`;
     const rewritten = rewriteSql(raw, NOW);
     expect(rewritten.values).toEqual([NOW]);
-    expect(rewritten.strings.join("?")).toBe("SELECT id FROM T WHERE expiresAt > ?");
+    expect(rewritten.strings.join("?")).toBe(
+      "SELECT id FROM T WHERE expiresAt > ?",
+    );
   });
 
   it("detects SELECT UTC_TIMESTAMP(3) AS now in matchClockOnlyQuery", () => {
@@ -189,8 +205,12 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     const path = "$.friendPrivacySnapshot";
     const raw = Prisma.sql`SELECT id FROM T WHERE COALESCE(JSON_CONTAINS_PATH(metadata, 'one', ${path}), 0) = 0`;
     const rewritten = rewriteSql(raw, NOW);
-    expect(rewritten.strings.join("?")).toContain("COALESCE((CASE WHEN json_type(metadata, ?");
-    expect(rewritten.strings.join("?")).toContain(") IS NOT NULL THEN 1 ELSE 0 END), 0) = 0");
+    expect(rewritten.strings.join("?")).toContain(
+      "COALESCE((CASE WHEN json_type(metadata, ?",
+    );
+    expect(rewritten.strings.join("?")).toContain(
+      ") IS NOT NULL THEN 1 ELSE 0 END), 0) = 0",
+    );
     expect(rewritten.values).toEqual([path]);
   });
 
@@ -198,15 +218,21 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     const scanPath = "$.holdingPeriodDays";
     const raw = Prisma.sql`SELECT id FROM T WHERE JSON_UNQUOTE(JSON_EXTRACT(p.metadata, ${scanPath})) <= '2026-10-12'`;
     const rewritten = rewriteSql(raw, NOW);
-    expect(rewritten.strings.join("?")).toContain("json_extract(p.metadata, ?) <= '2026-10-12'");
+    expect(rewritten.strings.join("?")).toContain(
+      "json_extract(p.metadata, ?) <= '2026-10-12'",
+    );
     expect(rewritten.values).toEqual([scanPath]);
   });
 
   it("rewrites static JSON_CONTAINS_PATH and JSON_UNQUOTE", () => {
     const raw = Prisma.sql`SELECT id FROM T WHERE JSON_CONTAINS_PATH(metadata, 'one', '$.flag') = 1 AND JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.status')) = 'active'`;
     const rewritten = rewriteSql(raw, NOW);
-    expect(rewritten.strings.join("")).toContain("(CASE WHEN json_type(metadata, '$.flag') IS NOT NULL THEN 1 ELSE 0 END) = 1");
-    expect(rewritten.strings.join("")).toContain("json_extract(metadata, '$.status') = 'active'");
+    expect(rewritten.strings.join("")).toContain(
+      "(CASE WHEN json_type(metadata, '$.flag') IS NOT NULL THEN 1 ELSE 0 END) = 1",
+    );
+    expect(rewritten.strings.join("")).toContain(
+      "json_extract(metadata, '$.status') = 'active'",
+    );
   });
 
   it("normalizes JSON_TYPE comparisons for SQLite", () => {
@@ -214,7 +240,9 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     const rewritten = rewriteSql(raw, NOW);
     const sql = rewritten.strings.join("");
     expect(sql).toContain("json_type(metadata) IN ('text', 'STRING')");
-    expect(sql).toContain("json_type(metadata, '$.num') IN ('integer', 'INTEGER')");
+    expect(sql).toContain(
+      "json_type(metadata, '$.num') IN ('integer', 'INTEGER')",
+    );
     expect(sql).toContain("json_type(metadata) NOT IN ('object', 'OBJECT')");
   });
 
@@ -222,8 +250,12 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     const raw = Prisma.sql`SELECT LEAST(50, SUM(score)) AS score, LEAST(15, count * 2) AS matchScore FROM T`;
     const rewritten = rewriteSql(raw, NOW);
     const sql = rewritten.strings.join("");
-    expect(sql).toContain("(CASE WHEN (SUM(score)) < 50 THEN (SUM(score)) ELSE 50 END) AS score");
-    expect(sql).toContain("(CASE WHEN (count * 2) < 15 THEN (count * 2) ELSE 15 END) AS matchScore");
+    expect(sql).toContain(
+      "(CASE WHEN (SUM(score)) < 50 THEN (SUM(score)) ELSE 50 END) AS score",
+    );
+    expect(sql).toContain(
+      "(CASE WHEN (count * 2) < 15 THEN (count * 2) ELSE 15 END) AS matchScore",
+    );
   });
 
   it("strips BINARY and maps CAST(... AS BINARY) to CAST(... AS BLOB)", () => {
@@ -232,7 +264,9 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     const sql = rewritten.strings.join("");
     expect(sql).not.toMatch(/\bBINARY\b/);
     expect(sql).toContain("CAST(sku AS BLOB)");
-    expect(sql).toContain("SELECT id, CAST(sku AS BLOB) FROM T WHERE col = 'val' ORDER BY id");
+    expect(sql).toContain(
+      "SELECT id, CAST(sku AS BLOB) FROM T WHERE col = 'val' ORDER BY id",
+    );
   });
 
   it("strips FORCE INDEX and maps STRAIGHT_JOIN to JOIN", () => {
@@ -256,7 +290,9 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     const raw = Prisma.sql`SELECT id FROM T WHERE COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.retainUntil')), '') NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'`;
     const rewritten = rewriteSql(raw, NOW);
     const sql = rewritten.strings.join("");
-    expect(sql).toContain("length(COALESCE(json_extract(metadata, '$.retainUntil'), '')) <> 24");
+    expect(sql).toContain(
+      "length(COALESCE(json_extract(metadata, '$.retainUntil'), '')) <> 24",
+    );
     expect(sql).toContain("NOT LIKE '____-__-__T__:__:__.___Z'");
   });
 
@@ -311,6 +347,3 @@ describe("sql-dialect: MySQL date and time constructs", () => {
     expect(rewritten.values).toEqual([new Date(NOW.getTime() - 5 * 60_000)]);
   });
 });
-
-
-

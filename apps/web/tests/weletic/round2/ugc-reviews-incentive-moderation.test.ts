@@ -1,9 +1,6 @@
 import { ReviewError } from "@/lib/weletic/reviews/contracts";
 import { openReviewSubmissionRoute } from "@/lib/weletic/reviews/open-submission-route";
-import {
-  moderateNativeReview,
-  moderateNativeReviewInTransaction,
-} from "@/lib/weletic/reviews/service";
+import { moderateNativeReviewInTransaction } from "@/lib/weletic/reviews/service";
 import { signWeleticShopifyRequest } from "@/lib/weletic/shopify/service-auth";
 import { createHmac } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -80,8 +77,7 @@ vi.mock("@/lib/weletic/reviews/media", () => ({
 }));
 
 vi.mock("@/lib/weletic/reviews/transaction", () => ({
-  withReviewMutation: (storeId: string, fn: any) =>
-    mocks.boundary(storeId, fn),
+  withReviewMutation: (storeId: string, fn: any) => mocks.boundary(storeId, fn),
 }));
 
 vi.mock("@/lib/weletic/loyalty/outbox", () => ({
@@ -146,7 +142,9 @@ describe("Round 2 UGC Reviews Incentive Moderation & Multi-Domain Resolution Tes
       };
 
       mocks.tx.weleticProductReview.findFirst.mockResolvedValue(existingReview);
-      mocks.tx.weleticProductReview.findFirstOrThrow.mockResolvedValue(existingReview);
+      mocks.tx.weleticProductReview.findFirstOrThrow.mockResolvedValue(
+        existingReview,
+      );
       mocks.tx.weleticProductReview.updateMany.mockResolvedValue({ count: 1 });
       mocks.tx.weleticProductReview.findUniqueOrThrow.mockResolvedValue({
         ...existingReview,
@@ -352,7 +350,11 @@ describe("Round 2 UGC Reviews Incentive Moderation & Multi-Domain Resolution Tes
   });
 
   describe("Feature 6: Open Review Submission Store Resolution & Security (REV-02 / Invariant 1)", () => {
-    function generateAuthorBinding(shop: string, customerId: string, gen: string) {
+    function generateAuthorBinding(
+      shop: string,
+      customerId: string,
+      gen: string,
+    ) {
       return createHmac("sha256", TEST_SECRET)
         .update(
           JSON.stringify([
@@ -473,7 +475,11 @@ describe("Round 2 UGC Reviews Incentive Moderation & Multi-Domain Resolution Tes
       const shopDomain = "yamax-official.myshopify.com";
       const customerId = "987654321";
       // Tampered binding (for different customer)
-      const tamperedBinding = generateAuthorBinding(shopDomain, "fake-customer", generation);
+      const tamperedBinding = generateAuthorBinding(
+        shopDomain,
+        "fake-customer",
+        generation,
+      );
 
       mocks.tx.weleticShopifyStore.findUnique.mockResolvedValue({
         id: storeId,
@@ -526,7 +532,11 @@ describe("Round 2 UGC Reviews Incentive Moderation & Multi-Domain Resolution Tes
     it("returns 404 Store unavailable when shop cannot be found or resolved", async () => {
       const unknownShop = "unregistered-shop.myshopify.com";
       const customerId = "987654321";
-      const binding = generateAuthorBinding(unknownShop, customerId, generation);
+      const binding = generateAuthorBinding(
+        unknownShop,
+        customerId,
+        generation,
+      );
 
       mocks.tx.weleticShopifyStore.findUnique.mockResolvedValue(null);
 

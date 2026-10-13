@@ -6,6 +6,7 @@
     "allowJs": true,
     "skipLibCheck": true,
     "baseUrl": ".",
+    "types": ["node"],
     "paths": {
       "@/pages/*": ["pages/*"],
       "@/styles/*": ["styles/*"],
@@ -43,5 +44,5 @@
     "../../packages/blocks/src/event-list.tsx",
     "../../packages/ui/src/hooks/use-pagination.ts"
   ],
-  "exclude": ["node_modules", "playwright"]
+  "exclude": ["node_modules", "playwright", "workers"]
 }

@@ -1,15 +1,15 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+import dns from "dns/promises";
+import fs from "fs";
+import path from "path";
 import {
   assertSafeIp,
   assertSafeUrl,
   hasSiteConfigured,
 } from "../../../app/api/domains/[domain]/validate/utils";
-import dns from "dns/promises";
-import fs from "fs";
-import path from "path";
 
 describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
   describe("1. SEC-SSRF-01: Domain Validation SSRF Protection", () => {
@@ -105,9 +105,9 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
       });
 
       it("rejects URLs resolving to loopback or metadata via DNS", async () => {
-        const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValueOnce([
-          { address: "127.0.0.1", family: 4 },
-        ] as any);
+        const lookupSpy = vi
+          .spyOn(dns, "lookup")
+          .mockResolvedValueOnce([{ address: "127.0.0.1", family: 4 }] as any);
 
         await expect(
           assertSafeUrl("http://malicious-localtest.me"),
@@ -116,9 +116,11 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
       });
 
       it("rejects URLs resolving to AWS instance metadata service", async () => {
-        const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValueOnce([
-          { address: "169.254.169.254", family: 4 },
-        ] as any);
+        const lookupSpy = vi
+          .spyOn(dns, "lookup")
+          .mockResolvedValueOnce([
+            { address: "169.254.169.254", family: 4 },
+          ] as any);
 
         await expect(
           assertSafeUrl("http://attacker-metadata-proxy.com"),
@@ -127,9 +129,11 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
       });
 
       it("allows safe public URLs", async () => {
-        const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValueOnce([
-          { address: "93.184.216.34", family: 4 },
-        ] as any);
+        const lookupSpy = vi
+          .spyOn(dns, "lookup")
+          .mockResolvedValueOnce([
+            { address: "93.184.216.34", family: 4 },
+          ] as any);
 
         await expect(
           assertSafeUrl("https://example.com"),
@@ -141,12 +145,12 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
     describe("hasSiteConfigured SSRF Prevention", () => {
       it("aborts and returns false without making fetch when domain resolves to internal IP", async () => {
         const fetchSpy = vi.spyOn(globalThis, "fetch");
-        const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValue([
-          { address: "127.0.0.1", family: 4 },
-        ] as any);
-        const resolveSpy = vi.spyOn(dns, "resolve").mockResolvedValue([
-          "127.0.0.1",
-        ] as any);
+        const lookupSpy = vi
+          .spyOn(dns, "lookup")
+          .mockResolvedValue([{ address: "127.0.0.1", family: 4 }] as any);
+        const resolveSpy = vi
+          .spyOn(dns, "resolve")
+          .mockResolvedValue(["127.0.0.1"] as any);
 
         const result = await hasSiteConfigured("evil.127.0.0.1.nip.io");
         expect(result).toBe(false);
@@ -187,7 +191,8 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
               l.programId === where.programId &&
               l.partnerId === where.partnerId,
           )
-          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0] ?? null;
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0] ??
+        null;
 
       const defectiveResult = defectiveQuery({
         programId: "prog_123",
@@ -198,8 +203,11 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
       expect(defectiveResult?.id).toBe("link_old_disabled");
       expect(defectiveResult?.disabledAt).not.toBeNull();
       // Downstream orders-paid sets link = null if !isTemporarilyValid, breaking attribution!
-      const isTemporarilyValid = (disabledAt: Date | null) => disabledAt === null;
-      const attributedLinkDefective = isTemporarilyValid(defectiveResult.disabledAt)
+      const isTemporarilyValid = (disabledAt: Date | null) =>
+        disabledAt === null;
+      const attributedLinkDefective = isTemporarilyValid(
+        defectiveResult.disabledAt,
+      )
         ? defectiveResult
         : null;
       expect(attributedLinkDefective).toBeNull(); // Fails attribution!
@@ -213,7 +221,8 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
               l.partnerId === where.partnerId &&
               (where.disabledAt === null ? l.disabledAt === null : true),
           )
-          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0] ?? null;
+          .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0] ??
+        null;
 
       const fixedResult = fixedQuery({
         programId: "prog_123",
@@ -244,7 +253,9 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
 
       // Verifies resolveShopifyStoreByDomain is imported and called
       expect(routeContent).toContain("resolveShopifyStoreByDomain");
-      expect(routeContent).toMatch(/store\s*=\s*await\s+resolveShopifyStoreByDomain\(shop\)/);
+      expect(routeContent).toMatch(
+        /store\s*=\s*await\s+resolveShopifyStoreByDomain\(shop\)/,
+      );
     });
   });
 
@@ -259,7 +270,9 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
       );
 
       expect(partnerProfileContent).toContain("discountCodes: {");
-      expect(partnerProfileContent).toMatch(/discountCodes:\s*\{\s*where:\s*\{\s*disabledAt:\s*null\s*\}/);
+      expect(partnerProfileContent).toMatch(
+        /discountCodes:\s*\{\s*where:\s*\{\s*disabledAt:\s*null\s*\}/,
+      );
     });
 
     it("verifies importAffiliateCoupons filters soft-deleted codes and auto-purges them before re-creating", () => {
@@ -294,9 +307,15 @@ describe("Milestone 5: Architecture Invariants & Security Hardening", () => {
       );
 
       expect(subscriptionStatusContent).not.toContain("yamaxdev");
-      expect(subscriptionStatusContent).toContain("Restricted development feature testing.");
-      expect(subscriptionStatusContent).toContain("開発ストア限定の機能テストです。");
-      expect(subscriptionStatusContent).toContain("Thử nghiệm tính năng giới hạn trên cửa hàng phát triển.");
+      expect(subscriptionStatusContent).toContain(
+        "Restricted development feature testing.",
+      );
+      expect(subscriptionStatusContent).toContain(
+        "開発ストア限定の機能テストです。",
+      );
+      expect(subscriptionStatusContent).toContain(
+        "Thử nghiệm tính năng giới hạn trên cửa hàng phát triển.",
+      );
     });
 
     it("replaces deep relative import with environment configuration in flow points-adjustment", () => {

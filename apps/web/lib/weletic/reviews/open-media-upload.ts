@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { storage } from "@/lib/storage";
 import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { Prisma } from "@prisma/client";
-import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { REVIEW_MAX_PHOTO_BYTES, ReviewError } from "./contracts";
@@ -111,7 +111,7 @@ export async function uploadOpenReviewPhoto({
         `);
         if (
           settings.length !== 1 ||
-          ![true, 1, 1n].includes(settings[0].photoUploadsEnabled as any)
+          ![true, 1, BigInt(1)].includes(settings[0].photoUploadsEnabled as any)
         )
           throw new ReviewError("disabled", "Review photos are disabled");
         const { shopperId } = await ensureOpenReviewAuthorInTransaction({

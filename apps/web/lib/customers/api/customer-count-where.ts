@@ -1,4 +1,3 @@
-import { sanitizeFullTextSearch } from "@/lib/prisma";
 import { getCustomersCountQuerySchema } from "@/lib/zod/schemas/customers";
 import { Prisma } from "@prisma/client";
 import * as z from "zod/v4";

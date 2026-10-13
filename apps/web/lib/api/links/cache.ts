@@ -5,16 +5,16 @@ import {
   redisGlobal,
   redisGlobalWithTimeout,
 } from "@/lib/upstash";
-import { getCache, waitUntil } from "@vercel/functions";
-import { LRUCache } from "lru-cache";
-import { revalidateTag } from "next/cache";
-import { decodeKey, isCaseSensitiveDomain } from "./case-sensitivity";
-import { ExpandedLink } from "./utils/transform-link";
 import {
   evictLinkFromKv,
   evictLinksBatchFromKv,
   tombstoneLinkInKv,
 } from "@/lib/weletic/link-kv-cache";
+import { getCache, waitUntil } from "@vercel/functions";
+import { LRUCache } from "lru-cache";
+import { revalidateTag } from "next/cache";
+import { decodeKey, isCaseSensitiveDomain } from "./case-sensitivity";
+import { ExpandedLink } from "./utils/transform-link";
 
 /*
  * Link LRU cache to reduce Redis load during traffic spikes.

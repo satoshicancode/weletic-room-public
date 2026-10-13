@@ -280,9 +280,11 @@ describe("Shopify POS loyalty extension", () => {
 
       expect(() =>
         createPosCustomerBindingToken("shop.myshopify.com", "cust_123"),
-      ).toThrow("Missing POS customer binding secret in production environment");
+      ).toThrow(
+        "Missing POS customer binding secret in production environment",
+      );
     } finally {
-      process.env.NODE_ENV = prevEnv;
+      (process.env as any).NODE_ENV = prevEnv;
       if (prevSecret) process.env.WELETIC_SHOPIFY_SERVICE_SECRET = prevSecret;
       if (prevShopifySecret) process.env.SHOPIFY_API_SECRET = prevShopifySecret;
     }

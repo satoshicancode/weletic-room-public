@@ -4,6 +4,7 @@ import {
 } from "@/lib/integrations/shopify/admin-graphql";
 import { prisma } from "@/lib/prisma";
 import { getAccountingFxQuote } from "@/lib/weletic/fx";
+import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import { createWeleticId } from "@/lib/weletic/ids";
 import { lockLoyaltyProgramRowIfPresent } from "@/lib/weletic/loyalty/program-write-fence";
 import {
@@ -17,7 +18,6 @@ import {
   renewDistributedLock,
   withDistributedLock,
 } from "@/lib/weletic/redis-lock";
-import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import {
   Prisma,
   WeleticProductStatus,

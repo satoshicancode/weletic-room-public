@@ -1,9 +1,12 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { resolveTargetUrl } from "../../workers/link-redirector/src/index";
 import { linkCache } from "@/lib/api/links/cache";
-import { evictLinkFromKv, evictLinksBatchFromKv } from "@/lib/weletic/link-kv-cache";
+import {
+  evictLinkFromKv,
+  evictLinksBatchFromKv,
+} from "@/lib/weletic/link-kv-cache";
 import { SHOPIFY_FLOW_TRIGGER_HANDLES } from "@/lib/weletic/loyalty/flow-triggers";
 import { FlowTriggerPayloadSchema } from "@/lib/weletic/loyalty/outbox";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveTargetUrl } from "../../workers/link-redirector/src/index";
 
 // Mock link-kv-cache
 vi.mock("@/lib/weletic/link-kv-cache", () => ({
@@ -58,7 +61,9 @@ describe("Round 2 Pre-Production Deep Audit Remediation Test Suite", () => {
         country: "JP",
       });
 
-      expect(resolved).toBe("https://yamax.com/ja/products/flow-leggings?currency=JPY");
+      expect(resolved).toBe(
+        "https://yamax.com/ja/products/flow-leggings?currency=JPY",
+      );
       expect(resolved).not.toContain("/ja/en-us/");
     });
 
@@ -69,7 +74,9 @@ describe("Round 2 Pre-Production Deep Audit Remediation Test Suite", () => {
         country: "JP",
       });
 
-      expect(resolved).toBe("https://yamax.com/ja/products/flow-leggings?currency=JPY");
+      expect(resolved).toBe(
+        "https://yamax.com/ja/products/flow-leggings?currency=JPY",
+      );
       expect(resolved).not.toContain("/ja/ja/");
     });
 
@@ -80,7 +87,9 @@ describe("Round 2 Pre-Production Deep Audit Remediation Test Suite", () => {
         country: "VN",
       });
 
-      expect(resolved).toBe("https://yamax.com/vi/products/flow-leggings?currency=VND");
+      expect(resolved).toBe(
+        "https://yamax.com/vi/products/flow-leggings?currency=VND",
+      );
       expect(resolved).not.toContain("/vi/ja-jp/");
     });
 
@@ -119,8 +128,20 @@ describe("Round 2 Pre-Production Deep Audit Remediation Test Suite", () => {
 
     it("batch evicts KV cache on linkCache.mset", async () => {
       const links = [
-        { id: "l1", domain: "go.yamax.com", key: "k1", url: "https://yamax.com/1", disabledAt: null },
-        { id: "l2", domain: "go.yamax.com", key: "k2", url: "https://yamax.com/2", disabledAt: null },
+        {
+          id: "l1",
+          domain: "go.yamax.com",
+          key: "k1",
+          url: "https://yamax.com/1",
+          disabledAt: null,
+        },
+        {
+          id: "l2",
+          domain: "go.yamax.com",
+          key: "k2",
+          url: "https://yamax.com/2",
+          disabledAt: null,
+        },
       ] as any[];
 
       await linkCache.mset(links);

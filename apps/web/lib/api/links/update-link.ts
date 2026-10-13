@@ -4,6 +4,10 @@ import { isNotHostedImage, storage } from "@/lib/storage";
 import { recordLink } from "@/lib/tinybird";
 import { LinkProps, ProcessedLinkProps } from "@/lib/types";
 import {
+  evictLinkFromKv,
+  tombstoneLinkInKv,
+} from "@/lib/weletic/link-kv-cache";
+import {
   R2_URL,
   getParamsFromURL,
   linkConstructorSimple,
@@ -19,10 +23,6 @@ import { linkCache } from "./cache";
 import { encodeKeyIfCaseSensitive } from "./case-sensitivity";
 import { includeTags } from "./include-tags";
 import { transformLink } from "./utils";
-import {
-  evictLinkFromKv,
-  tombstoneLinkInKv,
-} from "@/lib/weletic/link-kv-cache";
 
 export async function updateLink({
   oldLink,

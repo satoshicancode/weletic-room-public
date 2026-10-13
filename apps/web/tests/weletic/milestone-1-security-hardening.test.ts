@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/stripe", () => ({
   stripe: {
@@ -9,23 +9,21 @@ vi.mock("@/lib/stripe", () => ({
   },
 }));
 
-import {
-  createPrismaNonceClient,
-  createD1NonceClient,
-  createKVNonceClient,
-  verifyWeleticShopifyRequest,
-  resetServiceAuthNonceCache,
-  setServiceAuthRedisClient,
-} from "@weletic/contracts/shopify/service-auth";
 import { getIP } from "@/lib/api/utils/get-ip";
-import { POST as stripeWebhookHandler } from "../../app/(ee)/api/stripe/webhook/route";
-import {
-  verifySignature as verifyPayPalSignature,
-  PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS,
-} from "../../app/(ee)/api/paypal/webhook/verify-signature";
-import { purgeExpiredNoncesJob } from "../../workers/cron-triggers/src/index";
 import { authOptions } from "@/lib/auth/options";
 import { getSessionCookieDomain } from "@/lib/auth/session-cookie";
+import {
+  createPrismaNonceClient,
+  resetServiceAuthNonceCache,
+  setServiceAuthRedisClient,
+  verifyWeleticShopifyRequest,
+} from "@weletic/contracts/shopify/service-auth";
+import {
+  PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS,
+  verifySignature as verifyPayPalSignature,
+} from "../../app/(ee)/api/paypal/webhook/verify-signature";
+import { POST as stripeWebhookHandler } from "../../app/(ee)/api/stripe/webhook/route";
+import { purgeExpiredNoncesJob } from "../../workers/cron-triggers/src/index";
 
 describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification", () => {
   const secret = "a".repeat(32);
@@ -46,13 +44,22 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
   // --------------------------------------------------------------------------
   describe("SEC-R1-02 & SEC-R1-05: Prisma ServiceAuthNonce Distributed Provider", () => {
     it("Prisma ServiceAuthNonce provider successfully records new nonce and rejects replay via unique constraint", async () => {
-      const storage = new Map<string, { nonceKey: string; expiresAt: number }>();
+      const storage = new Map<
+        string,
+        { nonceKey: string; expiresAt: number }
+      >();
 
       const mockPrismaClient = {
         serviceAuthNonce: {
-          async create({ data }: { data: { nonceKey: string; expiresAt: number } }) {
+          async create({
+            data,
+          }: {
+            data: { nonceKey: string; expiresAt: number };
+          }) {
             if (storage.has(data.nonceKey)) {
-              const error: any = new Error("Unique constraint failed on the fields: (`nonceKey`)");
+              const error: any = new Error(
+                "Unique constraint failed on the fields: (`nonceKey`)",
+              );
               error.code = "P2002";
               throw error;
             }
@@ -62,7 +69,13 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
           async findUnique({ where }: { where: { nonceKey: string } }) {
             return storage.get(where.nonceKey) ?? null;
           },
-          async update({ where, data }: { where: { nonceKey: string }; data: { expiresAt: number } }) {
+          async update({
+            where,
+            data,
+          }: {
+            where: { nonceKey: string };
+            data: { expiresAt: number };
+          }) {
             const existing = storage.get(where.nonceKey);
             if (!existing) throw new Error("Record not found");
             const updated = { ...existing, ...data };
@@ -76,17 +89,26 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
       const testNonceKey = `weletic:service-auth:nonce:${crypto.randomUUID()}`;
 
       // 1. Initial attempt: successfully inserts nonce
-      const res1 = await prismaNonceClient.set(testNonceKey, "1", { nx: true, ex: 720 });
+      const res1 = await prismaNonceClient.set(testNonceKey, "1", {
+        nx: true,
+        ex: 720,
+      });
       expect(res1).toBe("OK");
       expect(storage.has(testNonceKey)).toBe(true);
 
       // 2. Replay attempt: encounters P2002 unique constraint, returns null (replay detected)
-      const res2 = await prismaNonceClient.set(testNonceKey, "1", { nx: true, ex: 720 });
+      const res2 = await prismaNonceClient.set(testNonceKey, "1", {
+        nx: true,
+        ex: 720,
+      });
       expect(res2).toBeNull();
     });
 
     it("Prisma ServiceAuthNonce provider allows re-recording an expired nonce", async () => {
-      const storage = new Map<string, { nonceKey: string; expiresAt: number }>();
+      const storage = new Map<
+        string,
+        { nonceKey: string; expiresAt: number }
+      >();
       const testNonceKey = `weletic:service-auth:nonce:${crypto.randomUUID()}`;
 
       // Pre-seed an expired nonce (10 minutes in the past)
@@ -97,9 +119,15 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
 
       const mockPrismaClient = {
         serviceAuthNonce: {
-          async create({ data }: { data: { nonceKey: string; expiresAt: number } }) {
+          async create({
+            data,
+          }: {
+            data: { nonceKey: string; expiresAt: number };
+          }) {
             if (storage.has(data.nonceKey)) {
-              const error: any = new Error("Unique constraint failed on the fields: (`nonceKey`)");
+              const error: any = new Error(
+                "Unique constraint failed on the fields: (`nonceKey`)",
+              );
               error.code = "P2002";
               throw error;
             }
@@ -109,8 +137,17 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
           async findUnique({ where }: { where: { nonceKey: string } }) {
             return storage.get(where.nonceKey) ?? null;
           },
-          async update({ where, data }: { where: { nonceKey: string }; data: { expiresAt: number } }) {
-            const updated = { nonceKey: where.nonceKey, expiresAt: data.expiresAt };
+          async update({
+            where,
+            data,
+          }: {
+            where: { nonceKey: string };
+            data: { expiresAt: number };
+          }) {
+            const updated = {
+              nonceKey: where.nonceKey,
+              expiresAt: data.expiresAt,
+            };
             storage.set(where.nonceKey, updated);
             return updated;
           },
@@ -118,18 +155,30 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
       };
 
       const prismaNonceClient = createPrismaNonceClient(mockPrismaClient);
-      const res = await prismaNonceClient.set(testNonceKey, "1", { nx: true, ex: 720 });
+      const res = await prismaNonceClient.set(testNonceKey, "1", {
+        nx: true,
+        ex: 720,
+      });
       expect(res).toBe("OK");
       expect(storage.get(testNonceKey)!.expiresAt).toBeGreaterThan(Date.now());
     });
 
     it("verifies end-to-end request anti-replay through verifyWeleticShopifyRequest using Prisma nonce client", async () => {
-      const storage = new Map<string, { nonceKey: string; expiresAt: number }>();
+      const storage = new Map<
+        string,
+        { nonceKey: string; expiresAt: number }
+      >();
       const mockPrismaClient = {
         serviceAuthNonce: {
-          async create({ data }: { data: { nonceKey: string; expiresAt: number } }) {
+          async create({
+            data,
+          }: {
+            data: { nonceKey: string; expiresAt: number };
+          }) {
             if (storage.has(data.nonceKey)) {
-              const error: any = new Error("Unique constraint failed on the fields: (`nonceKey`)");
+              const error: any = new Error(
+                "Unique constraint failed on the fields: (`nonceKey`)",
+              );
               error.code = "P2002";
               throw error;
             }
@@ -146,17 +195,23 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
       const requestId = crypto.randomUUID();
       const body = JSON.stringify({ shop: "store.myshopify.com" });
       const canonical = `${timestamp}\nPOST\n/api/internal/shopify/sessions\n${body}\n${requestId}`;
-      const signature = crypto.createHmac("sha256", secret).update(canonical).digest("hex");
+      const signature = crypto
+        .createHmac("sha256", secret)
+        .update(canonical)
+        .digest("hex");
 
-      const req1 = new Request("https://app.weletic.com/api/internal/shopify/sessions", {
-        method: "POST",
-        headers: {
-          "x-weletic-timestamp": timestamp,
-          "x-weletic-signature": signature,
-          "x-weletic-request-id": requestId,
+      const req1 = new Request(
+        "https://app.weletic.com/api/internal/shopify/sessions",
+        {
+          method: "POST",
+          headers: {
+            "x-weletic-timestamp": timestamp,
+            "x-weletic-signature": signature,
+            "x-weletic-request-id": requestId,
+          },
+          body,
         },
-        body,
-      });
+      );
 
       // First verification passes
       const firstValid = await verifyWeleticShopifyRequest({
@@ -167,15 +222,18 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
       expect(firstValid).toBe(true);
 
       // Replay of identical request is blocked
-      const req2 = new Request("https://app.weletic.com/api/internal/shopify/sessions", {
-        method: "POST",
-        headers: {
-          "x-weletic-timestamp": timestamp,
-          "x-weletic-signature": signature,
-          "x-weletic-request-id": requestId,
+      const req2 = new Request(
+        "https://app.weletic.com/api/internal/shopify/sessions",
+        {
+          method: "POST",
+          headers: {
+            "x-weletic-timestamp": timestamp,
+            "x-weletic-signature": signature,
+            "x-weletic-request-id": requestId,
+          },
+          body,
         },
-        body,
-      });
+      );
 
       const secondValid = await verifyWeleticShopifyRequest({
         request: req2,
@@ -201,7 +259,9 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
 
     it("scopes dashboard cookies to host-only (domain undefined) by default to prevent cookie tossing", () => {
       // When NEXTAUTH_CROSS_SUBDOMAIN_COOKIES is not 'true', domain is undefined (RFC 6265 host-only)
-      expect(authOptions.cookies?.sessionToken?.options?.domain).toBeUndefined();
+      expect(
+        authOptions.cookies?.sessionToken?.options?.domain,
+      ).toBeUndefined();
     });
 
     it("supports hostOnly parameter in getSessionCookieDomain()", () => {
@@ -240,7 +300,9 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
 
       const result = await purgeExpiredNoncesJob({ DB: mockD1 as any });
       expect(result.deletedCount).toBe(42);
-      expect(executedQuery).toBe("DELETE FROM ServiceAuthNonce WHERE expiresAt <= ?");
+      expect(executedQuery).toBe(
+        "DELETE FROM ServiceAuthNonce WHERE expiresAt <= ?",
+      );
       expect(typeof boundParam).toBe("number");
       expect(boundParam as number).toBeLessThanOrEqual(Date.now());
     });
@@ -353,13 +415,16 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
   describe("SEC-R1-10: PayPal Webhook Timestamp Freshness", () => {
     it("rejects webhook if paypal-transmission-time is older than 300 seconds", async () => {
       const now = Date.now();
-      const staleTime = new Date(now - (PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS + 10_000)).toISOString();
+      const staleTime = new Date(
+        now - (PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS + 10_000),
+      ).toISOString();
 
       const headers = new Headers({
         "paypal-transmission-id": "trans_12345",
         "paypal-transmission-sig": "c2lnbmF0dXJl",
         "paypal-transmission-time": staleTime,
-        "paypal-cert-url": "https://api.paypal.com/v1/notifications/certs/CERT-123",
+        "paypal-cert-url":
+          "https://api.paypal.com/v1/notifications/certs/CERT-123",
       });
 
       const result = await verifyPayPalSignature({
@@ -373,13 +438,16 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
 
     it("rejects webhook if paypal-transmission-time is in the future beyond 300 seconds skew", async () => {
       const now = Date.now();
-      const futureTime = new Date(now + (PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS + 15_000)).toISOString();
+      const futureTime = new Date(
+        now + (PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS + 15_000),
+      ).toISOString();
 
       const headers = new Headers({
         "paypal-transmission-id": "trans_12345",
         "paypal-transmission-sig": "c2lnbmF0dXJl",
         "paypal-transmission-time": futureTime,
-        "paypal-cert-url": "https://api.paypal.com/v1/notifications/certs/CERT-123",
+        "paypal-cert-url":
+          "https://api.paypal.com/v1/notifications/certs/CERT-123",
       });
 
       const result = await verifyPayPalSignature({
@@ -396,7 +464,8 @@ describe("Milestone 1 (SEC-R1-01 to SEC-R1-10) Security Hardening Verification",
         "paypal-transmission-id": "trans_12345",
         "paypal-transmission-sig": "c2lnbmF0dXJl",
         "paypal-transmission-time": "not-a-valid-date-time",
-        "paypal-cert-url": "https://api.paypal.com/v1/notifications/certs/CERT-123",
+        "paypal-cert-url":
+          "https://api.paypal.com/v1/notifications/certs/CERT-123",
       });
 
       const result = await verifyPayPalSignature({

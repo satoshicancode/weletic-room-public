@@ -284,7 +284,11 @@ export const createStripeTransfer = async ({
     // (4xx). On network/5xx errors the transfer may exist, so keep the claim
     // (same-key retries are allowed; it also expires after the stale window).
     const statusCode = (error as { statusCode?: number } | null)?.statusCode;
-    if (typeof statusCode === "number" && statusCode >= 400 && statusCode < 500) {
+    if (
+      typeof statusCode === "number" &&
+      statusCode >= 400 &&
+      statusCode < 500
+    ) {
       await prisma.payout.updateMany({
         where: { id: { in: claimedPayoutIds }, stripeTransferId: claimMarker },
         data: { stripeTransferId: null },

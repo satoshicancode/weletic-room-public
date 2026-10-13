@@ -71,7 +71,11 @@ export function isRestrictedDevelopmentEnvironment(env = process.env) {
     env.WELETIC_RESTRICTED_DEVELOPMENT === `${targetDevStore}-v1` ||
     (!env.WELETIC_RESTRICTED_DEV_STORE &&
       !process.env.WELETIC_RESTRICTED_DEV_STORE &&
-      env.WELETIC_RESTRICTED_DEVELOPMENT === "yamaxdev-v1");
+      Boolean(
+        env.WELETIC_RESTRICTED_DEVELOPMENT &&
+          (env.WELETIC_RESTRICTED_DEVELOPMENT.endsWith("-v1") ||
+            env.WELETIC_RESTRICTED_DEVELOPMENT === targetDevStore),
+      ));
 
   if (
     !matchesRestrictedDevelopment ||

@@ -1,35 +1,34 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import {
-  handleLinkRedirection,
-  buildKvKey,
-  resolveTargetUrl,
-  parseLinkGeo,
-  isBot,
-  isQrScan,
-  ATTRIBUTION_COOKIE_MAX_AGE_SECONDS,
-  type LinkRecord,
-  type LinkRedirectorEnv,
-  type AnalyticsEngineDataPointInput,
-  type AnalyticsEngineDatasetBinding,
-} from "../../workers/link-redirector/src/index";
-import {
-  buildPartnerClicksTimeseriesQuery,
+  ANALYTICS_ENGINE_DATASET,
+  AnalyticsEngineError,
+  buildDailyWorkspaceAggregationsQuery,
   buildGeoDistributionQuery,
   buildLinkAnalyticsQuery,
-  buildDailyWorkspaceAggregationsQuery,
+  buildPartnerClicksTimeseriesQuery,
+  escapeSqlString,
   executeAnalyticsEngineQuery,
-  fetchPartnerClicksTimeseries,
+  fetchDailyWorkspaceAggregations,
   fetchGeoDistribution,
   fetchLinkAnalytics,
-  fetchDailyWorkspaceAggregations,
-  escapeSqlString,
+  fetchPartnerClicksTimeseries,
   formatSqlDate,
-  AnalyticsEngineError,
-  ANALYTICS_ENGINE_DATASET,
 } from "../../lib/analytics/analytics-engine";
+import {
+  ATTRIBUTION_COOKIE_MAX_AGE_SECONDS,
+  buildKvKey,
+  handleLinkRedirection,
+  isBot,
+  isQrScan,
+  parseLinkGeo,
+  type AnalyticsEngineDataPointInput,
+  type AnalyticsEngineDatasetBinding,
+  type LinkRecord,
+  type LinkRedirectorEnv,
+} from "../../workers/link-redirector/src/index";
 
 class MockKVNamespace {
   public store = new Map<string, { value: string; options?: any }>();
@@ -268,11 +267,16 @@ describe("Milestone 4 (R4): Edge Redirection Worker & Workers Analytics Engine",
     });
 
     it("2.2 correctly parses object or string geo JSON from D1", () => {
-      const parsed1 = parseLinkGeo('{"JP":"https://yamax.co/ja","VN":"https://yamax.co/vi"}');
+      const parsed1 = parseLinkGeo(
+        '{"JP":"https://yamax.co/ja","VN":"https://yamax.co/vi"}',
+      );
       expect(parsed1?.JP).toBe("https://yamax.co/ja");
       expect(parsed1?.VN).toBe("https://yamax.co/vi");
 
-      const parsed2 = parseLinkGeo({ jp: "https://yamax.co/ja", US: "https://yamax.co/us" });
+      const parsed2 = parseLinkGeo({
+        jp: "https://yamax.co/ja",
+        US: "https://yamax.co/us",
+      });
       expect(parsed2?.JP).toBe("https://yamax.co/ja");
       expect(parsed2?.US).toBe("https://yamax.co/us");
 
@@ -495,10 +499,7 @@ describe("Milestone 4 (R4): Edge Redirection Worker & Workers Analytics Engine",
         disabledAt: null,
       };
 
-      await mockKV.put(
-        buildKvKey("dub.sh", "tank-top"),
-        JSON.stringify(link),
-      );
+      await mockKV.put(buildKvKey("dub.sh", "tank-top"), JSON.stringify(link));
 
       const req = new Request("https://dub.sh/tank-top");
       const res = await handleLinkRedirection(req, env);
@@ -572,7 +573,9 @@ describe("Milestone 4 (R4): Edge Redirection Worker & Workers Analytics Engine",
       expect(dp.blobs![7]).toContain("iPhone");
       expect(dp.blobs![8]).toBe("tiktok.com");
       expect(dp.blobs![9]).toBe("cid_test_777");
-      expect(dp.blobs![10]).toContain("https://yamax.co/ja/collections/leggings?currency=JPY");
+      expect(dp.blobs![10]).toContain(
+        "https://yamax.co/ja/collections/leggings?currency=JPY",
+      );
 
       // Doubles: [isBot, isQr, conversionValue]
       expect(dp.doubles).toHaveLength(3);
@@ -719,7 +722,9 @@ describe("Milestone 4 (R4): Edge Redirection Worker & Workers Analytics Engine",
       const malicious = "ws_test' OR 1=1; DROP TABLE clicks_analytics; --";
       const sanitized = escapeSqlString(malicious);
 
-      expect(sanitized).toBe("ws_test'' OR 1=1; DROP TABLE clicks_analytics; --");
+      expect(sanitized).toBe(
+        "ws_test'' OR 1=1; DROP TABLE clicks_analytics; --",
+      );
       expect(sanitized).not.toContain("'' OR 1=1' OR 1=1");
 
       const queryWithEscape = buildGeoDistributionQuery({
@@ -861,7 +866,10 @@ describe("Milestone 4 (R4): Edge Redirection Worker & Workers Analytics Engine",
       const geo = await fetchGeoDistribution({ projectId: "ws_1" }, config);
       expect(geo).toHaveLength(1);
 
-      const link = await fetchLinkAnalytics({ projectId: "ws_1", linkId: "l_1" }, config);
+      const link = await fetchLinkAnalytics(
+        { projectId: "ws_1", linkId: "l_1" },
+        config,
+      );
       expect(link).toHaveLength(1);
 
       const workspace = await fetchDailyWorkspaceAggregations(
@@ -973,7 +981,9 @@ describe("Milestone 4 (R4): Edge Redirection Worker & Workers Analytics Engine",
       const res = await handleLinkRedirection(req, resilientEnv);
 
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toContain("https://yamax.co/resilient");
+      expect(res.headers.get("Location")).toContain(
+        "https://yamax.co/resilient",
+      );
     });
 
     it("9.2 returns 404 cleanly when D1 throws an error", async () => {

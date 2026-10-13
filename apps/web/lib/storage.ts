@@ -102,9 +102,7 @@ type BucketType = "public" | "private";
 class StorageClient {
   get accessKeyId(): string {
     return (
-      process.env.STORAGE_ACCESS_KEY_ID ||
-      process.env.AWS_ACCESS_KEY_ID ||
-      ""
+      process.env.STORAGE_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID || ""
     );
   }
 
@@ -117,18 +115,12 @@ class StorageClient {
   }
 
   get endpoint(): string {
-    return (
-      process.env.STORAGE_ENDPOINT ||
-      process.env.AWS_ENDPOINT ||
-      ""
-    );
+    return process.env.STORAGE_ENDPOINT || process.env.AWS_ENDPOINT || "";
   }
 
   get baseUrl(): string {
     return (
-      process.env.STORAGE_BASE_URL ||
-      process.env.NEXT_PUBLIC_CDN_URL ||
-      ""
+      process.env.STORAGE_BASE_URL || process.env.NEXT_PUBLIC_CDN_URL || ""
     );
   }
 
@@ -169,9 +161,7 @@ class StorageClient {
     bucket?: BucketType;
   }) {
     const configuredBucket =
-      bucket === "private"
-        ? this.privateBucket
-        : this.publicBucket;
+      bucket === "private" ? this.privateBucket : this.publicBucket;
     if (
       !this.endpoint ||
       !configuredBucket ||
@@ -409,9 +399,7 @@ class StorageClient {
     bucket?: BucketType;
   }) {
     const configuredBucket =
-      bucket === "private"
-        ? this.privateBucket
-        : this.publicBucket;
+      bucket === "private" ? this.privateBucket : this.publicBucket;
     if (
       !this.endpoint ||
       !configuredBucket ||
@@ -558,7 +546,9 @@ class StorageClient {
     }
   }
 
-  private async assertSafeUrl(url: string): Promise<{ hostname: string; safeIp: string }> {
+  private async assertSafeUrl(
+    url: string,
+  ): Promise<{ hostname: string; safeIp: string }> {
     const { hostname, protocol } = new URL(url);
 
     if (protocol !== "http:" && protocol !== "https:") {
@@ -657,9 +647,7 @@ class StorageClient {
     }
 
     const rawContentType =
-      opts?.contentType ||
-      response.headers.get("content-type") ||
-      "";
+      opts?.contentType || response.headers.get("content-type") || "";
     const mimeType = rawContentType.split(";")[0].trim().toLowerCase();
     if (!ALLOWED_IMAGE_MIME_TYPES.has(mimeType)) {
       throw new Error(
@@ -717,7 +705,8 @@ class StorageClient {
         const sharpModule = await import("sharp");
         const sharp = (typeof sharpModule === "function"
           ? sharpModule
-          : (sharpModule as { default?: typeof import("sharp") }).default ?? sharpModule) as unknown as typeof import("sharp");
+          : (sharpModule as { default?: typeof import("sharp") }).default ??
+            sharpModule) as unknown as typeof import("sharp");
         const resizedBuffer = await sharp(Buffer.from(arrayBuffer))
           .resize({
             width: opts.width,

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import dns from "dns/promises";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -68,7 +68,11 @@ vi.mock("@/lib/weletic/shopify/privacy-cache", () => ({
 vi.mock("@/lib/auth", () => ({
   withSession: (handler: any) => async (req: any, ctx: any) => {
     const params = await ctx?.params;
-    return handler({ req, params, session: { user: { id: "usr_test_security" } } });
+    return handler({
+      req,
+      params,
+      session: { user: { id: "usr_test_security" } },
+    });
   },
 }));
 
@@ -80,13 +84,13 @@ vi.mock("@/lib/api/domains/validate-dub-link-subdomain", () => ({
   validateDubLinkSubdomain: mocks.validateDubLinkSubdomain,
 }));
 
+import { ordersPaid } from "../../../app/(ee)/api/shopify/integration/webhook/orders-paid";
 import { GET as validateDomainRoute } from "../../../app/api/domains/[domain]/validate/route";
 import {
   assertSafeIp,
   assertSafeUrl,
   hasSiteConfigured,
 } from "../../../app/api/domains/[domain]/validate/utils";
-import { ordersPaid } from "../../../app/(ee)/api/shopify/integration/webhook/orders-paid";
 
 const createOrderEvent = (overrides: Record<string, any> = {}) => ({
   id: 88776655,
@@ -132,49 +136,99 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
   describe("Part 1: SSRF Protection & Private IP Filtering (assertSafeIp & assertSafeUrl)", () => {
     describe("assertSafeIp boundary checks", () => {
       it("blocks loopback IPv4 addresses (127.0.0.0/8)", () => {
-        expect(() => assertSafeIp("127.0.0.1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("127.0.0.2")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("127.255.255.255")).toThrow("URL resolves to a private or internal IP address.");
+        expect(() => assertSafeIp("127.0.0.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("127.0.0.2")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("127.255.255.255")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
       });
 
       it("blocks cloud instance metadata endpoint and link-local addresses (169.254.0.0/16)", () => {
-        expect(() => assertSafeIp("169.254.169.254")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("169.254.1.1")).toThrow("URL resolves to a private or internal IP address.");
+        expect(() => assertSafeIp("169.254.169.254")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("169.254.1.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
       });
 
       it("blocks RFC 1918 private IPv4 networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)", () => {
-        expect(() => assertSafeIp("10.0.0.1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("10.255.255.255")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("172.16.0.1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("172.31.255.255")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("192.168.0.1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("192.168.1.100")).toThrow("URL resolves to a private or internal IP address.");
+        expect(() => assertSafeIp("10.0.0.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("10.255.255.255")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("172.16.0.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("172.31.255.255")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("192.168.0.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("192.168.1.100")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
       });
 
       it("blocks Carrier-Grade NAT (CGNAT 100.64.0.0/10)", () => {
-        expect(() => assertSafeIp("100.64.0.1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("100.127.255.255")).toThrow("URL resolves to a private or internal IP address.");
+        expect(() => assertSafeIp("100.64.0.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("100.127.255.255")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
       });
 
       it("blocks unspecified (0.0.0.0/8), multicast (224.0.0.0/4), and reserved (240.0.0.0/4)", () => {
-        expect(() => assertSafeIp("0.0.0.0")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("224.0.0.1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("240.0.0.1")).toThrow("URL resolves to a private or internal IP address.");
+        expect(() => assertSafeIp("0.0.0.0")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("224.0.0.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("240.0.0.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
       });
 
       it("blocks IPv6 loopback (::1, ::), unique-local (fc00::/7), and link-local (fe80::/10)", () => {
-        expect(() => assertSafeIp("::1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("::")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("fe80::1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("fc00::1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("fd00::1")).toThrow("URL resolves to a private or internal IP address.");
+        expect(() => assertSafeIp("::1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("::")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("fe80::1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("fc00::1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("fd00::1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
       });
 
       it("blocks IPv4-mapped IPv6 representations of internal addresses", () => {
-        expect(() => assertSafeIp("::ffff:127.0.0.1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("::ffff:169.254.169.254")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("::ffff:10.0.0.1")).toThrow("URL resolves to a private or internal IP address.");
-        expect(() => assertSafeIp("::ffff:192.168.1.1")).toThrow("URL resolves to a private or internal IP address.");
+        expect(() => assertSafeIp("::ffff:127.0.0.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("::ffff:169.254.169.254")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("::ffff:10.0.0.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
+        expect(() => assertSafeIp("::ffff:192.168.1.1")).toThrow(
+          "URL resolves to a private or internal IP address.",
+        );
       });
 
       it("permits public routable IP addresses across IPv4 and IPv6", () => {
@@ -187,9 +241,9 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
 
     describe("assertSafeUrl protocol and DNS safety", () => {
       it("rejects non-http/https protocols (e.g. ftp, file, gopher)", async () => {
-        await expect(assertSafeUrl("ftp://files.example.com/data")).rejects.toThrow(
-          "Only http and https URLs are allowed.",
-        );
+        await expect(
+          assertSafeUrl("ftp://files.example.com/data"),
+        ).rejects.toThrow("Only http and https URLs are allowed.");
         await expect(assertSafeUrl("file:///etc/shadow")).rejects.toThrow(
           "Only http and https URLs are allowed.",
         );
@@ -199,18 +253,20 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
         await expect(assertSafeUrl("http://localhost:8080")).rejects.toThrow(
           "URL resolves to a private or internal hostname.",
         );
-        await expect(assertSafeUrl("http://metadata.aws.internal")).rejects.toThrow(
-          "URL resolves to a private or internal hostname.",
-        );
+        await expect(
+          assertSafeUrl("http://metadata.aws.internal"),
+        ).rejects.toThrow("URL resolves to a private or internal hostname.");
         await expect(assertSafeUrl("http://gateway.local")).rejects.toThrow(
           "URL resolves to a private or internal hostname.",
         );
       });
 
       it("blocks domain resolving to 169.254.169.254 via DNS lookup", async () => {
-        const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValueOnce([
-          { address: "169.254.169.254", family: 4 },
-        ] as any);
+        const lookupSpy = vi
+          .spyOn(dns, "lookup")
+          .mockResolvedValueOnce([
+            { address: "169.254.169.254", family: 4 },
+          ] as any);
 
         await expect(
           assertSafeUrl("http://cloud-meta.attacker.net/credentials"),
@@ -219,11 +275,15 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
       });
 
       it("allows safe public URL when DNS resolves to routable IP", async () => {
-        const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValueOnce([
-          { address: "93.184.216.34", family: 4 },
-        ] as any);
+        const lookupSpy = vi
+          .spyOn(dns, "lookup")
+          .mockResolvedValueOnce([
+            { address: "93.184.216.34", family: 4 },
+          ] as any);
 
-        await expect(assertSafeUrl("https://safe-brand.io")).resolves.toBeUndefined();
+        await expect(
+          assertSafeUrl("https://safe-brand.io"),
+        ).resolves.toBeUndefined();
         lookupSpy.mockRestore();
       });
     });
@@ -231,12 +291,14 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
     describe("hasSiteConfigured and GET /api/domains/[domain]/validate route", () => {
       it("hasSiteConfigured returns false without making fetch when domain resolves to 169.254.169.254", async () => {
         const fetchSpy = vi.spyOn(globalThis, "fetch");
-        const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValue([
-          { address: "169.254.169.254", family: 4 },
-        ] as any);
-        const resolveSpy = vi.spyOn(dns, "resolve").mockResolvedValue([
-          "169.254.169.254",
-        ] as any);
+        const lookupSpy = vi
+          .spyOn(dns, "lookup")
+          .mockResolvedValue([
+            { address: "169.254.169.254", family: 4 },
+          ] as any);
+        const resolveSpy = vi
+          .spyOn(dns, "resolve")
+          .mockResolvedValue(["169.254.169.254"] as any);
 
         const result = await hasSiteConfigured("meta-proxy.attacker.io");
         expect(result).toBe(false);
@@ -248,12 +310,12 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
       });
 
       it("hasSiteConfigured returns true when public domain returns HTTP 200", async () => {
-        const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValue([
-          { address: "93.184.216.34", family: 4 },
-        ] as any);
-        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-          new Response(null, { status: 200 }),
-        );
+        const lookupSpy = vi
+          .spyOn(dns, "lookup")
+          .mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as any);
+        const fetchSpy = vi
+          .spyOn(globalThis, "fetch")
+          .mockResolvedValue(new Response(null, { status: 200 }));
 
         const result = await hasSiteConfigured("active-shop.com");
         expect(result).toBe(true);
@@ -263,8 +325,10 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
       });
 
       it("GET route returns { status: 'invalid' } for malformed domain", async () => {
-        const request = new Request("https://api.test/api/domains/not-a-domain..invalid/validate");
-        const response = await validateDomainRoute(request, {
+        const request = new Request(
+          "https://api.test/api/domains/not-a-domain..invalid/validate",
+        );
+        const response = await validateDomainRoute(request as any, {
           params: Promise.resolve({ domain: "not-a-domain..invalid" }),
         });
 
@@ -273,8 +337,10 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
       });
 
       it("GET route rejects domains starting with www.", async () => {
-        const request = new Request("https://api.test/api/domains/www.partner-shop.com/validate");
-        const response = await validateDomainRoute(request, {
+        const request = new Request(
+          "https://api.test/api/domains/www.partner-shop.com/validate",
+        );
+        const response = await validateDomainRoute(request as any, {
           params: Promise.resolve({ domain: "www.partner-shop.com" }),
         });
 
@@ -286,8 +352,10 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
       it("GET route returns { status: 'conflict' } when domain is already registered", async () => {
         mocks.domainExists.mockResolvedValueOnce(true);
 
-        const request = new Request("https://api.test/api/domains/existing-brand.io/validate");
-        const response = await validateDomainRoute(request, {
+        const request = new Request(
+          "https://api.test/api/domains/existing-brand.io/validate",
+        );
+        const response = await validateDomainRoute(request as any, {
           params: Promise.resolve({ domain: "existing-brand.io" }),
         });
 
@@ -296,11 +364,17 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
       });
 
       it("GET route returns { status: 'available' } for safe unconfigured domain", async () => {
-        const lookupSpy = vi.spyOn(dns, "lookup").mockRejectedValue(new Error("ENOTFOUND"));
-        const resolveSpy = vi.spyOn(dns, "resolve").mockRejectedValue(new Error("ENOTFOUND"));
+        const lookupSpy = vi
+          .spyOn(dns, "lookup")
+          .mockRejectedValue(new Error("ENOTFOUND"));
+        const resolveSpy = vi
+          .spyOn(dns, "resolve")
+          .mockRejectedValue(new Error("ENOTFOUND"));
 
-        const request = new Request("https://api.test/api/domains/unconfigured-custom-domain.org/validate");
-        const response = await validateDomainRoute(request, {
+        const request = new Request(
+          "https://api.test/api/domains/unconfigured-custom-domain.org/validate",
+        );
+        const response = await validateDomainRoute(request as any, {
           params: Promise.resolve({ domain: "unconfigured-custom-domain.org" }),
         });
 
@@ -353,7 +427,9 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
         workspace: baseWorkspace as any,
       });
 
-      expect(result).toBe("[Shopify] Order event processed successfully with discount codes.");
+      expect(result).toBe(
+        "[Shopify] Order event processed successfully with discount codes.",
+      );
       expect(mocks.attribute).toHaveBeenCalledWith({
         event,
         workspace: baseWorkspace,
@@ -398,7 +474,9 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
       });
 
       // Attribution skipped; factual order recorded
-      expect(result).toBe("[Shopify] Factual order recorded. Order is not from a Dub affiliate link.");
+      expect(result).toBe(
+        "[Shopify] Factual order recorded. Order is not from a Dub affiliate link.",
+      );
       expect(mocks.attribute).not.toHaveBeenCalled();
       expect(mocks.sale).not.toHaveBeenCalled();
     });
@@ -444,7 +522,9 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
         workspace: baseWorkspace as any,
       });
 
-      expect(result).toBe("[Shopify] Order event processed successfully with discount codes.");
+      expect(result).toBe(
+        "[Shopify] Order event processed successfully with discount codes.",
+      );
 
       // Verify Prisma query strictly filtered out disabled records (disabledAt: null)
       expect(mocks.linkFindFirst).toHaveBeenCalledWith(
@@ -492,7 +572,9 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
         workspace: baseWorkspace as any,
       });
 
-      expect(result).toBe("[Shopify] Factual order recorded. Order is not from a Dub affiliate link.");
+      expect(result).toBe(
+        "[Shopify] Factual order recorded. Order is not from a Dub affiliate link.",
+      );
       expect(mocks.attribute).not.toHaveBeenCalled();
       expect(mocks.sale).not.toHaveBeenCalled();
     });
@@ -532,7 +614,9 @@ describe("Round 2 Security Suite: SSRF Prevention & Orders-Paid Attribution Inva
         storeId: dynamicStoreId,
       });
 
-      expect(result).toBe("[Shopify] Order event processed successfully with discount codes.");
+      expect(result).toBe(
+        "[Shopify] Order event processed successfully with discount codes.",
+      );
       expect(mocks.attribute).toHaveBeenCalledWith({
         event,
         workspace: dynamicWorkspace,

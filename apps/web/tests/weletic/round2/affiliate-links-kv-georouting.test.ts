@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -37,7 +37,10 @@ vi.mock("@/lib/upstash", () => ({
   redisGlobal: {
     get: vi.fn(async (key: string) => mockRedisStore.get(key) || null),
     set: vi.fn(async (key: string, val: any) => {
-      mockRedisStore.set(key, typeof val === "string" ? val : JSON.stringify(val));
+      mockRedisStore.set(
+        key,
+        typeof val === "string" ? val : JSON.stringify(val),
+      );
       return "OK";
     }),
     del: vi.fn(async (key: string) => {
@@ -61,19 +64,19 @@ vi.mock("@/lib/upstash", () => ({
   })),
 }));
 
-import {
-  handleLinkRedirection,
-  resolveTargetUrl,
-  buildKvKey,
-  type LinkRecord,
-  type LinkRedirectorEnv,
-} from "../../../workers/link-redirector/src/index";
+import { linkCache } from "../../../lib/api/links/cache";
 import {
   evictLinkFromKv,
   evictLinksBatchFromKv,
   tombstoneLinkInKv,
 } from "../../../lib/weletic/link-kv-cache";
-import { linkCache } from "../../../lib/api/links/cache";
+import {
+  buildKvKey,
+  handleLinkRedirection,
+  resolveTargetUrl,
+  type LinkRecord,
+  type LinkRedirectorEnv,
+} from "../../../workers/link-redirector/src/index";
 
 // Mock Cloudflare KV Namespace for redirector worker
 class MockKVNamespace {
@@ -173,7 +176,10 @@ describe("Round 2 Affiliate Links: KV Cache Invalidation & Geo-Routing Suite", (
     it("evictLinkFromKv deletes key using native globalThis.LINKS_KV worker binding", async () => {
       const mockKv = new MockKVNamespace();
       mockKv.store.set("link:aff-partner.org:summit26", {
-        value: JSON.stringify({ id: "link_1", url: "https://shop.example.com" }),
+        value: JSON.stringify({
+          id: "link_1",
+          url: "https://shop.example.com",
+        }),
       });
       (globalThis as any).LINKS_KV = mockKv;
 
@@ -193,7 +199,9 @@ describe("Round 2 Affiliate Links: KV Cache Invalidation & Geo-Routing Suite", (
       process.env.CLOUDFLARE_LINKS_KV_NAMESPACE_ID = "ns_links_kv";
 
       const mockFetch = vi.fn(async (url: string, init: any) => {
-        expect(url).toContain("/accounts/acc_test_12345/storage/kv/namespaces/ns_links_kv/values/");
+        expect(url).toContain(
+          "/accounts/acc_test_12345/storage/kv/namespaces/ns_links_kv/values/",
+        );
         expect(url).toContain(encodeURIComponent("link:domain-test.io:sale"));
         expect(init.method).toBe("DELETE");
         expect(init.headers.Authorization).toBe("Bearer tok_test_secret");
@@ -244,7 +252,9 @@ describe("Round 2 Affiliate Links: KV Cache Invalidation & Geo-Routing Suite", (
       });
 
       expect(success).toBe(true);
-      const kvEntry = mockKv.store.get("link:creator-affiliates.net:retired-code");
+      const kvEntry = mockKv.store.get(
+        "link:creator-affiliates.net:retired-code",
+      );
       expect(kvEntry).toBeDefined();
       expect(kvEntry?.options?.expirationTtl).toBe(300);
 
@@ -256,7 +266,9 @@ describe("Round 2 Affiliate Links: KV Cache Invalidation & Geo-Routing Suite", (
     it("linkCache.set triggers KV cache eviction even when link is active to prevent stale reads", async () => {
       const mockKv = new MockKVNamespace();
       (globalThis as any).LINKS_KV = mockKv;
-      mockKv.store.set("link:hub.partner-app.io:active-slug", { value: "old-version" });
+      mockKv.store.set("link:hub.partner-app.io:active-slug", {
+        value: "old-version",
+      });
 
       const activeLink = {
         id: "link_act_123",
@@ -268,7 +280,9 @@ describe("Round 2 Affiliate Links: KV Cache Invalidation & Geo-Routing Suite", (
 
       await linkCache.set(activeLink);
 
-      expect(mockKv.store.has("link:hub.partner-app.io:active-slug")).toBe(false);
+      expect(mockKv.store.has("link:hub.partner-app.io:active-slug")).toBe(
+        false,
+      );
     });
 
     it("linkCache.mset batch evicts KV entries via waitUntil", async () => {
@@ -276,8 +290,20 @@ describe("Round 2 Affiliate Links: KV Cache Invalidation & Geo-Routing Suite", (
       (globalThis as any).LINKS_KV = mockKv;
 
       const links = [
-        { id: "l1", domain: "shop.brand-test.io", key: "alpha", url: "https://shop.brand-test.io/1", disabledAt: null },
-        { id: "l2", domain: "shop.brand-test.io", key: "beta", url: "https://shop.brand-test.io/2", disabledAt: null },
+        {
+          id: "l1",
+          domain: "shop.brand-test.io",
+          key: "alpha",
+          url: "https://shop.brand-test.io/1",
+          disabledAt: null,
+        },
+        {
+          id: "l2",
+          domain: "shop.brand-test.io",
+          key: "beta",
+          url: "https://shop.brand-test.io/2",
+          disabledAt: null,
+        },
       ] as any[];
 
       await linkCache.mset(links);
@@ -446,11 +472,14 @@ describe("Round 2 Affiliate Links: KV Cache Invalidation & Geo-Routing Suite", (
         },
       });
 
-      expect(resolved).toBe("https://special-japan-campaign.brand.io/exclusive");
+      expect(resolved).toBe(
+        "https://special-japan-campaign.brand.io/exclusive",
+      );
     });
 
     it("preserves pre-existing destination query parameters while setting currency", () => {
-      const url = "https://brand-storefront.io/products/shorts?size=M&color=black";
+      const url =
+        "https://brand-storefront.io/products/shorts?size=M&color=black";
       const resolved = resolveTargetUrl({
         baseTargetUrl: url,
         country: "JP",
@@ -503,12 +532,16 @@ describe("Round 2 Affiliate Links: KV Cache Invalidation & Geo-Routing Suite", (
         CLICKS_ANALYTICS: mockAnalytics as any,
       };
 
-      const request = new Request("https://go.brand-shop.io/summer?utm_source=twitter", {
-        headers: {
-          "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
-          referer: "https://t.co/xyz",
+      const request = new Request(
+        "https://go.brand-shop.io/summer?utm_source=twitter",
+        {
+          headers: {
+            "user-agent":
+              "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+            referer: "https://t.co/xyz",
+          },
         },
-      });
+      );
       (request as any).cf = { country: "JP", city: "Tokyo" };
 
       const waitUntilSpy = vi.fn();

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
 import { convertCurrencyWithFxRates } from "@/lib/analytics/convert-currency";
+import { describe, expect, it } from "vitest";
 
 describe("FIN-AUDIT-09: FirstPromoter Commission Import FX Conversion", () => {
   const fxRates: Record<string, string> = {

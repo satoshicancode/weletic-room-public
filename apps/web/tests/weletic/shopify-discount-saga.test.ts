@@ -136,17 +136,22 @@ vi.mock("@/lib/prisma", () => ({
   },
 }));
 
-vi.mock("@/lib/weletic/loyalty/ledger", () => ({
-  appendPointsLedgerEntry: vi.fn().mockImplementation(async (params) => {
-    return {
-      id: `wpledger_mock_${Date.now()}`,
-      sequenceNumber: 1,
-      pointsDelta: params.pointsDelta,
-      balanceAfter: BigInt(1000) + BigInt(params.pointsDelta),
-      ...params,
-    };
-  }),
-}));
+vi.mock("@/lib/weletic/loyalty/ledger", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/weletic/loyalty/ledger")>();
+  return {
+    ...actual,
+    appendPointsLedgerEntry: vi.fn().mockImplementation(async (params) => {
+      return {
+        id: `wpledger_mock_${Date.now()}`,
+        sequenceNumber: 1,
+        pointsDelta: params.pointsDelta,
+        balanceAfter: BigInt(1000) + BigInt(params.pointsDelta),
+        ...params,
+      };
+    }),
+  };
+});
 
 vi.mock("@/lib/weletic/loyalty/outbox", () => {
   const enqueueOutboxJob = vi.fn().mockImplementation(async (params) => {
@@ -3677,9 +3682,9 @@ describe("Shopify GraphQL Discount Adapters & 4-Phase Distributed Saga (Mileston
         const [programLockStatement] = queryRawMock.mock.calls[0];
         if (process.env.DATABASE_URL?.startsWith("mysql:")) {
           expect(
-            (programLockStatement as { strings: readonly string[] }).strings.join(
-              " ",
-            ),
+            (
+              programLockStatement as { strings: readonly string[] }
+            ).strings.join(" "),
           ).toContain("FOR UPDATE");
         }
       },

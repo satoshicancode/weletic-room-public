@@ -6,8 +6,8 @@ import {
 import { fetchShopifyTokenAuthorityCredential } from "@/lib/weletic/shopify/token-authority";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  verifyWeleticInternalRequest,
   clearInternalNonceCacheForTest,
+  verifyWeleticInternalRequest,
   WELETIC_INTERNAL_SIGNATURE_HEADER,
   WELETIC_INTERNAL_TIMESTAMP_HEADER,
   WELETIC_REQUEST_ID_HEADER,

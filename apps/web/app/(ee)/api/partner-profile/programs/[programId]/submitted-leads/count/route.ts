@@ -1,6 +1,6 @@
 import { getProgramEnrollmentOrThrow } from "@/lib/api/programs/get-program-enrollment-or-throw";
 import { withPartnerProfile } from "@/lib/auth/partner";
-import { prisma, sanitizeFullTextSearch } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import {
   getPartnerSubmittedLeadsCountQuerySchema,
   partnerSubmittedLeadsCountResponseSchema,

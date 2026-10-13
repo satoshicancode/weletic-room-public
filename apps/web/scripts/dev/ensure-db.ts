@@ -18,11 +18,12 @@ async function ensureDb() {
       console.log(`📁 Created SQLite database directory: ${dbDir}`);
     }
 
-    console.log(`✅ [Database Setup] SQLite database ready at: ${resolvedPath}`);
+    console.log(
+      `✅ [Database Setup] SQLite database ready at: ${resolvedPath}`,
+    );
   } else {
     console.log("☁️ [Database Setup] Using remote D1 / database connection.");
   }
 }
 
 ensureDb();
-

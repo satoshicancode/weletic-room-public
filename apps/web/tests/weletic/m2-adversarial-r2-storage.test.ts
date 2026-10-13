@@ -30,14 +30,14 @@ afterEach(() => {
     if (val === undefined) {
       delete process.env[name];
     } else {
-      process.env[name] = val;
+      (process.env as any)[name] = val;
     }
   }
 });
 
 describe("M2 Adversarial Challenge: Fail-Closed Security under NODE_ENV=production", () => {
   function configureValidProductionR2() {
-    process.env.NODE_ENV = "production";
+    (process.env as any).NODE_ENV = "production";
     process.env.STORAGE_ENDPOINT = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
     process.env.STORAGE_PRIVATE_BUCKET = "private-vault";
     process.env.STORAGE_ACCESS_KEY_ID = "valid-prod-key";
@@ -127,7 +127,7 @@ describe("M2 Adversarial Challenge: Fail-Closed Security under NODE_ENV=producti
 
   it("cannot bypass production fail-closed security using STORAGE_ALLOW_TEST_ENDPOINT flags", async () => {
     configureValidProductionR2();
-    process.env.NODE_ENV = "production";
+    (process.env as any).NODE_ENV = "production";
     process.env.STORAGE_ENDPOINT = "http://127.0.0.1:9002";
 
     const fetchSpy = vi.fn();
@@ -137,13 +137,17 @@ describe("M2 Adversarial Challenge: Fail-Closed Security under NODE_ENV=producti
     process.env.STORAGE_ALLOW_TEST_ENDPOINT = "1";
     await expect(
       storage.headPrivateR2Object("reviews/photo.webp"),
-    ).rejects.toThrow("Direct private R2 storage is not configured for reconciliation");
+    ).rejects.toThrow(
+      "Direct private R2 storage is not configured for reconciliation",
+    );
 
     // Try STORAGE_ALLOW_TEST_ENDPOINT="true"
     process.env.STORAGE_ALLOW_TEST_ENDPOINT = "true";
     await expect(
       storage.headPrivateR2Object("reviews/photo.webp"),
-    ).rejects.toThrow("Direct private R2 storage is not configured for reconciliation");
+    ).rejects.toThrow(
+      "Direct private R2 storage is not configured for reconciliation",
+    );
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -227,7 +231,9 @@ describe("M2 Adversarial Challenge: Dual-Namespace Resolution (AWS_* only)", () 
     expect(storage.baseUrl).toBe("https://media.yamax.co");
 
     // 2. Mock fetch and verify public upload
-    const fetchSpy = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(new Response("", { status: 200 }));
     vi.stubGlobal("fetch", fetchSpy);
 
     const uploadResult = await storage.upload({
@@ -236,7 +242,9 @@ describe("M2 Adversarial Challenge: Dual-Namespace Resolution (AWS_* only)", () 
       bucket: "public",
     });
 
-    expect(uploadResult.url).toBe("https://media.yamax.co/products/leggings.webp");
+    expect(uploadResult.url).toBe(
+      "https://media.yamax.co/products/leggings.webp",
+    );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const uploadReq = fetchSpy.mock.calls[0][0] as Request;
     expect(uploadReq.url).toBe(
@@ -295,8 +303,12 @@ describe("M2 Adversarial Challenge: Dual-Namespace Resolution (AWS_* only)", () 
     expect(signedDownloadUrl).toContain("X-Amz-Signature=");
 
     // 8. Verify isStored recognizes CDN URL
-    expect(isStored("https://media.yamax.co/products/leggings.webp")).toBe(true);
-    expect(isStored("https://malicious.com/products/leggings.webp")).toBe(false);
+    expect(isStored("https://media.yamax.co/products/leggings.webp")).toBe(
+      true,
+    );
+    expect(isStored("https://malicious.com/products/leggings.webp")).toBe(
+      false,
+    );
   });
 
   it("prioritizes STORAGE_* variables over AWS_* variables when both are set", () => {
@@ -346,13 +358,13 @@ describe("M2 Adversarial Challenge: Dual-Namespace Resolution (AWS_* only)", () 
       }),
     ).rejects.toThrow("Private storage is not fully configured.");
 
-    await expect(
-      storage.headPrivateR2Object("test.enc"),
-    ).rejects.toThrow("Direct private R2 storage is not configured for reconciliation");
+    await expect(storage.headPrivateR2Object("test.enc")).rejects.toThrow(
+      "Direct private R2 storage is not configured for reconciliation",
+    );
 
-    await expect(
-      storage.readPrivateR2Object("test.enc", 10),
-    ).rejects.toThrow("Direct private R2 storage is not configured for reconciliation");
+    await expect(storage.readPrivateR2Object("test.enc", 10)).rejects.toThrow(
+      "Direct private R2 storage is not configured for reconciliation",
+    );
   });
 });
 
@@ -363,7 +375,9 @@ describe("M2 Adversarial Challenge: Zero S3 ACL Injection", () => {
     process.env.STORAGE_ACCESS_KEY_ID = "key";
     process.env.STORAGE_SECRET_ACCESS_KEY = "secret";
 
-    const fetchSpy = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(new Response("", { status: 200 }));
     vi.stubGlobal("fetch", fetchSpy);
 
     await storage.upload({
@@ -408,7 +422,8 @@ describe("M2 Adversarial Challenge: Zero S3 ACL Injection", () => {
     expect(parsedUrl.searchParams.has("X-Amz-Acl")).toBe(false);
     expect(signedUrl).not.toContain("public-read");
 
-    const signedHeaders = parsedUrl.searchParams.get("X-Amz-SignedHeaders") || "";
+    const signedHeaders =
+      parsedUrl.searchParams.get("X-Amz-SignedHeaders") || "";
     expect(signedHeaders.toLowerCase()).not.toContain("acl");
   });
 

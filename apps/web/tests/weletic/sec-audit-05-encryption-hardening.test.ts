@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  decrypt,
-  decryptOrPassthrough,
-  encrypt,
-} from "../../lib/encryption";
+import { decrypt, decryptOrPassthrough, encrypt } from "../../lib/encryption";
 
 describe("SEC-AUDIT-05: Secret Decryption Hardening & Fail-Closed Validation", () => {
   const originalKey = process.env.ENCRYPTION_KEY;
@@ -42,7 +38,9 @@ describe("SEC-AUDIT-05: Secret Decryption Hardening & Fail-Closed Validation", (
     const shortBuffer = Buffer.from("tooshort"); // 8 bytes
     const shortBase64 = shortBuffer.toString("base64");
 
-    expect(() => decrypt(shortBase64)).toThrow(/byte length 8 is less than minimum 28/);
+    expect(() => decrypt(shortBase64)).toThrow(
+      /byte length 8 is less than minimum 28/,
+    );
     expect(() => decryptOrPassthrough(shortBase64)).toThrow();
   });
 
@@ -51,7 +49,9 @@ describe("SEC-AUDIT-05: Secret Decryption Hardening & Fail-Closed Validation", (
     delete process.env.ENCRYPTION_KEY;
 
     expect(() => decrypt(ciphertext)).toThrow(/ENCRYPTION_KEY is not set/);
-    expect(() => decryptOrPassthrough(ciphertext)).toThrow(/ENCRYPTION_KEY is not set/);
+    expect(() => decryptOrPassthrough(ciphertext)).toThrow(
+      /ENCRYPTION_KEY is not set/,
+    );
   });
 
   it("allows recognized legacy plaintext tokens during deprecation window with warning", () => {

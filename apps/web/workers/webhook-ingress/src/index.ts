@@ -1,13 +1,13 @@
-/// <reference types="@cloudflare/workers-types" />
+import type { ExecutionContext } from "../../../lib/weletic/cloudflare-types";
 import {
-  verifyShopifyWebhookSignature,
-  verifyHmac,
-} from "../../../lib/weletic/shopify/webhook-signature";
-import {
-  webhookRateLimiter,
-  getClientIp,
   createRateLimitResponse,
+  getClientIp,
+  webhookRateLimiter,
 } from "../../../lib/weletic/edge-rate-limiter";
+import {
+  verifyHmac,
+  verifyShopifyWebhookSignature,
+} from "../../../lib/weletic/shopify/webhook-signature";
 
 export const WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES = 128 * 1024; // 128KB (131,072 bytes)
 
@@ -136,18 +136,24 @@ export async function handleWebhookIngress(
   if (contentLength !== null) {
     const rawLength = contentLength.trim();
     if (!/^\d+$/.test(rawLength)) {
-      return new Response("[Shopify] Webhook payload is too large or invalid.", {
-        status: 413,
-      });
+      return new Response(
+        "[Shopify] Webhook payload is too large or invalid.",
+        {
+          status: 413,
+        },
+      );
     }
     const parsedLength = Number(rawLength);
     if (
       parsedLength < 0 ||
       parsedLength > WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES
     ) {
-      return new Response("[Shopify] Webhook payload is too large or invalid.", {
-        status: 413,
-      });
+      return new Response(
+        "[Shopify] Webhook payload is too large or invalid.",
+        {
+          status: 413,
+        },
+      );
     }
   }
 
@@ -208,10 +214,9 @@ export async function handleWebhookIngress(
   // 6. Topic filtering
   if (!SUPPORTED_WEBHOOK_TOPICS.has(topic)) {
     // Gracefully acknowledge unsupported topics so Shopify does not retry
-    return new Response(
-      `[Shopify] Unsupported topic: ${topic}. Ignored.`,
-      { status: 200 },
-    );
+    return new Response(`[Shopify] Unsupported topic: ${topic}. Ignored.`, {
+      status: 200,
+    });
   }
 
   // 7. Enqueue to Cloudflare Queue (<5ms, zero synchronous database I/O)
@@ -264,4 +269,3 @@ const worker = {
 export default worker;
 
 export { verifyHmac };
-

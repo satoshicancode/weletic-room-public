@@ -1,13 +1,20 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import crypto from "node:crypto";
 import {
-  handleWebhookIngress,
-  WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
-  type WebhookIngressEnv,
-} from "../../workers/webhook-ingress/src/index";
+  cronRateLimiter,
+  EdgeRateLimiter,
+  getClientIp,
+  redirectRateLimiter,
+  webhookRateLimiter,
+} from "../../lib/weletic/edge-rate-limiter";
+import {
+  handleHttpTrigger,
+  timingSafeStringEqual,
+  type CronWorkerEnv,
+} from "../../workers/cron-triggers/src/index";
 import {
   handleLinkRedirection,
   KV_NEGATIVE_CACHE_TTL_SECONDS,
@@ -15,18 +22,10 @@ import {
   type NegativeCacheSentinel,
 } from "../../workers/link-redirector/src/index";
 import {
-  handleHttpTrigger,
-  timingSafeStringEqual,
-  type CronWorkerEnv,
-} from "../../workers/cron-triggers/src/index";
-import {
-  EdgeRateLimiter,
-  webhookRateLimiter,
-  redirectRateLimiter,
-  cronRateLimiter,
-  getClientIp,
-  createRateLimitResponse,
-} from "../../lib/weletic/edge-rate-limiter";
+  handleWebhookIngress,
+  WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
+  type WebhookIngressEnv,
+} from "../../workers/webhook-ingress/src/index";
 
 const TEST_SECRET = "shpss_test_shopify_webhook_secret_32bytes_12345";
 const TEST_CRON_SECRET = "wltc_cron_secret_high_entropy_token_999";
@@ -140,7 +139,9 @@ describe("Milestone 4: Cloudflare Edge Workers DoS Resilience & Quota Protection
       };
 
       // Buffer of 128KB + 10 bytes
-      const oversizedBuffer = new Uint8Array(WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 10);
+      const oversizedBuffer = new Uint8Array(
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES + 10,
+      );
       oversizedBuffer.fill(65);
 
       // Request with spoofed smaller Content-Length (100 bytes) but actual streaming body > 128KB
@@ -167,7 +168,9 @@ describe("Milestone 4: Cloudflare Edge Workers DoS Resilience & Quota Protection
       };
 
       // Payload exactly at 128KB boundary
-      const exact128KbBuffer = new Uint8Array(WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES);
+      const exact128KbBuffer = new Uint8Array(
+        WELETIC_SHOPIFY_MAX_WEBHOOK_BODY_BYTES,
+      );
       exact128KbBuffer.fill(66);
       const signature = signPayload(exact128KbBuffer, TEST_SECRET);
 
@@ -358,9 +361,15 @@ describe("Milestone 4: Cloudflare Edge Workers DoS Resilience & Quota Protection
     });
 
     it("3.5 timingSafeStringEqual performs constant-time equality check without throwing on length mismatch", () => {
-      expect(timingSafeStringEqual("exact_match_123", "exact_match_123")).toBe(true);
-      expect(timingSafeStringEqual("exact_match_123", "exact_match_124")).toBe(false);
-      expect(timingSafeStringEqual("short", "much_longer_string_that_differs")).toBe(false);
+      expect(timingSafeStringEqual("exact_match_123", "exact_match_123")).toBe(
+        true,
+      );
+      expect(timingSafeStringEqual("exact_match_123", "exact_match_124")).toBe(
+        false,
+      );
+      expect(
+        timingSafeStringEqual("short", "much_longer_string_that_differs"),
+      ).toBe(false);
       expect(timingSafeStringEqual("", "")).toBe(true);
       expect(timingSafeStringEqual("a", "")).toBe(false);
       expect(timingSafeStringEqual(null as any, "test")).toBe(false);

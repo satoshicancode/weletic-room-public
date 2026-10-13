@@ -1,11 +1,11 @@
 import { prisma } from "@/lib/prisma";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { storage } from "@/lib/storage";
 import { createWeleticId } from "@/lib/weletic/ids";
 import { enqueueOutboxJob } from "@/lib/weletic/loyalty/outbox";
 import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { Prisma, type WeleticReviewMedia } from "@prisma/client";
-import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import sharp from "sharp";
 import {
   REVIEW_MAX_PHOTO_BYTES,

@@ -1,9 +1,9 @@
 import { decrypt } from "@/lib/encryption";
-import { Prisma } from "@prisma/client";
 import {
-  forUpdateClause,
   currentTimestampClause,
+  forUpdateClause,
 } from "@/lib/prisma/sql-helpers";
+import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { lockShopifySessionLifecycle } from "./session-lifecycle-fence";
 import { readShopifySessionPayload } from "./session-online-binding";

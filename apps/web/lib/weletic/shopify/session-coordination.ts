@@ -1,9 +1,9 @@
-import { Prisma } from "@prisma/client";
 import {
-  forUpdateClause,
   currentTimestampClause,
+  forUpdateClause,
   isMysql,
 } from "@/lib/prisma/sql-helpers";
+import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 
 export const SHOPIFY_SESSION_LEASE_MS = 60_000;

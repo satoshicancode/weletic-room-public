@@ -55,7 +55,8 @@ describe("draft store-review additive schema (no database connection)", () => {
       expect(statements(migration)).toEqual(statements(generated));
     } else {
       const sqliteStatements =
-        generated.match(/CREATE TABLE "WeleticStoreReview[^"]*"[\s\S]*?;/g) ?? [];
+        generated.match(/CREATE TABLE "WeleticStoreReview[^"]*"[\s\S]*?;/g) ??
+        [];
       expect(sqliteStatements).toHaveLength(5);
       const generatedTables = [
         ...generated.matchAll(/CREATE TABLE "(WeleticStoreReview[^"]*)"/g),

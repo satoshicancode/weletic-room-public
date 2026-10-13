@@ -1,9 +1,9 @@
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { Prisma, type WeleticShopifyPendingInstallation } from "@prisma/client";
-import {
-  forUpdateClause,
-  currentTimestampClause,
-} from "@/lib/prisma/sql-helpers";
 import { randomUUID } from "node:crypto";
 import type { z } from "zod/v4";
 import type { installationStatusIdentitySchema } from "./installation-admission-contract";

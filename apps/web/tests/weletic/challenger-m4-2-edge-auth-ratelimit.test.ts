@@ -1,29 +1,25 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import crypto from "node:crypto";
+import {
+  EdgeRateLimiter,
+  createRateLimitResponse,
+  cronRateLimiter,
+  getClientIp,
+  redirectRateLimiter,
+  webhookRateLimiter,
+} from "../../lib/weletic/edge-rate-limiter";
 import {
   handleHttpTrigger,
   timingSafeStringEqual,
   type CronWorkerEnv,
 } from "../../workers/cron-triggers/src/index";
 import {
-  EdgeRateLimiter,
-  cronRateLimiter,
-  webhookRateLimiter,
-  redirectRateLimiter,
-  getClientIp,
-  createRateLimitResponse,
-} from "../../lib/weletic/edge-rate-limiter";
-import {
   handleWebhookIngress,
   type WebhookIngressEnv,
 } from "../../workers/webhook-ingress/src/index";
-import {
-  handleLinkRedirection,
-  type LinkRedirectorEnv,
-} from "../../workers/link-redirector/src/index";
 
 const TEST_SECRET = "shpss_test_shopify_webhook_secret_32bytes_12345";
 const VALID_CRON_SECRET = "wltc_cron_master_secret_random_hex_998877665544";
@@ -55,14 +51,20 @@ describe("Challenger M4_2: Adversarial Verification of Cron Auth & Edge Rate Lim
         { name: "undefined CRON_SECRET", env: {} },
         { name: "empty string CRON_SECRET", env: { CRON_SECRET: "" } },
         { name: "space only CRON_SECRET", env: { CRON_SECRET: "   " } },
-        { name: "tabs and newlines CRON_SECRET", env: { CRON_SECRET: "\t\r\n   " } },
+        {
+          name: "tabs and newlines CRON_SECRET",
+          env: { CRON_SECRET: "\t\r\n   " },
+        },
       ];
 
       for (const { name, env } of invalidEnvConfigs) {
         // Even if caller supplies a Bearer token or matches empty string, must fail closed
-        const reqWithBearer = new Request("http://localhost/trigger?cron=5min", {
-          headers: { Authorization: "Bearer some_forged_secret" },
-        });
+        const reqWithBearer = new Request(
+          "http://localhost/trigger?cron=5min",
+          {
+            headers: { Authorization: "Bearer some_forged_secret" },
+          },
+        );
         const res = await handleHttpTrigger(reqWithBearer, env);
         expect(res.status, `Failed closed test for ${name}`).toBe(401);
 
@@ -70,9 +72,12 @@ describe("Challenger M4_2: Adversarial Verification of Cron Auth & Edge Rate Lim
         expect(data.error).toContain("CRON_SECRET is not configured");
 
         // Try matching empty Bearer header
-        const reqEmptyBearer = new Request("http://localhost/trigger?cron=5min", {
-          headers: { Authorization: "Bearer " },
-        });
+        const reqEmptyBearer = new Request(
+          "http://localhost/trigger?cron=5min",
+          {
+            headers: { Authorization: "Bearer " },
+          },
+        );
         const resEmpty = await handleHttpTrigger(reqEmptyBearer, env);
         expect(resEmpty.status).toBe(401);
       }
@@ -103,7 +108,9 @@ describe("Challenger M4_2: Adversarial Verification of Cron Auth & Edge Rate Lim
           headers["Authorization"] = authHeader;
         }
 
-        const req = new Request("http://localhost/trigger?cron=5min", { headers });
+        const req = new Request("http://localhost/trigger?cron=5min", {
+          headers,
+        });
         const res = await handleHttpTrigger(req, env);
         expect(res.status).toBe(401);
         const data = (await res.json()) as { error?: string };
@@ -134,7 +141,9 @@ describe("Challenger M4_2: Adversarial Verification of Cron Auth & Edge Rate Lim
           headers: { Authorization: token },
         });
         const res = await handleHttpTrigger(req, env);
-        expect(res.status, `Token ${JSON.stringify(token)} should be 401`).toBe(401);
+        expect(res.status, `Token ${JSON.stringify(token)} should be 401`).toBe(
+          401,
+        );
         const data = (await res.json()) as { error?: string };
         expect(data.error).toBe("Unauthorized");
       }
@@ -198,14 +207,24 @@ describe("Challenger M4_2: Adversarial Verification of Cron Auth & Edge Rate Lim
     it("2.3 timingSafeStringEqual works properly when crypto.timingSafeEqual throws or is unavailable (XOR fallback)", () => {
       // Temporarily spy on crypto.timingSafeEqual and make it throw
       const originalTimingSafeEqual = crypto.timingSafeEqual;
-      const timingSpy = vi.spyOn(crypto, "timingSafeEqual").mockImplementation(() => {
-        throw new Error("Simulated Node crypto unavailable in worker runtime");
-      });
+      const timingSpy = vi
+        .spyOn(crypto, "timingSafeEqual")
+        .mockImplementation(() => {
+          throw new Error(
+            "Simulated Node crypto unavailable in worker runtime",
+          );
+        });
 
       try {
-        expect(timingSafeStringEqual("matching_token_abc", "matching_token_abc")).toBe(true);
-        expect(timingSafeStringEqual("matching_token_abc", "matching_token_abx")).toBe(false);
-        expect(timingSafeStringEqual("matching_token_abc", "xatching_token_abc")).toBe(false);
+        expect(
+          timingSafeStringEqual("matching_token_abc", "matching_token_abc"),
+        ).toBe(true);
+        expect(
+          timingSafeStringEqual("matching_token_abc", "matching_token_abx"),
+        ).toBe(false);
+        expect(
+          timingSafeStringEqual("matching_token_abc", "xatching_token_abc"),
+        ).toBe(false);
         expect(timingSafeStringEqual("short", "longer_token")).toBe(false);
         expect(timingSafeStringEqual("", "")).toBe(true);
         expect(timingSafeStringEqual("a", "")).toBe(false);
@@ -268,7 +287,11 @@ describe("Challenger M4_2: Adversarial Verification of Cron Auth & Edge Rate Lim
       const nowSec = Math.floor(Date.now() / 1000);
       expect(resetTimestamp).toBeGreaterThanOrEqual(nowSec + 5);
 
-      const body = (await res.json()) as { error: string; message: string; retryAfter: number };
+      const body = (await res.json()) as {
+        error: string;
+        message: string;
+        retryAfter: number;
+      };
       expect(body.error).toBe("Too Many Requests");
       expect(body.retryAfter).toBe(6);
     });
@@ -348,7 +371,10 @@ describe("Challenger M4_2: Adversarial Verification of Cron Auth & Edge Rate Lim
     });
 
     it("3.4 respects limitOverride and windowMsOverride dynamically", () => {
-      const limiter = new EdgeRateLimiter({ maxRequests: 10, windowMs: 10_000 });
+      const limiter = new EdgeRateLimiter({
+        maxRequests: 10,
+        windowMs: 10_000,
+      });
       const clientIp = "198.51.100.99";
 
       // Check with strict limitOverride = 1

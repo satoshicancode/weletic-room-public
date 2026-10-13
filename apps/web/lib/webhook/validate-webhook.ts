@@ -29,7 +29,10 @@ function isPrivateIPv4(address: string): boolean {
 }
 
 function parseIpv6Hextets(address: string): number[] | null {
-  let clean = address.trim().replace(/^\[|\]$/g, "").toLowerCase();
+  let clean = address
+    .trim()
+    .replace(/^\[|\]$/g, "")
+    .toLowerCase();
 
   // Handle embedded IPv4 at the end, e.g. ::ffff:127.0.0.1 or 0:0:0:0:0:ffff:127.0.0.1
   const lastColon = clean.lastIndexOf(":");
@@ -90,8 +93,7 @@ function isPrivateIPv6(address: string): boolean {
   }
 
   // Loopback: ::1 or 0:0:0:0:0:0:0:1
-  const isLoopback =
-    nums.slice(0, 7).every((n) => n === 0) && nums[7] === 1;
+  const isLoopback = nums.slice(0, 7).every((n) => n === 0) && nums[7] === 1;
 
   // Unspecified: :: or 0:0:0:0:0:0:0:0
   const isUnspecified = nums.every((n) => n === 0);
@@ -130,7 +132,8 @@ function assertSafeWebhookIp(address: string): void {
   if (isRestricted) {
     throw new DubApiError({
       code: "bad_request",
-      message: "Webhook URL cannot point to a private, loopback, or metadata IP address.",
+      message:
+        "Webhook URL cannot point to a private, loopback, or metadata IP address.",
     });
   }
 }

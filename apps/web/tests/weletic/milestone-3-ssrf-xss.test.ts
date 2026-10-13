@@ -37,28 +37,21 @@ vi.mock("@/lib/upstash", () => ({
   }),
 }));
 
-import dnsCallback, { promises as dns } from "dns";
-import {
-  assertSafeIp as assertSafeMetatagsIp,
-  assertSafeFetchUrl,
-  getHtml,
-  getMetaTags,
-  pinnedMetatagsDnsMap,
-} from "../../app/api/links/metatags/utils";
-import { GET as getMetatagsRoute } from "../../app/api/links/metatags/route";
-import {
-  assertSafeIp as assertSafeDomainIp,
-  assertSafeUrl,
-  hasSiteConfigured,
-  pinnedDnsMap,
-} from "../../app/api/domains/[domain]/validate/utils";
+import { DubApiError } from "@/lib/api/errors";
 import {
   assertSafeWebhookUrl,
   validateWebhook,
 } from "@/lib/webhook/validate-webhook";
 import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
+import dnsCallback, { promises as dns } from "dns";
 import { NextRequest } from "next/server";
-import { DubApiError } from "@/lib/api/errors";
+import {
+  assertSafeUrl,
+  hasSiteConfigured,
+  pinnedDnsMap,
+} from "../../app/api/domains/[domain]/validate/utils";
+import { GET as getMetatagsRoute } from "../../app/api/links/metatags/route";
+import { assertSafeFetchUrl } from "../../app/api/links/metatags/utils";
 
 describe("Milestone 3: SSRF Fail-Closed Defense, TOCTOU DNS Rebinding & Stored XSS Hygiene", () => {
   describe("SEC-R3-01: Metatags SSRF Fail-Closed Defense (/api/links/metatags)", () => {
@@ -143,29 +136,35 @@ describe("Milestone 3: SSRF Fail-Closed Defense, TOCTOU DNS Rebinding & Stored X
     });
 
     it("fails closed when hostname cannot be resolved via DNS", async () => {
-      const lookupSpy = vi.spyOn(dns, "lookup").mockRejectedValueOnce(new Error("ENOTFOUND"));
+      const lookupSpy = vi
+        .spyOn(dns, "lookup")
+        .mockRejectedValueOnce(new Error("ENOTFOUND"));
 
-      await expect(assertSafeFetchUrl("http://nonexistent-host-domain.test")).rejects.toThrow(
-        DubApiError,
-      );
+      await expect(
+        assertSafeFetchUrl("http://nonexistent-host-domain.test"),
+      ).rejects.toThrow(DubApiError);
       lookupSpy.mockRestore();
     });
 
     it("rejects domains that resolve via DNS to loopback or metadata IP", async () => {
-      const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValueOnce([
-        { address: "169.254.169.254", family: 4 },
-      ] as any);
+      const lookupSpy = vi
+        .spyOn(dns, "lookup")
+        .mockResolvedValueOnce([
+          { address: "169.254.169.254", family: 4 },
+        ] as any);
 
-      await expect(assertSafeFetchUrl("http://attacker-rebinding.com")).rejects.toThrow(
-        DubApiError,
-      );
+      await expect(
+        assertSafeFetchUrl("http://attacker-rebinding.com"),
+      ).rejects.toThrow(DubApiError);
       lookupSpy.mockRestore();
     });
 
     it("allows safe public URLs and pins the resolved IP", async () => {
-      const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValueOnce([
-        { address: "93.184.216.34", family: 4 },
-      ] as any);
+      const lookupSpy = vi
+        .spyOn(dns, "lookup")
+        .mockResolvedValueOnce([
+          { address: "93.184.216.34", family: 4 },
+        ] as any);
 
       const result = await assertSafeFetchUrl("https://example.com/blog");
       expect(result.hostname).toBe("example.com");
@@ -174,7 +173,9 @@ describe("Milestone 3: SSRF Fail-Closed Defense, TOCTOU DNS Rebinding & Stored X
     });
 
     it("route handler returns HTTP 400 Bad Request when private IP is targeted", async () => {
-      const req = new NextRequest("https://dub.co/api/links/metatags?url=http://127.0.0.1:8080");
+      const req = new NextRequest(
+        "https://dub.co/api/links/metatags?url=http://127.0.0.1:8080",
+      );
       const res = await getMetatagsRoute(req);
       expect(res.status).toBe(400);
 
@@ -218,9 +219,9 @@ describe("Milestone 3: SSRF Fail-Closed Defense, TOCTOU DNS Rebinding & Stored X
     });
 
     it("hasSiteConfigured cleans up pinned DNS after completing checks", async () => {
-      const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValue([
-        { address: "93.184.216.34", family: 4 },
-      ] as any);
+      const lookupSpy = vi
+        .spyOn(dns, "lookup")
+        .mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as any);
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
         ok: true,
         status: 200,
@@ -299,21 +300,27 @@ describe("Milestone 3: SSRF Fail-Closed Defense, TOCTOU DNS Rebinding & Stored X
     });
 
     it("rejects unresolvable domains for webhook targets", async () => {
-      const lookupSpy = vi.spyOn(dns, "lookup").mockRejectedValueOnce(new Error("ENOTFOUND"));
+      const lookupSpy = vi
+        .spyOn(dns, "lookup")
+        .mockRejectedValueOnce(new Error("ENOTFOUND"));
 
-      await expect(assertSafeWebhookUrl("http://unresolvable-target.test/webhook")).rejects.toThrow(
-        DubApiError,
-      );
+      await expect(
+        assertSafeWebhookUrl("http://unresolvable-target.test/webhook"),
+      ).rejects.toThrow(DubApiError);
       lookupSpy.mockRestore();
     });
 
     it("allows valid public webhook targets", async () => {
-      const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValueOnce([
-        { address: "93.184.216.34", family: 4 },
-      ] as any);
+      const lookupSpy = vi
+        .spyOn(dns, "lookup")
+        .mockResolvedValueOnce([
+          { address: "93.184.216.34", family: 4 },
+        ] as any);
 
       await expect(
-        assertSafeWebhookUrl("https://webhook.site/00000000-0000-0000-0000-000000000000"),
+        assertSafeWebhookUrl(
+          "https://webhook.site/00000000-0000-0000-0000-000000000000",
+        ),
       ).resolves.toBeUndefined();
       lookupSpy.mockRestore();
     });
@@ -321,7 +328,8 @@ describe("Milestone 3: SSRF Fail-Closed Defense, TOCTOU DNS Rebinding & Stored X
 
   describe("SEC-R3-04: Stored XSS Hygiene in Shopify Catalog Sync", () => {
     it("strips malicious script tags from product descriptions", () => {
-      const dirty = "<p>Product Intro</p><script>alert('XSS')</script><strong>Premium Quality</strong>";
+      const dirty =
+        "<p>Product Intro</p><script>alert('XSS')</script><strong>Premium Quality</strong>";
       const cleaned = sanitizeProductDescriptionHtml(dirty);
       expect(cleaned).not.toContain("<script>");
       expect(cleaned).not.toContain("alert");
@@ -330,7 +338,8 @@ describe("Milestone 3: SSRF Fail-Closed Defense, TOCTOU DNS Rebinding & Stored X
     });
 
     it("strips event handlers (onerror, onload, onclick, onmouseover)", () => {
-      const dirty = '<img src="x" onerror="alert(1)"><div onclick="steal()">Click me</div>';
+      const dirty =
+        '<img src="x" onerror="alert(1)"><div onclick="steal()">Click me</div>';
       const cleaned = sanitizeProductDescriptionHtml(dirty);
       expect(cleaned).not.toContain("onerror");
       expect(cleaned).not.toContain("onclick");
@@ -339,7 +348,8 @@ describe("Milestone 3: SSRF Fail-Closed Defense, TOCTOU DNS Rebinding & Stored X
     });
 
     it("strips javascript: and data: pseudo-protocols on links", () => {
-      const dirty = '<a href="javascript:alert(document.cookie)">Click for discount</a>';
+      const dirty =
+        '<a href="javascript:alert(document.cookie)">Click for discount</a>';
       const cleaned = sanitizeProductDescriptionHtml(dirty);
       expect(cleaned).not.toContain("javascript:");
       expect(cleaned).not.toContain("alert");
@@ -356,7 +366,8 @@ describe("Milestone 3: SSRF Fail-Closed Defense, TOCTOU DNS Rebinding & Stored X
     });
 
     it("strips Tailwind class overlay attributes", () => {
-      const tailwindOverlay = '<div class="fixed inset-0 z-50 bg-black/80">Phishing Modal</div>';
+      const tailwindOverlay =
+        '<div class="fixed inset-0 z-50 bg-black/80">Phishing Modal</div>';
       const cleaned = sanitizeProductDescriptionHtml(tailwindOverlay);
       expect(cleaned).not.toContain('class="fixed');
       expect(cleaned).not.toContain("fixed inset-0");

@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import dnsCallback, { promises as dns } from "dns";
 import { execSync } from "child_process";
+import { promises as dns } from "dns";
 import path from "path";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("next/server", async (importOriginal) => {
@@ -39,30 +39,23 @@ vi.mock("@/lib/upstash", () => ({
 }));
 
 import { DubApiError } from "@/lib/api/errors";
-import {
-  assertSafeIp as assertSafeMetatagsIp,
-  assertSafeFetchUrl,
-  getHtml,
-  pinnedMetatagsDnsMap,
-  isPrivateIPv4 as isPrivateIPv4Metatags,
-  isPrivateIPv6 as isPrivateIPv6Metatags,
-} from "../../app/api/links/metatags/utils";
-import {
-  assertSafeIp as assertSafeDomainIp,
-  assertSafeUrl,
-  isPrivateIPv4 as isPrivateIPv4Domain,
-  isPrivateIPv6 as isPrivateIPv6Domain,
-} from "../../app/api/domains/[domain]/validate/utils";
 import { assertSafeWebhookUrl } from "@/lib/webhook/validate-webhook";
-import {
-  sanitizeProductDescriptionHtml,
-  PRODUCT_DESCRIPTION_SANITIZE_OPTIONS,
-} from "@/lib/weletic/html-sanitizer";
+import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import {
   buildKvKey,
   evictLinkFromKv,
   tombstoneLinkInKv,
 } from "@/lib/weletic/link-kv-cache";
+import {
+  assertSafeIp as assertSafeDomainIp,
+  assertSafeUrl,
+} from "../../app/api/domains/[domain]/validate/utils";
+import {
+  assertSafeFetchUrl,
+  assertSafeIp as assertSafeMetatagsIp,
+  getHtml,
+  pinnedMetatagsDnsMap,
+} from "../../app/api/links/metatags/utils";
 import {
   KV_NEGATIVE_CACHE_TTL_SECONDS,
   NegativeCacheSentinel,
@@ -179,7 +172,10 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
         { url: "http://127.1/ssrf", desc: "shorthand 127.1" },
         { url: "http://0xa9fea9fe/ssrf", desc: "hex 169.254.169.254" },
         { url: "http://2852039166/ssrf", desc: "dword 169.254.169.254" },
-        { url: "http://0251.0376.0251.0376/ssrf", desc: "octal 169.254.169.254" },
+        {
+          url: "http://0251.0376.0251.0376/ssrf",
+          desc: "octal 169.254.169.254",
+        },
         { url: "http://167772161/ssrf", desc: "dword 10.0.0.1" },
         { url: "http://3232235521/ssrf", desc: "dword 192.168.0.1" },
       ];
@@ -201,25 +197,30 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
     });
 
     it("1.5 blocks HTTP 301/302 redirects to http://169.254.169.254 fail-closed without following", async () => {
-      const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValue([
-        { address: "93.184.216.34", family: 4 },
-      ] as any);
+      const lookupSpy = vi
+        .spyOn(dns, "lookup")
+        .mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as any);
 
       let metadataServiceCalled = false;
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any) => {
-        const urlStr = typeof input === "string" ? input : input.url;
-        if (urlStr === "http://public-entry.com/redirect-to-aws") {
-          return new Response("", {
-            status: 301,
-            headers: { Location: "http://169.254.169.254/latest/meta-data/identity-credentials" },
-          });
-        }
-        if (urlStr.includes("169.254.169.254")) {
-          metadataServiceCalled = true;
-          return new Response("SECRET_AWS_CREDENTIALS", { status: 200 });
-        }
-        return new Response("OK", { status: 200 });
-      });
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockImplementation(async (input: any) => {
+          const urlStr = typeof input === "string" ? input : input.url;
+          if (urlStr === "http://public-entry.com/redirect-to-aws") {
+            return new Response("", {
+              status: 301,
+              headers: {
+                Location:
+                  "http://169.254.169.254/latest/meta-data/identity-credentials",
+              },
+            });
+          }
+          if (urlStr.includes("169.254.169.254")) {
+            metadataServiceCalled = true;
+            return new Response("SECRET_AWS_CREDENTIALS", { status: 200 });
+          }
+          return new Response("OK", { status: 200 });
+        });
 
       await expect(
         getHtml("http://public-entry.com/redirect-to-aws"),
@@ -231,9 +232,9 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
     });
 
     it("1.6 blocks HTTP 302 redirects to internal subnets and IPv6 loopback", async () => {
-      const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValue([
-        { address: "93.184.216.34", family: 4 },
-      ] as any);
+      const lookupSpy = vi
+        .spyOn(dns, "lookup")
+        .mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as any);
 
       const internalTargets = [
         "http://127.0.0.1:8080/admin",
@@ -244,16 +245,18 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
       ];
 
       for (const target of internalTargets) {
-        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any) => {
-          const urlStr = typeof input === "string" ? input : input.url;
-          if (urlStr === "http://public-entry.com/bounce") {
-            return new Response("", {
-              status: 302,
-              headers: { Location: target },
-            });
-          }
-          return new Response("OK", { status: 200 });
-        });
+        const fetchSpy = vi
+          .spyOn(globalThis, "fetch")
+          .mockImplementation(async (input: any) => {
+            const urlStr = typeof input === "string" ? input : input.url;
+            if (urlStr === "http://public-entry.com/bounce") {
+              return new Response("", {
+                status: 302,
+                headers: { Location: target },
+              });
+            }
+            return new Response("OK", { status: 200 });
+          });
 
         await expect(
           getHtml("http://public-entry.com/bounce"),
@@ -267,26 +270,28 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
     });
 
     it("1.7 blocks circular redirect loops (A -> B -> A -> B) at maxRedirects limit", async () => {
-      const lookupSpy = vi.spyOn(dns, "lookup").mockResolvedValue([
-        { address: "93.184.216.34", family: 4 },
-      ] as any);
+      const lookupSpy = vi
+        .spyOn(dns, "lookup")
+        .mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as any);
 
       let hopCount = 0;
-      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input: any) => {
-        hopCount++;
-        const urlStr = typeof input === "string" ? input : input.url;
-        const nextTarget = urlStr.includes("/hop-a")
-          ? "http://public-entry.com/hop-b"
-          : "http://public-entry.com/hop-a";
-        return new Response("", {
-          status: 302,
-          headers: { Location: nextTarget },
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockImplementation(async (input: any) => {
+          hopCount++;
+          const urlStr = typeof input === "string" ? input : input.url;
+          const nextTarget = urlStr.includes("/hop-a")
+            ? "http://public-entry.com/hop-b"
+            : "http://public-entry.com/hop-a";
+          return new Response("", {
+            status: 302,
+            headers: { Location: nextTarget },
+          });
         });
-      });
 
-      await expect(
-        getHtml("http://public-entry.com/hop-a"),
-      ).rejects.toThrow("Too many redirects encountered.");
+      await expect(getHtml("http://public-entry.com/hop-a")).rejects.toThrow(
+        "Too many redirects encountered.",
+      );
 
       // maxRedirects is 3; original + 3 redirects = 4 hops
       expect(hopCount).toBe(4);
@@ -361,7 +366,9 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
         expect(sanitized).not.toMatch(/<form/i);
         expect(sanitized).not.toMatch(/position:\s*fixed/i);
         expect(sanitized).not.toMatch(/position:\s*absolute/i);
-        expect(sanitized).not.toMatch(/z-index:\s*(?:[1-9][1-9]|[1-9][0-9]{2,})/i);
+        expect(sanitized).not.toMatch(
+          /z-index:\s*(?:[1-9][1-9]|[1-9][0-9]{2,})/i,
+        );
         expect(sanitized).not.toMatch(/class\s*=/i);
       }
     });
@@ -449,7 +456,9 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
       expect(sanitized).toContain("<strong>Non-Slip Waistband</strong>");
       expect(sanitized).toContain("<strong>Flattering Glute Contours</strong>");
       expect(sanitized).toContain("<strong>Second-Skin Support</strong>");
-      expect(sanitized).toContain("<strong>Material:</strong> 60% Premium Nylon, 40% Spandex (Yenergy™ Series)");
+      expect(sanitized).toContain(
+        "<strong>Material:</strong> 60% Premium Nylon, 40% Spandex (Yenergy™ Series)",
+      );
       expect(sanitized).toContain("<strong>Wash:</strong> Machine wash cold");
       expect(sanitized).toContain("<strong>Dry:</strong> Tumble dry low");
       expect(sanitized).toContain("<strong>Care:</strong> Do not bleach");
@@ -550,13 +559,19 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
 
       // Step 1: Active query with disabledAt: null yields zero conflict
       const activeCode = existingCodes.find(
-        (c) => c.programId === "prog_yamax" && c.code === "SAVE20" && c.disabledAt === null,
+        (c) =>
+          c.programId === "prog_yamax" &&
+          c.code === "SAVE20" &&
+          c.disabledAt === null,
       );
       expect(activeCode).toBeUndefined();
 
       // Step 2: Uniqueness lookup detects soft-deleted record for reactivation
       const softDeletedRecord = existingCodes.find(
-        (c) => c.programId === "prog_yamax" && c.code === "SAVE20" && c.disabledAt !== null,
+        (c) =>
+          c.programId === "prog_yamax" &&
+          c.code === "SAVE20" &&
+          c.disabledAt !== null,
       );
       expect(softDeletedRecord).toBeDefined();
       expect(softDeletedRecord?.id).toBe("dcode_old_1");
@@ -579,7 +594,11 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
       const repoRoot = path.resolve(__dirname, "../../../..");
 
       // Production paths: apps/web/app, apps/web/lib, apps/web/workers, packages/
-      const forbiddenTokens = ["montdev", "yamaxdev", "restricted-yamaxdev-testing"];
+      const forbiddenTokens = [
+        "montdev",
+        "yamaxdev",
+        "restricted-yamaxdev-testing",
+      ];
 
       let grepFailed = false;
       let matchedOutput = "";
@@ -603,7 +622,10 @@ describe("Milestone 5_2 Empirical Challenger: Adversarial Invariant Stress & SSR
         }
       }
 
-      expect(grepFailed, `Zero hardcoded strings violated:\n${matchedOutput}`).toBe(false);
+      expect(
+        grepFailed,
+        `Zero hardcoded strings violated:\n${matchedOutput}`,
+      ).toBe(false);
     });
   });
 });

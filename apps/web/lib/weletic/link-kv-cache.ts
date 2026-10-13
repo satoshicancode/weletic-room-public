@@ -22,7 +22,10 @@ export interface LinkIdentity {
  * Builds canonical KV lookup key: link:${domain}:${key.toLowerCase()}
  */
 export function buildKvKey(domain: string, key: string): string {
-  const cleanDomain = domain.replace(/^www\./, "").split(":")[0].toLowerCase();
+  const cleanDomain = domain
+    .replace(/^www\./, "")
+    .split(":")[0]
+    .toLowerCase();
   return `link:${cleanDomain}:${key.toLowerCase()}`;
 }
 
@@ -31,7 +34,9 @@ export function buildKvKey(domain: string, key: string): string {
  * 1. Uses native worker binding (globalThis.LINKS_KV) if present.
  * 2. Falls back to Cloudflare KV REST API if credentials are provided in env.
  */
-export async function evictLinkFromKv(options: EvictLinkOptions): Promise<boolean> {
+export async function evictLinkFromKv(
+  options: EvictLinkOptions,
+): Promise<boolean> {
   const { domain, key } = options;
   if (!domain || !key) return false;
 
@@ -44,7 +49,10 @@ export async function evictLinkFromKv(options: EvictLinkOptions): Promise<boolea
       await kv.delete(kvKey);
       return true;
     } catch (err) {
-      console.warn(`[link-kv-cache] Failed to delete KV key ${kvKey} via worker binding:`, err);
+      console.warn(
+        `[link-kv-cache] Failed to delete KV key ${kvKey} via worker binding:`,
+        err,
+      );
     }
   }
 
@@ -75,7 +83,10 @@ export async function evictLinkFromKv(options: EvictLinkOptions): Promise<boolea
       });
       return res.ok;
     } catch (err) {
-      console.warn(`[link-kv-cache] Failed to delete KV key ${kvKey} via REST API:`, err);
+      console.warn(
+        `[link-kv-cache] Failed to delete KV key ${kvKey} via REST API:`,
+        err,
+      );
     }
   }
 
@@ -91,7 +102,9 @@ export async function evictLinksBatchFromKv(
 ): Promise<{ evictedCount: number }> {
   if (!links || links.length === 0) return { evictedCount: 0 };
 
-  const kvKeys = Array.from(new Set(links.map((l) => buildKvKey(l.domain, l.key))));
+  const kvKeys = Array.from(
+    new Set(links.map((l) => buildKvKey(l.domain, l.key))),
+  );
 
   // 1. Native Worker Binding
   const kv = (globalThis as any).LINKS_KV;
@@ -100,7 +113,10 @@ export async function evictLinksBatchFromKv(
       await Promise.allSettled(kvKeys.map((k) => kv.delete(k)));
       return { evictedCount: kvKeys.length };
     } catch (err) {
-      console.warn("[link-kv-cache] Failed batch KV delete via worker binding:", err);
+      console.warn(
+        "[link-kv-cache] Failed batch KV delete via worker binding:",
+        err,
+      );
     }
   }
 
@@ -171,7 +187,10 @@ export async function tombstoneLinkInKv(
       await kv.put(kvKey, tombstonePayload, { expirationTtl: ttlSeconds });
       return true;
     } catch (err) {
-      console.warn(`[link-kv-cache] Failed to put tombstone for ${kvKey}:`, err);
+      console.warn(
+        `[link-kv-cache] Failed to put tombstone for ${kvKey}:`,
+        err,
+      );
     }
   }
 

@@ -41,7 +41,7 @@ export async function attachOpenReviewPhotos({
   `);
   if (
     settings.length !== 1 ||
-    ![true, 1, 1n].includes(settings[0].photoUploadsEnabled as any)
+    ![true, 1, BigInt(1)].includes(settings[0].photoUploadsEnabled as any)
   )
     throw new ReviewError("disabled", "Review photos are disabled");
   // Lock media before ownership, matching storage claims and cleanup. Use current

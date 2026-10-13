@@ -1,35 +1,23 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 import {
-  handleLinkRedirection,
-  buildKvKey,
-  resolveTargetUrl,
-  parseLinkGeo,
-  isBot,
-  isQrScan,
-  ATTRIBUTION_COOKIE_MAX_AGE_SECONDS,
-  type LinkRecord,
-  type LinkRedirectorEnv,
-  type AnalyticsEngineDataPointInput,
-  type AnalyticsEngineDatasetBinding,
-} from "../../workers/link-redirector/src/index";
-import {
-  buildPartnerClicksTimeseriesQuery,
   buildGeoDistributionQuery,
   buildLinkAnalyticsQuery,
-  buildDailyWorkspaceAggregationsQuery,
-  executeAnalyticsEngineQuery,
-  fetchPartnerClicksTimeseries,
-  fetchGeoDistribution,
-  fetchLinkAnalytics,
-  fetchDailyWorkspaceAggregations,
+  buildPartnerClicksTimeseriesQuery,
   escapeSqlString,
+  executeAnalyticsEngineQuery,
   formatSqlDate,
-  AnalyticsEngineError,
-  ANALYTICS_ENGINE_DATASET,
 } from "../../lib/analytics/analytics-engine";
+import {
+  buildKvKey,
+  handleLinkRedirection,
+  type AnalyticsEngineDataPointInput,
+  type AnalyticsEngineDatasetBinding,
+  type LinkRecord,
+  type LinkRedirectorEnv,
+} from "../../workers/link-redirector/src/index";
 
 class MockKVNamespace {
   public store = new Map<string, { value: string; options?: any }>();
@@ -214,7 +202,9 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
       // All 50 requests must succeed with 302
       for (const res of responses) {
         expect(res.status).toBe(302);
-        expect(res.headers.get("Location")).toContain("https://yamax.co/products/viral-drop");
+        expect(res.headers.get("Location")).toContain(
+          "https://yamax.co/products/viral-drop",
+        );
       }
 
       // KV must now contain the cached key with 24-hour TTL (86400s)
@@ -253,7 +243,9 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
 
       // Even if KV put throws, worker must catch and successfully redirect user
       expect(res.status).toBe(302);
-      expect(res.headers.get("Location")).toContain("https://yamax.co/resilient");
+      expect(res.headers.get("Location")).toContain(
+        "https://yamax.co/resilient",
+      );
     });
 
     it("1.4 [Resilience] handles malformed JSON in KV by falling back to D1 seamlessly", async () => {
@@ -291,7 +283,10 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
     };
 
     beforeEach(async () => {
-      await mockKV.put(buildKvKey("dub.sh", "geo-test"), JSON.stringify(baseLink));
+      await mockKV.put(
+        buildKvKey("dub.sh", "geo-test"),
+        JSON.stringify(baseLink),
+      );
     });
 
     it("2.1 safely handles hostile, extreme, or malformed country codes without crashing", async () => {
@@ -378,7 +373,10 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
         disabledAt: null,
       };
 
-      await mockKV.put(buildKvKey("dub.sh", "encoded-test"), JSON.stringify(link));
+      await mockKV.put(
+        buildKvKey("dub.sh", "encoded-test"),
+        JSON.stringify(link),
+      );
 
       const complexQuery =
         "?search=high%20waist%20leggings&symbol=%26%25%23%3D&filter%5Bcolor%5D=deep%20navy&emoji=%F0%9F%A7%98";
@@ -402,7 +400,10 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
         disabledAt: null,
       };
 
-      await mockKV.put(buildKvKey("dub.sh", "hash-link"), JSON.stringify(linkWithHash));
+      await mockKV.put(
+        buildKvKey("dub.sh", "hash-link"),
+        JSON.stringify(linkWithHash),
+      );
 
       const req = new Request("https://dub.sh/hash-link?utm_source=twitter");
       const res = await handleLinkRedirection(req, env);
@@ -421,7 +422,10 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
         disabledAt: null,
       };
 
-      await mockKV.put(buildKvKey("dub.sh", "summer-deal"), JSON.stringify(link));
+      await mockKV.put(
+        buildKvKey("dub.sh", "summer-deal"),
+        JSON.stringify(link),
+      );
 
       const req = new Request("https://dub.sh/summer-deal");
       const res = await handleLinkRedirection(req, env);
@@ -455,7 +459,10 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
         url: "https://yamax.co/super-secret-vip-destination",
         disabledAt: "2026-10-01T00:00:00Z",
       };
-      await mockKV.put(buildKvKey("dub.sh", "secret-promo"), JSON.stringify(softDeletedKV));
+      await mockKV.put(
+        buildKvKey("dub.sh", "secret-promo"),
+        JSON.stringify(softDeletedKV),
+      );
 
       const reqKV = new Request("https://dub.sh/secret-promo");
       const resKV = await handleLinkRedirection(reqKV, env);
@@ -495,9 +502,15 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
         disabledAt: null,
         expiresAt: new Date(Date.now() - 60000).toISOString(),
       };
-      await mockKV.put(buildKvKey("dub.sh", "past-exp"), JSON.stringify(expiredLink));
+      await mockKV.put(
+        buildKvKey("dub.sh", "past-exp"),
+        JSON.stringify(expiredLink),
+      );
 
-      const resPast = await handleLinkRedirection(new Request("https://dub.sh/past-exp"), env);
+      const resPast = await handleLinkRedirection(
+        new Request("https://dub.sh/past-exp"),
+        env,
+      );
       expect(resPast.status).toBe(404);
 
       // 1 hour in the future
@@ -508,11 +521,19 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
         disabledAt: null,
         expiresAt: new Date(Date.now() + 3600000).toISOString(),
       };
-      await mockKV.put(buildKvKey("dub.sh", "future-exp"), JSON.stringify(futureLink));
+      await mockKV.put(
+        buildKvKey("dub.sh", "future-exp"),
+        JSON.stringify(futureLink),
+      );
 
-      const resFuture = await handleLinkRedirection(new Request("https://dub.sh/future-exp"), env);
+      const resFuture = await handleLinkRedirection(
+        new Request("https://dub.sh/future-exp"),
+        env,
+      );
       expect(resFuture.status).toBe(302);
-      expect(resFuture.headers.get("Location")).toContain("https://yamax.co/valid-future");
+      expect(resFuture.headers.get("Location")).toContain(
+        "https://yamax.co/valid-future",
+      );
     });
 
     it("4.3 handles non-ISO / malformed expiresAt gracefully without server crash", async () => {
@@ -523,9 +544,15 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
         disabledAt: null,
         expiresAt: "invalid-timestamp-string",
       };
-      await mockKV.put(buildKvKey("dub.sh", "bad-exp"), JSON.stringify(malformedExpLink));
+      await mockKV.put(
+        buildKvKey("dub.sh", "bad-exp"),
+        JSON.stringify(malformedExpLink),
+      );
 
-      const res = await handleLinkRedirection(new Request("https://dub.sh/bad-exp"), env);
+      const res = await handleLinkRedirection(
+        new Request("https://dub.sh/bad-exp"),
+        env,
+      );
       // Date.getTime() is NaN, handler does not crash
       expect([302, 404]).toContain(res.status);
     });
@@ -682,4 +709,3 @@ describe("Adversarial Challenger Suite: Milestone 4 (R4) Edge Redirection & Anal
     });
   });
 });
-

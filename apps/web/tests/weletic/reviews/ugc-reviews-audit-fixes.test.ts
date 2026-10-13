@@ -1,15 +1,12 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { ReviewError } from "@/lib/weletic/reviews/contracts";
+import { storage } from "@/lib/storage";
 import {
   reserveProductReviewIncentiveInTransaction,
   reviewParticipationContentDigest,
 } from "@/lib/weletic/reviews/incentive-claims";
-import {
-  reviewIncentivePolicyDigest,
-} from "@/lib/weletic/reviews/incentive-policy";
+import { reviewIncentivePolicyDigest } from "@/lib/weletic/reviews/incentive-policy";
 import { moderateNativeReviewInTransaction } from "@/lib/weletic/reviews/service";
 import { syncProductReviewSummary } from "@/lib/weletic/reviews/summary-sync";
-import { storage } from "@/lib/storage";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/weletic/redis-lock", () => ({
@@ -34,9 +31,10 @@ vi.mock("@/lib/weletic/shopify/store-compliance-state", () => ({
 }));
 
 vi.mock("@/lib/weletic/loyalty/shopify-discounts", async (importOriginal) => {
-  const actual = await importOriginal<
-    typeof import("@/lib/weletic/loyalty/shopify-discounts")
-  >();
+  const actual =
+    await importOriginal<
+      typeof import("@/lib/weletic/loyalty/shopify-discounts")
+    >();
   return {
     ...actual,
     resolveShopifyOfflineCredentials: vi.fn().mockResolvedValue({
@@ -233,7 +231,7 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
       // Claim status must remain reserved when review is pending
       expect(result.status).toBe("reserved");
       expect(result.created).toBe(true);
-      expect(result.claim.id).toBe("wrevclaim_1");
+      expect(result.claim?.id).toBe("wrevclaim_1");
     });
 
     it("fulfills reserved points claim when review transitions from pending to published", async () => {
@@ -358,13 +356,17 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
             status: "published",
             version: 2,
           }),
-          update: vi.fn().mockResolvedValue({ ...existingReview, status: "published" }),
+          update: vi
+            .fn()
+            .mockResolvedValue({ ...existingReview, status: "published" }),
         },
         weleticReviewIncentiveClaim: {
           findFirst: vi.fn().mockResolvedValue(reservedClaim),
           findUnique: vi.fn().mockResolvedValue(reservedClaim),
           findUniqueOrThrow: vi.fn().mockResolvedValue(reservedClaim),
-          update: vi.fn().mockResolvedValue({ ...reservedClaim, status: "fulfilled" }),
+          update: vi
+            .fn()
+            .mockResolvedValue({ ...reservedClaim, status: "fulfilled" }),
         },
         weleticPointsLedgerEntry: {
           findFirst: vi.fn().mockResolvedValue(null),
@@ -407,8 +409,14 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         weleticShopper: {
-          findUnique: vi.fn().mockResolvedValue({ id: "shopper_1", storeId, pointsBalance: BigInt(0) }),
-          update: vi.fn().mockResolvedValue({ id: "shopper_1", pointsBalance: BigInt(150) }),
+          findUnique: vi.fn().mockResolvedValue({
+            id: "shopper_1",
+            storeId,
+            pointsBalance: BigInt(0),
+          }),
+          update: vi
+            .fn()
+            .mockResolvedValue({ id: "shopper_1", pointsBalance: BigInt(150) }),
         },
         weleticLoyaltyOutboxJob: {
           findUnique: vi.fn().mockResolvedValue(null),
@@ -449,7 +457,9 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
 
       expect(result.status).toBe("published");
       // Claim was queried and points were fulfilled
-      expect(mockTx.weleticReviewIncentiveClaim.findUnique).toHaveBeenCalledWith({
+      expect(
+        mockTx.weleticReviewIncentiveClaim.findUnique,
+      ).toHaveBeenCalledWith({
         where: { storeId_orderId: { storeId, orderId: "order_1" } },
       });
     });
@@ -546,12 +556,16 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
             status: "rejected",
             version: 3,
           }),
-          update: vi.fn().mockResolvedValue({ ...existingReview, status: "rejected" }),
+          update: vi
+            .fn()
+            .mockResolvedValue({ ...existingReview, status: "rejected" }),
         },
         weleticReviewIncentiveClaim: {
           findFirst: vi.fn().mockResolvedValue(fulfilledClaim),
           findUnique: vi.fn().mockResolvedValue(fulfilledClaim),
-          update: vi.fn().mockResolvedValue({ ...fulfilledClaim, status: "reversed" }),
+          update: vi
+            .fn()
+            .mockResolvedValue({ ...fulfilledClaim, status: "reversed" }),
         },
         weleticRewardRedemption: {
           findMany: vi.fn().mockResolvedValue([]),
@@ -559,7 +573,9 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
         },
         weleticReviewIncentiveInvalidation: {
           findUnique: vi.fn().mockResolvedValue(null),
-          create: vi.fn().mockResolvedValue({ id: "wrevinv_1", outcome: "points_reversed" }),
+          create: vi
+            .fn()
+            .mockResolvedValue({ id: "wrevinv_1", outcome: "points_reversed" }),
         },
         weleticLoyaltyOutboxJob: {
           findUnique: vi.fn().mockResolvedValue(null),
@@ -578,7 +594,11 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
         weleticPointsLedgerEntry: {
           findFirst: vi.fn().mockResolvedValue(awardLedgerEntry),
           findUnique: vi.fn().mockImplementation(({ where }: any) => {
-            if (where?.storeId_idempotencyKey?.idempotencyKey?.includes("reversal")) {
+            if (
+              where?.storeId_idempotencyKey?.idempotencyKey?.includes(
+                "reversal",
+              )
+            ) {
               return Promise.resolve(null);
             }
             return Promise.resolve(awardLedgerEntry);
@@ -604,8 +624,14 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
           updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
         weleticShopper: {
-          findUnique: vi.fn().mockResolvedValue({ id: "shopper_1", storeId, pointsBalance: BigInt(150) }),
-          update: vi.fn().mockResolvedValue({ id: "shopper_1", pointsBalance: BigInt(0) }),
+          findUnique: vi.fn().mockResolvedValue({
+            id: "shopper_1",
+            storeId,
+            pointsBalance: BigInt(150),
+          }),
+          update: vi
+            .fn()
+            .mockResolvedValue({ id: "shopper_1", pointsBalance: BigInt(0) }),
         },
         weleticReviewSettings: {
           findUnique: vi.fn().mockResolvedValue({ enabled: true }),
@@ -623,7 +649,9 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
 
       expect(result.status).toBe("rejected");
       // Claim was invalidated and points reversal recorded
-      expect(mockTx.weleticReviewIncentiveInvalidation.create).toHaveBeenCalledWith(
+      expect(
+        mockTx.weleticReviewIncentiveInvalidation.create,
+      ).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             storeId,
@@ -640,10 +668,13 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
       vi.stubGlobal(
         "fetch",
         vi.fn().mockResolvedValue(
-          new Response("<!DOCTYPE html><html><body>malicious payload</body></html>", {
-            status: 200,
-            headers: { "Content-Type": "text/html" },
-          }),
+          new Response(
+            "<!DOCTYPE html><html><body>malicious payload</body></html>",
+            {
+              status: 200,
+              headers: { "Content-Type": "text/html" },
+            },
+          ),
         ),
       );
 

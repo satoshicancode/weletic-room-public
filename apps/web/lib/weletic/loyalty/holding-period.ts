@@ -43,9 +43,19 @@ export interface ReleaseHoldingPeriodGrantParams {
   accountId?: string;
   storeId?: string;
   expectedInstallationGeneration?: string | null;
+  jobId?: string;
   loyaltyMaintenancePermit?: LoyaltyMaintenancePermit;
   tx?: Prisma.TransactionClient;
 }
+
+export type ReleaseHoldingPeriodGrantResult = {
+  released: boolean;
+  grantId?: string;
+  referralId?: string;
+  points?: bigint;
+  ledgerEntryId?: string;
+  reason?: string;
+};
 
 type ReleasableGrant = any;
 
@@ -213,7 +223,7 @@ async function recoverInterruptedRelease(
  */
 export async function releaseHoldingPeriodGrant(
   params: ReleaseHoldingPeriodGrantParams,
-) {
+): Promise<ReleaseHoldingPeriodGrantResult> {
   const {
     payload,
     grantId: directGrantId,

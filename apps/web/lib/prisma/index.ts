@@ -1,8 +1,8 @@
-/// <reference types="@cloudflare/workers-types" />
 import { PrismaD1 } from "@prisma/adapter-d1";
 import * as prismaClientModule from "@prisma/client";
 import { PrismaClient } from "@prisma/client";
 import { ALL_ENUMS } from "../types/enums";
+import type { D1Database } from "../weletic/cloudflare-types";
 import {
   isD1TransactionSemanticsEnabled,
   withD1TransactionSemantics,
@@ -92,17 +92,26 @@ function withSqlDialect<T extends PrismaClient<any, any, any>>(client: T): T {
               try {
                 return await query(args);
               } catch (err: any) {
-                if (err.code === "P2002" || /unique constraint/i.test(err.message || "")) {
+                if (
+                  err.code === "P2002" ||
+                  /unique constraint/i.test(err.message || "")
+                ) {
                   let count = 0;
-                  const modelName = model.charAt(0).toLowerCase() + model.slice(1);
+                  const modelName =
+                    model.charAt(0).toLowerCase() + model.slice(1);
                   const delegate = (client as any)[modelName];
-                  const data = Array.isArray(args.data) ? args.data : [args.data];
+                  const data = Array.isArray(args.data)
+                    ? args.data
+                    : [args.data];
                   for (const item of data) {
                     try {
                       await delegate.create({ data: item });
                       count++;
                     } catch (itemErr: any) {
-                      if (itemErr.code !== "P2002" && !/unique constraint/i.test(itemErr.message || "")) {
+                      if (
+                        itemErr.code !== "P2002" &&
+                        !/unique constraint/i.test(itemErr.message || "")
+                      ) {
                         throw itemErr;
                       }
                     }
@@ -143,7 +152,7 @@ function withSqlDialect<T extends PrismaClient<any, any, any>>(client: T): T {
 
 export function createPrismaClient(d1Database?: D1Database) {
   if (d1Database) {
-    const adapter = new PrismaD1(d1Database);
+    const adapter = new PrismaD1(d1Database as any);
     return withSqlDialect(new PrismaClient({ adapter, ...clientOptions }));
   }
 
@@ -167,8 +176,8 @@ export function createPrismaClient(d1Database?: D1Database) {
   ) {
     throw new Error(
       "[Prisma D1 Configuration Fatal] Running in production requires valid Cloudflare D1 HTTP credentials " +
-      "(CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID, CLOUDFLARE_D1_API_TOKEN) or native D1 binding. " +
-      "Silent fallback to local SQLite container is strictly prohibited.",
+        "(CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID, CLOUDFLARE_D1_API_TOKEN) or native D1 binding. " +
+        "Silent fallback to local SQLite container is strictly prohibited.",
     );
   }
 

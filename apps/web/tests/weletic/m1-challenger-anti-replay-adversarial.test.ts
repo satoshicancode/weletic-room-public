@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const testRsaKey = crypto.generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -22,21 +22,21 @@ vi.mock("@/lib/upstash/redis", () => ({
   },
 }));
 
-import {
-  createPrismaNonceClient,
-  createD1NonceClient,
-  verifyWeleticShopifyRequest,
-  resetServiceAuthNonceCache,
-  setServiceAuthRedisClient,
-  WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
-  WELETIC_SHOPIFY_TIMESTAMP_HEADER,
-  WELETIC_SHOPIFY_SIGNATURE_HEADER,
-  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
-} from "@weletic/contracts/shopify/service-auth";
 import { getIP } from "@/lib/api/utils/get-ip";
 import {
-  verifySignature as verifyPayPalSignature,
+  createD1NonceClient,
+  createPrismaNonceClient,
+  resetServiceAuthNonceCache,
+  setServiceAuthRedisClient,
+  verifyWeleticShopifyRequest,
+  WELETIC_SHOPIFY_MAX_CLOCK_SKEW_MS,
+  WELETIC_SHOPIFY_REQUEST_ID_HEADER,
+  WELETIC_SHOPIFY_SIGNATURE_HEADER,
+  WELETIC_SHOPIFY_TIMESTAMP_HEADER,
+} from "@weletic/contracts/shopify/service-auth";
+import {
   PAYPAL_WEBHOOK_MAX_CLOCK_SKEW_MS,
+  verifySignature as verifyPayPalSignature,
 } from "../../app/(ee)/api/paypal/webhook/verify-signature";
 
 describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (apps/web)", () => {
@@ -73,13 +73,19 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
         ? `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}\n${requestId}`
         : `${timestamp}\n${method.toUpperCase()}\n${path}\n${body}`;
 
-    const signature = crypto.createHmac("sha256", customSecret).update(canonical).digest("hex");
+    const signature = crypto
+      .createHmac("sha256", customSecret)
+      .update(canonical)
+      .digest("hex");
 
     const headersMap = new Map<string, string>();
     headersMap.set(WELETIC_SHOPIFY_TIMESTAMP_HEADER.toLowerCase(), timestamp);
     headersMap.set(WELETIC_SHOPIFY_SIGNATURE_HEADER.toLowerCase(), signature);
     if (requestId !== undefined) {
-      headersMap.set(WELETIC_SHOPIFY_REQUEST_ID_HEADER.toLowerCase(), requestId);
+      headersMap.set(
+        WELETIC_SHOPIFY_REQUEST_ID_HEADER.toLowerCase(),
+        requestId,
+      );
     }
 
     return {
@@ -102,16 +108,25 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
   // --------------------------------------------------------------------------
   describe("High-Concurrency Anti-Replay: Prisma Provider", () => {
     it("100 concurrent insertion calls with identical nonceKey yield exactly 1 success and 99 rejections", async () => {
-      const storage = new Map<string, { nonceKey: string; expiresAt: number }>();
+      const storage = new Map<
+        string,
+        { nonceKey: string; expiresAt: number }
+      >();
       const testKey = `weletic:service-auth:nonce:${crypto.randomUUID()}`;
       const concurrency = 100;
 
       const mockPrismaClient = {
         serviceAuthNonce: {
-          async create({ data }: { data: { nonceKey: string; expiresAt: number } }) {
+          async create({
+            data,
+          }: {
+            data: { nonceKey: string; expiresAt: number };
+          }) {
             // Emulate database unique constraint atomic violation
             if (storage.has(data.nonceKey)) {
-              const err: any = new Error("Unique constraint failed on the fields: (`nonceKey`)");
+              const err: any = new Error(
+                "Unique constraint failed on the fields: (`nonceKey`)",
+              );
               err.code = "P2002";
               throw err;
             }
@@ -140,12 +155,21 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
     });
 
     it("50 concurrent end-to-end verifyWeleticShopifyRequest attempts accept exactly 1 and reject 49", async () => {
-      const storage = new Map<string, { nonceKey: string; expiresAt: number }>();
+      const storage = new Map<
+        string,
+        { nonceKey: string; expiresAt: number }
+      >();
       const mockPrismaClient = {
         serviceAuthNonce: {
-          async create({ data }: { data: { nonceKey: string; expiresAt: number } }) {
+          async create({
+            data,
+          }: {
+            data: { nonceKey: string; expiresAt: number };
+          }) {
             if (storage.has(data.nonceKey)) {
-              const err: any = new Error("Unique constraint failed on the fields: (`nonceKey`)");
+              const err: any = new Error(
+                "Unique constraint failed on the fields: (`nonceKey`)",
+              );
               err.code = "P2002";
               throw err;
             }
@@ -190,7 +214,10 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
   // --------------------------------------------------------------------------
   describe("High-Concurrency Anti-Replay: Cloudflare D1 Provider", () => {
     it("100 concurrent insertion calls with identical nonceKey yield exactly 1 success and 99 rejections", async () => {
-      const storage = new Map<string, { nonceKey: string; expiresAt: number }>();
+      const storage = new Map<
+        string,
+        { nonceKey: string; expiresAt: number }
+      >();
       const testKey = `weletic:service-auth:nonce:${crypto.randomUUID()}`;
       const concurrency = 100;
 
@@ -202,7 +229,9 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
               return {
                 async run() {
                   if (storage.has(key)) {
-                    throw new Error("UNIQUE constraint failed: ServiceAuthNonce.nonceKey");
+                    throw new Error(
+                      "UNIQUE constraint failed: ServiceAuthNonce.nonceKey",
+                    );
                   }
                   storage.set(key, { nonceKey: key, expiresAt });
                   return { success: true, meta: { changes: 1 } };
@@ -244,7 +273,12 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
       const { request, body } = createSignedShopifyRequest({
         timestamp: String(now - 299_000),
       });
-      const valid = await verifyWeleticShopifyRequest({ request, body, now, secret });
+      const valid = await verifyWeleticShopifyRequest({
+        request,
+        body,
+        now,
+        secret,
+      });
       expect(valid).toBe(true);
     });
 
@@ -253,7 +287,12 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
       const { request, body } = createSignedShopifyRequest({
         timestamp: String(now - skewMs),
       });
-      const valid = await verifyWeleticShopifyRequest({ request, body, now, secret });
+      const valid = await verifyWeleticShopifyRequest({
+        request,
+        body,
+        now,
+        secret,
+      });
       expect(valid).toBe(true);
     });
 
@@ -262,7 +301,12 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
       const { request, body } = createSignedShopifyRequest({
         timestamp: String(now - (skewMs + 1)),
       });
-      const valid = await verifyWeleticShopifyRequest({ request, body, now, secret });
+      const valid = await verifyWeleticShopifyRequest({
+        request,
+        body,
+        now,
+        secret,
+      });
       expect(valid).toBe(false);
     });
 
@@ -271,7 +315,12 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
       const { request, body } = createSignedShopifyRequest({
         timestamp: String(now - 301_000),
       });
-      const valid = await verifyWeleticShopifyRequest({ request, body, now, secret });
+      const valid = await verifyWeleticShopifyRequest({
+        request,
+        body,
+        now,
+        secret,
+      });
       expect(valid).toBe(false);
     });
 
@@ -280,7 +329,12 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
       const { request, body } = createSignedShopifyRequest({
         timestamp: String(now + 299_000),
       });
-      const valid = await verifyWeleticShopifyRequest({ request, body, now, secret });
+      const valid = await verifyWeleticShopifyRequest({
+        request,
+        body,
+        now,
+        secret,
+      });
       expect(valid).toBe(true);
     });
 
@@ -289,7 +343,12 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
       const { request, body } = createSignedShopifyRequest({
         timestamp: String(now + skewMs),
       });
-      const valid = await verifyWeleticShopifyRequest({ request, body, now, secret });
+      const valid = await verifyWeleticShopifyRequest({
+        request,
+        body,
+        now,
+        secret,
+      });
       expect(valid).toBe(true);
     });
 
@@ -298,7 +357,12 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
       const { request, body } = createSignedShopifyRequest({
         timestamp: String(now + (skewMs + 1)),
       });
-      const valid = await verifyWeleticShopifyRequest({ request, body, now, secret });
+      const valid = await verifyWeleticShopifyRequest({
+        request,
+        body,
+        now,
+        secret,
+      });
       expect(valid).toBe(false);
     });
 
@@ -307,7 +371,12 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
       const { request, body } = createSignedShopifyRequest({
         timestamp: String(now + 301_000),
       });
-      const valid = await verifyWeleticShopifyRequest({ request, body, now, secret });
+      const valid = await verifyWeleticShopifyRequest({
+        request,
+        body,
+        now,
+        secret,
+      });
       expect(valid).toBe(false);
     });
   });
@@ -430,7 +499,10 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
   describe("Adversarial IP Spoofing Challenge against getIP()", () => {
     it("handles heavily polluted X-Forwarded-For with multiple commas and leading/trailing spaces", async () => {
       const headers = new Headers();
-      headers.set("x-forwarded-for", " , ,  10.0.0.1 ,  ,  192.168.1.100  ,  203.0.113.88 , , ");
+      headers.set(
+        "x-forwarded-for",
+        " , ,  10.0.0.1 ,  ,  192.168.1.100  ,  203.0.113.88 , , ",
+      );
 
       const ip = await getIP(headers);
       expect(ip).toBe("203.0.113.88");
@@ -494,7 +566,11 @@ describe("Adversarial Anti-Replay, Clock Skew & IP Spoofing Challenger Suite (ap
       let recordedTtl: number | undefined;
 
       const mockRedisClient = {
-        async set(key: string, value: string, opts?: { nx?: boolean; ex?: number }) {
+        async set(
+          key: string,
+          value: string,
+          opts?: { nx?: boolean; ex?: number },
+        ) {
           recordedTtl = opts?.ex;
           return "OK";
         },

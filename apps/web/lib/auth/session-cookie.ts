@@ -49,10 +49,7 @@ function extractApexDomain(hostname: string): string | undefined {
 export function getSessionCookieDomain(
   customEnv?: SessionCookieDomainOptions,
 ): string | undefined {
-  if (
-    customEnv?.hostOnly ||
-    process.env.NEXTAUTH_COOKIE_HOST_ONLY === "true"
-  ) {
+  if (customEnv?.hostOnly || process.env.NEXTAUTH_COOKIE_HOST_ONLY === "true") {
     return undefined;
   }
   const vercelEnv = customEnv?.vercelEnv ?? process.env.VERCEL_ENV;
