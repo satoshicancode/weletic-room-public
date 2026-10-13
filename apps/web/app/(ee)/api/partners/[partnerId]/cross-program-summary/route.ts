@@ -31,7 +31,7 @@ export const GET = withWorkspace(
     // approved and archived statuses
     const activePrograms = programEnrollments
       .filter((enrollment) =>
-        ACTIVE_ENROLLMENT_STATUSES.includes(enrollment.status),
+        ACTIVE_ENROLLMENT_STATUSES.includes(enrollment.status as any),
       )
       .reduce((acc, enrollment) => acc + enrollment._count, 0);
 

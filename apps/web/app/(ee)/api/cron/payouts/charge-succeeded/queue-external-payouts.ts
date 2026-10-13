@@ -77,7 +77,7 @@ export async function queueExternalPayouts(
       disabledAt: null,
       triggers: {
         array_contains: ["payout.confirmed"],
-      },
+      } as any,
     },
     select: {
       id: true,

@@ -12,7 +12,7 @@ export const syncClickWebhookWorkspaceSet = async () => {
       disabledAt: null,
       triggers: {
         array_contains: [LINK_CLICK_WEBHOOK_TRIGGER],
-      },
+      } as any,
       project: {
         plan: {
           notIn: ["free", "pro"],

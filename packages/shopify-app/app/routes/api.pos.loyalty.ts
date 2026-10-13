@@ -4,6 +4,10 @@ import type {
   LoaderFunctionArgs,
 } from "@remix-run/node";
 import { boundary } from "@shopify/shopify-app-remix/server";
+import {
+  createPosCustomerBindingToken,
+  verifyPosCustomerBindingToken,
+} from "../pos-binding.server";
 import { authenticate } from "../shopify.server";
 import {
   privateCustomerJson,
@@ -58,6 +62,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     );
   }
 
+  const customerBindingToken = createPosCustomerBindingToken(shop, customerId);
+
   try {
     const search = new URLSearchParams({
       shop,
@@ -69,7 +75,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
       { method: "GET", signal: request.signal },
     );
     const payload = await upstream.json();
-    return cors(privateCustomerJson(payload, { status: upstream.status }));
+    let enrichedPayload = payload;
+    if (payload && typeof payload === "object") {
+      enrichedPayload = {
+        ...payload,
+        customerBindingToken,
+        ...("data" in payload &&
+        typeof (payload as any).data === "object" &&
+        (payload as any).data !== null
+          ? { data: { ...(payload as any).data, customerBindingToken } }
+          : {}),
+      };
+    }
+    return cors(
+      privateCustomerJson(enrichedPayload, { status: upstream.status }),
+    );
   } catch (error) {
     console.error("[POS Loyalty Loader Error]", error);
     return cors(
@@ -117,6 +137,25 @@ export async function action({ request }: ActionFunctionArgs) {
           },
         },
         { status: 422 },
+      ),
+    );
+  }
+
+  const customerBindingToken = body.customerBindingToken;
+  if (
+    !customerBindingToken ||
+    !verifyPosCustomerBindingToken(customerBindingToken, shop, customerId)
+  ) {
+    return cors(
+      privateCustomerJson(
+        {
+          error: {
+            code: "invalid_customer_binding",
+            message:
+              "Invalid or expired customer session. Please reload customer rewards.",
+          },
+        },
+        { status: 403 },
       ),
     );
   }

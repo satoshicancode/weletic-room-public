@@ -57,7 +57,7 @@ it("verifies the complete actor/request body before a single repeatable-read tra
     expect.objectContaining({ body: JSON.stringify(input) }),
   );
   expect(mocks.transaction).toHaveBeenCalledWith(expect.any(Function), {
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
   });
   expect(mocks.query).toHaveBeenCalledWith({
     tx,

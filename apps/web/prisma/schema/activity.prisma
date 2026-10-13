@@ -8,7 +8,7 @@ model ActivityLog {
   resourceId         String
   userId             String?
   action             String
-  description        String?  @db.Text
+  description        String?
   batchId            String?
   changeSet          Json?
   createdAt          DateTime @default(now())

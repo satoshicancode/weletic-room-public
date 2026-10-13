@@ -16,6 +16,11 @@ export const GET = withWorkspace(async ({ workspace, searchParams }) => {
       ...(campaignId && { campaignId }),
       ...(partnerId && { partnerId }),
       type: "Campaign",
+      campaign: {
+        program: {
+          workspaceId: workspace.id,
+        },
+      },
     },
   });
 
@@ -28,7 +33,30 @@ export const POST = withWorkspace(
     assertE2EWorkspace(workspace);
 
     const programId = getDefaultProgramIdOrThrow(workspace);
-    const body = await req.json();
+    const body = (await req.json()) as {
+      emailId?: string;
+      campaignId?: string;
+      partnerId?: string;
+      recipientUserId?: string;
+    };
+
+    if (body.campaignId) {
+      const campaign = await prisma.campaign.findFirst({
+        where: {
+          id: body.campaignId,
+          program: {
+            workspaceId: workspace.id,
+          },
+        },
+      });
+
+      if (!campaign) {
+        return NextResponse.json(
+          { error: "Campaign not found in workspace" },
+          { status: 404 },
+        );
+      }
+    }
 
     const email = await prisma.notificationEmail.create({
       data: {
@@ -60,6 +88,22 @@ export const DELETE = withWorkspace(
       return NextResponse.json(
         { error: "campaignId is required" },
         { status: 400 },
+      );
+    }
+
+    const campaign = await prisma.campaign.findFirst({
+      where: {
+        id: campaignId,
+        program: {
+          workspaceId: workspace.id,
+        },
+      },
+    });
+
+    if (!campaign) {
+      return NextResponse.json(
+        { error: "Campaign not found in workspace" },
+        { status: 404 },
       );
     }
 

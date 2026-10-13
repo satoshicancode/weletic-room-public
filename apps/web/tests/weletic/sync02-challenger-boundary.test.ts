@@ -722,7 +722,7 @@ describe("Challenger 1 Empirical Boundary Testing for SYNC-02", () => {
   // SECTION 6: Resilience on Malformed Dates and Edge Case Formats
   // =========================================================================
   describe("Section 6: Malformed / Edge Case Timestamp Resilience", () => {
-    it("6.1: When order created_at is an invalid date string, does not crash and defaults to permissive attribution", async () => {
+    it("6.1: When order created_at is an invalid date string, does not crash and fails closed on disabled code (FIN-AUDIT-11)", async () => {
       mocks.discountFindMany.mockResolvedValue([
         {
           id: "dcode_invalid_date",
@@ -750,14 +750,14 @@ describe("Challenger 1 Empirical Boundary Testing for SYNC-02", () => {
         storeId: "store_challenger",
       });
 
-      // Does not throw unhandled exception; attribution proceeds safely
-      expect(mocks.attribute).toHaveBeenCalledOnce();
+      // Does not throw unhandled exception; fails closed without attributing disabled code
+      expect(mocks.attribute).not.toHaveBeenCalled();
       expect(result).toContain(
-        "Order event processed successfully with discount codes",
+        "[Shopify] Factual order recorded. Order is not from a Dub affiliate link.",
       );
     });
 
-    it("6.2: When code.disabledAt is an invalid date string, does not crash and treats code as valid", async () => {
+    it("6.2: When code.disabledAt is an invalid date string, does not crash and safely fails closed (FIN-AUDIT-11)", async () => {
       mocks.discountFindMany.mockResolvedValue([
         {
           id: "dcode_invalid_disabled",
@@ -785,9 +785,9 @@ describe("Challenger 1 Empirical Boundary Testing for SYNC-02", () => {
         storeId: "store_challenger",
       });
 
-      expect(mocks.attribute).toHaveBeenCalledOnce();
+      expect(mocks.attribute).not.toHaveBeenCalled();
       expect(result).toContain(
-        "Order event processed successfully with discount codes",
+        "[Shopify] Factual order recorded. Order is not from a Dub affiliate link.",
       );
     });
   });

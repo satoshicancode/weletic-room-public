@@ -55,14 +55,24 @@ export async function POST(req: Request) {
       );
     }
 
-    // Set the method for each payout in the invoice to the corresponding partner's default payout method
+    // Set the method for each payout in the invoice to the corresponding partner's default payout method (FIN-AUDIT-01: SQLite / ANSI SQL compatible)
     await prisma.$executeRaw`
-      UPDATE Payout p
-      INNER JOIN Partner pn ON p.partnerId = pn.id
-      SET p.method = pn.defaultPayoutMethod
-      WHERE p.invoiceId = ${invoice.id}
-      AND pn.defaultPayoutMethod IS NOT NULL
-      AND p.status = 'processing'
+      UPDATE Payout
+      SET
+        method = (
+          SELECT defaultPayoutMethod
+          FROM Partner
+          WHERE Partner.id = Payout.partnerId
+        ),
+        updatedAt = CURRENT_TIMESTAMP
+      WHERE invoiceId = ${invoice.id}
+        AND status = 'processing'
+        AND EXISTS (
+          SELECT 1
+          FROM Partner
+          WHERE Partner.id = Payout.partnerId
+            AND defaultPayoutMethod IS NOT NULL
+        )
     `;
 
     let fundsAvailable = true;

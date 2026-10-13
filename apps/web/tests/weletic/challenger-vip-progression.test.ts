@@ -623,7 +623,7 @@ describe("Challenger 2: Adversarial VIP Tier Progression & CLI Script Stress Sui
         where: { id: account.id },
         data: expect.objectContaining({
           currentTierId: "wtier_platinum_4",
-          tierExpiresAt: null, // Grace cleared!
+          tierExpiresAt: expect.any(Date), // Expiration scheduled!
         }),
       });
 

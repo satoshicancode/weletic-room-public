@@ -4122,7 +4122,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
             );
         },
         {
-          isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
           timeout: 15000,
         },
       );
@@ -8085,7 +8085,7 @@ describe("native reviews real MySQL production-service boundaries", () => {
         });
       },
       {
-        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         timeout: 15000,
       },
     );

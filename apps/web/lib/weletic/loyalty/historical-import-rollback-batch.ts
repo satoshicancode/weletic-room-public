@@ -81,7 +81,7 @@ export async function processHistoricalImportRollbackBatch({
         };
       },
       {
-        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
         timeout: 30_000,
       },
     );

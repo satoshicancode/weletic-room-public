@@ -71,7 +71,7 @@ export async function executeWorkflows({
         triggerConditions: {
           path: "$[*].attribute",
           array_contains: attribute,
-        },
+        } as any,
       })),
     },
   });

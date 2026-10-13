@@ -11,7 +11,10 @@ import { NextResponse } from "next/server";
 // POST /api/admin/ban
 export const POST = withAdmin(
   async ({ req }) => {
-    const { email, blockEmailDomain } = await req.json();
+    const { email, blockEmailDomain } = (await req.json()) as {
+      email: string;
+      blockEmailDomain?: boolean;
+    };
 
     const user = await prisma.user.findUniqueOrThrow({
       where: {

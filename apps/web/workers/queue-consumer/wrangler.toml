@@ -1,0 +1,24 @@
+name = "weletic-queue-consumer"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[queues.consumers]]
+queue = "order-webhook-queue"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "order-webhook-dlq"
+
+[[queues.producers]]
+queue = "order-webhook-dlq"
+binding = "ORDER_WEBHOOK_DLQ"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "weletic-production"
+database_id = "weletic-d1-prod"
+
+[alias]
+"server-only" = "../empty.ts"
+

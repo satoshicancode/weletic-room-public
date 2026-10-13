@@ -785,7 +785,7 @@ describe("FIN-04: Currency Conversion in Link Stats (createShopifySale)", () => 
 
       const event = createOrderEvent({
         amount: "10000",
-        currencyCode: "JPY",
+        currencyCode: "CHF",
         invoiceId: "INV-REDIS-FAIL",
       });
 
@@ -797,7 +797,7 @@ describe("FIN-04: Currency Conversion in Link Stats (createShopifySale)", () => 
           leadData,
           settlementLockContext,
         }),
-      ).rejects.toThrow("Upstash Redis connection timeout");
+      ).rejects.toThrow(/Missing FX rate for CHF\/USD/);
 
       // Invariant: Prisma update is never called
       expect(mocks.prismaLinkUpdate).not.toHaveBeenCalled();

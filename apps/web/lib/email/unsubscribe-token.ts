@@ -41,12 +41,10 @@ export function verifyUnsubscribeToken(token: string): string | null {
       .digest("hex")
       .slice(0, 24);
 
-    if (
-      !timingSafeEqual(
-        Uint8Array.from(Buffer.from(signature)),
-        Uint8Array.from(Buffer.from(expectedSignature)),
-      )
-    ) {
+    const sigBuf = Buffer.from(signature, "utf8");
+    const expBuf = Buffer.from(expectedSignature, "utf8");
+
+    if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
       return null;
     }
 

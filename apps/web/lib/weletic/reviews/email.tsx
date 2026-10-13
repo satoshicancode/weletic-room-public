@@ -13,6 +13,7 @@ import {
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { resend } from "@dub/email/resend";
 import { randomUUID } from "node:crypto";
+import { readReviewInvitationPath } from "../shopify/app-proxy-route";
 import { generateReviewToken, hashReviewToken, ReviewError } from "./contracts";
 import { finalizeReviewDeliveryInTransaction } from "./delivery-finalization";
 import {
@@ -185,6 +186,11 @@ async function deliverReviewRequestLocked(
           where: { storeId },
           select: { name: true },
         });
+        const proxyPath = await readReviewInvitationPath(
+          tx,
+          storeId,
+          generation,
+        );
         prepared = await prepareReviewEmail({
           email: request.shopper.email,
           language,
@@ -194,7 +200,7 @@ async function deliverReviewRequestLocked(
           logoUrl: communications.logoUrl,
           accentColor: communications.accentColor,
           disclosure: disclosure?.[language] ?? [],
-          url: `https://${store.shopDomain}/apps/weletic/reviews/write?locale=${language}#token=${token}`,
+          url: `https://${store.shopDomain}${proxyPath}/reviews/write?locale=${language}#token=${token}`,
         });
         if (
           prepared.provider !== provider ||

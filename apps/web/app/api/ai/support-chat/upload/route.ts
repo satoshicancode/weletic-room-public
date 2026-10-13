@@ -29,7 +29,10 @@ export const POST = withSession(async ({ req, session }) => {
   let fileName: string;
   let fileSizeBytes: number;
   try {
-    ({ fileName, fileSizeBytes } = await req.json());
+    ({ fileName, fileSizeBytes } = (await req.json()) as {
+      fileName: string;
+      fileSizeBytes: number;
+    });
   } catch {
     return new Response("Invalid JSON body", { status: 400 });
   }

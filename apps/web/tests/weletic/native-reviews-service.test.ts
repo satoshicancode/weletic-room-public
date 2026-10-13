@@ -25,6 +25,11 @@ const mocks = vi.hoisted(() => ({
     weleticLoyaltyReviewIntegration: { updateMany: vi.fn() },
     weleticPointsLedgerEntry: { findUniqueOrThrow: vi.fn() },
     weleticShopifyCustomerPrivacyTombstone: { findFirst: vi.fn() },
+    weleticReviewIncentiveClaim: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
   },
   boundary: vi.fn(),
   enqueue: vi.fn(),
@@ -156,6 +161,7 @@ beforeEach(() => {
   );
   mocks.tx.weleticProductReview.updateMany.mockResolvedValue({ count: 1 });
   mocks.tx.weleticReviewOrderCancellation.findUnique.mockResolvedValue(null);
+  mocks.tx.weleticReviewIncentiveClaim.findUnique.mockResolvedValue(null);
   mocks.reverse.mockResolvedValue({ status: "clawed_back" });
 });
 

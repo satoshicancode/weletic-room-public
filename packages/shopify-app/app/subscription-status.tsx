@@ -12,7 +12,7 @@ const copy = {
   en: {
     title: "Shopify subscription",
     restricted:
-      "Restricted yamaxdev feature testing. Subscription billing is not verified; this access cannot be used in production.",
+      "Restricted development feature testing. Subscription billing is not verified; this access cannot be used in production.",
     restrictedPaused:
       "Restricted testing access is paused until the development installation identity is verified. Subscription billing remains untested.",
     setup:
@@ -33,7 +33,7 @@ const copy = {
   ja: {
     title: "Shopifyサブスクリプション",
     restricted:
-      "yamaxdev限定の機能テストです。課金契約は未検証で、本番環境では利用できません。",
+      "開発ストア限定の機能テストです。課金契約は未検証で、本番環境では利用できません。",
     restrictedPaused:
       "開発ストアのインストール情報を確認するまでテスト権限は停止中です。課金契約は未検証です。",
     setup:
@@ -54,7 +54,7 @@ const copy = {
   vi: {
     title: "Gói đăng ký Shopify",
     restricted:
-      "Thử nghiệm tính năng giới hạn trên yamaxdev. Chưa xác minh thanh toán gói đăng ký; quyền này không dùng được trên production.",
+      "Thử nghiệm tính năng giới hạn trên cửa hàng phát triển. Chưa xác minh thanh toán gói đăng ký; quyền này không dùng được trên production.",
     restrictedPaused:
       "Quyền thử nghiệm tạm dừng cho đến khi xác minh cài đặt trên cửa hàng phát triển. Thanh toán gói đăng ký vẫn chưa được kiểm thử.",
     setup:

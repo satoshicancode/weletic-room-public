@@ -339,6 +339,6 @@ export async function getPublicProductReviews(storeId: string, input: unknown) {
             : null,
       };
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
 }

@@ -90,68 +90,63 @@ export async function syncProductReviewSummary(
         select: { externalId: true },
       });
       if (!product) return;
-      const summary = await prisma.$transaction(
-        async (tx) => {
-          const current = await assertShopifyStoreMatchesInstallationGeneration(
-            {
-              storeId,
-              expectedInstallationGeneration,
-              action: "native_review_summary_read",
-              tx,
-            },
+      const summary = await prisma.$transaction(async (tx) => {
+        const current = await assertShopifyStoreMatchesInstallationGeneration({
+          storeId,
+          expectedInstallationGeneration,
+          action: "native_review_summary_read",
+          tx,
+        });
+        if (
+          current.complianceState !== "active" ||
+          current.storeAccessState !== "active"
+        )
+          throw new ReviewError(
+            "unavailable",
+            "Review summary store unavailable",
           );
-          if (
-            current.complianceState !== "active" ||
-            current.storeAccessState !== "active"
-          )
-            throw new ReviewError(
-              "unavailable",
-              "Review summary store unavailable",
-            );
-          const privacy = buildReviewPublicPrivacySql({
-            storeId,
-            productId,
-            installationGeneration: store.installationGeneration!,
-          });
-          const unknown = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        const privacy = buildReviewPublicPrivacySql({
+          storeId,
+          productId,
+          installationGeneration: store.installationGeneration!,
+        });
+        const unknown = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
           SELECT r.id FROM ${privacy.from} WHERE ${privacy.unknown} LIMIT 1`);
-          if (unknown.length)
-            throw new ReviewError(
-              "unavailable",
-              "Review summary privacy coverage unavailable",
-            );
-          const groups = await tx.$queryRaw<
-            Array<{ rating: number; count: bigint }>
-          >(Prisma.sql`
+        if (unknown.length)
+          throw new ReviewError(
+            "unavailable",
+            "Review summary privacy coverage unavailable",
+          );
+        const groups = await tx.$queryRaw<
+          Array<{ rating: number; count: bigint }>
+        >(Prisma.sql`
           SELECT r.rating, COUNT(*) AS count FROM ${privacy.from}
           WHERE ${privacy.eligible} GROUP BY r.rating`);
-          let count = 0;
-          let sum = 0;
-          for (const group of groups) {
-            const quantity = Number(group.count);
-            if (
-              !Number.isSafeInteger(quantity) ||
-              quantity < 0 ||
-              !Number.isInteger(group.rating) ||
-              group.rating < 1 ||
-              group.rating > 5
-            )
-              throw new ReviewError(
-                "unavailable",
-                "Review summary totals unavailable",
-              );
-            count += quantity;
-            sum += quantity * group.rating;
-          }
-          if (!Number.isSafeInteger(count) || !Number.isSafeInteger(sum))
+        let count = 0;
+        let sum = 0;
+        for (const group of groups) {
+          const quantity = Number(group.count);
+          if (
+            !Number.isSafeInteger(quantity) ||
+            quantity < 0 ||
+            !Number.isInteger(group.rating) ||
+            group.rating < 1 ||
+            group.rating > 5
+          )
             throw new ReviewError(
               "unavailable",
               "Review summary totals unavailable",
             );
-          return { _count: { rating: count }, _sum: { rating: sum } };
-        },
-        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-      );
+          count += quantity;
+          sum += quantity * group.rating;
+        }
+        if (!Number.isSafeInteger(count) || !Number.isSafeInteger(sum))
+          throw new ReviewError(
+            "unavailable",
+            "Review summary totals unavailable",
+          );
+        return { _count: { rating: count }, _sum: { rating: sum } };
+      });
       const credentials = await resolveShopifyOfflineCredentials({ storeId });
       // Recheck after credential resolution; never hold a SQL transaction across
       // the provider request. Remote projection remains eventually consistent.
@@ -203,7 +198,7 @@ export async function syncProductReviewSummary(
         accessToken: credentials.accessToken,
         query,
         requestTimeoutMs: 8000,
-        maxRetries: 0,
+        maxRetries: 3,
         variables: {
           metafields,
           ...(count
@@ -219,12 +214,16 @@ export async function syncProductReviewSummary(
               }),
         },
       });
+      const deleteErrors = (response.metafieldsDelete?.userErrors ?? []).filter(
+        (err) => {
+          const msg = (err.message || "").toLowerCase();
+          return !msg.includes("does not exist") && !msg.includes("not found");
+        },
+      );
       if (
         !response.metafieldsSet ||
         response.metafieldsSet.userErrors.length ||
-        (!count &&
-          (!response.metafieldsDelete ||
-            response.metafieldsDelete.userErrors.length))
+        (!count && (!response.metafieldsDelete || deleteErrors.length > 0))
       ) {
         throw new ReviewError(
           "unavailable",

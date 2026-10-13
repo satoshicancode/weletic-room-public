@@ -1,3 +1,4 @@
+import "@/lib/weletic/rbac/register";
 import { WorkspaceRole } from "@prisma/client";
 import { PermissionAction } from "../rbac/permissions";
 import { permissionRegistry } from "../rbac/plugin-registry";

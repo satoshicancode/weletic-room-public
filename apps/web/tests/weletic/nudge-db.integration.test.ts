@@ -16,7 +16,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 const fixtures: string[] = [];
 let verified = false;
 const options = {
-  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   timeout: 15000,
 };
 beforeAll(async () => {

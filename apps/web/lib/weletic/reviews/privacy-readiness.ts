@@ -89,6 +89,6 @@ export async function inspectReviewPrivacyReaderCoverage({
         counts,
       };
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
   );
 }

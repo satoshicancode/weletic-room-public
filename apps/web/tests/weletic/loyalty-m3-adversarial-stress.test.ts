@@ -967,6 +967,7 @@ describe("M3 Adversarial Stress Harness: Holding Periods, Negative Balances & OC
       // Verification 5: Audit reconciliation confirms zero corruption
       (prisma.weleticLoyaltyAccount.findUnique as any).mockResolvedValueOnce({
         id: ACCOUNT_ID,
+        storeId: STORE_ID,
         cachedPointsBalance: committedBalance,
         cachedPendingPoints: BigInt(0),
         lifetimePointsEarned: committedLifetimeEarned,
@@ -997,6 +998,7 @@ describe("M3 Adversarial Stress Harness: Holding Periods, Negative Balances & OC
       );
       (prisma.weleticLoyaltyAccount.findUnique as any).mockResolvedValueOnce({
         id: ACCOUNT_ID,
+        storeId: STORE_ID,
         cachedPointsBalance: BigInt(300),
         lifetimePointsEarned: BigInt(300),
         lifetimePointsRedeemed: BigInt(0),

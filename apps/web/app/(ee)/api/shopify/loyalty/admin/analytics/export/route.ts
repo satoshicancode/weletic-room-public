@@ -114,7 +114,7 @@ export const GET = withWorkspace(
     };
     const validationResult = await prisma.$transaction(
       (tx) => exportLoyaltyMetricsJson({ ...commonParams, tx }),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
     const dataQualityFailure =
       validationResult.healthMetrics.financialDataQuality.status !==

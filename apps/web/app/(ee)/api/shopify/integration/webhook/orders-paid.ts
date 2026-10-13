@@ -255,21 +255,25 @@ async function ordersPaidUnlocked({
     const isTemporarilyValid = (
       disabledAt: Date | string | null | undefined,
     ) => {
+      // 1. If code is active (no disable timestamp), it is always valid.
       if (!disabledAt) {
         return true;
       }
+
+      // 2. Parse disabled timestamp; fail closed if corrupted
       const disabledDate =
         disabledAt instanceof Date ? disabledAt : new Date(disabledAt);
       if (isNaN(disabledDate.getTime())) {
-        return true;
-      }
-      if (
-        isOrderCreatedAtValid &&
-        orderCreatedAt.getTime() > disabledDate.getTime()
-      ) {
         return false;
       }
-      return true;
+
+      // 3. For a disabled code, order MUST possess a verified valid timestamp (FIN-AUDIT-11)
+      if (!isOrderCreatedAtValid || !orderCreatedAt) {
+        return false;
+      }
+
+      // 4. Valid if and only if order checkout was at or before code disablement
+      return orderCreatedAt.getTime() <= disabledDate.getTime();
     };
 
     const programDiscountCodes = rawProgramDiscountCodes.filter((code) =>
@@ -287,6 +291,7 @@ async function ordersPaidUnlocked({
           where: {
             programId: workspace.defaultProgramId,
             partnerId: discountCode.partnerId,
+            disabledAt: null,
           },
           orderBy: { createdAt: "asc" },
         });

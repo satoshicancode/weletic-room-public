@@ -59,3 +59,9 @@ blob-report/
 apps/web/reports/loyalty-recon/
 packages/shopify-app/.loyalty-preview/
 packages/shopify-app/shopify.app.loyalty-preview.toml
+
+# SQLite local databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

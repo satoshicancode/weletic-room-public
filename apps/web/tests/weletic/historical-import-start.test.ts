@@ -47,7 +47,7 @@ beforeEach(() => {
 it("owns a fresh transaction and authorizes before scoped source proof/claim", async () => {
   await run();
   expect(mocks.transaction.mock.calls[0][1]).toEqual({
-    isolationLevel: "RepeatableRead",
+    isolationLevel: "Serializable",
     timeout: 30000,
   });
   expect(mocks.auth).toHaveBeenCalledWith({

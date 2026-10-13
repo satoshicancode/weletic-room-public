@@ -23,7 +23,11 @@ export function SlackSupportInvite() {
               }),
             });
 
-            const json = await res.json().catch(() => ({}));
+            const json = (await res.json().catch(() => ({}))) as {
+              nameTaken?: boolean;
+              error?: string;
+              inviteId?: string;
+            };
 
             if (!res.ok) {
               if (json.nameTaken) {

@@ -1,11 +1,15 @@
 import {
   RESTRICTED_DEVELOPMENT,
+  getRestrictedDevelopmentConfig,
+  getRestrictedDevelopmentStores,
   hasRestrictedDevelopmentConfiguration,
   isRestrictedDevelopmentEnvironment,
 } from "../../../../../infra/shopify-development/restricted-policy.mjs";
 import { SUBSCRIPTION_VERIFICATION_MS } from "./app-pricing-contract";
 export {
   RESTRICTED_DEVELOPMENT,
+  getRestrictedDevelopmentConfig,
+  getRestrictedDevelopmentStores,
   hasRestrictedDevelopmentConfiguration,
   isRestrictedDevelopmentEnvironment,
 };
@@ -20,12 +24,20 @@ export function permitsRestrictedDevelopmentIdentity(
   },
   env = process.env,
 ) {
+  const cfg = getRestrictedDevelopmentConfig(env);
+  const stores = getRestrictedDevelopmentStores(env);
+  const shopMatches =
+    stores.length > 0
+      ? stores.includes(identity.shop)
+      : identity.shop === cfg.shop;
+
   return (
     isRestrictedDevelopmentEnvironment(env) &&
-    identity.appId === RESTRICTED_DEVELOPMENT.appId &&
-    identity.partnerAppId === RESTRICTED_DEVELOPMENT.partnerAppId &&
-    identity.shopId === RESTRICTED_DEVELOPMENT.shopId &&
-    identity.shop === RESTRICTED_DEVELOPMENT.shop &&
+    identity.appId === cfg.appId &&
+    identity.partnerAppId === cfg.partnerAppId &&
+    (!cfg.shopId || identity.shopId === cfg.shopId) &&
+    Boolean(cfg.shop || stores.length > 0) &&
+    shopMatches &&
     identity.installationGeneration ===
       env.WELETIC_RESTRICTED_DEVELOPMENT_GENERATION
   );

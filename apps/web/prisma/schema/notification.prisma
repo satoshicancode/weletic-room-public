@@ -1,13 +1,7 @@
-enum NotificationEmailType {
-  Message
-  Bounty
-  Campaign
-}
-
 model NotificationEmail {
-  id              String                @id @default(cuid())
-  emailId         String                @unique // Resend email id
-  type            NotificationEmailType
+  id              String    @id @default(cuid())
+  emailId         String    @unique // Resend email id
+  type            String
   messageId       String?
   bountyId        String?
   campaignId      String?
@@ -17,7 +11,7 @@ model NotificationEmail {
   deliveredAt     DateTime?
   openedAt        DateTime?
   bouncedAt       DateTime?
-  createdAt       DateTime              @default(now())
+  createdAt       DateTime  @default(now())
 
   message  Message?  @relation(fields: [messageId], references: [id])
   bounty   Bounty?   @relation(fields: [bountyId], references: [id])

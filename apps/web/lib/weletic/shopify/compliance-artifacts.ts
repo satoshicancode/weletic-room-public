@@ -238,7 +238,7 @@ function assertPrivateComplianceStorageConfigured() {
   }
 }
 
-function sha256(value: string | Buffer) {
+function sha256(value: string | Uint8Array) {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -716,7 +716,7 @@ async function fetchAndDecryptArtifact(
   if (maxBytes !== undefined) {
     if (!response.body) throw new Error("Compliance artifact body missing");
     const reader = response.body.getReader();
-    const chunks: Buffer[] = [];
+    const chunks: Uint8Array[] = [];
     let length = 0;
     try {
       for (;;) {

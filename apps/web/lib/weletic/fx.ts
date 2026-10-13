@@ -54,18 +54,33 @@ export async function getAccountingFxQuote({
   const currencies = [...new Set([baseCurrency, quoteCurrency])].filter(
     (currency) => currency !== "USD",
   );
-  const [values, asOfValue] = await Promise.all([
-    Promise.all(
-      currencies.map(
-        async (currency) =>
-          [
-            currency,
-            await redis.hget<string>("fxRates:usd", currency),
-          ] as const,
+  let values: Array<readonly [string, string | null]> = [];
+  let asOfValue: string | null = null;
+  let isFallback = false;
+
+  try {
+    [values, asOfValue] = await Promise.all([
+      Promise.all(
+        currencies.map(
+          async (currency) =>
+            [
+              currency,
+              await redis.hget<string>("fxRates:usd", currency),
+            ] as const,
+        ),
       ),
-    ),
-    redis.get<string>("fxRates:usd:asOf"),
-  ]);
+      redis.get<string>("fxRates:usd:asOf"),
+    ]);
+  } catch (error) {
+    console.warn(
+      "[getAccountingFxQuote] Redis lookup failed; falling back to static default FX rates.",
+      error instanceof Error ? error.message : error,
+    );
+    isFallback = true;
+    values = [];
+    asOfValue = null;
+  }
+
   const DEFAULT_FALLBACK_RATES: Record<string, string> = {
     USD: "1",
     EUR: "0.92",
@@ -100,8 +115,10 @@ export async function getAccountingFxQuote({
       quote: quoteCurrency,
       rates,
     }),
-    provider: "dub-fxRates:usd",
-    providerRef: `redis:fxRates:usd:${capturedAt.toISOString()}`,
+    provider: isFallback ? "static-fallback" : "dub-fxRates:usd",
+    providerRef: isFallback
+      ? `static:default_fallback_rates:${capturedAt.toISOString()}`
+      : `redis:fxRates:usd:${capturedAt.toISOString()}`,
     capturedAt,
   };
 }

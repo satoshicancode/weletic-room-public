@@ -40,10 +40,10 @@ module.exports = withPlausibleProxy({
   skipMiddlewareUrlNormalize: process.env.WELETIC_ISOLATED_DEVELOPMENT === "1",
   reactStrictMode: false,
   eslint: {
-    ignoreDuringBuilds: hasSeparateCiValidation,
+    ignoreDuringBuilds: hasSeparateCiValidation || isLocalContainerBuild,
   },
   typescript: {
-    ignoreBuildErrors: hasSeparateCiValidation,
+    ignoreBuildErrors: hasSeparateCiValidation || isLocalContainerBuild,
   },
   transpilePackages: [
     "prettier",

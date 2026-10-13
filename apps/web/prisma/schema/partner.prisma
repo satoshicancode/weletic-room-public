@@ -1,77 +1,33 @@
-enum PartnerRole {
-  owner
-  member
-}
-
-enum PartnerProfileType {
-  individual
-  company
-}
-
-enum PartnerNetworkStatus {
-  draft
-  submitted
-  approved
-  rejected
-  trusted
-}
-
-enum MonthlyTraffic {
-  ZeroToOneThousand
-  OneThousandToTenThousand
-  TenThousandToFiftyThousand
-  FiftyThousandToOneHundredThousand
-  OneHundredThousandPlus
-}
-
-enum PartnerPayoutMethod {
-  connect
-  stablecoin
-  paypal
-  tremendous
-}
-
 // https://devdocs.veriff.com/v1/docs/how-to-generate-sessions-manually#verification-session-statuses
-enum IdentityVerificationStatus {
-  started
-  submitted
-  approved
-  declined
-  resubmissionRequested
-  expired
-  abandoned
-  review
-}
-
 model Partner {
-  id                       String               @id @default(cuid())
+  id                       String  @id @default(cuid())
   name                     String
-  username                 String?              @unique
-  email                    String?              @unique
-  image                    String?              @db.Text
-  description              String?              @db.Text
+  username                 String? @unique
+  email                    String? @unique
+  image                    String?
+  description              String?
   country                  String?
-  preferredLocale          String               @default("en")
-  timeZone                 String               @default("UTC")
+  preferredLocale          String  @default("en")
+  timeZone                 String  @default("UTC")
   preferredDisplayCurrency String?
   preferredPayoutCurrency  String?
   companyName              String?
-  profileType              PartnerProfileType   @default(individual)
-  networkStatus            PartnerNetworkStatus @default(draft)
+  profileType              String  @default("individual")
+  networkStatus            String  @default("draft")
 
   // identity verification fields
-  identityVerificationStatus IdentityVerificationStatus?
+  identityVerificationStatus String?
   identityVerifiedAt         DateTime?
-  veriffSessionId            String?                     @unique
+  veriffSessionId            String?   @unique
   veriffMetadata             Json? // see veriffMetadataSchema
 
   // payout fields
-  defaultPayoutMethod          PartnerPayoutMethod?
+  defaultPayoutMethod          String?
   payoutsEnabledAt             DateTime?
   connectPayoutsLastRemindedAt DateTime?
-  paypalEmail                  String?              @unique
-  stripeConnectId              String?              @unique
-  stripeRecipientId            String?              @unique
+  paypalEmail                  String?   @unique
+  stripeConnectId              String?   @unique
+  stripeRecipientId            String?   @unique
   payoutMethodHash             String?
   cryptoWalletAddress          String?
   tremendousEmail              String?
@@ -102,7 +58,7 @@ model Partner {
   comments                   PartnerComment[]
   discountCodes              DiscountCode[]
   notificationEmails         NotificationEmail[]
-  monthlyTraffic             MonthlyTraffic?
+  monthlyTraffic             String?
   industryInterests          PartnerIndustryInterest[]
   preferredEarningStructures PartnerPreferredEarningStructure[]
   salesChannels              PartnerSalesChannel[]
@@ -124,15 +80,14 @@ model Partner {
   @@index(identityVerifiedAt)
   @@index(referredByPartnerId)
   @@index(tremendousEmail)
-  @@fulltext([email, name, companyName]) // For full-text search
 }
 
 model PartnerInvite {
   email     String
   expires   DateTime
   partnerId String
-  role      PartnerRole @default(member)
-  createdAt DateTime    @default(now())
+  role      String   @default("member")
+  createdAt DateTime @default(now())
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 
@@ -141,12 +96,12 @@ model PartnerInvite {
 }
 
 model PartnerUser {
-  id        String      @id @default(cuid())
-  role      PartnerRole @default(member)
+  id        String   @id @default(cuid())
+  role      String   @default("member")
   userId    String
   partnerId String
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
@@ -159,43 +114,25 @@ model PartnerUser {
 
 model PartnerIndustryInterest {
   partnerId        String
-  industryInterest IndustryInterest
+  industryInterest String
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 
   @@unique([partnerId, industryInterest])
 }
 
-enum PreferredEarningStructure {
-  Revenue_Share
-  Per_Lead
-  Per_Sale
-  Per_Click
-  One_Time_Payment
-}
-
 model PartnerPreferredEarningStructure {
   partnerId                 String
-  preferredEarningStructure PreferredEarningStructure
+  preferredEarningStructure String
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 
   @@unique([partnerId, preferredEarningStructure])
 }
 
-enum SalesChannel {
-  Blogs
-  Coupons
-  Direct_Reselling
-  Newsletters
-  Social_Media
-  Events
-  Company_Referrals
-}
-
 model PartnerSalesChannel {
   partnerId    String
-  salesChannel SalesChannel
+  salesChannel String
 
   partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
 

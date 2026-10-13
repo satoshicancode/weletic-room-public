@@ -93,16 +93,21 @@ export async function enqueueDeleteDiscountCode(
   if (!process.env.QSTASH_TOKEN || process.env.NODE_ENV === "development") {
     for (const discountCode of codesWithProvider) {
       try {
-        const workspace = await prisma.project.findUnique({
+        const program = await prisma.program.findUnique({
           where: {
-            defaultProgramId: discountCode.programId,
+            id: discountCode.programId,
           },
           select: {
-            id: true,
-            stripeConnectId: true,
-            shopifyStoreId: true,
+            workspace: {
+              select: {
+                id: true,
+                stripeConnectId: true,
+                shopifyStoreId: true,
+              },
+            },
           },
         });
+        const workspace = program?.workspace;
 
         if (workspace) {
           const discountProvider = getDiscountProvider(
@@ -146,16 +151,21 @@ export async function enqueueDeleteDiscountCode(
       // Fallback to direct execution if enqueue fails
       for (const discountCode of chunkOfCodes) {
         try {
-          const workspace = await prisma.project.findUnique({
+          const program = await prisma.program.findUnique({
             where: {
-              defaultProgramId: discountCode.programId,
+              id: discountCode.programId,
             },
             select: {
-              id: true,
-              stripeConnectId: true,
-              shopifyStoreId: true,
+              workspace: {
+                select: {
+                  id: true,
+                  stripeConnectId: true,
+                  shopifyStoreId: true,
+                },
+              },
             },
           });
+          const workspace = program?.workspace;
 
           if (workspace) {
             const discountProvider = getDiscountProvider(

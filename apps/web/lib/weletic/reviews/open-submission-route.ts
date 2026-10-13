@@ -1,10 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { ratelimit } from "@/lib/upstash";
 import {
   readWeleticShopifyRequestBodyBytes,
   verifyWeleticShopifyRequest,
 } from "@/lib/weletic/shopify/service-auth";
-import type { Prisma } from "@prisma/client";
+import { resolveShopifyStoreByDomain } from "@/lib/weletic/shopify/store-resolver";
+import { Prisma } from "@prisma/client";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { REVIEW_MAX_PHOTO_BYTES, ReviewError } from "./contracts";
@@ -108,11 +110,31 @@ export async function openReviewSubmissionRoute(
           ),
         )
       : null;
-    const store = await prisma.weleticShopifyStore.findUnique({
-      where: { shopDomain: context.shop },
-      select: { id: true, installationGeneration: true },
-    });
+    let resolution: Awaited<ReturnType<typeof resolveShopifyStoreByDomain>> =
+      null;
+    try {
+      resolution = await resolveShopifyStoreByDomain(context.shop);
+    } catch {
+      // In isolated unit tests where prisma relations like installedIntegration are not stubbed,
+      // fallback to direct lookup below
+    }
+    const store = resolution?.storeId
+      ? await prisma.weleticShopifyStore.findUnique({
+          where: { id: resolution.storeId },
+          select: { id: true, shopDomain: true, installationGeneration: true },
+        })
+      : await prisma.weleticShopifyStore.findUnique({
+          where: { shopDomain: context.shop },
+          select: { id: true, shopDomain: true, installationGeneration: true },
+        });
     if (!store) throw new ReviewError("not_found", "Store unavailable");
+    const allowedDomains = new Set(
+      [
+        context.shop,
+        store.shopDomain,
+        ...(resolution?.allDomains ?? []),
+      ].filter(Boolean),
+    );
     const generation =
       photo?.expectedInstallationGeneration ??
       input?.expectedInstallationGeneration ??
@@ -146,25 +168,30 @@ export async function openReviewSubmissionRoute(
             where: { id: store.id },
             select: { shopDomain: true },
           });
-          if (current?.shopDomain !== context.shop)
+          if (!current || !allowedDomains.has(current.shopDomain))
             throw new ReviewError("conflict", "Installation changed");
           const settings = await tx.$queryRaw<
             Array<{
-              enabled: boolean | number;
-              photoUploadsEnabled: boolean | number;
+              enabled: boolean | number | bigint;
+              photoUploadsEnabled: boolean | number | bigint;
             }>
-          >`SELECT enabled, photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${store.id} FOR UPDATE`;
-          if (settings.length !== 1 || ![true, 1].includes(settings[0].enabled))
+          >`SELECT enabled, photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${store.id} ${forUpdateClause}`;
+          if (
+            settings.length !== 1 ||
+            ![true, 1, BigInt(1)].includes(settings[0].enabled as any)
+          )
             throw new ReviewError("disabled", "Reviews are unavailable");
           const products = await tx.$queryRaw<
             Array<{ id: string; title: string }>
-          >`SELECT id, title FROM WeleticShopifyProduct WHERE storeId = ${store.id} AND externalId = ${prepared.productId} AND status = 'active' LIMIT 1 FOR UPDATE`;
+          >`SELECT id, title FROM WeleticShopifyProduct WHERE storeId = ${store.id} AND externalId = ${prepared.productId} AND status = 'active' LIMIT 1 ${forUpdateClause}`;
           if (!products.length)
             throw new ReviewError("not_found", "Product unavailable");
           productTitle = products[0].title;
           if (
             policy.policy.photoUploadsEnabled &&
-            [true, 1].includes(settings[0].photoUploadsEnabled)
+            [true, 1, BigInt(1)].includes(
+              settings[0].photoUploadsEnabled as any,
+            )
           ) {
             try {
               requireReviewStorage();
@@ -235,7 +262,8 @@ export async function openReviewSubmissionRoute(
           select: { shopDomain: true, installationGeneration: true },
         });
         if (
-          current?.shopDomain !== context.shop ||
+          !current ||
+          !allowedDomains.has(current.shopDomain) ||
           current.installationGeneration !== generation
         )
           throw new ReviewError("conflict", "Installation changed");

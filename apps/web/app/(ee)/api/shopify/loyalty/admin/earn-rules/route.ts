@@ -310,7 +310,12 @@ export const POST = withWorkspace(
       action: "loyalty_earning_rule_write",
       operation: (tx) =>
         asWorkspaceWrite(() =>
-          writeEarningRuleInTransaction({ tx, storeId, ruleId, ruleData }),
+          writeEarningRuleInTransaction({
+            tx,
+            storeId,
+            ruleId,
+            ruleData: ruleData as any,
+          }),
         ),
     });
 

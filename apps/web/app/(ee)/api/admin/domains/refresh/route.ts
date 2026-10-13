@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 // POST /api/admin/domains/refresh
 export const POST = withAdmin(async ({ req }) => {
-  const { domain } = await req.json();
+  const { domain } = (await req.json()) as { domain: string };
 
   const remove = await fetch(
     `https://api.vercel.com/v9/projects/${process.env.VERCEL_PROJECT_ID}/domains/${domain}?teamId=${process.env.TEAM_ID_VERCEL}`,
@@ -14,7 +14,7 @@ export const POST = withAdmin(async ({ req }) => {
       },
       method: "DELETE",
     },
-  ).then((res) => res.json());
+  ).then((res) => res.json() as Promise<any>);
   const add = await addDomainToVercel(domain);
 
   console.log({ remove, add });

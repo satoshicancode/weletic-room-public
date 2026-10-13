@@ -259,7 +259,12 @@ export const withWorkspace = (
           }
 
           // Find workspaceId if it's a restricted token
-          if (isRestrictedToken && token?.projectId) {
+          if (
+            isRestrictedToken &&
+            token?.projectId &&
+            !workspaceId &&
+            !workspaceSlug
+          ) {
             workspaceId = token.projectId;
           }
 
@@ -440,6 +445,18 @@ export const withWorkspace = (
           }
         }
 
+        if (
+          isRestrictedToken &&
+          token?.projectId &&
+          workspace?.id &&
+          workspace.id !== token.projectId
+        ) {
+          throw new DubApiError({
+            code: "not_found",
+            message: "Workspace not found.",
+          });
+        }
+
         // Machine users have owner role by default
         // Only workspace owners can create machine users
         if (session.user.isMachine) {
@@ -463,6 +480,21 @@ export const withWorkspace = (
             requiredPermissions,
             workspaceId: workspace.id,
             externalRequest: Boolean(apiKey),
+          });
+        } else if (
+          isRestrictedToken &&
+          token?.scopes &&
+          requiredRoles.length > 0 &&
+          !token.scopes.split(" ").includes("apis.all")
+        ) {
+          // Restricted tokens act as an owner machine user, and scopes are only
+          // enforced through `requiredPermissions`. A route that declares just
+          // `requiredRoles` would otherwise accept any restricted key regardless
+          // of its scopes, so require the full-access scope there.
+          throw new DubApiError({
+            code: "forbidden",
+            message:
+              "This API key doesn't have the required scope to access this endpoint.",
           });
         }
 

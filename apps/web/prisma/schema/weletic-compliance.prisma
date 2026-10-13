@@ -2,70 +2,34 @@
 // Direct customer and shop identifiers are encrypted transiently or represented
 // by versioned keyed-HMAC identities. Tombstones never retain the raw subject.
 
-enum WeleticComplianceRequestType {
-  customer_data_request
-  customer_redact
-  shop_redact
-  app_uninstalled
-}
-
-enum WeleticComplianceRequestStatus {
-  pending
-  processing
-  retrying
-  completed
-  dead_letter
-}
-
-enum WeleticVoucherCleanupSource {
-  customer_redact
-  app_uninstalled
-  shop_redact
-  review_invalidation
-}
-
-enum WeleticVoucherCleanupStatus {
-  pending
-  processing
-  retrying
-  completed
-  dead_letter
-  cancelled
-}
-
-enum WeleticCustomerPrivacyIdentityKind {
-  customer_id
-  customer_email
-}
-
 model WeleticShopifyComplianceRequest {
-  id                      String                              @id
+  id                      String    @id
   storeId                 String
-  webhookId               String                              @unique
+  webhookId               String    @unique
   shopDomain              String
-  requestType             WeleticComplianceRequestType
-  authenticatedBodyDigest String?                             @db.VarChar(191)
-  status                  WeleticComplianceRequestStatus      @default(pending)
-  phase                   String                              @default("received")
-  subjectKind             WeleticCustomerPrivacyIdentityKind?
+  requestType             String
+  authenticatedBodyDigest String?
+  status                  String    @default("pending")
+  phase                   String    @default("received")
+  subjectKind             String?
   subjectKeyId            String?
   subjectDigest           String?
-  payloadCiphertext       String?                             @db.LongText
-  cursor                  Json?                               @db.Json
-  progress                Json?                               @db.Json
-  attempts                Int                                 @default(0)
-  maxAttempts             Int                                 @default(10)
-  leaseVersion            Int                                 @default(0)
+  payloadCiphertext       String?
+  cursor                  Json?
+  progress                Json?
+  attempts                Int       @default(0)
+  maxAttempts             Int       @default(10)
+  leaseVersion            Int       @default(0)
   lockedAt                DateTime?
   lockedBy                String?
   nextRetryAt             DateTime?
-  lastError               String?                             @db.Text
+  lastError               String?
   triggeredAt             DateTime?
-  receivedAt              DateTime                            @default(now())
+  receivedAt              DateTime  @default(now())
   startedAt               DateTime?
   completedAt             DateTime?
-  createdAt               DateTime                            @default(now())
-  updatedAt               DateTime                            @updatedAt
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   store                     WeleticShopifyStore                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
   artifacts                 WeleticShopifyComplianceArtifact[]
@@ -87,19 +51,19 @@ model WeleticShopifyComplianceArtifact {
   storeId                 String
   kind                    String
   sequence                Int
-  storageKey              String    @db.Text
+  storageKey              String
   encryptionVersion       String
   contentSha256           String
   byteSize                BigInt
   expiresAt               DateTime
   downloadTokenHash       String?
-  downloadTokenCiphertext String?   @db.Text
+  downloadTokenCiphertext String?
   downloadTokenKeyId      String?
   downloadTokenExpiresAt  DateTime?
   deliveredAt             DateTime?
   downloadedAt            DateTime?
   deletedAt               DateTime?
-  lastError               String?   @db.Text
+  lastError               String?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
@@ -116,9 +80,9 @@ model WeleticShopifyCustomerPrivacyTombstone {
   // physical FK. Composite relations still define the generated-client
   // contract; the sole writer additionally validates both owners in the same
   // transaction before persisting either optional link.
-  id              String                             @id
+  id              String   @id
   storeId         String
-  identityKind    WeleticCustomerPrivacyIdentityKind
+  identityKind    String
   identityKeyId   String
   customerDigest  String
   shopperId       String?
@@ -126,16 +90,16 @@ model WeleticShopifyCustomerPrivacyTombstone {
   sourceRequestId String?
   redactedAt      DateTime
   expiresAt       DateTime
-  createdAt       DateTime                           @default(now())
-  updatedAt       DateTime                           @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   store         WeleticShopifyStore              @relation(fields: [storeId], references: [id], onDelete: Cascade)
   // Owner links deliberately reuse this tombstone's storeId. Composite owner
   // relations make a cross-store shopper/account unrepresentable through the
   // Prisma schema contract. Retained financial owners are pseudonymous and
-  // cleared explicitly before deletion; NoAction preserves the tombstone.
-  shopper       WeleticShopper?                  @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: NoAction, onUpdate: NoAction)
-  account       WeleticLoyaltyAccount?           @relation(fields: [storeId, accountId], references: [storeId, id], onDelete: NoAction, onUpdate: NoAction)
+  // cleared explicitly before deletion; Restrict preserves the tombstone.
+  shopper       WeleticShopper?                  @relation(fields: [storeId, shopperId], references: [storeId, id], onDelete: Restrict, onUpdate: Restrict)
+  account       WeleticLoyaltyAccount?           @relation(fields: [storeId, accountId], references: [storeId, id], onDelete: Restrict, onUpdate: Restrict)
   sourceRequest WeleticShopifyComplianceRequest? @relation("CustomerPrivacyTombstoneRequest", fields: [sourceRequestId], references: [id], onDelete: SetNull)
 
   @@unique([storeId, identityKind, identityKeyId, customerDigest])
@@ -165,23 +129,23 @@ model WeleticShopifyShopPrivacyTombstone {
 }
 
 model WeleticShopifyVoucherCleanup {
-  id                            String                      @id
+  id                            String    @id
   storeId                       String
   redemptionId                  String
   sourceRequestId               String?
-  source                        WeleticVoucherCleanupSource
-  status                        WeleticVoucherCleanupStatus @default(pending)
+  source                        String
+  status                        String    @default("pending")
   expectedDiscountCode          String
   expectedDiscountCodeCanonical String
   expectedDiscountId            String?
-  ownershipSnapshot             Json?                       @db.Json
-  attempts                      Int                         @default(0)
-  maxAttempts                   Int                         @default(10)
-  leaseVersion                  Int                         @default(0)
+  ownershipSnapshot             Json?
+  attempts                      Int       @default(0)
+  maxAttempts                   Int       @default(10)
+  leaseVersion                  Int       @default(0)
   lockedAt                      DateTime?
   lockedBy                      String?
   nextRetryAt                   DateTime?
-  lastError                     String?                     @db.Text
+  lastError                     String?
   remoteVerifiedAt              DateTime?
   remoteUsageCount              Int?
   remoteUsageObservedAt         DateTime?
@@ -189,8 +153,8 @@ model WeleticShopifyVoucherCleanup {
   remoteDeactivatedAt           DateTime?
   remoteOutcome                 String?
   completedAt                   DateTime?
-  createdAt                     DateTime                    @default(now())
-  updatedAt                     DateTime                    @updatedAt
+  createdAt                     DateTime  @default(now())
+  updatedAt                     DateTime  @updatedAt
 
   store              WeleticShopifyStore                       @relation(fields: [storeId], references: [id], onDelete: Cascade)
   sourceRequest      WeleticShopifyComplianceRequest?          @relation("VoucherCleanupRequest", fields: [sourceRequestId], references: [id], onDelete: SetNull)

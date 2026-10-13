@@ -86,13 +86,13 @@ function buildReviewPrivacySql({
       AND c.state = 'active' AND c.redactedAt IS NULL
       AND c.installationGeneration = ${installationGeneration}
       AND c.keySetDigest = ${keySetDigest} AND LENGTH(c.sourceDigest) = 64
-      AND c.identityCount = ${keyring.all.length} * IF(NULLIF(TRIM(s.email), '') IS NULL, 1, 2)
+      AND c.identityCount = ${keyring.all.length} * (CASE WHEN NULLIF(TRIM(s.email), '') IS NULL THEN 1 ELSE 2 END)
       AND c.identityCount = (SELECT COUNT(*) FROM WeleticReviewOwnerPrivacyIdentity i
         WHERE i.storeId = c.storeId AND i.shopperId = c.shopperId)
       AND ${keyring.all.length} = (SELECT COUNT(*) FROM WeleticReviewOwnerPrivacyIdentity i
         WHERE i.storeId = c.storeId AND i.shopperId = c.shopperId
           AND i.identityKind = 'customer_id' AND i.identityKeyId IN (${keys}))
-      AND ${keyring.all.length} * IF(NULLIF(TRIM(s.email), '') IS NULL, 0, 1) =
+      AND ${keyring.all.length} * (CASE WHEN NULLIF(TRIM(s.email), '') IS NULL THEN 0 ELSE 1 END) =
         (SELECT COUNT(*) FROM WeleticReviewOwnerPrivacyIdentity i
           WHERE i.storeId = c.storeId AND i.shopperId = c.shopperId
             AND i.identityKind = 'customer_email' AND i.identityKeyId IN (${keys}))

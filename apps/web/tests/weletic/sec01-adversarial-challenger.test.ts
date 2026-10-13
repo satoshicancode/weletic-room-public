@@ -146,6 +146,8 @@ describe("SEC-01 Adversarial Challenger Attack & Bypass Suite", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(BASE_NOW);
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", TEST_SECRET);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
     redisStore.clear();
     mockRedisSet.mockReset();
     mockRedisSet.mockImplementation(

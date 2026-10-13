@@ -22,8 +22,7 @@ jobs:
       DOTENV_FLOW_SILENT: "true"
       RUNTIME_CACHE_DISABLE_BUILD_CACHE: "true"
       CI_SEPARATE_VALIDATION: "true"
-      DATABASE_URL: "mysql://root:@localhost:3306/planetscale"
-      PLANETSCALE_DATABASE_URL: "http://root:unused@localhost:3900/planetscale"
+      DATABASE_URL: "file:/tmp/weletic-e2e.db"
 
       NEXTAUTH_SECRET: "e2e-test-secret-at-least-32-chars-long"
       NEXTAUTH_URL: "http://partners.localhost:8888"
@@ -64,20 +63,6 @@ jobs:
       STRIPE_APP_SECRET_KEY: "xx"
 
     services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_DATABASE: planetscale
-          MYSQL_ROOT_HOST: "%"
-          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-        ports:
-          - 3306:3306
-
       mailhog:
         image: mailhog/mailhog:latest
         ports:
@@ -122,8 +107,7 @@ jobs:
           docker stop \
             "${{ job.services.srh.id }}" \
             "${{ job.services.mailhog.id }}" \
-            "${{ job.services.redis.id }}" \
-            "${{ job.services.mysql.id }}"
+            "${{ job.services.redis.id }}"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -180,28 +164,20 @@ jobs:
 
       - name: Resume and verify E2E service containers
         run: |
-          mysql_id="${{ job.services.mysql.id }}"
           mailhog_id="${{ job.services.mailhog.id }}"
           redis_id="${{ job.services.redis.id }}"
           srh_id="${{ job.services.srh.id }}"
 
-          docker start "$mysql_id" "$redis_id" "$mailhog_id"
+          docker start "$redis_id" "$mailhog_id"
 
-          mysql_ready=false
           redis_ready=false
           for attempt in {1..30}; do
-            if docker exec "$mysql_id" mysqladmin ping -h 127.0.0.1 --silent; then
-              mysql_ready=true
-            fi
             if docker exec "$redis_id" redis-cli ping | grep --quiet PONG; then
               redis_ready=true
-            fi
-            if [[ "$mysql_ready" == true && "$redis_ready" == true ]]; then
               break
             fi
             sleep 2
           done
-          [[ "$mysql_ready" == true ]]
           [[ "$redis_ready" == true ]]
 
           docker start "$srh_id"
@@ -223,20 +199,9 @@ jobs:
           wait_for_port 8025 "MailHog HTTP"
           wait_for_port 8079 "serverless-redis-http"
 
-      - name: Start PlanetScale simulator
-        run: |
-          docker run -d --name ps-http-sim \
-            --network host \
-            ghcr.io/mattrobenolt/ps-http-sim:latest \
-            -listen-addr=0.0.0.0 \
-            -listen-port=3900 \
-            -mysql-dbname=planetscale \
-            -mysql-no-pass \
-            -mysql-addr=127.0.0.1
-
-      - name: Push database schema
+      - name: Apply database migrations (SQLite)
         working-directory: apps/web
-        run: pnpm prisma:push
+        run: pnpm exec prisma migrate deploy --schema=./prisma/schema
 
       - name: Seed test data
         working-directory: apps/web

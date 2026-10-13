@@ -29,7 +29,7 @@ export const sendPartnerPostback = async ({
         : { disabledAt: null }),
       triggers: {
         array_contains: [event],
-      },
+      } as any,
     },
   });
 
