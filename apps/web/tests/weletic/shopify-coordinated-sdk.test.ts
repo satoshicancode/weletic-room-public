@@ -280,6 +280,8 @@ describe("coordinated Shopify SDK operations", () => {
     vi.stubEnv("SHOPIFY_APP_URL", "https://shopify-runtime.invalid");
     vi.stubEnv("WELETIC_API_URL", "https://session-gateway.invalid");
     vi.stubEnv("WELETIC_SHOPIFY_SERVICE_SECRET", serviceSecret);
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://mock-redis.upstash.io");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-token");
   });
   afterEach(() => {
     redisStore.clear();
