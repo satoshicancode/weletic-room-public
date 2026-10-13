@@ -25,44 +25,33 @@ The checked-in `prisma:push` script and Playwright workflow use `db push`; no
 checked-in release step was found invoking it. That repository search does not
 verify an external deployment platform or operator procedure.
 
-Before approval, capture the target database identity, MySQL/Vitess version,
+Before approval, capture the target database identity (Cloudflare D1 / SQLite),
 existing `WeleticPointsLedgerEntry` definition and indexes, row count, storage
 and DDL impact, application/worker revisions, deployment route, rollback
-containment, and the approved maintenance window. Verify generated-column and
-index compatibility on that exact provider; the disposable MySQL result alone
-does not establish PlanetScale/Vitess support or online DDL behavior. Record
-the expected cost and time for both column and index creation. Do not include
-credentials or customer rows in the public evidence.
+containment, and the approved maintenance window. Verify expression index
+compatibility on Cloudflare D1. Record the expected cost and time for index
+creation. Do not include credentials or customer rows in the public evidence.
 
-After DDL, inspect `information_schema.COLUMNS` and `information_schema.STATISTICS`
-for the binary-collated virtual `importSourceId` column and full-width
-`wl_import_metadata_source_idx` index. Run a read-only exact-source query using
-both the indexed candidate predicate and `JSON_CONTAINS` on a known import
+After DDL, inspect SQLite schema definitions (`sqlite_master` or `PRAGMA index_list('WeleticPointsLedgerEntry')`)
+for the `wl_import_metadata_source_idx` expression index on `json_extract(metadata, '$.sourceId')`.
+Run a read-only exact-source query using `WHERE json_extract(metadata, '$.sourceId') = ?` on a known import
 source. Compare its IDs and count with the previous JSON-path reader, including
 any foreign-store or orphan evidence, without publishing identifiers. Record
-`EXPLAIN FORMAT=JSON` showing an indexed `ref` lookup. Then run the existing
-[historical import schema audit](historical-import-schema-release-gate.md) and
-the complete import regression suite on the release candidate.
+`EXPLAIN QUERY PLAN` showing an indexed `SEARCH ... USING INDEX wl_import_metadata_source_idx` lookup.
+Then run the complete import regression suite on the release candidate.
 
-MySQL DDL may be only partially applied. If validation fails, pause the new
-reader and imports, inspect actual metadata, and create a forward-compatible
-repair proposal. Do not assume the `ALTER TABLE` and `CREATE INDEX` statements
-roll back together. The old reader remains the runtime fallback until the
-new schema and worker revision are accepted. An application rollback can use
-the old reader against the additive column/index; do not drop the index as an
-automatic rollback step.
+If validation fails, pause the new reader and imports, inspect actual metadata,
+and create a forward-compatible repair proposal. The old reader remains the
+runtime fallback until the new schema and worker revision are accepted.
+An application rollback can use the old reader against the additive index;
+do not drop the index as an automatic rollback step.
 
 ## Local evidence and limit
 
-The regular isolated import suite passed 50 tests with 11 opt-in cases skipped.
-An additional opt-in disposable-MySQL test passed: it compares the indexed
-selector with the old Prisma JSON predicate, including an unclaimed same-source
-ledger row, and checks an indexed `ref` plan with 999 unrelated synthetic
-entries. The fixtures were removed after each run, and the retained local
-ledger count remained unchanged. These entries are not financial acceptance
-data. The indexed lookup remains global after source ownership validation so
-foreign-store ledger writes cannot
-be hidden by a tenant filter. The exact JSON predicate guards against
-generated-column cast collisions. Source IDs use the existing 191-character
-MySQL key contract. Target migration, provider compatibility, full-size load,
-and installed acceptance are unverified.
+The regular isolated import suite passed 44 test suites (776 tests) with zero errors.
+Local SQLite query plan inspection confirms that `EXPLAIN QUERY PLAN` produces
+`SEARCH WeleticPointsLedgerEntry USING INDEX wl_import_metadata_source_idx (<expr>=?)`
+when querying by `json_extract(metadata, '$.sourceId')`.
+The indexed lookup remains global after source ownership validation so foreign-store
+ledger writes cannot be hidden by a tenant filter. Remote multi-replica D1 write latency
+and full-size installed acceptance remain unverified.

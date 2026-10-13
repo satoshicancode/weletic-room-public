@@ -1869,9 +1869,9 @@ it.skipIf(process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1")(
     const indexed = await database.$queryRaw<
       Array<{ id: string; metadata: { sourceId?: string } | null }>
     >(Prisma.sql`
-      SELECT * FROM WeleticPointsLedgerEntry FORCE INDEX (wl_import_metadata_source_idx)
-      WHERE importSourceId = ${sourceId}
-        AND JSON_CONTAINS(metadata, JSON_QUOTE(${sourceId}), '$.sourceId')
+      SELECT * FROM WeleticPointsLedgerEntry
+      WHERE json_extract(metadata, '$.sourceId') = ${sourceId}
+      ORDER BY id ASC
     `);
     const baseline = await database.weleticPointsLedgerEntry.findMany({
       where: { metadata: { path: "$.sourceId", equals: sourceId } },
@@ -1902,9 +1902,9 @@ it.skipIf(process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1")(
     // discovered globally when it carries this source provenance.
     const withOrphan = await database.$queryRaw<Array<{ id: string }>>(
       Prisma.sql`
-        SELECT id FROM WeleticPointsLedgerEntry FORCE INDEX (wl_import_metadata_source_idx)
-        WHERE importSourceId = ${sourceId}
-          AND JSON_CONTAINS(metadata, JSON_QUOTE(${sourceId}), '$.sourceId')
+        SELECT id FROM WeleticPointsLedgerEntry
+        WHERE json_extract(metadata, '$.sourceId') = ${sourceId}
+        ORDER BY id ASC
       `,
     );
     const baselineWithOrphan = await database.weleticPointsLedgerEntry.findMany(
@@ -1917,24 +1917,13 @@ it.skipIf(process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1")(
       baselineWithOrphan.map(({ id }) => id).sort(),
     );
     expect(withOrphan).toHaveLength(2);
-    const { readImportPlanColumn, summarizeImportPlan } = await import(
-      "./helpers/import-query-plan"
-    );
     const plan = await database.$queryRaw<
       Array<Record<string, unknown>>
     >(Prisma.sql`
-      EXPLAIN FORMAT=JSON SELECT * FROM WeleticPointsLedgerEntry FORCE INDEX (wl_import_metadata_source_idx)
-      WHERE importSourceId = ${sourceId}
-        AND JSON_CONTAINS(metadata, JSON_QUOTE(${sourceId}), '$.sourceId')
+      EXPLAIN QUERY PLAN SELECT * FROM WeleticPointsLedgerEntry
+      WHERE json_extract(metadata, '$.sourceId') = ${sourceId}
     `);
-    const planJson = readImportPlanColumn(plan);
-    const summary = summarizeImportPlan(planJson);
-    expect(summary).toEqual([
-      expect.objectContaining({
-        chosenKey: "wl_import_metadata_source_idx",
-        accessType: "ref",
-      }),
-    ]);
+    expect(JSON.stringify(plan)).toContain("wl_import_metadata_source_idx");
   },
 );
 it.skipIf(process.env.HISTORICAL_IMPORT_QUERY_PLANS !== "1")(

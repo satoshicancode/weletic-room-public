@@ -129,6 +129,7 @@ export async function readHistoricalImportExecutionProofInTransaction({
   const discovered = await tx.$queryRaw<WeleticPointsLedgerEntry[]>(Prisma.sql`
     SELECT * FROM WeleticPointsLedgerEntry
     WHERE json_extract(metadata, '$.sourceId') = ${sourceId}
+    ORDER BY id ASC
     LIMIT ${maximumSourceEntries + 1}
   `);
   if (discovered.length > maximumSourceEntries)
