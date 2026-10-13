@@ -5,6 +5,7 @@ import {
   type LoaderFunctionArgs,
 } from "@remix-run/node";
 import { boundary } from "@shopify/shopify-app-remix/server";
+import { recordVerifiedAppProxyRoute } from "../app-proxy-observation.server";
 import { reviewProxyResponse } from "../reviews-gateway.server";
 import { authenticate } from "../shopify.server";
 import {
@@ -92,6 +93,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 
   const customerId = url.searchParams.get("logged_in_customer_id") || undefined;
   const subpath = normalizeSubpath(params["*"]);
+
+  // Any authenticated app-proxy request proves the merchant-configured prefix.
+  // Observe it in the background so an unavailable internal service cannot slow
+  // storefront traffic; later signed requests retry if persistence fails.
+  if (request.method === "GET")
+    void recordVerifiedAppProxyRoute(request, session?.shop).catch(
+      () => undefined,
+    );
 
   if (subpath.startsWith("reviews/"))
     return reviewProxyResponse(

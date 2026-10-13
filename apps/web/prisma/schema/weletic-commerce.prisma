@@ -73,6 +73,7 @@ model WeleticShopifyStore {
   accessChanges                WeleticShopifyStoreAccessChange[]
   pendingInstallation          WeleticShopifyPendingInstallation?
   installationCredentials      WeleticShopifyInstallationCredential[]
+  appProxyRoutes               WeleticShopifyAppProxyRoute[]
 
   @@index(syncStatus)
   @@index(complianceState)
@@ -708,11 +709,22 @@ model WeleticReconciliationIssue {
   @@index([storeId, status, severity])
 }
 
-
 model ServiceAuthNonce {
   nonceKey  String @id
   // Epoch milliseconds (~1.8e12) — must be BigInt, Int overflows 32 bits.
   expiresAt BigInt
 
   @@index([expiresAt])
+}
+
+// Observed only through authenticated Shopify proxy requests; never inferred from TOML.
+model WeleticShopifyAppProxyRoute {
+  storeId                String
+  appId                  String
+  installationGeneration String?
+  pathPrefix             String
+  observedAt             DateTime
+  store                  WeleticShopifyStore @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([storeId, appId])
 }

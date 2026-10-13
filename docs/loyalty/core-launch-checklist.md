@@ -254,8 +254,22 @@ Order #1048 earned 1,000 points after the participation policy was activated. Th
 blank customer-projection defect was fixed and the failed sync retried successfully.
 See [bounded evidence and open gates](restricted-yamaxdev-testing-2026-09-28.md#installed-purchase-and-refund-evidence--september-28).
 
-P0.4 and P0.5 remain open: coupon checkout is unproven, and Shopify denies the
-Email field, preventing review invitation creation. The email-access change is
-prepared but not saved pending explicit confirmation. P0.6 remains open because
-the required Flow extension is absent from the preview. These findings do not
-close any full release gate or authorize production.
+P0.4 remains open for authenticated coupon checkout. Email access was saved by
+Hiro and verified through the real Admin API. A fresh signed fulfillment created
+one invitation delivered to local MailHog. On the actual installed proxy route,
+a one-star text/photo review received exactly 100 points before publication;
+manual publication/reply and hiding preserved the award (balance 1,100). Reused
+invitation access was rejected. The seven-day collection default was restored.
+
+P0.5 remains open: the invitation hardcodes `/apps/weletic`, while this installation
+uses `/apps/weletic-1`. Testing used a manually corrected link, so the unmodified
+invitation journey is not accepted. The implementation now learns the prefix from
+any fresh authenticated app-proxy GET and binds it to the current app/store/
+installation generation; new invitation snapshots fail closed until a matching
+route is observed, while retries keep their original encrypted content. A dedicated
+additive table has a local-only migration; no shared schema has been changed.
+External inbox delivery, installed storefront display and photo deletion remain
+unproven until the installed preview is re-tested. P0.6 still needs installed Flow
+extensions and workflow receipts.
+PR #181 merged as `6b9ff691b4509b69ca014054de5563666a80e367` after all six
+exact-head full CI jobs passed. These findings do not authorize production.
