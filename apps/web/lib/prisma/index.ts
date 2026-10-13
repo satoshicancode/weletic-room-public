@@ -155,9 +155,15 @@ export function createPrismaClient(d1Database?: D1Database) {
     );
   }
 
+  const allowLocalSqlite =
+    process.env.PLAYWRIGHT_TEST === "1" ||
+    process.env.CI_SEPARATE_VALIDATION === "true" ||
+    process.env.WELETIC_ALLOW_LOCAL_SQLITE === "1";
+
   if (
     process.env.NODE_ENV === "production" &&
-    process.env.NEXT_PHASE !== "phase-production-build"
+    process.env.NEXT_PHASE !== "phase-production-build" &&
+    !allowLocalSqlite
   ) {
     throw new Error(
       "[Prisma D1 Configuration Fatal] Running in production requires valid Cloudflare D1 HTTP credentials " +

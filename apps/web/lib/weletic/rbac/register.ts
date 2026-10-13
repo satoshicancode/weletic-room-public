@@ -40,6 +40,37 @@ export function registerWeleticPermissions() {
         includeInApisAll: true,
       },
     },
+    {
+      action: "integrations.read",
+      description: "access integrations",
+      roles: ["owner", "member", "viewer", "billing"],
+      resource: {
+        name: "Integrations",
+        key: "integrations",
+        description: "Access and configure integrations",
+      },
+      scope: {
+        type: "read",
+        resource: "integrations",
+        includeInApisRead: true,
+        includeInApisAll: true,
+      },
+    },
+    {
+      action: "integrations.write",
+      description: "manage integrations",
+      roles: ["owner", "member"],
+      resource: {
+        name: "Integrations",
+        key: "integrations",
+        description: "Access and configure integrations",
+      },
+      scope: {
+        type: "write",
+        resource: "integrations",
+        includeInApisAll: true,
+      },
+    },
   ]);
 }
 

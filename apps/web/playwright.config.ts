@@ -14,11 +14,10 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: 1,
-  // Local .env often sets CI=true for other tooling; only pin to 1 worker on Actions.
-  workers: process.env.GITHUB_ACTIONS ? 1 : undefined,
+  workers: 1,
   reporter: process.env.CI
     ? [["list"], ["html", { outputFolder: "playwright-report" }]]
-    : [["html", { open: "always" }]],
+    : [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]],
   expect: {
     timeout: 30000,
   },
@@ -83,13 +82,15 @@ export default defineConfig({
       },
     },
   ],
-  webServer: process.env.CI
-    ? {
-        command: "pnpm start -p 8888",
-        port: 8888,
-        reuseExistingServer: true,
-        timeout: 120_000,
-        stdout: "ignore",
-      }
-    : undefined,
+  webServer: {
+    command: "pnpm start -p 8888",
+    port: 8888,
+    reuseExistingServer: true,
+    timeout: 120_000,
+    stdout: "ignore",
+    env: {
+      PLAYWRIGHT_TEST: "1",
+      WELETIC_ALLOW_LOCAL_SQLITE: "1",
+    },
+  },
 });

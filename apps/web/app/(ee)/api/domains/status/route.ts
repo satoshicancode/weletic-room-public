@@ -23,7 +23,10 @@ export const GET = withWorkspace(
       });
     }
 
-    if (!isWorkspaceEligibleForDomainRegistration(workspace)) {
+    if (
+      !isWorkspaceEligibleForDomainRegistration(workspace) ||
+      !process.env.DYNADOT_API_KEY
+    ) {
       throw new DubApiError({
         code: "forbidden",
         message:
