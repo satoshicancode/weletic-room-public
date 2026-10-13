@@ -70,7 +70,7 @@ export async function reserveProductReviewIncentiveInTransaction({
   });
   if (
     !review ||
-    review.source !== "verified_customer" ||
+    (review.source ?? "verified_customer") !== "verified_customer" ||
     !review.request ||
     !review.requestId ||
     !review.shopperId ||

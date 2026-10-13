@@ -109,7 +109,8 @@ export async function reverseReviewPointsClaimInTransaction({
   });
   if (
     !review ||
-    (claim.subjectType !== "store" && review.source !== "verified_customer") ||
+    (claim.subjectType !== "store" &&
+      (review.source ?? "verified_customer") !== "verified_customer") ||
     !review.request ||
     !review.shopperId ||
     review.shopperId !== claim.shopperId ||

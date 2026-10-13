@@ -260,7 +260,7 @@ async function applyPublishedReviewReward(
     include: { request: { include: reviewRequestInclude }, media: true },
   });
   if (
-    review.source !== "verified_customer" ||
+    (review.source ?? "verified_customer") !== "verified_customer" ||
     !review.request ||
     !review.shopperId ||
     // New promises never fall back to the publication-based legacy writer.
@@ -645,7 +645,7 @@ export async function moderateNativeReviewInTransaction({
   const status = patch.status ?? review.status;
   if (
     patch.retryReward &&
-    review.source === "verified_customer" &&
+    (review.source ?? "verified_customer") === "verified_customer" &&
     review.request?.incentivePolicyId === null &&
     status !== "published"
   )
@@ -751,12 +751,15 @@ export async function moderateNativeReviewInTransaction({
           }
         }
       }
-    } else if (review.source === "verified_customer" && review.request) {
+    } else if (
+      (review.source ?? "verified_customer") === "verified_customer" &&
+      review.request
+    ) {
       await applyPublishedReviewReward(tx, storeId, review.id, generation);
     }
   } else if (status === "rejected" || status === "hidden") {
     if (
-      review.source === "verified_customer" &&
+      (review.source ?? "verified_customer") === "verified_customer" &&
       review.rewardStatus === "awarded" &&
       review.request &&
       review.request.incentivePolicyId === null
