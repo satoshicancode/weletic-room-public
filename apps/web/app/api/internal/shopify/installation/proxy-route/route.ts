@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     });
     if (!bytes) return reviewJson({ error: { code: "bad_request" } }, 413);
     const body = new TextDecoder().decode(bytes);
-    if (!verifyWeleticShopifyRequest({ request, body }))
+    if (!(await verifyWeleticShopifyRequest({ request, body })))
       return reviewJson({ error: { code: "unauthorized" } }, 401);
     const input = appProxyObservationSchema.parse(JSON.parse(body));
     const store = await resolveShopifyStoreByDomain(input.shop);
