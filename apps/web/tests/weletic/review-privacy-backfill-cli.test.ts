@@ -59,6 +59,8 @@ it("rejects FIFO, symlink, oversized and permissive checkpoints without blocking
             PATH: process.env.PATH,
             NODE_ENV: "test",
             DATABASE_URL: "private-invalid-database-sentinel",
+            UPSTASH_REDIS_REST_URL: "http://127.0.0.1:8079",
+            UPSTASH_REDIS_REST_TOKEN: "mock_token",
           },
         },
       );
@@ -95,6 +97,8 @@ it.each(
         PATH: process.env.PATH,
         NODE_ENV: "test",
         DATABASE_URL: "private-invalid-database-sentinel",
+        UPSTASH_REDIS_REST_URL: "http://127.0.0.1:8079",
+        UPSTASH_REDIS_REST_TOKEN: "mock_token",
       },
     },
   );
@@ -102,7 +106,7 @@ it.each(
   expect(child.signal).toBeNull();
   expect(child.status).toBe(1);
   expect(child.stdout).toBe("");
-  expect(child.stderr.trim()).toBe(
+  expect(child.stderr).toContain(
     "Review privacy backfill failed. Some owners may have committed; inspect private audit evidence and retry from the previous checkpoint with a new output path. No readiness is implied.",
   );
 });

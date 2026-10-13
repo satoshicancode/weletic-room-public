@@ -282,40 +282,57 @@ it("does not dispatch an expiry email when retention crosses the expiry instant"
     expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
     expect(mocks.send).not.toHaveBeenCalled();
   } finally {
+    mocks.retain.mockImplementation(async ({ prepare }) => prepare());
     vi.useRealTimers();
   }
 });
 it.each(["redemption", "referral_coupon"] as const)(
   "renders %s expiry through the shared sender in EN/JA/VI with mocked remote transport",
   async (kind) => {
-    for (const locale of ["en", "ja", "vi"]) {
-      const { args } = expiryFixture(kind, locale);
-      expect(await sendPointsEarnedNotification(args)).toBe("sent");
-      expect(mocks.expiryRemote).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          event: args.claim.candidate.payload,
-          shopifyCustomerId: "gid://shopify/Customer/private-customer",
-        }),
-      );
-      const prepared = mocks.prepare.mock.calls.at(-1)![0];
-      expect(prepared.subject).not.toMatch(/\{\{|undefined|private-|PRIVATE-/);
-      expect(prepared.react).toBeTruthy();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T00:00:00.000Z"));
+    try {
+      for (const locale of ["en", "ja", "vi"]) {
+        const { args } = expiryFixture(kind, locale);
+        expect(await sendPointsEarnedNotification(args)).toBe("sent");
+        expect(mocks.expiryRemote).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            event: args.claim.candidate.payload,
+            shopifyCustomerId: "gid://shopify/Customer/private-customer",
+          }),
+        );
+        const prepared = mocks.prepare.mock.calls.at(-1)![0];
+        expect(prepared.subject).not.toMatch(
+          /\{\{|undefined|private-|PRIVATE-/,
+        );
+        expect(prepared.react).toBeTruthy();
+      }
+    } finally {
+      vi.useRealTimers();
     }
   },
 );
 it.each(["redemption", "referral_coupon"] as const)(
   "suppresses unavailable %s remotely and retries transport failures without sending",
   async (kind) => {
-    const { args } = expiryFixture(kind);
-    mocks.expiryRemote.mockResolvedValue(false);
-    expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
-    expect(mocks.retain).not.toHaveBeenCalled();
-    expect(mocks.send).not.toHaveBeenCalled();
-    mocks.expiryRemote.mockRejectedValue(new Error("synthetic lookup failure"));
-    await expect(sendPointsEarnedNotification(args)).rejects.toThrow(
-      "synthetic lookup failure",
-    );
-    expect(mocks.send).not.toHaveBeenCalled();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T00:00:00.000Z"));
+    try {
+      const { args } = expiryFixture(kind);
+      mocks.expiryRemote.mockResolvedValue(false);
+      expect(await sendPointsEarnedNotification(args)).toBe("ineligible");
+      expect(mocks.retain).not.toHaveBeenCalled();
+      expect(mocks.send).not.toHaveBeenCalled();
+      mocks.expiryRemote.mockRejectedValue(
+        new Error("synthetic lookup failure"),
+      );
+      await expect(sendPointsEarnedNotification(args)).rejects.toThrow(
+        "synthetic lookup failure",
+      );
+      expect(mocks.send).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   },
 );
 function birthdayFixture() {

@@ -60,7 +60,8 @@ export const GET = withWorkspace(async ({ workspace }) => {
 // POST /api/workspaces/[idOrSlug]/import/bitly - create job to import links from bitly
 export const POST = withWorkspace(
   async ({ req, workspace, session }) => {
-    const { selectedDomains, selectedGroupTags, folderId } = await req.json();
+    const { selectedDomains, selectedGroupTags, folderId } =
+      (await req.json()) as any;
 
     const domains = await prisma.domain.findMany({
       where: { projectId: workspace.id },

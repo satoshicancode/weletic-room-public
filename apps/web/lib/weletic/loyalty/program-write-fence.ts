@@ -5,6 +5,7 @@ import {
   type LoyaltyMaintenancePermit,
 } from "@/lib/weletic/loyalty/maintenance-write-fence";
 import { isShopifyStoreAccessActive } from "@/lib/weletic/shopify/store-access-policy";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import { Prisma } from "@prisma/client";
 
 export type LoyaltyProgramRowLockMode = "lock_only" | "active";
@@ -17,6 +18,7 @@ export type LockedLoyaltyProgram = {
   metadata: Prisma.JsonValue | null;
   storeAccessState?: string;
   version?: number;
+  holdingPeriodDays?: number | null;
 };
 
 export class OptimisticLockConflictError extends Error {
@@ -142,13 +144,17 @@ export async function lockLoyaltyProgramRow({
     );
   }
 
+  const forUpdateClause = process.env.DATABASE_URL?.startsWith("mysql:")
+    ? Prisma.sql`FOR UPDATE`
+    : Prisma.empty;
+
   // Acquire the store before the program, matching admission/lifecycle writers.
   // This also covers remote voucher workers that hold only this program fence.
   const stores = await tx.$queryRaw<
     Array<{ id: string; storeAccessState: string }>
   >(Prisma.sql`
       SELECT id, storeAccessState FROM WeleticShopifyStore
-      WHERE id = ${storeId} LIMIT 1 FOR UPDATE
+      WHERE id = ${storeId} LIMIT 1 ${forUpdateClause}
     `);
   const store = stores[0];
   if (
@@ -170,7 +176,7 @@ export async function lockLoyaltyProgramRow({
     FROM WeleticLoyaltyProgram
     WHERE storeId = ${storeId}
     LIMIT 1
-    FOR UPDATE
+    ${forUpdateClause}
   `);
   const program = programs[0];
   if (!program || program.storeId !== storeId) {
@@ -208,6 +214,9 @@ export async function lockLoyaltyProgramRowIfPresent({
       "Loyalty program currency-generation fence is unavailable.",
     );
   }
+  const forUpdateClause = process.env.DATABASE_URL?.startsWith("mysql:")
+    ? Prisma.sql`FOR UPDATE`
+    : Prisma.empty;
   const programs = await tx.$queryRaw<
     Array<LockedLoyaltyProgram & { version: number }>
   >(Prisma.sql`
@@ -215,7 +224,7 @@ export async function lockLoyaltyProgramRowIfPresent({
     FROM WeleticLoyaltyProgram
     WHERE storeId = ${storeId}
     LIMIT 1
-    FOR UPDATE
+    ${forUpdateClause}
   `);
   const program = programs[0] ?? null;
   if (
@@ -307,17 +316,21 @@ export async function withLoyaltyProgramRowLock<T>({
   ) => Promise<T>;
   timeoutMs?: number;
 }) {
-  return prisma.$transaction(
-    async (tx) => {
-      const program = await lockLoyaltyProgramRow({
-        tx,
-        storeId,
-        mode,
-        loyaltyMaintenancePermit,
-      });
-      return operation(tx, program);
-    },
-    { maxWait: 10_000, timeout: timeoutMs },
+  return withFinancialTransactionRetry(
+    () =>
+      prisma.$transaction(
+        async (tx) => {
+          const program = await lockLoyaltyProgramRow({
+            tx,
+            storeId,
+            mode,
+            loyaltyMaintenancePermit,
+          });
+          return operation(tx, program);
+        },
+        { maxWait: 10_000, timeout: timeoutMs },
+      ),
+    { actionName: "program_row_lock" },
   );
 }
 

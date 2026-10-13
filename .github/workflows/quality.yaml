@@ -19,8 +19,7 @@ permissions:
 env:
   CI: "true"
   DOTENV_FLOW_SILENT: "true"
-  DATABASE_URL: "mysql://root:@localhost:3306/planetscale"
-  PLANETSCALE_DATABASE_URL: "http://root:unused@localhost:3900/planetscale"
+  DATABASE_URL: "file:/tmp/weletic-ci.db"
   NEXTAUTH_SECRET: "quality-gate-secret-at-least-32-characters"
   NEXTAUTH_URL: "http://partners.localhost:8888"
   TINYBIRD_API_KEY: "xx"
@@ -48,6 +47,7 @@ env:
   SHOPIFY_APP_URL: "https://shopify.example.test"
   WELETIC_API_URL: "https://app.example.test"
   WELETIC_SHOPIFY_SERVICE_SECRET: "quality-gate-service-secret-32-characters"
+  ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 jobs:
   changes:
@@ -162,6 +162,7 @@ jobs:
           node-version: 20
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web exec prisma db push --schema=./prisma/schema --accept-data-loss
       - name: Run affected unit tests
         env:
           SHOPIFY_AFFECTED: ${{ needs.changes.outputs.shopify }}

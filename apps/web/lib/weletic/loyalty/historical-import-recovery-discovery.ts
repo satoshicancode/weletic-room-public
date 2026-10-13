@@ -104,7 +104,7 @@ export async function discoverHistoricalImportCommitRecovery(request: unknown) {
       };
     },
     {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30_000,
     },
   );

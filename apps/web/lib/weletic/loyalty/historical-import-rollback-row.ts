@@ -16,7 +16,7 @@ import { readHistoricalImportExecutionProofInTransaction } from "./historical-im
 import { prepareHistoricalImportFieldRollback } from "./historical-import-rollback-fields";
 
 const options = {
-  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   timeout: 30_000,
 };
 

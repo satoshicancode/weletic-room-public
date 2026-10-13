@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 // POST /api/admin/workspaces/restore
 export const POST = withAdmin(
   async ({ req }) => {
-    const { slug } = await req.json();
+    const { slug } = (await req.json()) as { slug: string };
 
     const project = await prisma.project.findUnique({
       where: {

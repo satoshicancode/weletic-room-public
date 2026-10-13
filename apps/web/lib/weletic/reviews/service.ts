@@ -31,6 +31,7 @@ import {
 import { enqueueReviewFlowEvent } from "./flow-producer";
 import { reserveProductReviewIncentiveInTransaction } from "./incentive-claims";
 import { reviewParticipationContentDigest } from "./incentive-evidence";
+import { invalidateReviewIncentiveInTransaction } from "./incentive-invalidation";
 import { fulfillReviewPointsClaimInTransaction } from "./incentive-points";
 import {
   reviewModuleToggleSchema,
@@ -634,25 +635,92 @@ export async function moderateNativeReviewInTransaction({
     });
   }
   if (status === "published") {
-    await applyPublishedReviewReward(tx, storeId, review.id, generation);
-  } else if (
-    review.rewardStatus === "awarded" &&
-    review.request &&
-    review.request.incentivePolicyId === null
-  ) {
-    const result = await reverseReviewPoints({
-      tx,
-      storeId,
-      provider: "native",
-      reviewId: review.id,
-      reason: `review_${status}`,
-    });
-    if (result.status === "ignored")
-      throw new ReviewError("unavailable", "Reward ledger evidence is missing");
-    await tx.weleticProductReview.update({
-      where: { id: review.id },
-      data: { rewardStatus: "reversed", rewardReason: `review_${status}` },
-    });
+    if (
+      review.request &&
+      review.request.incentivePolicyId !== null &&
+      review.request.orderId
+    ) {
+      if (generation) {
+        const claim = await tx.weleticReviewIncentiveClaim.findUnique({
+          where: {
+            storeId_orderId: { storeId, orderId: review.request.orderId },
+          },
+        });
+        if (
+          claim &&
+          claim.sourceReviewId === review.id &&
+          claim.status === "reserved"
+        ) {
+          const award = claim.awardSnapshot;
+          if (
+            award &&
+            typeof award === "object" &&
+            !Array.isArray(award) &&
+            award.kind === "points"
+          ) {
+            await fulfillReviewPointsClaimInTransaction({
+              tx,
+              storeId,
+              claimId: claim.id,
+              generation,
+            });
+          }
+        }
+      }
+    } else {
+      await applyPublishedReviewReward(tx, storeId, review.id, generation);
+    }
+  } else if (status === "rejected" || status === "hidden") {
+    if (
+      review.rewardStatus === "awarded" &&
+      review.request &&
+      review.request.incentivePolicyId === null
+    ) {
+      const result = await reverseReviewPoints({
+        tx,
+        storeId,
+        provider: "native",
+        reviewId: review.id,
+        reason: `review_${status}`,
+      });
+      if (result.status === "ignored")
+        throw new ReviewError(
+          "unavailable",
+          "Reward ledger evidence is missing",
+        );
+      await tx.weleticProductReview.update({
+        where: { id: review.id },
+        data: { rewardStatus: "reversed", rewardReason: `review_${status}` },
+      });
+    } else if (
+      review.request &&
+      review.request.incentivePolicyId !== null &&
+      review.request.orderId &&
+      generation
+    ) {
+      const claim = await tx.weleticReviewIncentiveClaim.findUnique({
+        where: {
+          storeId_orderId: { storeId, orderId: review.request.orderId },
+        },
+      });
+      if (
+        claim &&
+        claim.sourceReviewId === review.id &&
+        ["reserved", "fulfilled"].includes(claim.status)
+      ) {
+        await invalidateReviewIncentiveInTransaction({
+          tx,
+          storeId,
+          claimId: claim.id,
+          generation,
+          decision: {
+            decisionId: createWeleticId("wrevdec_"),
+            actorUserId: userId || "system_moderator",
+            reason: "confirmed_fraud",
+          },
+        });
+      }
+    }
   }
   if (status === "published" || review.status === "published") {
     if (

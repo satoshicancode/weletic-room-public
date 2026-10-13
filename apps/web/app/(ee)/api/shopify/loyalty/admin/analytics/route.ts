@@ -99,7 +99,7 @@ export const GET = withWorkspace(
               : undefined,
           tx,
         }),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
     const totalPointsEarned = overview.healthMetrics.totalPointsEarned;

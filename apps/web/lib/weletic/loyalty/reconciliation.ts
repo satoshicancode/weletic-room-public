@@ -14,7 +14,9 @@ export type AnomalyType =
   | "SEQUENCE_GAP"
   | "SEQUENCE_COLLISION"
   | "BALANCE_CHAIN_DISCONTINUITY"
-  | "ORPHAN_LEDGER_RECORD";
+  | "ORPHAN_LEDGER_RECORD"
+  | "INVALID_SEQUENCE_NUMBER"
+  | "ILLEGAL_ENTRY_DELTA";
 
 export interface LedgerAnomaly {
   accountId: string;
@@ -92,6 +94,59 @@ export async function auditAccountLedger(
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const expectedSequence = i + 1;
+
+    // 0. Check for Invalid Sequence Numbers (<= 0)
+    if (entry.sequenceNumber < 1) {
+      hasFatalAnomaly = true;
+      anomalies.push({
+        accountId,
+        storeId: account.storeId,
+        type: "INVALID_SEQUENCE_NUMBER",
+        severity: "CRITICAL",
+        actionTaken: quarantineFatal ? "QUARANTINED" : "LOGGED_ONLY",
+        description: `Invalid sequence number ${entry.sequenceNumber} <= 0 detected at entry ${entry.id}.`,
+        details: { sequenceNumber: entry.sequenceNumber, entryId: entry.id },
+      });
+    }
+
+    // 0b. Check for Cross-Store Tenant Leak / Orphan Record
+    if (entry.storeId && entry.storeId !== account.storeId) {
+      hasFatalAnomaly = true;
+      anomalies.push({
+        accountId,
+        storeId: account.storeId,
+        type: "ORPHAN_LEDGER_RECORD",
+        severity: "CRITICAL",
+        actionTaken: quarantineFatal ? "QUARANTINED" : "LOGGED_ONLY",
+        description: `Cross-tenant entry detected at entry ${entry.id}: storeId ${entry.storeId} does not match account storeId ${account.storeId}.`,
+        details: {
+          entryStoreId: entry.storeId,
+          accountStoreId: account.storeId,
+          entryId: entry.id,
+        },
+      });
+    }
+
+    // 0c. Check for Illegal Points Delta Direction
+    if (
+      entry.entryType === WeleticPointsLedgerEntryType.REDEEM_REWARD &&
+      entry.pointsDelta > BigInt(0)
+    ) {
+      hasFatalAnomaly = true;
+      anomalies.push({
+        accountId,
+        storeId: account.storeId,
+        type: "ILLEGAL_ENTRY_DELTA",
+        severity: "CRITICAL",
+        actionTaken: quarantineFatal ? "QUARANTINED" : "LOGGED_ONLY",
+        description: `Illegal positive points delta (${entry.pointsDelta}) for REDEEM_REWARD at entry ${entry.id}.`,
+        details: {
+          entryId: entry.id,
+          pointsDelta: entry.pointsDelta.toString(),
+          entryType: entry.entryType,
+        },
+      });
+    }
 
     // 1. Check for Duplicate Sequences
     if (seenSequences.has(entry.sequenceNumber)) {

@@ -235,8 +235,20 @@ async function createCommission({
     saleAmount = convertedAmount;
   }
 
-  // Earnings
-  const earnings = commission.amount;
+  // Earnings with FX Conversion (FIN-AUDIT-09)
+  let earnings = Number(commission.amount ?? 0);
+  const earningsCurrency =
+    (commission as any).currency ?? commission.original_sale_currency ?? "usd";
+
+  if (earnings > 0 && earningsCurrency.toUpperCase() !== "USD" && fxRates) {
+    const { amount: convertedEarnings } = convertCurrencyWithFxRates({
+      currency: earningsCurrency,
+      amount: earnings,
+      fxRates,
+    });
+
+    earnings = convertedEarnings;
+  }
 
   // here, we also check for commissions that have already been recorded on Dub
   // e.g. during the transition period

@@ -193,13 +193,13 @@ const processClickStatsStreamBatch = () =>
         linkUpdates,
         async (update) => {
           try {
-            const lastClickedAt = new Date(update.lastClicked)
-              .toISOString()
-              .slice(0, 19)
-              .replace("T", " ");
+            // Bind a Date so it is stored in the engine's canonical DateTime
+            // format (INTEGER ms natively, ISO-8601 on D1); a pre-formatted
+            // string would be stored as text and break range comparisons.
+            const lastClickedAt = new Date(update.lastClicked);
 
             await conn.execute(
-              "UPDATE Link SET clicks = clicks + ?, lastClicked = GREATEST(COALESCE(lastClicked, ?), ?) WHERE id = ?",
+              "UPDATE Link SET clicks = clicks + ?, lastClicked = MAX(COALESCE(lastClicked, ?), ?) WHERE id = ?",
               [update.clicks, lastClickedAt, lastClickedAt, update.linkId],
             );
             processedEntryIds.push(...update.entryIds);
@@ -220,7 +220,7 @@ const processClickStatsStreamBatch = () =>
         async (update) => {
           try {
             await conn.execute(
-              "UPDATE Project p SET p.usage = p.usage + ?, p.totalClicks = p.totalClicks + ? WHERE id = ?",
+              "UPDATE Project SET usage = usage + ?, totalClicks = totalClicks + ? WHERE id = ?",
               [update.clicks, update.clicks, update.workspaceId],
             );
             return { success: true };

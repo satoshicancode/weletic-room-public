@@ -337,7 +337,7 @@ const fixtureDatabase = process.env.HISTORICAL_IMPORT_SOURCE_FIXTURE_DATABASE;
 const databaseName = fixtureDatabase ?? "weletic_loyalty_dev";
 let safeToClean = false;
 const options = {
-  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
   timeout: 20_000,
 };
 beforeAll(async () => {
@@ -1526,7 +1526,7 @@ it.skipIf(process.env.HISTORICAL_IMPORT_UPLOAD_LOAD_INTEGRATION !== "1")(
       sha256: createHash("sha256").update(bytes).digest("hex"),
     };
     const transactionOptions = {
-      isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: HISTORICAL_IMPORT_TRANSACTION_TIMEOUT_MS,
     };
     const inspectStarted = performance.now();

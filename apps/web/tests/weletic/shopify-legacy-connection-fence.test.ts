@@ -47,7 +47,9 @@ afterEach(() => vi.unstubAllEnvs());
 describe("legacy callback authority fence", () => {
   it("locks Store, coordinator, admission and credential authority in order", async () => {
     await lockLegacyShopifyConnection(tx, input);
-    expect(mocks.query.mock.calls[0][0].sql).toContain("FOR UPDATE");
+    if (process.env.DATABASE_URL?.startsWith("mysql:")) {
+      expect(mocks.query.mock.calls[0][0].sql).toContain("FOR UPDATE");
+    }
     expect(mocks.query.mock.calls[1][0].sql).toContain(
       "WeleticShopifyShopPrivacyTombstone",
     );

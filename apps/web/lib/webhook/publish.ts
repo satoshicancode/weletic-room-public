@@ -27,7 +27,7 @@ export const sendWorkspaceWebhook = async ({
         disabledAt: null,
         triggers: {
           array_contains: [trigger],
-        },
+        } as any,
       },
       select: {
         id: true,

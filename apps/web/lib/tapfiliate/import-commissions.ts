@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { chunk, nanoid } from "@dub/utils";
+import { chunk, isZeroDecimalCurrency, nanoid } from "@dub/utils";
 import { Customer, Link, Program } from "@prisma/client";
 import { convertCurrencyWithFxRates } from "../analytics/convert-currency";
 import { isFirstConversion } from "../analytics/is-first-conversion";
@@ -202,8 +202,13 @@ async function createCommission({
     return;
   }
 
-  let saleAmount = Math.round(commission.conversion_sub_amount * 100);
-  let earnings = Math.round(commission.amount * 100);
+  const isZeroDecimal = isZeroDecimalCurrency(commission.currency);
+  let saleAmount = isZeroDecimal
+    ? Math.round(commission.conversion_sub_amount)
+    : Math.round(commission.conversion_sub_amount * 100);
+  let earnings = isZeroDecimal
+    ? Math.round(commission.amount)
+    : Math.round(commission.amount * 100);
 
   if (commission.currency.toUpperCase() !== "USD" && fxRates) {
     const { amount: convertedSaleAmount } = convertCurrencyWithFxRates({

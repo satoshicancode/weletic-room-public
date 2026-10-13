@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { expect } from "@playwright/test";
 import crypto from "crypto";
 import { randomName } from "../../utils";
 import { test } from "../fixtures";
 
 test.describe.configure({
-  mode: "parallel",
+  mode: "serial",
 });
 
 const DEFAULT_WEBHOOK_SECRET = "weletic_test_webhook_secret_key_mock_123";
@@ -18,25 +19,81 @@ function calculateShopifyHmac(body: string, secret: string): string {
 }
 
 async function ensureWebhookStore(workspaceId: string, programId: string) {
-  const shopDomain = `playwright-wh-${randomName("store")}.myshopify.com`;
+  const uniqueId = randomName("store")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  const shopDomain = `playwright-wh-${uniqueId}.myshopify.com`;
   const store = await prisma.weleticShopifyStore.upsert({
     where: { projectId: workspaceId },
     create: {
-      id: `wstore_wh_${Date.now()}_${randomName("s")}`,
+      id: `wstore_wh_${Date.now()}_${uniqueId}`,
       projectId: workspaceId,
       programId,
       shopDomain,
       shopCurrency: "USD",
       apiVersion: "2026-10",
-      installationGeneration: "gen_playwright_wh",
+      complianceState: "active",
+      storeAccessState: "active",
+      installationGeneration: `gen_${uniqueId}`,
     },
     update: {
       shopDomain,
       shopCurrency: "USD",
       apiVersion: "2026-10",
-      installationGeneration: "gen_playwright_wh",
+      complianceState: "active",
+      storeAccessState: "active",
+      installationGeneration: `gen_${uniqueId}`,
     },
   });
+
+  await prisma.project.update({
+    where: { id: workspaceId },
+    data: {
+      shopifyStoreId: store.id,
+      defaultProgramId: programId,
+    },
+  });
+
+  const user = await prisma.user.findFirst({ select: { id: true } });
+  if (user) {
+    const testAccessToken = "shpat_playwright_wh_test_token_123456";
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(testAccessToken)
+      .digest("hex");
+
+    await prisma.installedIntegration.upsert({
+      where: {
+        userId_integrationId_projectId: {
+          userId: user.id,
+          integrationId: SHOPIFY_INTEGRATION_ID,
+          projectId: workspaceId,
+        },
+      },
+      create: {
+        id: `inst_wh_${Date.now()}`,
+        userId: user.id,
+        integrationId: SHOPIFY_INTEGRATION_ID,
+        projectId: workspaceId,
+        credentials: {
+          shop: shopDomain,
+          accessToken: testAccessToken,
+          shopVerificationTokenHash: tokenHash,
+          installationGeneration: `gen_${uniqueId}`,
+          scope: "read_products,read_orders,read_customers",
+        },
+      },
+      update: {
+        credentials: {
+          shop: shopDomain,
+          accessToken: testAccessToken,
+          shopVerificationTokenHash: tokenHash,
+          installationGeneration: `gen_${uniqueId}`,
+          scope: "read_products,read_orders,read_customers",
+        },
+      },
+    });
+  }
 
   return store;
 }
@@ -74,6 +131,8 @@ test("POST /api/shopify/integration/webhook – processes valid orders/paid webh
 
   const orderPayload = {
     id: orderId,
+    confirmation_number: `CN-${orderId}`,
+    checkout_token: `chk_${orderId}`,
     admin_graphql_api_id: `gid://shopify/Order/${orderId}`,
     order_number: 1001,
     name: "#1001",
@@ -88,6 +147,9 @@ test("POST /api/shopify/integration/webhook – processes valid orders/paid webh
       first_name: "Sarah",
       last_name: "Connor",
     },
+    current_subtotal_price_set: {
+      shop_money: { amount: "100.00", currency_code: "USD" },
+    },
     line_items: [
       {
         id: 11223344,
@@ -95,6 +157,9 @@ test("POST /api/shopify/integration/webhook – processes valid orders/paid webh
         variant_id: 887766,
         quantity: 2,
         price: "50.00",
+        price_set: {
+          shop_money: { amount: "50.00", currency_code: "USD" },
+        },
         title: "Yamax Flow™ High-Rise Leggings",
       },
     ],
@@ -144,6 +209,8 @@ test("POST /api/shopify/integration/webhook – enforces deduplication idempoten
 
   const payload = {
     id: orderId,
+    confirmation_number: `CN-${orderId}`,
+    checkout_token: `chk_${orderId}`,
     admin_graphql_api_id: `gid://shopify/Order/${orderId}`,
     order_number: 1002,
     name: "#1002",
@@ -155,14 +222,21 @@ test("POST /api/shopify/integration/webhook – enforces deduplication idempoten
       id: 5544332212,
       email: `customer_${randomName("cust")}@example.com`,
     },
+    current_subtotal_price_set: {
+      shop_money: { amount: "50.00", currency_code: "USD" },
+    },
     line_items: [
       {
         id: 11223345,
         price: "50.00",
+        price_set: {
+          shop_money: { amount: "50.00", currency_code: "USD" },
+        },
         quantity: 1,
         title: "Yamax Flow™ Cropped Tank Top",
       },
     ],
+    discount_codes: [],
   };
 
   const bodyString = JSON.stringify(payload);
@@ -232,6 +306,8 @@ test("POST /api/shopify/integration/webhook – records line-item order details 
 
   const orderPayload = {
     id: orderId,
+    confirmation_number: `CN-${orderId}`,
+    checkout_token: `chk_${orderId}`,
     admin_graphql_api_id: `gid://shopify/Order/${orderId}`,
     order_number: 1003,
     name: "#1003",
@@ -246,6 +322,9 @@ test("POST /api/shopify/integration/webhook – records line-item order details 
       first_name: "John",
       last_name: "Doe",
     },
+    current_subtotal_price_set: {
+      shop_money: { amount: "150.00", currency_code: "USD" },
+    },
     line_items: [
       {
         id: 22334455,
@@ -253,6 +332,9 @@ test("POST /api/shopify/integration/webhook – records line-item order details 
         variant_id: 776655,
         quantity: 1,
         price: "150.00",
+        price_set: {
+          shop_money: { amount: "150.00", currency_code: "USD" },
+        },
         title: "Yamax Flow™ High-Rise Leggings",
       },
     ],

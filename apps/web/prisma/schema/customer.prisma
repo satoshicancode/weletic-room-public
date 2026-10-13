@@ -2,7 +2,7 @@ model Customer {
   id               String  @id
   name             String?
   email            String?
-  avatar           String? @db.Text
+  avatar           String?
   externalId       String?
   stripeCustomerId String? @unique
 
@@ -29,7 +29,7 @@ model Customer {
   link              Link?              @relation(fields: [linkId], references: [id])
   program           Program?           @relation(fields: [programId], references: [id], onDelete: Cascade)
   partner           Partner?           @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  programEnrollment ProgramEnrollment? @relation(fields: [programId, partnerId], references: [programId, partnerId])
+  programEnrollment ProgramEnrollment? @relation(fields: [partnerId, programId], references: [partnerId, programId])
   commissions       Commission[]
   fraudEvents       FraudEvent[]
   submittedLeads    SubmittedLead[]
@@ -45,5 +45,4 @@ model Customer {
   @@index(partnerId)
   @@index(linkId)
   @@index(country)
-  @@fulltext([email, name]) // For full-text search
 }

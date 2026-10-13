@@ -1,4 +1,4 @@
-import { createHmac } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 interface SlackRequestVerificationOptions {
   signingSecret: string;
@@ -11,7 +11,11 @@ interface SlackRequestVerificationOptions {
 }
 
 // Verifies the signature of an incoming request from Slack.
-export const verifySlackSignature = async (req: Request, body: string) => {
+export const verifySlackSignature = async (
+  req: Request,
+  body: string,
+  opts?: { nowMilliseconds?: number },
+) => {
   if (!process.env.SLACK_SIGNING_SECRET) {
     throw new Error("SLACK_SIGNING_SECRET is not set");
   }
@@ -19,6 +23,7 @@ export const verifySlackSignature = async (req: Request, body: string) => {
   const options: SlackRequestVerificationOptions = {
     signingSecret: process.env.SLACK_SIGNING_SECRET,
     body: body,
+    nowMilliseconds: opts?.nowMilliseconds,
     headers: {
       "x-slack-signature": req.headers.get("x-slack-signature") ?? "",
       "x-slack-request-timestamp": Number(
@@ -40,11 +45,11 @@ export const verifySlackSignature = async (req: Request, body: string) => {
   // Calculate time-dependent values
   const nowMs = options.nowMilliseconds ?? Date.now();
   const requestTimestampMaxDeltaMin = 5;
-  const fiveMinutesAgoSec =
-    Math.floor(nowMs / 1000) - 60 * requestTimestampMaxDeltaMin;
+  const maxDeltaSec = 60 * requestTimestampMaxDeltaMin;
+  const nowSec = Math.floor(nowMs / 1000);
 
-  // Rule 1: Check staleness
-  if (requestTimestampSec < fiveMinutesAgoSec) {
+  // Rule 1: Check staleness and future clock skew (bounded to +/- 5 minutes)
+  if (Math.abs(nowSec - requestTimestampSec) > maxDeltaSec) {
     throw new Error(
       `${verifyErrorPrefix}: x-slack-request-timestamp must differ from system time by no more than ${requestTimestampMaxDeltaMin} minutes or request is stale`,
     );
@@ -63,7 +68,14 @@ export const verifySlackSignature = async (req: Request, body: string) => {
   hmac.update(`${signatureVersion}:${requestTimestampSec}:${options.body}`);
   const expectedSignature = hmac.digest("hex");
 
-  if (!signatureHash || signatureHash !== expectedSignature) {
+  if (!signatureHash) {
+    throw new Error(`${verifyErrorPrefix}: signature mismatch`);
+  }
+
+  const sigBuf = Buffer.from(signatureHash, "utf8");
+  const expBuf = Buffer.from(expectedSignature, "utf8");
+
+  if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
     throw new Error(`${verifyErrorPrefix}: signature mismatch`);
   }
 };

@@ -53,7 +53,7 @@ export async function POST(request: Request) {
           envelope: parsed.data.actor,
           request: parsed.data.request,
         }),
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
     return reply(result, 200);
   } catch (error) {

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { isNotHostedImage, storage } from "@/lib/storage";
+import { evictLinksBatchFromKv } from "@/lib/weletic/link-kv-cache";
 import { bulkUpdateLinksBodySchema } from "@/lib/zod/schemas/links";
 import { R2_URL, getParamsFromURL, nanoid, truncate } from "@dub/utils";
 import { Prisma } from "@prisma/client";
@@ -115,6 +116,10 @@ export async function bulkUpdateLinks(
       propagateBulkLinkChanges({
         links: updatedLinks,
       }),
+      // explicitly ensure KV cache is evicted for all modified links in batch
+      evictLinksBatchFromKv(
+        updatedLinks.map((link) => ({ domain: link.domain, key: link.key })),
+      ),
       // if proxy is true and image is not stored in R2, upload image to R2
       proxy &&
         image &&

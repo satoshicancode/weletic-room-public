@@ -3,6 +3,12 @@ import { syncTotalCommissions } from "@/lib/api/partners/sync-total-commissions"
 import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { orderSchema } from "@/lib/integrations/shopify/schema";
 import { prisma } from "@/lib/prisma";
+import {
+  createManyIgnoringDuplicates,
+  createOrGetByUnique,
+  deterministicWeleticId,
+  isUniqueViolation,
+} from "@/lib/weletic/commerce/idempotent-writes";
 import { calculateRefundReversal } from "@/lib/weletic/commerce/record-refund";
 import {
   allocateCommissionProportionally,
@@ -36,6 +42,7 @@ import {
 } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { getShopifyOrderLineContext } from "@/lib/weletic/shopify/order-context";
 import { assertShopifyStoreAcceptsOperationalWrites } from "@/lib/weletic/shopify/store-compliance-state";
+import { withFinancialTransactionRetry } from "@/lib/weletic/sqlite-retry";
 import {
   resolveShopifyRewardConfigAt,
   ShopifyEcommerceRewardConfigSchema,
@@ -862,7 +869,8 @@ async function recordWeleticOrderUnlocked({
       : []
   ).filter((rule) => isExplicitShopifyCommissionRuleKey(rule.logicalKey));
 
-  const orderId = existing?.id ?? createWeleticId("worder_");
+  const orderId =
+    existing?.id ?? deterministicWeleticId("worder_", store.id, externalId);
   const presentmentCurrency = normalizeCurrency(
     order.current_subtotal_price_set.presentment_money?.currency_code ??
       shopCurrency,
@@ -1238,7 +1246,9 @@ async function recordWeleticOrderUnlocked({
       }
 
       return {
-        id: existingLine?.id ?? createWeleticId("wline_"),
+        id:
+          existingLine?.id ??
+          deterministicWeleticId("wline_", orderId, String(line.id)),
         externalId: String(line.id),
         productId: product?.id,
         variantId: variant?.id,
@@ -1309,370 +1319,444 @@ async function recordWeleticOrderUnlocked({
       )?.id ?? null
     : null;
 
-  const result = await prisma.$transaction(
-    async (tx) => {
-      await assertShopifyStoreAcceptsOperationalWrites({
-        storeId: store.id,
-        action: "order_ingestion",
-        expectedInstallationGeneration,
-        loyaltyMaintenancePermit,
-        tx,
-      });
-      let attributionClaimed = true;
-      let savedOrder;
-      if (existing) {
-        const claim = await tx.weleticCommerceOrder.updateMany({
-          where: { id: existing.id, partnerId: null },
-          data: {
-            programId: effectiveProgramId || existing.programId,
-            partnerId: partnerId || null,
-            linkId: linkId || null,
-            shopperId: shopperId || existing.shopperId,
-            marketId: productLink?.marketId || null,
-            marketCountryCode: productLink?.countryCode || null,
-            customerOrderSequence,
-            customerClassification,
-            customerSegmentIds:
-              customerSegmentIds.length > 0
-                ? customerSegmentIds
-                : Prisma.DbNull,
-            processedAt: new Date(),
-          },
-        });
-        attributionClaimed = claim.count === 1;
-        savedOrder = await tx.weleticCommerceOrder.findUniqueOrThrow({
-          where: { id: existing.id },
-        });
-
-        if (attributionClaimed) {
-          await Promise.all(
-            lines.map((line) =>
-              tx.weleticCommerceOrderLine.update({
-                where: { id: line.id },
-                data: {
-                  sellingPlanId: line.sellingPlanId,
-                  sellingPlanCategory: line.sellingPlanCategory,
-                  subscriptionSeriesKey: line.subscriptionSeriesKey,
-                  subscriptionSequence: line.subscriptionSequence,
-                  collectionExternalIds: line.collectionExternalIds,
-                  productTags: line.productTags,
-                },
-              }),
-            ),
-          );
-        }
-      } else {
-        const loyaltyPolicyRevisionId =
-          await resolveOrderLoyaltyPolicyRevisionId({
+  const result = await withFinancialTransactionRetry(
+    () =>
+      prisma.$transaction(
+        async (tx) => {
+          await assertShopifyStoreAcceptsOperationalWrites({
+            storeId: store.id,
+            action: "order_ingestion",
+            expectedInstallationGeneration,
+            loyaltyMaintenancePermit,
             tx,
-            storeId: store.id,
-            occurredAt,
           });
-        savedOrder = await tx.weleticCommerceOrder.create({
-          data: {
-            id: orderId,
-            storeId: store.id,
-            programId: effectiveProgramId || store.programId,
-            partnerId: partnerId || null,
-            linkId: linkId || null,
-            shopperId: shopperId || null,
-            marketId: productLink?.marketId || null,
-            marketCountryCode: productLink?.countryCode || null,
-            externalId,
-            orderName: customerPrivacyTombstoned ? null : order.name,
-            checkoutToken: customerPrivacyTombstoned
-              ? null
-              : order.checkout_token,
-            customerOrderSequence,
-            customerClassification,
-            customerSegmentIds:
-              customerSegmentIds.length > 0
-                ? customerSegmentIds
-                : Prisma.DbNull,
-            loyaltyPolicyRevisionId,
-            shopifyRewardSnapshot: orderRewardSnapshot as Prisma.InputJsonValue,
-            status: orderStatus(order.financial_status),
-            presentmentCurrency,
-            presentmentSubtotal: amount(
-              order.current_subtotal_price_set,
-              "presentment_money",
-            ),
-            presentmentDiscount: amount(
-              order.current_total_discounts_set,
-              "presentment_money",
-            ),
-            presentmentNet: amount(
-              order.current_subtotal_price_set,
-              "presentment_money",
-            ),
-            presentmentTax: amount(
-              order.current_total_tax_set,
-              "presentment_money",
-            ),
-            presentmentShipping: amount(
-              order.total_shipping_price_set,
-              "presentment_money",
-            ),
-            presentmentTotal: order.current_total_price_set
-              ? amount(order.current_total_price_set, "presentment_money")
-              : amount(order.current_subtotal_price_set, "presentment_money") +
-                amount(order.current_total_tax_set, "presentment_money") +
-                amount(order.total_shipping_price_set, "presentment_money"),
-            shopCurrency,
-            shopSubtotal,
-            shopDiscount,
-            shopNet,
-            shopTax,
-            shopShipping,
-            shopTotal,
-            accountingCurrency,
-            accountingNet,
-            accountingTotal,
-            accountingFxRate: fx!.rate,
-            fxRateSnapshotId: fxSnapshot!.id,
-            occurredAt,
-            processedAt: new Date(),
-          },
-        });
-
-        await tx.weleticCommerceOrderLine.createMany({
-          data: lines.map((line) => ({
-            id: line.id,
-            orderId,
-            externalId: line.externalId,
-            productId: line.productId,
-            variantId: line.variantId,
-            sku: line.sku,
-            sellingPlanId: line.sellingPlanId,
-            sellingPlanCategory: line.sellingPlanCategory,
-            subscriptionSeriesKey: line.subscriptionSeriesKey,
-            subscriptionSequence: line.subscriptionSequence,
-            collectionExternalIds: line.collectionExternalIds,
-            productTags: line.productTags,
-            title: line.title,
-            quantity: line.quantity,
-            presentmentGross: line.presentmentGross,
-            presentmentDiscount: line.presentmentDiscount,
-            presentmentNet: line.presentmentGross - line.presentmentDiscount,
-            shopGross: line.shopGross,
-            shopDiscount: line.shopDiscount,
-            shopNet: line.shopNet,
-            accountingNet: line.accountingNet,
-            commissionableAccountingAmount: line.commissionableAccountingAmount,
-          })),
-        });
-      }
-
-      let commissionId: string | undefined;
-      const shouldRecordCalculations =
-        attributionClaimed &&
-        effectiveProgramId &&
-        partnerId &&
-        enrollment &&
-        lines.some((line) => line.rule);
-      if (shouldRecordCalculations && totalEarnings !== BigInt(0)) {
-        commissionId = createId({ prefix: "cm_" });
-        await tx.commission.create({
-          data: {
-            id: commissionId,
-            programId: effectiveProgramId,
-            partnerId,
-            rewardId: commissionRewardId,
-            linkId,
-            customerId,
-            eventId: `weletic:shopify:order:${store.id}:${externalId}`,
-            invoiceId: `shopify:${externalId}`,
-            description: `Shopify order ${order.name ?? order.confirmation_number}`,
-            type: "sale",
-            amount: toSafeBigInt(accountingNet, "Order amount"),
-            quantity: rawLines.reduce(
-              (total, line) => total + line.quantity,
-              0,
-            ),
-            earnings: toSafeBigInt(totalEarnings, "Commission earnings"),
-            currency: accountingCurrency,
-            status: "pending",
-            createdAt: occurredAt,
-          },
-        });
-      }
-
-      if (shouldRecordCalculations) {
-        await tx.weleticCommissionCalculation.createMany({
-          data: lines.flatMap((line) =>
-            line.rule
-              ? [
-                  {
-                    id: createWeleticId("wcalc_"),
-                    entryType: "sale" as const,
-                    orderLineId: line.id,
-                    commissionId: commissionId ?? null,
-                    ruleId: line.rule.id,
-                    sourceKey: `sale:${store.id}:${externalId}:${line.externalId}`,
-                    accountingCurrency,
-                    commissionableAmount: line.commissionableAccountingAmount,
-                    earnings: line.earnings,
-                    inputs: {
-                      ruleVersion: line.rule.version,
-                      ruleType: line.rule.ruleType,
-                      basisPoints: line.rule.basisPoints,
-                      fixedAmount: line.rule.fixedAmount?.toString() ?? null,
-                      fixedAmountMode: line.rule.fixedAmountMode,
-                      quantity: line.quantity,
-                      promotionCodes,
-                      fxRateSnapshotId:
-                        existing?.fxRateSnapshotId ?? fxSnapshot?.id ?? null,
-                      customerOrderSequence,
-                      customerClassification,
-                      customerSegmentIds,
-                      collectionExternalIds: line.collectionExternalIds,
-                      productTags: line.productTags,
-                      rewardId: effectiveRewardId,
-                      shopifyReward: line.shopifyResolution
-                        ? {
-                            configHash: line.shopifyResolution.configHash,
-                            source: line.shopifyResolution.source,
-                            sourceId: line.shopifyResolution.sourceId,
-                            matchedSegmentId:
-                              line.shopifyResolution.matchedSegmentId,
-                            subscriptionCycle:
-                              line.shopifyResolution.subscriptionCycle,
-                            sellingPlanId: line.shopifyResolution.sellingPlanId,
-                            sellingPlanCategory: line.sellingPlanCategory,
-                            subscriptionSeriesKey: line.subscriptionSeriesKey,
-                          }
-                        : null,
-                    },
+          // D1 has no transactions. Every write in this block is idempotent
+          // (deterministic ids, unique keys, absolute sets) and the order row /
+          // attribution claim is written LAST as the commit marker, so a crashed
+          // attempt is completed by its retry and the early "duplicate" return
+          // above is only reachable once the order is fully recorded.
+          let attributionClaimed = true;
+          let savedOrder;
+          let newOrderData:
+            | Prisma.WeleticCommerceOrderUncheckedCreateInput
+            | undefined;
+          if (existing) {
+            await Promise.all(
+              lines.map((line) =>
+                tx.weleticCommerceOrderLine.update({
+                  where: { id: line.id },
+                  data: {
+                    sellingPlanId: line.sellingPlanId,
+                    sellingPlanCategory: line.sellingPlanCategory,
+                    subscriptionSeriesKey: line.subscriptionSeriesKey,
+                    subscriptionSequence: line.subscriptionSequence,
+                    collectionExternalIds: line.collectionExternalIds,
+                    productTags: line.productTags,
                   },
-                ]
-              : [],
-          ),
-        });
-
-        const reversedByOrderLine = new Map<string, bigint>();
-        const refundedByOrderLine = new Map<string, bigint>();
-        const priorRefunds = new Map<
-          string,
-          {
-            occurredAt: Date;
-            lines: Array<{
-              refundLineId: string;
-              externalId: string;
-              orderLineId: string;
-              quantity: number;
-              accountingAmount: bigint;
-              earnings: bigint;
-              ruleId: string;
-            }>;
-          }
-        >();
-        for (const line of lines) {
-          if (!line.rule) continue;
-          const existingLine = existingLineMap.get(line.externalId);
-          for (const refundLine of existingLine?.refundLines ?? []) {
-            const alreadyReversed =
-              reversedByOrderLine.get(line.id) ?? BigInt(0);
-            const alreadyRefunded =
-              refundedByOrderLine.get(line.id) ?? BigInt(0);
-            const reversal = calculateRefundReversal({
-              originalEarnings: line.earnings,
-              originalCommissionableAmount: line.commissionableAccountingAmount,
-              refundedAmount: refundLine.accountingAmount,
-              alreadyReversed,
-              alreadyRefunded,
-            });
-            reversedByOrderLine.set(line.id, alreadyReversed + reversal);
-            refundedByOrderLine.set(
-              line.id,
-              alreadyRefunded + refundLine.accountingAmount,
-            );
-            if (reversal === BigInt(0)) continue;
-
-            const priorRefund = priorRefunds.get(
-              refundLine.refund.externalId,
-            ) ?? {
-              occurredAt: refundLine.refund.occurredAt,
-              lines: [],
-            };
-            priorRefund.lines.push({
-              refundLineId: refundLine.id,
-              externalId: refundLine.externalId,
-              orderLineId: line.id,
-              quantity: refundLine.quantity,
-              accountingAmount: refundLine.accountingAmount,
-              earnings: -reversal,
-              ruleId: line.rule.id,
-            });
-            priorRefunds.set(refundLine.refund.externalId, priorRefund);
-          }
-        }
-
-        for (const [refundExternalId, priorRefund] of priorRefunds) {
-          const reversalEarnings = priorRefund.lines.reduce(
-            (total, line) => total + line.earnings,
-            BigInt(0),
-          );
-          const reversalCommissionId = createId({ prefix: "cm_" });
-          await tx.commission.create({
-            data: {
-              id: reversalCommissionId,
-              programId: effectiveProgramId,
-              partnerId,
-              linkId,
-              customerId,
-              eventId: `weletic:shopify:refund:${store.id}:${refundExternalId}`,
-              description: `Refund for Shopify order ${order.name ?? externalId}`,
-              type: "custom",
-              amount: BigInt(0),
-              quantity: priorRefund.lines.reduce(
-                (total, line) => total + line.quantity,
-                0,
+                }),
               ),
-              earnings: toSafeBigInt(reversalEarnings, "Refund reversal"),
-              currency: accountingCurrency,
-              status: "pending",
-              sourceCommissionId: commissionId,
-              createdAt: occurredAt,
-            },
-          });
-          await tx.weleticCommissionCalculation.createMany({
-            data: priorRefund.lines.map((line) => ({
-              id: createWeleticId("wcalc_"),
-              entryType: "reversal" as const,
-              refundLineId: line.refundLineId,
-              commissionId: reversalCommissionId,
-              ruleId: line.ruleId,
-              sourceKey: `refund:${store.id}:${refundExternalId}:${line.externalId}`,
+            );
+          } else {
+            const loyaltyPolicyRevisionId =
+              await resolveOrderLoyaltyPolicyRevisionId({
+                tx,
+                storeId: store.id,
+                occurredAt,
+              });
+            newOrderData = {
+              id: orderId,
+              storeId: store.id,
+              programId: effectiveProgramId || store.programId,
+              partnerId: partnerId || null,
+              linkId: linkId || null,
+              shopperId: shopperId || null,
+              marketId: productLink?.marketId || null,
+              marketCountryCode: productLink?.countryCode || null,
+              externalId,
+              orderName: customerPrivacyTombstoned ? null : order.name,
+              checkoutToken: customerPrivacyTombstoned
+                ? null
+                : order.checkout_token,
+              customerOrderSequence,
+              customerClassification,
+              customerSegmentIds:
+                customerSegmentIds.length > 0
+                  ? customerSegmentIds
+                  : Prisma.DbNull,
+              loyaltyPolicyRevisionId,
+              shopifyRewardSnapshot:
+                orderRewardSnapshot as Prisma.InputJsonValue,
+              status: orderStatus(order.financial_status),
+              presentmentCurrency,
+              presentmentSubtotal: amount(
+                order.current_subtotal_price_set,
+                "presentment_money",
+              ),
+              presentmentDiscount: amount(
+                order.current_total_discounts_set,
+                "presentment_money",
+              ),
+              presentmentNet: amount(
+                order.current_subtotal_price_set,
+                "presentment_money",
+              ),
+              presentmentTax: amount(
+                order.current_total_tax_set,
+                "presentment_money",
+              ),
+              presentmentShipping: amount(
+                order.total_shipping_price_set,
+                "presentment_money",
+              ),
+              presentmentTotal: order.current_total_price_set
+                ? amount(order.current_total_price_set, "presentment_money")
+                : amount(
+                    order.current_subtotal_price_set,
+                    "presentment_money",
+                  ) +
+                  amount(order.current_total_tax_set, "presentment_money") +
+                  amount(order.total_shipping_price_set, "presentment_money"),
+              shopCurrency,
+              shopSubtotal,
+              shopDiscount,
+              shopNet,
+              shopTax,
+              shopShipping,
+              shopTotal,
               accountingCurrency,
-              commissionableAmount: -line.accountingAmount,
-              earnings: line.earnings,
-              inputs: {
+              accountingNet,
+              accountingTotal,
+              accountingFxRate: fx!.rate,
+              fxRateSnapshotId: fxSnapshot!.id,
+              occurredAt,
+              processedAt: new Date(),
+            };
+
+            await createManyIgnoringDuplicates(
+              tx.weleticCommerceOrderLine,
+              lines.map((line) => ({
+                id: line.id,
                 orderId,
-                orderLineId: line.orderLineId,
-                refundExternalId,
-                attachedAfterRefundAt: priorRefund.occurredAt.toISOString(),
-                fxRateSnapshotId: existing?.fxRateSnapshotId ?? null,
+                externalId: line.externalId,
+                productId: line.productId,
+                variantId: line.variantId,
+                sku: line.sku,
+                sellingPlanId: line.sellingPlanId,
+                sellingPlanCategory: line.sellingPlanCategory,
+                subscriptionSeriesKey: line.subscriptionSeriesKey,
+                subscriptionSequence: line.subscriptionSequence,
+                collectionExternalIds: line.collectionExternalIds,
+                productTags: line.productTags,
+                title: line.title,
+                quantity: line.quantity,
+                presentmentGross: line.presentmentGross,
+                presentmentDiscount: line.presentmentDiscount,
+                presentmentNet:
+                  line.presentmentGross - line.presentmentDiscount,
+                shopGross: line.shopGross,
+                shopDiscount: line.shopDiscount,
+                shopNet: line.shopNet,
+                accountingNet: line.accountingNet,
+                commissionableAccountingAmount:
+                  line.commissionableAccountingAmount,
+              })),
+            );
+          }
+
+          let commissionId: string | undefined;
+          const shouldRecordCalculations =
+            attributionClaimed &&
+            effectiveProgramId &&
+            partnerId &&
+            enrollment &&
+            lines.some((line) => line.rule);
+          if (shouldRecordCalculations && totalEarnings !== BigInt(0)) {
+            const saleEventId = `weletic:shopify:order:${store.id}:${externalId}`;
+            const saleCommission = await createOrGetByUnique({
+              create: () =>
+                tx.commission.create({
+                  data: {
+                    id: createId({ prefix: "cm_" }),
+                    programId: effectiveProgramId,
+                    partnerId,
+                    rewardId: commissionRewardId,
+                    linkId,
+                    customerId,
+                    eventId: saleEventId,
+                    invoiceId: `shopify:${externalId}`,
+                    description: `Shopify order ${order.name ?? order.confirmation_number}`,
+                    type: "sale",
+                    amount: toSafeBigInt(accountingNet, "Order amount"),
+                    quantity: rawLines.reduce(
+                      (total, line) => total + line.quantity,
+                      0,
+                    ),
+                    earnings: toSafeBigInt(
+                      totalEarnings,
+                      "Commission earnings",
+                    ),
+                    currency: accountingCurrency,
+                    status: "pending",
+                    createdAt: occurredAt,
+                  },
+                  select: { id: true },
+                }),
+              findExistingId: async () =>
+                (
+                  await tx.commission.findUnique({
+                    where: { eventId: saleEventId },
+                    select: { id: true },
+                  })
+                )?.id,
+            });
+            commissionId = saleCommission.id;
+          }
+
+          if (shouldRecordCalculations) {
+            await createManyIgnoringDuplicates(
+              tx.weleticCommissionCalculation,
+              lines.flatMap((line) =>
+                line.rule
+                  ? [
+                      {
+                        id: createWeleticId("wcalc_"),
+                        entryType: "sale" as const,
+                        orderLineId: line.id,
+                        commissionId: commissionId ?? null,
+                        ruleId: line.rule.id,
+                        sourceKey: `sale:${store.id}:${externalId}:${line.externalId}`,
+                        accountingCurrency,
+                        commissionableAmount:
+                          line.commissionableAccountingAmount,
+                        earnings: line.earnings,
+                        inputs: {
+                          ruleVersion: line.rule.version,
+                          ruleType: line.rule.ruleType,
+                          basisPoints: line.rule.basisPoints,
+                          fixedAmount:
+                            line.rule.fixedAmount?.toString() ?? null,
+                          fixedAmountMode: line.rule.fixedAmountMode,
+                          quantity: line.quantity,
+                          promotionCodes,
+                          fxRateSnapshotId:
+                            existing?.fxRateSnapshotId ??
+                            fxSnapshot?.id ??
+                            null,
+                          customerOrderSequence,
+                          customerClassification,
+                          customerSegmentIds,
+                          collectionExternalIds: line.collectionExternalIds,
+                          productTags: line.productTags,
+                          rewardId: effectiveRewardId,
+                          shopifyReward: line.shopifyResolution
+                            ? {
+                                configHash: line.shopifyResolution.configHash,
+                                source: line.shopifyResolution.source,
+                                sourceId: line.shopifyResolution.sourceId,
+                                matchedSegmentId:
+                                  line.shopifyResolution.matchedSegmentId,
+                                subscriptionCycle:
+                                  line.shopifyResolution.subscriptionCycle,
+                                sellingPlanId:
+                                  line.shopifyResolution.sellingPlanId,
+                                sellingPlanCategory: line.sellingPlanCategory,
+                                subscriptionSeriesKey:
+                                  line.subscriptionSeriesKey,
+                              }
+                            : null,
+                        },
+                      },
+                    ]
+                  : [],
+              ),
+            );
+
+            const reversedByOrderLine = new Map<string, bigint>();
+            const refundedByOrderLine = new Map<string, bigint>();
+            const priorRefunds = new Map<
+              string,
+              {
+                occurredAt: Date;
+                lines: Array<{
+                  refundLineId: string;
+                  externalId: string;
+                  orderLineId: string;
+                  quantity: number;
+                  accountingAmount: bigint;
+                  earnings: bigint;
+                  ruleId: string;
+                }>;
+              }
+            >();
+            for (const line of lines) {
+              if (!line.rule) continue;
+              const existingLine = existingLineMap.get(line.externalId);
+              for (const refundLine of existingLine?.refundLines ?? []) {
+                const alreadyReversed =
+                  reversedByOrderLine.get(line.id) ?? BigInt(0);
+                const alreadyRefunded =
+                  refundedByOrderLine.get(line.id) ?? BigInt(0);
+                const reversal = calculateRefundReversal({
+                  originalEarnings: line.earnings,
+                  originalCommissionableAmount:
+                    line.commissionableAccountingAmount,
+                  refundedAmount: refundLine.accountingAmount,
+                  alreadyReversed,
+                  alreadyRefunded,
+                });
+                reversedByOrderLine.set(line.id, alreadyReversed + reversal);
+                refundedByOrderLine.set(
+                  line.id,
+                  alreadyRefunded + refundLine.accountingAmount,
+                );
+                if (reversal === BigInt(0)) continue;
+
+                const priorRefund = priorRefunds.get(
+                  refundLine.refund.externalId,
+                ) ?? {
+                  occurredAt: refundLine.refund.occurredAt,
+                  lines: [],
+                };
+                priorRefund.lines.push({
+                  refundLineId: refundLine.id,
+                  externalId: refundLine.externalId,
+                  orderLineId: line.id,
+                  quantity: refundLine.quantity,
+                  accountingAmount: refundLine.accountingAmount,
+                  earnings: -reversal,
+                  ruleId: line.rule.id,
+                });
+                priorRefunds.set(refundLine.refund.externalId, priorRefund);
+              }
+            }
+
+            for (const [refundExternalId, priorRefund] of priorRefunds) {
+              const reversalEarnings = priorRefund.lines.reduce(
+                (total, line) => total + line.earnings,
+                BigInt(0),
+              );
+              const reversalEventId = `weletic:shopify:refund:${store.id}:${refundExternalId}`;
+              const reversalCommission = await createOrGetByUnique({
+                create: () =>
+                  tx.commission.create({
+                    data: {
+                      id: createId({ prefix: "cm_" }),
+                      programId: effectiveProgramId,
+                      partnerId,
+                      linkId,
+                      customerId,
+                      eventId: reversalEventId,
+                      description: `Refund for Shopify order ${order.name ?? externalId}`,
+                      type: "custom",
+                      amount: BigInt(0),
+                      quantity: priorRefund.lines.reduce(
+                        (total, line) => total + line.quantity,
+                        0,
+                      ),
+                      earnings: toSafeBigInt(
+                        reversalEarnings,
+                        "Refund reversal",
+                      ),
+                      currency: accountingCurrency,
+                      status: "pending",
+                      sourceCommissionId: commissionId,
+                      createdAt: occurredAt,
+                    },
+                    select: { id: true },
+                  }),
+                findExistingId: async () =>
+                  (
+                    await tx.commission.findUnique({
+                      where: { eventId: reversalEventId },
+                      select: { id: true },
+                    })
+                  )?.id,
+              });
+              const reversalCommissionId = reversalCommission.id;
+              await createManyIgnoringDuplicates(
+                tx.weleticCommissionCalculation,
+                priorRefund.lines.map((line) => ({
+                  id: createWeleticId("wcalc_"),
+                  entryType: "reversal" as const,
+                  refundLineId: line.refundLineId,
+                  commissionId: reversalCommissionId,
+                  ruleId: line.ruleId,
+                  sourceKey: `refund:${store.id}:${refundExternalId}:${line.externalId}`,
+                  accountingCurrency,
+                  commissionableAmount: -line.accountingAmount,
+                  earnings: line.earnings,
+                  inputs: {
+                    orderId,
+                    orderLineId: line.orderLineId,
+                    refundExternalId,
+                    attachedAfterRefundAt: priorRefund.occurredAt.toISOString(),
+                    fxRateSnapshotId: existing?.fxRateSnapshotId ?? null,
+                  },
+                })),
+              );
+            }
+          }
+
+          // Commit marker. Everything above is idempotent and keyed by business
+          // identifiers, so a crash before this point is completed by the retry.
+          if (existing) {
+            const claim = await tx.weleticCommerceOrder.updateMany({
+              where: { id: existing.id, partnerId: null },
+              data: {
+                programId: effectiveProgramId || existing.programId,
+                partnerId: partnerId || null,
+                linkId: linkId || null,
+                shopperId: shopperId || existing.shopperId,
+                marketId: productLink?.marketId || null,
+                marketCountryCode: productLink?.countryCode || null,
+                customerOrderSequence,
+                customerClassification,
+                customerSegmentIds:
+                  customerSegmentIds.length > 0
+                    ? customerSegmentIds
+                    : Prisma.DbNull,
+                processedAt: new Date(),
               },
-            })),
-          });
-        }
-      }
+            });
+            attributionClaimed = claim.count === 1;
+            savedOrder = await tx.weleticCommerceOrder.findUniqueOrThrow({
+              where: { id: existing.id },
+            });
+          } else {
+            try {
+              savedOrder = await tx.weleticCommerceOrder.create({
+                data: newOrderData!,
+              });
+            } catch (error) {
+              if (!isUniqueViolation(error)) throw error;
+              // A concurrent writer committed the same order first; its children
+              // are byte-identical (deterministic ids / unique keys).
+              attributionClaimed = false;
+              savedOrder = await tx.weleticCommerceOrder.findUniqueOrThrow({
+                where: {
+                  storeId_externalId: { storeId: store.id, externalId },
+                },
+              });
+            }
+          }
 
-      if (!attributionClaimed) {
-        const concurrentCommission = await tx.commission.findUnique({
-          where: {
-            eventId: `weletic:shopify:order:${store.id}:${externalId}`,
-          },
-          select: { id: true },
-        });
-        commissionId = concurrentCommission?.id;
-      }
+          if (!attributionClaimed) {
+            const concurrentCommission = await tx.commission.findUnique({
+              where: {
+                eventId: `weletic:shopify:order:${store.id}:${externalId}`,
+              },
+              select: { id: true },
+            });
+            commissionId = concurrentCommission?.id;
+          }
 
-      return { savedOrder, commissionId, attributionClaimed };
-    },
-    {
-      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    },
+          return { savedOrder, commissionId, attributionClaimed };
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
+      ),
+    { actionName: "record_weletic_order" },
   );
 
   if (result.commissionId && effectiveProgramId && partnerId) {

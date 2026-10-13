@@ -1,8 +1,3 @@
-enum MessageType {
-  direct
-  campaign
-}
-
 model Message {
   id        String @id
   programId String
@@ -11,9 +6,9 @@ model Message {
   senderUserId    String
   senderPartnerId String? // Populated only if the sender is a partner
 
-  type    MessageType @default(direct)
+  type    String  @default("direct")
   subject String? // Only for Campaign
-  text    String      @db.Text
+  text    String
 
   readInApp   DateTime?
   readInEmail DateTime?
@@ -36,7 +31,7 @@ model Message {
 model MessageAttachment {
   id         String   @id
   messageId  String
-  storageKey String   @db.Text
+  storageKey String
   name       String
   size       Int
   type       String

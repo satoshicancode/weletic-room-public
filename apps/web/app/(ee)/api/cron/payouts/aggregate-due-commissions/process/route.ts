@@ -20,6 +20,8 @@ export const maxDuration = 600;
 export const dynamic = "force-dynamic";
 
 const BATCH_SIZE = 100;
+const MAX_INT32 = 2_147_483_647;
+const MAX_PAYOUT_AMOUNT_LIMIT = 2_000_000_000;
 
 const inputSchema = z.object({
   programId: z.string(),
@@ -74,11 +76,24 @@ export const POST = withCron(async ({ rawBody }) => {
       `Found ${partnerGroups.length} partner groups with holding period days: ${holdingPeriodDays}`,
     );
 
+    // FIN-AUDIT-02: Track partners evaluated in this holding period cycle who resulted in
+    // non-positive net earnings, rollbacks, or errors. This unblocks subsequent eligible partners.
+    const excludedPartnerIds = new Set<string>();
+
     while (true) {
+      const previousExcludedCount = excludedPartnerIds.size;
+
       const dueCommissions = await prisma.commission.findMany({
         where: {
           programId,
           status: CommissionStatus.pending,
+          ...(excludedPartnerIds.size > 0
+            ? {
+                partnerId: {
+                  notIn: Array.from(excludedPartnerIds),
+                },
+              }
+            : {}),
           programEnrollment: {
             groupId: {
               in: partnerGroups.map((p) => p.id),
@@ -147,7 +162,7 @@ export const POST = withCron(async ({ rawBody }) => {
         ([partnerId, commissions]) => ({ partnerId, commissions }),
       );
 
-      let totalProcessed = 0;
+      let batchProcessed = 0;
       const partnerBatches = chunk(partnersWithCommissions, 50);
 
       for (let i = 0; i < partnerBatches.length; i++) {
@@ -160,16 +175,29 @@ export const POST = withCron(async ({ rawBody }) => {
               in: partnerChunk.map(({ partnerId }) => partnerId),
             },
             status: PayoutStatus.pending,
+            amount: {
+              lt: MAX_PAYOUT_AMOUNT_LIMIT,
+            },
           },
           select: {
             id: true,
             partnerId: true,
+            amount: true,
+          },
+          orderBy: {
+            createdAt: "asc",
           },
         });
 
-        const pendingPayoutByPartnerId = new Map(
-          existingPendingPayouts.map((payout) => [payout.partnerId, payout]),
-        );
+        const pendingPayoutByPartnerId = new Map<
+          string,
+          (typeof existingPendingPayouts)[number]
+        >();
+        for (const payout of existingPendingPayouts) {
+          if (!pendingPayoutByPartnerId.has(payout.partnerId)) {
+            pendingPayoutByPartnerId.set(payout.partnerId, payout);
+          }
+        }
 
         const results = await Promise.allSettled(
           partnerChunk.map(({ partnerId, commissions }) =>
@@ -182,14 +210,30 @@ export const POST = withCron(async ({ rawBody }) => {
           ),
         );
 
-        for (const result of results) {
-          if (result.status === "fulfilled" && result.value) {
-            totalProcessed++;
-          } else if (result.status === "rejected") {
-            console.error(
-              `Failed to aggregate due commissions for partner:`,
-              result.reason,
-            );
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j];
+          const partnerId = partnerChunk[j].partnerId;
+
+          if (result.status === "fulfilled" && result.value?.success) {
+            if (result.value.claimedCount > 0) {
+              batchProcessed++;
+            }
+            // FIN-AUDIT-03: If commissions were capped or deferred, exclude partner from subsequent
+            // while-loop iterations in this cron run to prevent immediate re-attachment or starvation.
+            if (result.value.wasCapped) {
+              excludedPartnerIds.add(partnerId);
+            }
+          } else {
+            // FIN-AUDIT-02: Non-positive partner rolled back or failed: exclude from subsequent queries
+            // in this cron run to allow subsequent positive partners to be processed.
+            excludedPartnerIds.add(partnerId);
+
+            if (result.status === "rejected") {
+              console.error(
+                `Failed to aggregate due commissions for partner ${partnerId}:`,
+                result.reason,
+              );
+            }
           }
         }
 
@@ -197,15 +241,20 @@ export const POST = withCron(async ({ rawBody }) => {
       }
 
       const successRate =
-        (totalProcessed / partnersWithCommissions.length) * 100;
+        (batchProcessed / partnersWithCommissions.length) * 100;
 
       console.log(
-        `Processed ${totalProcessed}/${partnersWithCommissions.length} partners with due commissions for partner groups with holding period days: ${holdingPeriodDays} (${successRate.toFixed(1)}% success rate)`,
+        `Processed ${batchProcessed}/${partnersWithCommissions.length} partners with due commissions for partner groups with holding period days: ${holdingPeriodDays} (${successRate.toFixed(1)}% success rate)`,
       );
 
-      if (totalProcessed === 0) {
+      // FIN-AUDIT-02: Defensive termination guard. If no partners were processed into payouts
+      // AND no new partners were excluded, break to prevent an infinite loop.
+      if (
+        batchProcessed === 0 &&
+        excludedPartnerIds.size === previousExcludedCount
+      ) {
         console.log(
-          `No partners were processed for holding period days: ${holdingPeriodDays}.`,
+          `No forward progress made for holding period days: ${holdingPeriodDays}. Breaking...`,
         );
         break;
       }
@@ -229,16 +278,68 @@ async function aggregateDueCommissionsForPartner({
     Commission,
     "id" | "createdAt" | "amount" | "earnings" | "status"
   >[];
-  existingPendingPayout?: Pick<Payout, "id" | "partnerId">;
-}): Promise<boolean> {
+  existingPendingPayout?: Pick<Payout, "id" | "partnerId" | "amount">;
+}): Promise<{
+  success: boolean;
+  wasCapped?: boolean;
+  claimedCount: number;
+}> {
+  // If existing pending payout is already at or above limit, do not claim into it
+  if (
+    existingPendingPayout &&
+    existingPendingPayout.amount >= MAX_PAYOUT_AMOUNT_LIMIT
+  ) {
+    console.warn(
+      `[aggregateDueCommissionsForPartner] Partner ${partnerId} existing pending payout ${existingPendingPayout.id} has reached limit (${existingPendingPayout.amount} >= ${MAX_PAYOUT_AMOUNT_LIMIT}). Deferring.`,
+    );
+    return { success: true, wasCapped: true, claimedCount: 0 };
+  }
+
   // Sort the commissions by createdAt
   const sortedCommissions = commissions.sort(
     (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
   );
 
-  const commissionIds = sortedCommissions.map((c) => c.id);
-  const periodStart = sortedCommissions[0].createdAt;
-  const periodEnd = sortedCommissions[sortedCommissions.length - 1].createdAt;
+  // FIN-AUDIT-03: Cap the commissions to prevent Int32 overflow (>2.14B) for high-denomination
+  // zero-decimal currencies (VND, JPY). Greedily include commissions up to MAX_PAYOUT_AMOUNT_LIMIT.
+  // Remaining commissions stay in 'pending' status for subsequent batches/payouts.
+  // Initialize cumulative with existing pending payout balance (if any) to prevent multi-batch overflow.
+  let cumulative = BigInt(existingPendingPayout?.amount ?? 0);
+  const eligibleCommissions: typeof sortedCommissions = [];
+  let wasCapped = false;
+
+  for (const c of sortedCommissions) {
+    const nextCumulative = cumulative + c.earnings;
+    if (
+      cumulative > BigInt(0) &&
+      nextCumulative > BigInt(MAX_PAYOUT_AMOUNT_LIMIT)
+    ) {
+      console.warn(
+        `[aggregateDueCommissionsForPartner] Capping commissions for partner ${partnerId} at ${cumulative} to avoid Int32 overflow. Remaining ${sortedCommissions.length - eligibleCommissions.length} commissions deferred.`,
+      );
+      wasCapped = true;
+      break;
+    }
+    cumulative = nextCumulative;
+    eligibleCommissions.push(c);
+  }
+
+  wasCapped =
+    wasCapped || eligibleCommissions.length < sortedCommissions.length;
+
+  // Defensive guard: If existing pending payout cannot accommodate any new commissions,
+  // safely defer all incoming commissions without throwing TypeError on empty eligible array.
+  if (eligibleCommissions.length === 0) {
+    console.log(
+      `[aggregateDueCommissionsForPartner] Partner ${partnerId} existing pending payout is full or cannot accommodate additional commissions within MAX_PAYOUT_AMOUNT_LIMIT (${MAX_PAYOUT_AMOUNT_LIMIT}). Deferring remaining commissions.`,
+    );
+    return { success: true, wasCapped: true, claimedCount: 0 };
+  }
+
+  const commissionIds = eligibleCommissions.map((c) => c.id);
+  const periodStart = eligibleCommissions[0].createdAt;
+  const periodEnd =
+    eligibleCommissions[eligibleCommissions.length - 1].createdAt;
 
   let payoutToUse = existingPendingPayout
     ? { id: existingPendingPayout.id }
@@ -264,24 +365,24 @@ async function aggregateDueCommissionsForPartner({
     });
   }
 
-  // Use raw SQL instead of prisma.commission.updateMany.
-  // Prisma has a reported MySQL issue where updateMany may drop WHERE predicates
-  // during the UPDATE, allowing concurrent workers to claim the same commissions.
-  // See: https://github.com/prisma/prisma/issues/28840
-  // Also join Payout so we never attach to a payout that left a mutable status
-  // (e.g. confirmed to processing between prefetch and claim).
+  // FIN-AUDIT-01: SQLite / Cloudflare D1 compatible claim statement.
+  // Replaced MySQL `UPDATE Commission c INNER JOIN Payout p` and `NOW()`
+  // with SQLite-compatible `UPDATE Commission ... WHERE ... AND EXISTS (...)` and `CURRENT_TIMESTAMP`.
   const updatedCommissions = await prisma.$executeRaw`
-    UPDATE Commission c
-    INNER JOIN Payout p ON p.id = ${payoutToUse.id}
+    UPDATE Commission
     SET
-      c.status = ${CommissionStatus.processed},
-      c.payoutId = ${payoutToUse.id},
-      c.updatedAt = NOW()
-    WHERE c.id IN (${Prisma.join(commissionIds)})
-      AND c.programId = ${program.id}
-      AND c.partnerId = ${partnerId}
-      AND c.status = ${CommissionStatus.pending}
-      AND p.status IN (${Prisma.join(MUTABLE_PAYOUT_STATUSES)})
+      status = ${CommissionStatus.processed},
+      payoutId = ${payoutToUse.id},
+      updatedAt = CURRENT_TIMESTAMP
+    WHERE id IN (${Prisma.join(commissionIds)})
+      AND programId = ${program.id}
+      AND partnerId = ${partnerId}
+      AND status = ${CommissionStatus.pending}
+      AND EXISTS (
+        SELECT 1 FROM Payout
+        WHERE id = ${payoutToUse.id}
+          AND status IN (${Prisma.join(MUTABLE_PAYOUT_STATUSES)})
+      )
   `;
 
   if (updatedCommissions === 0) {
@@ -301,7 +402,7 @@ async function aggregateDueCommissionsForPartner({
       });
     }
 
-    return false;
+    return { success: false, claimedCount: 0 };
   }
 
   // Always set amount from DB after claim (create + reuse) so partial claims
@@ -344,16 +445,45 @@ async function aggregateDueCommissionsForPartner({
       },
     });
 
-    return false;
+    return { success: false, claimedCount: 0 };
   }
 
-  // Raw SQL: Prisma updateMany also drops status predicates on MySQL.
+  // FIN-AUDIT-03: Hard overflow guard for single massive commissions exceeding 2.14B
+  if (netEarnings > MAX_INT32) {
+    console.error(
+      `[aggregateDueCommissionsForPartner] Partner ${partnerId} net earnings (${netEarnings}) exceed Int32 maximum (${MAX_INT32}). Rolling back commissions and flagging for manual review.`,
+    );
+
+    await prisma.commission.updateMany({
+      where: {
+        payoutId: payoutToUse.id,
+      },
+      data: {
+        payoutId: null,
+        status: CommissionStatus.pending,
+      },
+    });
+
+    await prisma.payout.deleteMany({
+      where: {
+        id: payoutToUse.id,
+        status: {
+          in: MUTABLE_PAYOUT_STATUSES,
+        },
+      },
+    });
+
+    return { success: false, claimedCount: 0 };
+  }
+
+  // FIN-AUDIT-01: SQLite / Cloudflare D1 compatible payout update.
+  // Replaced `NOW()` with `CURRENT_TIMESTAMP`.
   const updatedPayout = await prisma.$executeRaw`
     UPDATE Payout
     SET
       amount = ${netEarnings},
       periodEnd = COALESCE(${isReusingPendingPayout ? periodEnd : null}, periodEnd),
-      updatedAt = NOW()
+      updatedAt = CURRENT_TIMESTAMP
     WHERE id = ${payoutToUse.id}
       AND status IN (${Prisma.join(MUTABLE_PAYOUT_STATUSES)})
   `;
@@ -362,7 +492,7 @@ async function aggregateDueCommissionsForPartner({
     console.warn(
       `Payout ${payoutToUse.id} is no longer mutable after claim for partner ${partnerId}. Skipping...`,
     );
-    return false;
+    return { success: false, claimedCount: 0 };
   }
 
   // Only activity-log commissions we actually claimed (handles partial races).
@@ -398,5 +528,9 @@ async function aggregateDueCommissionsForPartner({
     );
   }
 
-  return true;
+  return {
+    success: true,
+    wasCapped,
+    claimedCount: claimedCommissions.length,
+  };
 }

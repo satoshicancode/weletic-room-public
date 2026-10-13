@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
 export async function POST(req: Request) {
   const { apiController } = await jackson();
 
-  const { slug } = await req.json();
+  const { slug } = (await req.json()) as { slug: string };
 
   if (!slug) {
     return NextResponse.json(

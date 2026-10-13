@@ -4,6 +4,10 @@ import { isNotHostedImage, storage } from "@/lib/storage";
 import { recordLink } from "@/lib/tinybird";
 import { LinkProps, ProcessedLinkProps } from "@/lib/types";
 import {
+  evictLinkFromKv,
+  tombstoneLinkInKv,
+} from "@/lib/weletic/link-kv-cache";
+import {
   R2_URL,
   getParamsFromURL,
   linkConstructorSimple,
@@ -181,6 +185,18 @@ export async function updateLink({
           ...(partner && { partner }),
           ...(discount && { discount }),
         }),
+
+        // Enforce Invariant 2: Set tombstone in KV if disabled, else evict stale KV entry
+        response.disabledAt
+          ? tombstoneLinkInKv({
+              domain: response.domain,
+              key: response.key,
+              disabledAt: response.disabledAt,
+            })
+          : evictLinkFromKv({
+              domain: response.domain,
+              key: response.key,
+            }),
 
         // Record link in Tinybird
         recordLink({

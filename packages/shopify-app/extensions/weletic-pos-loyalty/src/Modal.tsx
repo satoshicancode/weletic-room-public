@@ -97,23 +97,37 @@ async function readJson(response: Response) {
 export function PosLoyaltyModal() {
   const customerId = shopify.cart.current.value.customer?.id;
   const [summary, setSummary] = useState<PosSummary | null>(null);
+  const [customerBindingToken, setCustomerBindingToken] = useState<
+    string | null
+  >(null);
   const [loading, setLoading] = useState(Boolean(customerId));
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadSummary = useCallback(async () => {
-    if (!customerId) return;
+    setCustomerBindingToken(null);
+    if (!customerId) {
+      return;
+    }
     setError(null);
     const response = await fetch(
       `/api/pos/loyalty?customerId=${encodeURIComponent(String(customerId))}`,
     );
     const payload = await readJson(response);
+    const token =
+      payload?.customerBindingToken ||
+      payload?.data?.customerBindingToken ||
+      null;
+    setCustomerBindingToken(token);
     setSummary(unwrapPayload<PosSummary>(payload));
   }, [customerId]);
 
   useEffect(() => {
-    if (!customerId) return;
+    if (!customerId) {
+      setCustomerBindingToken(null);
+      return;
+    }
     setLoading(true);
     loadSummary()
       .catch((cause) => {
@@ -131,6 +145,10 @@ export function PosLoyaltyModal() {
 
   async function redeem(reward: PosReward) {
     if (!customerId) return;
+    if (!customerBindingToken) {
+      setError("Please wait for customer loyalty session to finish loading.");
+      return;
+    }
     setWorkingId(reward.id);
     setError(null);
     setMessage(null);
@@ -146,6 +164,7 @@ export function PosLoyaltyModal() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shopifyCustomerId: String(customerId),
+          customerBindingToken,
           rewardDefinitionId: reward.id,
           idempotencyKey,
         }),

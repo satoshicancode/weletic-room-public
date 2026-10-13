@@ -16,7 +16,7 @@ export function RefreshDomain() {
               domain: data.get("domain"),
             }),
           })
-            .then((res) => res.json())
+            .then((res) => res.json() as Promise<{ error?: string }>)
             .then((res) => {
               if (res.error) {
                 toast.error(res.error);

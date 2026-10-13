@@ -2,6 +2,10 @@ import { decrypt, decryptOrPassthrough } from "@/lib/encryption";
 import { SHOPIFY_ADMIN_API_VERSION } from "@/lib/integrations/shopify/admin-graphql";
 import { integrationCredentialsSchema } from "@/lib/integrations/shopify/schema";
 import { prisma } from "@/lib/prisma";
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { Prisma } from "@prisma/client";
 import { createHash } from "crypto";
@@ -201,7 +205,7 @@ export async function verifyAndBindShopifyIntegrationCredential({
         FROM WeleticShopifyStore
         WHERE id = ${expectedStore.id}
         LIMIT 1
-        FOR UPDATE
+        ${forUpdateClause}
       `);
       const store = stores[0];
       if (
@@ -218,7 +222,7 @@ export async function verifyAndBindShopifyIntegrationCredential({
       const [currentInstallation] = await tx.$queryRaw<
         Array<{ id: string; projectId: string; credentials: Prisma.JsonValue }>
       >(Prisma.sql`
-        SELECT id, projectId, credentials FROM InstalledIntegration WHERE id=${installation.id} LIMIT 1 FOR UPDATE`);
+        SELECT id, projectId, credentials FROM InstalledIntegration WHERE id=${installation.id} LIMIT 1 ${forUpdateClause}`);
       if (
         !currentInstallation ||
         currentInstallation.projectId !== store.projectId
@@ -269,7 +273,7 @@ export async function verifyAndBindShopifyIntegrationCredential({
       FROM WeleticShopifyStore
       WHERE id = ${expectedStore.id}
       LIMIT 1
-      FOR UPDATE
+      ${forUpdateClause}
     `);
     const store = stores[0];
     if (
@@ -286,7 +290,7 @@ export async function verifyAndBindShopifyIntegrationCredential({
     const [currentInstallation] = await tx.$queryRaw<
       Array<{ id: string; projectId: string; credentials: Prisma.JsonValue }>
     >(Prisma.sql`
-      SELECT id, projectId, credentials FROM InstalledIntegration WHERE id=${installation.id} LIMIT 1 FOR UPDATE`);
+      SELECT id, projectId, credentials FROM InstalledIntegration WHERE id=${installation.id} LIMIT 1 ${forUpdateClause}`);
     if (
       !currentInstallation ||
       currentInstallation.projectId !== store.projectId
@@ -525,6 +529,7 @@ export async function resolveShopifyStoreByDomain(
       // Public credentials authenticate only their canonical shop. Never inherit
       // a generic integration's alias or mutable Project alias as authority.
       if (domain !== storeShop) return null;
+
       return {
         shopId: `shop_${matchingProject.id}`,
         primaryDomain: storeShop,
@@ -621,7 +626,7 @@ export async function readLegacyBootstrapSession(input: {
       }>
     >(Prisma.sql`
       SELECT id, projectId, shopDomain, complianceState, installationGeneration
-      FROM WeleticShopifyStore WHERE id=${input.storeId} LIMIT 1 FOR UPDATE`);
+      FROM WeleticShopifyStore WHERE id=${input.storeId} LIMIT 1 ${forUpdateClause}`);
     if (
       !store ||
       store.projectId !== input.workspaceId ||
@@ -637,15 +642,15 @@ export async function readLegacyBootstrapSession(input: {
     const integrations = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
       SELECT id FROM InstalledIntegration
       WHERE projectId=${store.projectId} AND integrationId=${SHOPIFY_INTEGRATION_ID}
-      LIMIT 1 FOR UPDATE`);
+      LIMIT 1 ${forUpdateClause}`);
     if (integrations.length) return null;
     const [session] = await tx.$queryRaw<
       Array<{ shop: string; payload: string }>
     >(Prisma.sql`
       SELECT shop, payload FROM WeleticShopifyAppSession
       WHERE shop=${store.shopDomain} AND isOnline=FALSE
-        AND (expiresAt IS NULL OR expiresAt > CURRENT_TIMESTAMP(3))
-      ORDER BY updatedAt DESC, id ASC LIMIT 1 FOR UPDATE`);
+        AND (expiresAt IS NULL OR expiresAt > ${currentTimestampClause})
+      ORDER BY updatedAt DESC, id ASC LIMIT 1 ${forUpdateClause}`);
     if (!session?.payload || session.shop !== store.shopDomain) return null;
     return readOfflineSessionAccessToken(session.payload);
   });

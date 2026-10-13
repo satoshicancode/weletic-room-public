@@ -1,3 +1,8 @@
+import {
+  currentTimestampClause,
+  forUpdateClause,
+  isMysql,
+} from "@/lib/prisma/sql-helpers";
 import { Prisma } from "@prisma/client";
 import { createHash } from "node:crypto";
 
@@ -58,6 +63,8 @@ type CoordinationRow = {
   live: bigint | number;
 };
 
+const leaseExpiresAtClause = Prisma.sql`TIMESTAMPADD(MICROSECOND, ${SHOPIFY_SESSION_LEASE_MS * 1000}, CURRENT_TIMESTAMP(3))`;
+
 export async function observeShopifySessionCoordination(
   tx: Prisma.TransactionClient,
   scope: ShopifySessionScope,
@@ -66,7 +73,7 @@ export async function observeShopifySessionCoordination(
     Array<{ revision: bigint; leaseEpoch: bigint }>
   >(Prisma.sql`
     SELECT revision, leaseEpoch FROM WeleticShopifySessionCoordination
-    WHERE id = ${shopifySessionCoordinationId(scope)} FOR UPDATE
+    WHERE id = ${shopifySessionCoordinationId(scope)} ${forUpdateClause}
   `);
   return {
     epoch: String(rows[0]?.leaseEpoch ?? BigInt(0)),
@@ -79,13 +86,23 @@ export async function ensureShopifySessionCoordination(
   scope: ShopifySessionScope,
 ) {
   const id = shopifySessionCoordinationId(scope);
-  await tx.$executeRaw(Prisma.sql`
-    INSERT INTO WeleticShopifySessionCoordination
-      (id, appId, shop, revision, leaseEpoch, createdAt, updatedAt)
-    VALUES (${id}, ${scope.appId}, ${scope.shop}, 0, 0,
-      CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))
-    ON DUPLICATE KEY UPDATE id = id
-  `);
+  if (isMysql) {
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO WeleticShopifySessionCoordination
+        (id, appId, shop, revision, leaseEpoch, createdAt, updatedAt)
+      VALUES (${id}, ${scope.appId}, ${scope.shop}, 0, 0,
+        CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3))
+      ON DUPLICATE KEY UPDATE id = id
+    `);
+  } else {
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO WeleticShopifySessionCoordination
+        (id, appId, shop, revision, leaseEpoch, createdAt, updatedAt)
+      VALUES (${id}, ${scope.appId}, ${scope.shop}, 0, 0,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ON CONFLICT (id) DO UPDATE SET id = id
+    `);
+  }
 }
 
 /** Required privacy/auth lifecycle mutation only, in the same transaction as
@@ -100,7 +117,7 @@ export async function revokeShopifySessionCoordination(
   const changed = await tx.$executeRaw(Prisma.sql`
     UPDATE WeleticShopifySessionCoordination
     SET revision = revision + 1, leaseEpoch = leaseEpoch + 1,
-        leaseOwnerHash = NULL, leaseExpiresAt = NULL, updatedAt = CURRENT_TIMESTAMP(3)
+        leaseOwnerHash = NULL, leaseExpiresAt = NULL, updatedAt = ${currentTimestampClause}
     WHERE id = ${shopifySessionCoordinationId(scope)}
       AND revision < 9223372036854775806 AND leaseEpoch < 9223372036854775806
   `);
@@ -117,7 +134,7 @@ export async function advanceLegacyShopifySessionRevision(
   await ensureShopifySessionCoordination(tx, scope);
   const updated = await tx.$executeRaw(Prisma.sql`
     UPDATE WeleticShopifySessionCoordination
-    SET revision = revision + 1, updatedAt = CURRENT_TIMESTAMP(3)
+    SET revision = revision + 1, updatedAt = ${currentTimestampClause}
     WHERE id = ${shopifySessionCoordinationId(scope)}
       AND leaseEpoch = 0 AND revision < 9223372036854775806
   `);
@@ -143,18 +160,18 @@ export async function acquireShopifySessionLease(
   await tx.$executeRaw(Prisma.sql`
     UPDATE WeleticShopifySessionCoordination
     SET leaseOwnerHash = ${owner}, leaseEpoch = leaseEpoch + 1,
-      leaseExpiresAt = TIMESTAMPADD(MICROSECOND, ${SHOPIFY_SESSION_LEASE_MS * 1000}, CURRENT_TIMESTAMP(3)),
-      updatedAt = CURRENT_TIMESTAMP(3)
+      leaseExpiresAt = ${leaseExpiresAtClause},
+      updatedAt = ${currentTimestampClause}
     WHERE id = ${id}
-      AND (leaseExpiresAt IS NULL OR leaseExpiresAt <= CURRENT_TIMESTAMP(3))
+      AND (leaseExpiresAt IS NULL OR leaseExpiresAt <= ${currentTimestampClause})
       AND (leaseOwnerHash IS NULL OR leaseOwnerHash <> ${owner})
       AND leaseEpoch = ${epoch} AND revision = ${revision}
       AND leaseEpoch < 9223372036854775806
   `);
   const rows = await tx.$queryRaw<CoordinationRow[]>(Prisma.sql`
     SELECT revision, leaseEpoch, leaseOwnerHash,
-      (leaseExpiresAt > CURRENT_TIMESTAMP(3)) AS live
-    FROM WeleticShopifySessionCoordination WHERE id = ${id} FOR UPDATE
+      (leaseExpiresAt > ${currentTimestampClause}) AS live
+    FROM WeleticShopifySessionCoordination WHERE id = ${id} ${forUpdateClause}
   `);
   const row = rows[0];
   if (!row || !row.live || row.leaseOwnerHash !== owner) {
@@ -181,12 +198,12 @@ export async function renewShopifySessionLease(
   await lockShopifySessionCoordination(tx, lease);
   const updated = await tx.$executeRaw(Prisma.sql`
     UPDATE WeleticShopifySessionCoordination
-    SET leaseExpiresAt = TIMESTAMPADD(MICROSECOND, ${SHOPIFY_SESSION_LEASE_MS * 1000}, CURRENT_TIMESTAMP(3)),
-      updatedAt = CURRENT_TIMESTAMP(3)
+    SET leaseExpiresAt = ${leaseExpiresAtClause},
+      updatedAt = ${currentTimestampClause}
     WHERE id = ${shopifySessionCoordinationId(lease)}
       AND leaseOwnerHash = ${tokenDigest(lease.token)}
       AND leaseEpoch = ${counter(lease.epoch)}
-      AND leaseExpiresAt > CURRENT_TIMESTAMP(3)
+      AND leaseExpiresAt > ${currentTimestampClause}
   `);
   if (updated !== 1) {
     throw new ShopifySessionCoordinationError("stale_session");
@@ -202,7 +219,7 @@ export async function releaseShopifySessionLease(
   return (
     (await tx.$executeRaw(Prisma.sql`
       UPDATE WeleticShopifySessionCoordination
-      SET leaseExpiresAt = NULL, updatedAt = CURRENT_TIMESTAMP(3)
+      SET leaseExpiresAt = NULL, updatedAt = ${currentTimestampClause}
       WHERE id = ${shopifySessionCoordinationId(lease)}
         AND leaseOwnerHash = ${tokenDigest(lease.token)}
         AND leaseEpoch = ${counter(lease.epoch)}
@@ -219,12 +236,12 @@ export async function advanceShopifySessionRevision(
   await lockShopifySessionCoordination(tx, lease);
   const updated = await tx.$executeRaw(Prisma.sql`
     UPDATE WeleticShopifySessionCoordination
-    SET revision = revision + 1, updatedAt = CURRENT_TIMESTAMP(3)
+    SET revision = revision + 1, updatedAt = ${currentTimestampClause}
     WHERE id = ${shopifySessionCoordinationId(lease)}
       AND leaseOwnerHash = ${tokenDigest(lease.token)}
       AND leaseEpoch = ${counter(lease.epoch)}
       AND revision = ${revision}
-      AND leaseExpiresAt > CURRENT_TIMESTAMP(3)
+      AND leaseExpiresAt > ${currentTimestampClause}
   `);
   if (updated !== 1) {
     throw new ShopifySessionCoordinationError("stale_session");
@@ -240,6 +257,6 @@ async function lockShopifySessionCoordination(
   // lock here; the following conditional UPDATE then evaluates a fresh time.
   await tx.$queryRaw(Prisma.sql`
     SELECT id FROM WeleticShopifySessionCoordination
-    WHERE id = ${shopifySessionCoordinationId(scope)} FOR UPDATE
+    WHERE id = ${shopifySessionCoordinationId(scope)} ${forUpdateClause}
   `);
 }

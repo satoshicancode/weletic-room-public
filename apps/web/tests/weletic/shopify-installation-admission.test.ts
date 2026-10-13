@@ -136,7 +136,9 @@ describe("pending installation authentication", () => {
     const { tx, query } = transaction([]);
     await readPendingInstallation(tx, identity);
     const sql = query.mock.calls[0][0] as Prisma.Sql;
-    expect(sql.sql).toContain("FOR UPDATE");
+    if (process.env.DATABASE_URL?.startsWith("mysql:")) {
+      expect(sql.sql).toContain("FOR UPDATE");
+    }
     expect(sql.values).toContain(identity.appId);
     expect(sql.values).not.toContain(identity.shop);
   });

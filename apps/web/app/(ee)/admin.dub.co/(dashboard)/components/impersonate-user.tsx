@@ -23,7 +23,7 @@ export function ImpersonateUser() {
           }).then(async (res) => {
             if (res.ok) {
               setBlockEmailDomain(false);
-              setData(await res.json());
+              setData((await res.json()) as UserInfoProps);
             } else {
               const error = await res.text();
               toast.error(error);

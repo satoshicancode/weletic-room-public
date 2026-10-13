@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { forUpdateClause } from "@/lib/prisma/sql-helpers";
 import { storage } from "@/lib/storage";
 import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
@@ -104,13 +105,13 @@ export async function uploadOpenReviewPhoto({
         if (policy.revision !== data.expectedSettingsRevision)
           throw new ReviewError("conflict", "Open review policy changed");
         const settings = await tx.$queryRaw<
-          Array<{ photoUploadsEnabled: boolean | number }>
+          Array<{ photoUploadsEnabled: boolean | number | bigint }>
         >(Prisma.sql`
-          SELECT photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${storeId} FOR UPDATE
+          SELECT photoUploadsEnabled FROM WeleticReviewSettings WHERE storeId = ${storeId} ${forUpdateClause}
         `);
         if (
           settings.length !== 1 ||
-          ![true, 1].includes(settings[0].photoUploadsEnabled)
+          ![true, 1, BigInt(1)].includes(settings[0].photoUploadsEnabled as any)
         )
           throw new ReviewError("disabled", "Review photos are disabled");
         const { shopperId } = await ensureOpenReviewAuthorInTransaction({
@@ -121,7 +122,7 @@ export async function uploadOpenReviewPhoto({
         });
         const products = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
           SELECT id FROM WeleticShopifyProduct WHERE storeId = ${storeId}
-            AND externalId = ${data.productId} AND status = 'active' LIMIT 1 FOR UPDATE
+            AND externalId = ${data.productId} AND status = 'active' LIMIT 1 ${forUpdateClause}
         `);
         if (products.length !== 1)
           throw new ReviewError("not_found", "Product unavailable");

@@ -313,6 +313,10 @@ export const PATCH = withWorkspace(
             });
           };
 
+          const forUpdateClause = process.env.DATABASE_URL?.startsWith("mysql:")
+            ? Prisma.sql`FOR UPDATE`
+            : Prisma.empty;
+
           if (!lifecycle.storeId) {
             // The shared legacy fence already checked Store and tombstone
             // authority, before locking the coordinator and admission.
@@ -323,7 +327,7 @@ export const PATCH = withWorkspace(
               FROM WeleticShopifyStore
               WHERE shopDomain = ${verifiedShopDomain}
               LIMIT 1
-              FOR UPDATE
+              ${forUpdateClause}
             `);
             if (globalStores[0]) {
               throw new Error(
@@ -369,7 +373,7 @@ export const PATCH = withWorkspace(
               FROM WeleticShopifyStore
               WHERE id = ${lifecycle.storeId}
               LIMIT 1
-              FOR UPDATE
+              ${forUpdateClause}
             `);
           const lockedStore = lockedStores[0];
           if (!lockedStore) {

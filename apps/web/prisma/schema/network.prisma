@@ -1,21 +1,6 @@
-enum Category {
-  AI
-  Development
-  Design
-  Productivity
-  Finance
-  Marketing
-  Ecommerce
-  Security
-  Education
-  Health
-  Consumer
-  Support
-}
-
 model ProgramCategory {
   programId String
-  category  Category
+  category  String
 
   program Program @relation(fields: [programId], references: [id], onDelete: Cascade)
 
@@ -54,36 +39,10 @@ model DiscoveredPartner {
 
   program           Program            @relation(fields: [programId], references: [id], onDelete: Cascade)
   partner           Partner            @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  programEnrollment ProgramEnrollment? @relation(fields: [programId, partnerId], references: [programId, partnerId], onDelete: Cascade)
+  programEnrollment ProgramEnrollment? @relation(fields: [partnerId, programId], references: [partnerId, programId], onDelete: Cascade)
 
-  @@unique([programId, partnerId])
+  @@unique([partnerId, programId])
   @@index(partnerId)
 }
 
 // TODO: remove after we refactor all partner.industryInterests to use programCategory instead
-enum IndustryInterest {
-  SaaS
-  DevTool
-  AI
-  Creative_And_Design
-  Productivity_Software
-  Marketing
-  Gaming
-  Finance
-  Sales
-  Ecommerce
-  Customer_Service_And_Support
-  Content_Management
-  Human_Resources
-  Security
-  Analytics_And_Data
-  Social_Media
-  Consumer_Tech
-  Education_And_Learning
-  Health_And_Fitness
-  Food_And_Beverage
-  Travel_And_Lifestyle
-  Entertainment_And_Media
-  Sports
-  Science_And_Engineering
-}

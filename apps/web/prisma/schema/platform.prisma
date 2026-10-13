@@ -1,25 +1,16 @@
-enum PlatformType {
-  website
-  youtube
-  twitter
-  linkedin
-  instagram
-  tiktok
-}
-
 model PartnerPlatform {
-  id            String       @id @default(cuid())
+  id            String    @id @default(cuid())
   partnerId     String
-  type          PlatformType
+  type          String
   identifier    String // The unique identifier for the platform (e.g., username for social platforms, domain for websites)
   platformId    String? // Platform-specific immutable ID (e.g., YouTube channel ID)
-  avatarUrl     String?      @db.Text
-  subscribers   BigInt       @default(0) // Subscribers/followers for social platforms, also for newsletter subscribers
-  posts         BigInt       @default(0)
-  views         BigInt       @default(0) // Video views for YouTube, impressions for social platforms, pageviews for websites
+  avatarUrl     String?
+  subscribers   BigInt    @default(0) // Subscribers/followers for social platforms, also for newsletter subscribers
+  posts         BigInt    @default(0)
+  views         BigInt    @default(0) // Video views for YouTube, impressions for social platforms, pageviews for websites
   metadata      Json?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   verifiedAt    DateTime?
   lastCheckedAt DateTime?
 

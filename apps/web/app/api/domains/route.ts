@@ -1,5 +1,6 @@
 import { createId } from "@/lib/api/create-id";
 import { addDomainToVercel } from "@/lib/api/domains/add-domain-vercel";
+import { addCustomHostnameToCloudflare } from "@/lib/api/domains/cloudflare-saas";
 import { parseDomainJsonConfig } from "@/lib/api/domains/parse-domain-json-config";
 import { transformDomain } from "@/lib/api/domains/transform-domain";
 import { validateDomain } from "@/lib/api/domains/utils";
@@ -169,6 +170,20 @@ export const POST = withWorkspace(
         vercelResponse.error.code !== "domain_already_in_use" // ignore this error
       ) {
         return new Response(vercelResponse.error.message, { status: 422 });
+      }
+    } else if (
+      process.env.CLOUDFLARE_ZONE_ID &&
+      process.env.CLOUDFLARE_API_TOKEN
+    ) {
+      try {
+        await addCustomHostnameToCloudflare(slug);
+      } catch (err: any) {
+        if (!err.message?.includes("already exists")) {
+          console.error(
+            "Failed to add custom hostname to Cloudflare for SaaS:",
+            err,
+          );
+        }
       }
     }
 

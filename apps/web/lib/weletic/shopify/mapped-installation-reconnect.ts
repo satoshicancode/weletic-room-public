@@ -1,3 +1,7 @@
+import {
+  currentTimestampClause,
+  forUpdateClause,
+} from "@/lib/prisma/sql-helpers";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { Prisma, type WeleticShopifyPendingInstallation } from "@prisma/client";
 import { randomUUID } from "node:crypto";
@@ -56,7 +60,7 @@ export async function assertMappedInstallationReconnectReady(
   const blocking = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id FROM WeleticShopifyComplianceRequest
     WHERE storeId = ${store.id} AND requestType IN ('app_uninstalled', 'shop_redact')
-      AND status <> 'completed' LIMIT 1 FOR UPDATE
+      AND status <> 'completed' LIMIT 1 ${forUpdateClause}
   `);
   const completed = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id FROM WeleticShopifyComplianceRequest
@@ -64,18 +68,18 @@ export async function assertMappedInstallationReconnectReady(
       AND requestType = 'app_uninstalled' AND status = 'completed' AND phase = 'completed'
       AND COALESCE(triggeredAt, receivedAt) = ${store.uninstalledAt}
       AND receivedAt >= ${pending.authenticatedAt} AND completedAt >= receivedAt
-      AND completedAt <= CURRENT_TIMESTAMP(3)
-    LIMIT 1 FOR UPDATE
+      AND completedAt <= ${currentTimestampClause}
+    LIMIT 1 ${forUpdateClause}
   `);
   const cleanups = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id FROM WeleticShopifyVoucherCleanup
-    WHERE storeId = ${store.id} AND status <> 'completed' LIMIT 1 FOR UPDATE
+    WHERE storeId = ${store.id} AND status <> 'completed' LIMIT 1 ${forUpdateClause}
   `);
   if (blocking.length || !completed.length || cleanups.length)
     throw new Error("Mapped installation cleanup is incomplete");
   const native = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
     SELECT id FROM WeleticShopifyInstallationCredential
-    WHERE storeId = ${store.id} AND appId = ${actor.appId} LIMIT 1 FOR UPDATE
+    WHERE storeId = ${store.id} AND appId = ${actor.appId} LIMIT 1 ${forUpdateClause}
   `);
   const legacy = await tx.installedIntegration.count({
     where: {
@@ -89,7 +93,7 @@ export async function assertMappedInstallationReconnectReady(
     Array<{ status: string; killSwitchActive: number | boolean | bigint }>
   >(Prisma.sql`
     SELECT status, killSwitchActive FROM WeleticLoyaltyProgram
-    WHERE storeId = ${store.id} LIMIT 1 FOR UPDATE
+    WHERE storeId = ${store.id} LIMIT 1 ${forUpdateClause}
   `);
   if (
     programs.some(
@@ -114,7 +118,7 @@ export async function reopenMappedInstallation(
     UPDATE WeleticShopifyStore
     SET installationGeneration = ${generation}, complianceState = 'active', uninstalledAt = NULL,
         storeAccessState = 'pending_approval', storeAccessRevision = ${store.storeAccessRevision + 1},
-        syncStatus = 'pending', lastSyncError = NULL, updatedAt = CURRENT_TIMESTAMP(3)
+        syncStatus = 'pending', lastSyncError = NULL, updatedAt = ${currentTimestampClause}
     WHERE id = ${store.id} AND projectId = ${store.projectId} AND shopDomain = ${actor.shop}
       AND installationGeneration = ${store.installationGeneration} AND complianceState = 'frozen'
       AND storeAccessRevision = ${store.storeAccessRevision} AND uninstalledAt = ${store.uninstalledAt}
