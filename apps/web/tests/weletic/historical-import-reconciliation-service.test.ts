@@ -77,7 +77,7 @@ function fixture() {
     setReferenceIds: (ids: string[]) => {
       referenceIds = ids;
     },
-    setDiscoveredEntries: (entries: typeof entry[]) => {
+    setDiscoveredEntries: (entries: (typeof entry)[]) => {
       discoveredEntries = entries;
     },
     run: () =>
@@ -294,8 +294,9 @@ describe("stored import reconciliation", () => {
   it("rejects a claimed ledger entry belonging to another store", async () => {
     const f = fixture();
     f.setDiscoveredEntries([]);
-    f.tx.weleticPointsLedgerEntry.findMany
-      .mockResolvedValueOnce([{ ...f.entry, storeId: "other" }]);
+    f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValueOnce([
+      { ...f.entry, storeId: "other" },
+    ]);
     await expect(f.run()).rejects.toThrow();
   });
   it("rejects a foreign reference-only orphan without metadata or claims", async () => {
@@ -329,17 +330,16 @@ describe("stored import reconciliation", () => {
     async (kind) => {
       const f = fixture();
       f.setDiscoveredEntries([]);
-      f.tx.weleticPointsLedgerEntry.findMany
-        .mockResolvedValueOnce(
-          kind === "missing"
-            ? []
-            : [
-                {
-                  ...f.entry,
-                  metadata: kind === "corrupt" ? {} : f.entry.metadata,
-                },
-              ],
-        );
+      f.tx.weleticPointsLedgerEntry.findMany.mockResolvedValueOnce(
+        kind === "missing"
+          ? []
+          : [
+              {
+                ...f.entry,
+                metadata: kind === "corrupt" ? {} : f.entry.metadata,
+              },
+            ],
+      );
       const result = await f.run();
       expect(result.reconciled).toBe(kind === "valid");
       if (kind === "missing")
