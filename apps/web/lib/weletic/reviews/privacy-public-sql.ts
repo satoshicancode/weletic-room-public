@@ -60,7 +60,7 @@ function buildReviewPrivacySql({
       WHERE st.id = r.storeId AND st.complianceState = 'active'
         AND st.storeAccessState = 'active' AND rs.enabled = 1
         AND st.installationGeneration = ${installationGeneration})`;
-  const suppressed = Prisma.sql`r.source != 'merchant' AND (
+  const suppressed = Prisma.sql`(
     EXISTS (SELECT 1 FROM WeleticReviewOwnerPrivacyCoverage c
       WHERE c.storeId = r.storeId AND c.shopperId = r.shopperId AND c.state = 'redacted')
     OR EXISTS (SELECT 1 FROM WeleticShopper s
@@ -79,7 +79,7 @@ function buildReviewPrivacySql({
         AND t.identityKeyId = i.identityKeyId AND t.customerDigest = i.customerDigest
       WHERE i.storeId = r.storeId AND i.shopperId = r.shopperId)
   )`;
-  const ready = Prisma.sql`(r.source = 'merchant' OR EXISTS (
+  const ready = Prisma.sql`EXISTS (
     SELECT 1 FROM WeleticReviewOwnerPrivacyCoverage c
     JOIN WeleticShopper s ON s.storeId = c.storeId AND s.id = c.shopperId
     WHERE c.storeId = r.storeId AND c.shopperId = r.shopperId
@@ -96,7 +96,7 @@ function buildReviewPrivacySql({
         (SELECT COUNT(*) FROM WeleticReviewOwnerPrivacyIdentity i
           WHERE i.storeId = c.storeId AND i.shopperId = c.shopperId
             AND i.identityKind = 'customer_email' AND i.identityKeyId IN (${keys}))
-  ))`;
+  )`;
   return {
     from,
     base,
