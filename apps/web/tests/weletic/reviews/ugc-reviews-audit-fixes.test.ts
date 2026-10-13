@@ -6,7 +6,8 @@ import {
 import { reviewIncentivePolicyDigest } from "@/lib/weletic/reviews/incentive-policy";
 import { moderateNativeReviewInTransaction } from "@/lib/weletic/reviews/service";
 import { syncProductReviewSummary } from "@/lib/weletic/reviews/summary-sync";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import dns from "dns";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/weletic/redis-lock", () => ({
@@ -664,6 +665,24 @@ describe("Milestone 2 (UGC Reviews & Media Assets) Pre-Production Audit Fixes", 
   });
 
   describe("REV-04: Storage 5MB Bounding, Image MIME Validation & DNS Rebinding", () => {
+    const originalEnv = { ...process.env };
+
+    beforeEach(() => {
+      process.env.STORAGE_ENDPOINT = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
+      process.env.STORAGE_PUBLIC_BUCKET = "public-test";
+      process.env.STORAGE_ACCESS_KEY_ID = "test-key";
+      process.env.STORAGE_SECRET_ACCESS_KEY = "test-secret";
+      (vi.spyOn(dns.promises, "lookup") as any).mockImplementation(async () => [
+        { address: "93.184.216.34", family: 4 },
+      ]);
+    });
+
+    afterEach(() => {
+      process.env = { ...originalEnv };
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+
     it("rejects non-image MIME types when downloading remote media", async () => {
       vi.stubGlobal(
         "fetch",
