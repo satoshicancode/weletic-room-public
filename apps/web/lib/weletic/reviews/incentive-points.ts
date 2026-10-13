@@ -102,7 +102,10 @@ export async function fulfillReviewPointsClaimInTransaction({
         });
   if (
     !review ||
+    (claim.subjectType !== "store" &&
+      (review.source !== "verified_customer" || !review.requestId)) ||
     !review.request ||
+    !review.shopperId ||
     review.shopperId !== claim.shopperId ||
     review.redactedAt ||
     review.status === "redacted" ||

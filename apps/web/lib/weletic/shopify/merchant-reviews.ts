@@ -57,11 +57,15 @@ export async function listShopifyMerchantReviewsInTransaction({
       throw new ReviewError("bad_request", "Invalid review cursor");
     }
   }
-  const result = await listAdminReviews(
-    actor.storeId,
-    { ...query, cursor },
-    tx,
-  );
+  const [result, products] = await Promise.all([
+    listAdminReviews(actor.storeId, { ...query, cursor }, tx),
+    tx.weleticShopifyProduct.findMany({
+      where: { storeId: actor.storeId, status: "active" },
+      orderBy: [{ title: "asc" }, { id: "asc" }],
+      take: 100,
+      select: { title: true, externalId: true },
+    }),
+  ]);
   const nextCursor = result.nextCursor
     ? Buffer.from(
         JSON.stringify({ scope, cursor: result.nextCursor }),
@@ -87,9 +91,14 @@ export async function listShopifyMerchantReviewsInTransaction({
           displayName: row.displayName,
           merchantReply: row.merchantReply,
           verifiedPurchase: row.verifiedPurchase,
+          source: row.source,
           incentivized: row.incentivized,
           rewardStatus: row.rewardStatus,
-          photoCount: row.media.length,
+          photoCount: row.media.filter((media) => media.kind === "photo")
+            .length,
+          videoCount: row.media.filter((media) => media.kind === "video")
+            .length,
+          media: row.media,
         }
       : {
           ...common,
@@ -130,5 +139,6 @@ export async function listShopifyMerchantReviewsInTransaction({
     view: query.view,
     items,
     nextCursor,
+    products,
   });
 }

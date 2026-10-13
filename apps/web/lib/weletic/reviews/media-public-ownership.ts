@@ -1,5 +1,9 @@
 import { Prisma } from "@prisma/client";
-import { REVIEW_MAX_PHOTO_BYTES } from "./contracts";
+import {
+  REVIEW_MAX_PHOTO_BYTES,
+  REVIEW_MAX_VIDEO_BYTES,
+  REVIEW_MAX_VIDEO_DURATION_MS,
+} from "./contracts";
 
 /** Private projection fields. Public callers must return only explicit IDs. */
 export const publicPhotoReviewSelection = {
@@ -8,6 +12,7 @@ export const publicPhotoReviewSelection = {
   shopperId: true,
   productId: true,
   requestId: true,
+  source: true,
   openSubmission: {
     select: {
       storeId: true,
@@ -28,10 +33,12 @@ export const publicPhotoMediaSelection = {
   storeId: true,
   reviewId: true,
   requestId: true,
+  kind: true,
   status: true,
   objectKey: true,
   contentType: true,
   sizeBytes: true,
+  durationMs: true,
   request: {
     select: { id: true, storeId: true, shopperId: true, productId: true },
   },
@@ -64,7 +71,7 @@ type Media = Prisma.WeleticReviewMediaGetPayload<{
  * Historical generation must agree between immutable source and upload; a fresh
  * installation does not rewrite or invalidate previously accepted content.
  */
-export function hasPublicReviewPhotoOwnership(
+export function hasPublicReviewMediaOwnership(
   storeId: string,
   review: Review,
   media: Media,
@@ -74,13 +81,39 @@ export function hasPublicReviewPhotoOwnership(
     media.storeId !== storeId ||
     media.reviewId !== review.id ||
     media.status !== "uploaded" ||
-    media.objectKey !== `weletic/reviews/${storeId}/${media.id}.webp` ||
-    media.contentType !== "image/webp" ||
     !Number.isInteger(media.sizeBytes) ||
-    media.sizeBytes < 1 ||
-    media.sizeBytes > REVIEW_MAX_PHOTO_BYTES
+    media.sizeBytes < 1
   )
     return false;
+
+  if (media.kind === "video") {
+    if (
+      media.objectKey !== `weletic/reviews/${storeId}/${media.id}.mp4` ||
+      media.contentType !== "video/mp4" ||
+      media.sizeBytes > REVIEW_MAX_VIDEO_BYTES ||
+      typeof media.durationMs !== "number" ||
+      media.durationMs < 1 ||
+      media.durationMs > REVIEW_MAX_VIDEO_DURATION_MS
+    )
+      return false;
+  } else {
+    if (
+      media.objectKey !== `weletic/reviews/${storeId}/${media.id}.webp` ||
+      media.contentType !== "image/webp" ||
+      media.sizeBytes > REVIEW_MAX_PHOTO_BYTES
+    )
+      return false;
+  }
+
+  if (review.source === "merchant") {
+    return (
+      review.requestId === null &&
+      media.requestId === null &&
+      !review.openSubmission &&
+      !media.openOwnership
+    );
+  }
+
   if (review.requestId) {
     const request = media.request;
     return (
@@ -120,4 +153,13 @@ export function hasPublicReviewPhotoOwnership(
     !!owner.contentDigest &&
     owner.storageWriteState === "confirmed"
   );
+}
+
+export function hasPublicReviewPhotoOwnership(
+  storeId: string,
+  review: Review,
+  media: Media,
+) {
+  if (media.kind !== "photo") return false;
+  return hasPublicReviewMediaOwnership(storeId, review, media);
 }

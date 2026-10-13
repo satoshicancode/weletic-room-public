@@ -246,6 +246,7 @@ export async function getReviewRequestPreview(storeId: string, token: string) {
       productHandle: request.product.handle,
       expiresAt: request.expiresAt,
       photoUploadsEnabled: settings.photoUploadsEnabled,
+      videoUploadsEnabled: settings.videoUploadsEnabled,
       incentiveDisclosure: reviewIncentiveDisclosure(policy),
     };
   });

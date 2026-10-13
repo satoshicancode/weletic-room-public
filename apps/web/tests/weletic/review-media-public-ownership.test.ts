@@ -33,6 +33,7 @@ const review: Review = {
   shopperId: "shopper",
   productId: "product",
   requestId: null,
+  source: "verified_customer",
   openSubmission: source,
 };
 const media: Media = {
@@ -40,6 +41,8 @@ const media: Media = {
   storeId: "store",
   reviewId: "review",
   requestId: null,
+  kind: "photo",
+  durationMs: null,
   status: "uploaded",
   objectKey: "weletic/reviews/store/media.webp",
   contentType: "image/webp",

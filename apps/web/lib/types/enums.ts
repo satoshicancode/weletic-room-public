@@ -747,6 +747,20 @@ export const WeleticReferralRewardKind = {
 export type WeleticReferralRewardKind =
   (typeof WeleticReferralRewardKind)[keyof typeof WeleticReferralRewardKind];
 
+export const WeleticReviewMediaKind = {
+  photo: "photo",
+  video: "video",
+} as const;
+export type WeleticReviewMediaKind =
+  (typeof WeleticReviewMediaKind)[keyof typeof WeleticReviewMediaKind];
+
+export const WeleticReviewSource = {
+  verified_customer: "verified_customer",
+  merchant: "merchant",
+} as const;
+export type WeleticReviewSource =
+  (typeof WeleticReviewSource)[keyof typeof WeleticReviewSource];
+
 export const WeleticReviewMediaStatus = {
   reserved: "reserved",
   uploaded: "uploaded",
@@ -1033,10 +1047,12 @@ export const ALL_ENUMS = {
   WeleticReconciliationStatus,
   WeleticRedemptionStatus,
   WeleticReferralRewardKind,
+  WeleticReviewMediaKind,
   WeleticReviewMediaStatus,
   WeleticReviewOwnerPrivacyState,
   WeleticReviewRequestStatus,
   WeleticReviewRewardStatus,
+  WeleticReviewSource,
   WeleticRewardArtifactKind,
   WeleticRewardExchangeType,
   WeleticRewardSalesChannel,

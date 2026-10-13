@@ -137,6 +137,7 @@
     "lru-cache": "^11.2.2",
     "lucide-react": "^0.462.0",
     "luxon": "^3.5.0",
+    "mediabunny": "1.55.7",
     "minimatch": "^10.1.1",
     "motion": "^12.23.22",
     "nanoid": "^5.0.1",

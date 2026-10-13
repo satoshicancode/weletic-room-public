@@ -25,7 +25,7 @@ type Review = {
   rewardPolicy?: "legacy" | "participation" | "none";
   canRetryReward?: boolean;
   product: { title: string };
-  media: { id: string }[];
+  media: { id: string; kind: "photo" | "video" }[];
 };
 type Invitation = {
   id: string;
@@ -266,8 +266,10 @@ function ReviewCard({
 }) {
   const [reply, setReply] = useState(review.merchantReply ?? "");
   const [busy, setBusy] = useState(false);
-  const [photos, setPhotos] = useState<string[]>([]);
-  const [photoError, setPhotoError] = useState("");
+  const [media, setMedia] = useState<
+    { url: string; kind: "photo" | "video" }[]
+  >([]);
+  const [mediaError, setMediaError] = useState("");
   const moderate = async (patch: Record<string, unknown>) => {
     setBusy(true);
     try {
@@ -312,33 +314,44 @@ function ReviewCard({
             try {
               const urls = await Promise.all(
                 review.media.map((media) =>
-                  requestJson<{ url: string }>(
+                  requestJson<{ url: string; kind: "photo" | "video" }>(
                     `${endpoint}&mediaId=${encodeURIComponent(media.id)}`,
                   ),
                 ),
               );
-              setPhotos(urls.map((row) => row.url));
+              setMedia(urls);
             } catch {
-              setPhotoError("Photos could not be loaded. Try again.");
+              setMediaError("Media could not be loaded. Try again.");
             }
           }}
         >
-          View {review.media.length} photos
+          View {review.media.length} media files
         </button>
       )}
-      {photoError && <p role="status">{photoError}</p>}
+      {mediaError && <p role="status">{mediaError}</p>}
       <div className="flex flex-wrap gap-2">
-        {photos.map((url, index) => (
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className={control}
-            key={index}
-          >
-            Open photo {index + 1}
-          </a>
-        ))}
+        {media.map((item, index) =>
+          item.kind === "video" ? (
+            <video
+              key={index}
+              src={item.url}
+              controls
+              playsInline
+              preload="metadata"
+              className="max-w-xs rounded-md"
+            />
+          ) : (
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className={control}
+              key={index}
+            >
+              Open photo {index + 1}
+            </a>
+          ),
+        )}
       </div>
       {review.status !== "redacted" && (
         <fieldset disabled={busy} className="space-y-3">
@@ -420,6 +433,7 @@ function ReviewSettingsForm({
               requestEmailEnabled: draft.requestEmailEnabled,
               autoPublish: draft.autoPublish,
               photoUploadsEnabled: draft.photoUploadsEnabled,
+              videoUploadsEnabled: draft.videoUploadsEnabled,
               sendAfterDays: draft.sendAfterDays,
               expiresAfterDays: draft.expiresAfterDays,
             },
@@ -448,6 +462,10 @@ function ReviewSettingsForm({
             ],
             ["autoPublish", "Publish verified reviews automatically"],
             ["photoUploadsEnabled", "Allow photos (requires private storage)"],
+            [
+              "videoUploadsEnabled",
+              "Allow MP4 videos (requires private R2 storage)",
+            ],
           ] as const
         ).map(([key, label]) => (
           <label key={key} className="flex gap-2">

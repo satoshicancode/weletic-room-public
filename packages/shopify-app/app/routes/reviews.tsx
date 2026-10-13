@@ -39,7 +39,9 @@ import { StoreReviewsPanel } from "../components/StoreReviewsPanel";
 import { useMerchantLocale } from "../merchant-locale";
 import { createMerchantOpenReviewPolicyClient } from "../merchant-open-review-policy-client";
 import { createMerchantReviewCollectionClient } from "../merchant-review-collection-client";
+import { createMerchantReviewCreateClient } from "../merchant-review-create-client";
 import { createMerchantReviewIncentivesClient } from "../merchant-review-incentives-client";
+import { createMerchantReviewMediaClient } from "../merchant-review-media-client";
 import { createMerchantReviewModerationClient } from "../merchant-review-moderation-client";
 import { createMerchantReviewTranslationsClient } from "../merchant-review-translations-client";
 import { createMerchantReviewsClient } from "../merchant-reviews-client";
@@ -56,6 +58,59 @@ const polarisTranslations = {
   ja: jaTranslations,
   vi: viTranslations,
 };
+
+function ReviewMediaPreview({
+  media,
+  load,
+}: {
+  media: { id: string; kind: "photo" | "video" };
+  load: (id: string) => Promise<{ url: string; kind: "photo" | "video" }>;
+}) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  if (url)
+    return media.kind === "video" ? (
+      <video
+        controls
+        playsInline
+        preload="metadata"
+        src={url}
+        style={{ maxWidth: 320 }}
+      />
+    ) : (
+      <img
+        src={url}
+        alt="Review attachment"
+        referrerPolicy="no-referrer"
+        style={{ width: 120, height: 120, objectFit: "cover" }}
+      />
+    );
+  return (
+    <Button
+      disabled={busy || failed}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          const result = await load(media.id);
+          setUrl(result.url);
+        } catch {
+          setFailed(true);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      {failed
+        ? "Media unavailable"
+        : busy
+          ? "Loading…"
+          : media.kind === "video"
+            ? "Play video"
+            : "View photo"}
+    </Button>
+  );
+}
 
 export const headers: HeadersFunction = (args) => {
   const result = new Headers(boundary.headers(args));
@@ -114,6 +169,23 @@ export default function ReviewsPage() {
     () => createMerchantReviewModerationClient(() => shopify.idToken()),
     [shopify],
   );
+  const createReview = useMemo(
+    () => createMerchantReviewCreateClient(() => shopify.idToken()),
+    [shopify],
+  );
+  const readMedia = useMemo(
+    () => createMerchantReviewMediaClient(() => shopify.idToken()),
+    [shopify],
+  );
+  const [draftReview, setDraftReview] = useState({
+    productId: "",
+    displayName: "Store owner",
+    rating: "5",
+    title: "",
+    body: "",
+    publishNow: true,
+  });
+  const [creatingReview, setCreatingReview] = useState(false);
   const [moderationResult, setModerationResult] = useState<
     "saved" | StaffAccessClientError["code"] | null
   >(null);
@@ -312,6 +384,161 @@ export default function ReviewsPage() {
                 </Card>
               </>
             )}
+            <Card>
+              {!creatingReview ? (
+                <Button onClick={() => setCreatingReview(true)}>
+                  {copy.createReview}
+                </Button>
+              ) : (
+                <form
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    if (inFlight.current) return;
+                    inFlight.current = true;
+                    setBusy(true);
+                    setError(null);
+                    try {
+                      const rawProductId = draftReview.productId.trim();
+                      await createReview({
+                        productId: rawProductId.startsWith("gid://")
+                          ? rawProductId
+                          : `gid://shopify/Product/${rawProductId}`,
+                        displayName: draftReview.displayName,
+                        rating: Number(draftReview.rating),
+                        title: draftReview.title,
+                        body: draftReview.body,
+                        status: draftReview.publishNow
+                          ? "published"
+                          : "pending",
+                      });
+                      setDraftReview((current) => ({
+                        ...current,
+                        title: "",
+                        body: "",
+                      }));
+                      setCreatingReview(false);
+                      inFlight.current = false;
+                      await load({ view: "reviews" }, 1);
+                    } catch (failure) {
+                      setError(
+                        failure instanceof StaffAccessClientError
+                          ? failure.code
+                          : "unavailable",
+                      );
+                    } finally {
+                      inFlight.current = false;
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <BlockStack gap="300">
+                    <Text as="h2" variant="headingMd">
+                      {copy.createReview}
+                    </Text>
+                    <label>
+                      {copy.productId}
+                      <select
+                        required
+                        value={draftReview.productId}
+                        onChange={(event) =>
+                          setDraftReview({
+                            ...draftReview,
+                            productId: event.target.value,
+                          })
+                        }
+                      >
+                        <option value="">—</option>
+                        {data?.products?.map((product) => (
+                          <option
+                            key={product.externalId}
+                            value={product.externalId}
+                          >
+                            {product.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {copy.displayName}
+                      <input
+                        required
+                        maxLength={80}
+                        value={draftReview.displayName}
+                        onChange={(event) =>
+                          setDraftReview({
+                            ...draftReview,
+                            displayName: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      {copy.rating}
+                      <select
+                        value={draftReview.rating}
+                        onChange={(event) =>
+                          setDraftReview({
+                            ...draftReview,
+                            rating: event.target.value,
+                          })
+                        }
+                      >
+                        {[5, 4, 3, 2, 1].map((rating) => (
+                          <option key={rating} value={rating}>
+                            {rating} / 5
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      {copy.reviewTitle}
+                      <input
+                        required
+                        maxLength={120}
+                        value={draftReview.title}
+                        onChange={(event) =>
+                          setDraftReview({
+                            ...draftReview,
+                            title: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      {copy.reviewBody}
+                      <textarea
+                        required
+                        minLength={20}
+                        maxLength={10000}
+                        value={draftReview.body}
+                        onChange={(event) =>
+                          setDraftReview({
+                            ...draftReview,
+                            body: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={draftReview.publishNow}
+                        onChange={(event) =>
+                          setDraftReview({
+                            ...draftReview,
+                            publishNow: event.target.checked,
+                          })
+                        }
+                      />{" "}
+                      {copy.publishNow}
+                    </label>
+                    <Button submit disabled={busy}>
+                      {copy.create}
+                    </Button>
+                  </BlockStack>
+                </form>
+              )}
+            </Card>
             <Select
               disabled={busy}
               label={copy.view}
@@ -436,12 +663,32 @@ export default function ReviewsPage() {
                             {row.body}
                           </p>
                           <p>
-                            {row.verifiedPurchase
-                              ? copy.verified
-                              : copy.unverified}
+                            {row.source === "merchant"
+                              ? copy.merchantAuthored
+                              : row.verifiedPurchase
+                                ? copy.verified
+                                : copy.unverified}
                             {row.incentivized ? ` · ${copy.incentive}` : ""} ·{" "}
-                            {copy.photos}: {row.photoCount}
+                            {copy.photos}: {row.photoCount} · {copy.videos}:{" "}
+                            {row.videoCount ?? 0}
                           </p>
+                          {Boolean(row.media?.length) && (
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: 12,
+                              }}
+                            >
+                              {row.media?.map((media) => (
+                                <ReviewMediaPreview
+                                  key={media.id}
+                                  media={media}
+                                  load={readMedia}
+                                />
+                              ))}
+                            </div>
+                          )}
                           {row.merchantReply && (
                             <>
                               <Text as="h3" variant="headingSm">

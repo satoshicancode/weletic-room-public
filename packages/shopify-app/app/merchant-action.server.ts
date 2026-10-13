@@ -9,7 +9,11 @@ import {
   merchantReviewIncentiveDraftInputSchema,
   merchantReviewIncentiveReadInputSchema,
 } from "@weletic/contracts/reviews/incentive-merchant-contract";
-import { merchantReviewListInputSchema } from "@weletic/contracts/reviews/merchant-contract";
+import {
+  merchantReviewCreateInputSchema,
+  merchantReviewListInputSchema,
+  merchantReviewMediaInputSchema,
+} from "@weletic/contracts/reviews/merchant-contract";
 import { auditedReviewModerationInputSchema } from "@weletic/contracts/reviews/moderation-contract";
 import {
   openReviewPolicyReadSchema,
@@ -109,6 +113,14 @@ const operations = {
     schema: auditedReviewModerationInputSchema,
     path: "reviews/store/moderate",
   },
+  "create-review": {
+    schema: merchantReviewCreateInputSchema,
+    path: "reviews/create",
+  },
+  "review-media": {
+    schema: merchantReviewMediaInputSchema,
+    path: "reviews/media",
+  },
 } as const;
 
 function reply(data: unknown, status: number) {
@@ -131,7 +143,8 @@ export function createMerchantAction(
           (operation === "review-translations-write"
             ? 64
             : operation === "moderate-review" ||
-                operation === "moderate-store-review"
+                operation === "moderate-store-review" ||
+                operation === "create-review"
               ? 32
               : 16) * 1024,
       });

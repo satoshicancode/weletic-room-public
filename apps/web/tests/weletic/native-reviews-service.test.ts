@@ -1,5 +1,6 @@
 import { generateReviewToken } from "@/lib/weletic/reviews/contracts";
 import {
+  createMerchantReviewInTransaction,
   moderateNativeReview,
   moderateNativeReviewInTransaction,
   submitNativeReview,
@@ -11,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   tx: {
     weleticReviewSettings: { findUnique: vi.fn(), upsert: vi.fn() },
+    weleticShopifyProduct: { findFirst: vi.fn() },
     weleticReviewRequest: { findFirst: vi.fn(), updateMany: vi.fn() },
     weleticReviewMedia: { findMany: vi.fn(), updateMany: vi.fn() },
     weleticProductReview: {
@@ -55,6 +57,7 @@ const settings = {
   requestEmailEnabled: true,
   autoPublish: false,
   photoUploadsEnabled: true,
+  videoUploadsEnabled: false,
   sendAfterDays: 7,
   expiresAfterDays: 30,
 };
@@ -118,6 +121,8 @@ function submission() {
 function reviewFixture() {
   return {
     id: "review-1",
+    requestId: "request-1",
+    source: "verified_customer",
     storeId: "store-1",
     productId: "product-1",
     shopperId: "shopper-1",
@@ -145,6 +150,9 @@ beforeEach(() => {
   );
   mocks.tx.weleticReviewSettings.findUnique.mockResolvedValue(settings);
   mocks.tx.weleticReviewSettings.upsert.mockResolvedValue(settings);
+  mocks.tx.weleticShopifyProduct.findFirst.mockResolvedValue({
+    id: "product-1",
+  });
   mocks.tx.weleticReviewRequest.findFirst.mockResolvedValue(requestFixture());
   mocks.tx.weleticReviewRequest.updateMany.mockResolvedValue({ count: 1 });
   mocks.tx.weleticReviewMedia.findMany.mockResolvedValue([]);
@@ -166,6 +174,80 @@ beforeEach(() => {
 });
 
 describe("native review production services (mocked database boundary)", () => {
+  it("creates merchant reviews without purchase identity or loyalty eligibility", async () => {
+    const tx = mocks.tx as unknown as Prisma.TransactionClient;
+    await createMerchantReviewInTransaction({
+      tx,
+      storeId: "store-1",
+      userId: "123",
+      input: {
+        productId: "gid://shopify/Product/123",
+        rating: 5,
+        title: "Store demonstration",
+        body: "A merchant-authored product demonstration review.",
+        displayName: "Store owner",
+        status: "published",
+      },
+    });
+    expect(mocks.tx.weleticProductReview.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        source: "merchant",
+        createdByUserId: "123",
+        verifiedPurchase: false,
+        rewardStatus: "ineligible",
+        rewardReason: "merchant_authored",
+        participationStatus: "ineligible",
+      }),
+    });
+    const data = mocks.tx.weleticProductReview.create.mock.calls[0][0].data;
+    expect(data).not.toHaveProperty("requestId");
+    expect(data).not.toHaveProperty("shopperId");
+    expect(mocks.enqueue).toHaveBeenCalledTimes(1);
+    expect(mocks.award).not.toHaveBeenCalled();
+  });
+  it("rejects loyalty reward retries for merchant-authored reviews before mutation", async () => {
+    mocks.tx.weleticProductReview.findFirst.mockResolvedValue({
+      ...reviewFixture(),
+      source: "merchant",
+      requestId: null,
+      request: null,
+      shopperId: null,
+      verifiedPurchase: false,
+      rewardStatus: "ineligible",
+    });
+    await expect(
+      moderateNativeReviewInTransaction({
+        tx: mocks.tx as unknown as Prisma.TransactionClient,
+        storeId: "store-1",
+        reviewId: "review-1",
+        userId: "owner-1",
+        input: { version: 1, retryReward: true },
+        generation: "g1",
+      }),
+    ).rejects.toThrow("cannot earn rewards");
+    expect(mocks.tx.weleticProductReview.updateMany).not.toHaveBeenCalled();
+    expect(mocks.award).not.toHaveBeenCalled();
+  });
+  it("never invokes legacy reward reversal for merchant-authored reviews", async () => {
+    mocks.tx.weleticProductReview.findFirst.mockResolvedValue({
+      ...reviewFixture(),
+      source: "merchant",
+      requestId: null,
+      request: null,
+      shopperId: null,
+      verifiedPurchase: false,
+      rewardStatus: "awarded",
+    });
+    await moderateNativeReviewInTransaction({
+      tx: mocks.tx as unknown as Prisma.TransactionClient,
+      storeId: "store-1",
+      reviewId: "review-1",
+      userId: "owner-1",
+      input: { version: 1, status: "hidden" },
+      generation: "g1",
+    });
+    expect(mocks.reverse).not.toHaveBeenCalled();
+  });
   it("keeps the supplied transaction for review, legacy reversal and summary writes", async () => {
     const tx = mocks.tx as unknown as Prisma.TransactionClient;
     await moderateNativeReviewInTransaction({
