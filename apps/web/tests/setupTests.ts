@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 import { vi } from "vitest";
 
+process.env.ENCRYPTION_KEY ||=
+  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
 vi.mock("server-only", () => ({}));
 
 Object.defineProperty(globalThis, "crypto", {
