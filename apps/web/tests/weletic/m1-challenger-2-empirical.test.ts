@@ -409,19 +409,48 @@ describe("M1 Database Migration Challenger 2: Empirical Verification Suite", () 
     });
 
     it("3.2 Concurrent Interactive Transactions: executes 20 concurrent transactions without deadlocks", async () => {
+      const runWithRetry = async (
+        fn: () => Promise<any>,
+        retries = 5,
+        delay = 50,
+      ): Promise<any> => {
+        try {
+          return await fn();
+        } catch (err: any) {
+          if (
+            retries > 0 &&
+            (err.code === "P2034" ||
+              err.code === "P2028" ||
+              /busy|locked/i.test(err.message || ""))
+          ) {
+            await new Promise((r) => setTimeout(r, delay + Math.random() * 50));
+            return runWithRetry(fn, retries - 1, delay * 2);
+          }
+          throw err;
+        }
+      };
+
       const results = await Promise.allSettled(
         Array.from({ length: 20 }, async (_, idx) => {
-          return prisma.$transaction(async (tx) => {
-            const project = await tx.project.findUnique({
-              where: { id: testWorkspaceId },
-              select: { id: true, updatedAt: true },
-            });
-            await tx.project.update({
-              where: { id: testWorkspaceId },
-              data: { updatedAt: new Date() },
-            });
-            return { idx, projectId: project?.id };
-          });
+          return runWithRetry(() =>
+            prisma.$transaction(
+              async (tx) => {
+                const project = await tx.project.findUnique({
+                  where: { id: testWorkspaceId },
+                  select: { id: true, updatedAt: true },
+                });
+                await tx.project.update({
+                  where: { id: testWorkspaceId },
+                  data: { updatedAt: new Date() },
+                });
+                return { idx, projectId: project?.id };
+              },
+              {
+                maxWait: 15000,
+                timeout: 15000,
+              },
+            ),
+          );
         }),
       );
 

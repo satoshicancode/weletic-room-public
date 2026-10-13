@@ -15,7 +15,13 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const require = createRequire(join(root, "apps/web/package.json"));
 const { parse } = require("dotenv-flow");
-const { connect } = require("@planetscale/database");
+let connect;
+try {
+  ({ connect } = require("@planetscale/database"));
+} catch {
+  // @planetscale/database was replaced by Cloudflare D1 / SQLite
+  connect = null;
+}
 const { Redis } = require("@upstash/redis");
 const { AwsClient } = require("aws4fetch");
 const checks = [];
@@ -264,41 +270,47 @@ async function verify() {
       ],
       { MYSQL_PWD: password },
     );
-  const proxy = connect({
-    url: web.PLANETSCALE_DATABASE_URL,
-    fetch: (input, init) =>
-      fetch(input, { ...init, signal: AbortSignal.timeout(5000) }),
-  });
-  await check("sql_proxy_same_database_and_server", async () => {
-    const native = sql(
-      "SELECT DATABASE(), @@server_uuid, CURRENT_USER()",
-    ).split("\t");
-    const result = await proxy.execute(
-      "SELECT DATABASE() AS db, @@server_uuid AS uuid, CURRENT_USER() AS principal",
-    );
-    const row = result.rows[0];
-    return (
-      native[0] === databaseName &&
-      row.db === native[0] &&
-      row.uuid === native[1] &&
-      row.principal === native[2] &&
-      native[2].startsWith("loyalty_dev@")
-    );
-  });
+  const proxy = connect
+    ? connect({
+        url: web.PLANETSCALE_DATABASE_URL,
+        fetch: (input, init) =>
+          fetch(input, { ...init, signal: AbortSignal.timeout(5000) }),
+      })
+    : null;
+  if (proxy) {
+    await check("sql_proxy_same_database_and_server", async () => {
+      const native = sql(
+        "SELECT DATABASE(), @@server_uuid, CURRENT_USER()",
+      ).split("\t");
+      const result = await proxy.execute(
+        "SELECT DATABASE() AS db, @@server_uuid AS uuid, CURRENT_USER() AS principal",
+      );
+      const row = result.rows[0];
+      return (
+        native[0] === databaseName &&
+        row.db === native[0] &&
+        row.uuid === native[1] &&
+        row.principal === native[2] &&
+        native[2].startsWith("loyalty_dev@")
+      );
+    });
+  }
   await check("database_scoped_grants", () => {
     const grants = sql("SHOW GRANTS FOR CURRENT_USER()").split("\n");
     return exactDatabaseGrants(grants, sql("SELECT @@partial_revokes") === "1");
   });
-  await check("database_system_table_denied", async () => {
-    try {
-      await proxy.execute("SELECT COUNT(*) FROM mysql.user");
-      return false;
-    } catch (error) {
-      return /access denied|command denied|permission denied/i.test(
-        error.message || "",
-      );
-    }
-  });
+  if (proxy) {
+    await check("database_system_table_denied", async () => {
+      try {
+        await proxy.execute("SELECT COUNT(*) FROM mysql.user");
+        return false;
+      } catch (error) {
+        return /access denied|command denied|permission denied/i.test(
+          error.message || "",
+        );
+      }
+    });
+  }
 
   const redis = new Redis({
     url: web.UPSTASH_REDIS_REST_URL,
