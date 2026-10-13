@@ -62,20 +62,32 @@ export async function enqueueTierReviewSweepJobs({
     programFailures: [],
   };
 
-  const programs = await prisma.weleticLoyaltyProgram.findMany({
-    where: {
-      status: "active",
-      killSwitchActive: false,
-      vipAutoDowngradeEnabled: true,
-      tiers: { some: {} },
-      store: { complianceState: "active" },
-    },
-    select: {
-      storeId: true,
-      vipTimeframe: true,
-    },
-    orderBy: { storeId: "asc" },
-  });
+  let programs: Array<{ storeId: string; vipTimeframe: string | null }> = [];
+  try {
+    if (!prisma.weleticLoyaltyProgram?.findMany) {
+      return result;
+    }
+    programs = await prisma.weleticLoyaltyProgram.findMany({
+      where: {
+        status: "active",
+        killSwitchActive: false,
+        vipAutoDowngradeEnabled: true,
+        tiers: { some: {} },
+        store: { complianceState: "active" },
+      },
+      select: {
+        storeId: true,
+        vipTimeframe: true,
+      },
+      orderBy: { storeId: "asc" },
+    });
+  } catch (err) {
+    console.warn(
+      "[TierReviewSweep] Failed to query active loyalty programs:",
+      err,
+    );
+    return result;
+  }
 
   let remaining = effectiveBatchSize;
   for (const program of programs) {

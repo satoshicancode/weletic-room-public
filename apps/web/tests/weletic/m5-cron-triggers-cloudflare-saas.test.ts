@@ -17,6 +17,7 @@ import * as outboxModule from "../../lib/weletic/loyalty/outbox";
 import * as pointsExpirySchedulerModule from "../../lib/weletic/loyalty/points-expiry-scheduler";
 import * as rewardExpirySchedulerModule from "../../lib/weletic/loyalty/reward-expiry-scheduler";
 import * as storeCreditReconciliationModule from "../../lib/weletic/loyalty/store-credit-reconciliation";
+import * as tierReviewSchedulingModule from "../../lib/weletic/loyalty/tier-review-scheduling";
 import * as catalogSyncModule from "../../lib/weletic/shopify/catalog-sync";
 import * as ordersPaidRecoveryModule from "../../lib/weletic/shopify/orders-paid-recovery";
 import * as sessionRenewalModule from "../../lib/weletic/shopify/session-renewal";
@@ -50,6 +51,12 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
     const mockAccountDelegate = {
       findMany: vi.fn().mockResolvedValue([]),
     };
+    const mockProgramDelegate = {
+      findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockResolvedValue(null),
+      count: vi.fn().mockResolvedValue(0),
+    };
 
     Object.defineProperty(prisma, "weleticShopifyStore", {
       value: mockStoreDelegate,
@@ -59,6 +66,12 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
 
     Object.defineProperty(prisma, "weleticLoyaltyAccount", {
       value: mockAccountDelegate,
+      writable: true,
+      configurable: true,
+    });
+
+    Object.defineProperty(prisma, "weleticLoyaltyProgram", {
+      value: mockProgramDelegate,
       writable: true,
       configurable: true,
     });
@@ -522,6 +535,15 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       const sessionRenewalSpy = vi
         .spyOn(sessionRenewalModule, "listDueShopifySessionRenewals")
         .mockResolvedValue({ jobs: [], nextCursor: null });
+      const tierReviewSpy = vi
+        .spyOn(tierReviewSchedulingModule, "enqueueTierReviewSweepJobs")
+        .mockResolvedValue({
+          programsScanned: 0,
+          programsSkipped: 0,
+          accountsEvaluated: 0,
+          jobsEnqueued: 0,
+          programFailures: [],
+        });
 
       const envWithKey: CronWorkerEnv = {
         SHOPIFY_API_KEY: "shopify_app_client_id_test",
@@ -535,6 +557,7 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       expect(pointsExpirySpy).toHaveBeenCalled();
       expect(rewardExpirySpy).toHaveBeenCalled();
       expect(sessionRenewalSpy).toHaveBeenCalled();
+      expect(tierReviewSpy).toHaveBeenCalled();
 
       expect(report.cron).toBe(CRON_SCHEDULE_HOURLY);
       expect(report.jobs).toHaveLength(3);

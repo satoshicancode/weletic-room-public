@@ -360,7 +360,16 @@ export async function loyaltyPointsExpirationJob(env: CronWorkerEnv): Promise<{
   const [pointsResult, rewardResult] = await Promise.all([
     enqueuePointsExpiryLifecycleJobs({ batchSize: 50 }),
     enqueueRewardExpiryReminderJobs({ batchSize: 50 }),
-    enqueueTierReviewSweepJobs({ batchSize: 50 }),
+    enqueueTierReviewSweepJobs({ batchSize: 50 }).catch((err) => {
+      console.warn("[CronJob] Tier review sweep error:", err);
+      return {
+        programsScanned: 0,
+        programsSkipped: 0,
+        accountsEvaluated: 0,
+        jobsEnqueued: 0,
+        programFailures: [],
+      };
+    }),
   ]);
 
   return {
