@@ -12,5 +12,5 @@ export const POST = withWorkspace(
     });
     return NextResponse.json(result, { status: 202 });
   },
-  { requiredRoles: ["owner"] },
+  { requiredPermissions: ["integrations.write"], requiredRoles: ["owner"] },
 );

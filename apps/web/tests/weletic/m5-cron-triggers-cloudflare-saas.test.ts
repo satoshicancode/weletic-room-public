@@ -29,6 +29,7 @@ import worker, {
   executeIsolatedJob,
   handleHttpTrigger,
   loyaltyPointsExpirationJob,
+  processLoyaltyOutboxJob,
   recoverStalledWebhooksJob,
   scheduledHandler,
   syncMultiTenantCatalogJob,
@@ -962,6 +963,47 @@ describe("Milestone 5 (R5): Cloudflare Cron Triggers & Cloudflare for SaaS Custo
       expect(enqueuedMessages[0].webhookId).toBe("wh_shopify_stalled_1");
       expect(executedUpdates).toHaveLength(1);
       expect(executedUpdates[0]).toEqual(["row_stalled_1"]);
+    });
+
+    it("processLoyaltyOutboxJob D1 fast-check includes pending, retryable failed, and processing jobs", async () => {
+      let capturedQuery = "";
+      let capturedBindings: unknown[] = [];
+      let simulatedCount = 0;
+
+      const mockD1: any = {
+        prepare(query: string) {
+          capturedQuery = query;
+          return {
+            bind(...args: unknown[]) {
+              capturedBindings = args;
+              return {
+                async first() {
+                  return { count: simulatedCount };
+                },
+              };
+            },
+          };
+        },
+      };
+
+      const outboxSpy = vi
+        .spyOn(outboxModule, "processOutboxJobsBatch")
+        .mockResolvedValue({ processed: 3 } as any);
+
+      // Case 1: 0 eligible jobs -> skips processOutboxJobsBatch
+      const emptyRes = await processLoyaltyOutboxJob({ DB: mockD1 });
+      expect(emptyRes.processed).toBe(0);
+      expect(outboxSpy).not.toHaveBeenCalled();
+      expect(capturedQuery).toContain("status IN ('pending', 'failed')");
+      expect(capturedQuery).toContain("nextRetryAt IS NULL");
+      expect(capturedQuery).toContain("OR status = 'processing'");
+      expect(capturedBindings).toHaveLength(4);
+
+      // Case 2: 1 retryable failed or processing job -> invokes processOutboxJobsBatch
+      simulatedCount = 1;
+      const activeRes = await processLoyaltyOutboxJob({ DB: mockD1 });
+      expect(activeRes.processed).toBe(3);
+      expect(outboxSpy).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -926,4 +926,67 @@ describe("Shopify Canonical Store Resolver & Multi-Domain Alias Suite", () => {
     expect(mockFetch).not.toHaveBeenCalled();
     invalidateShopifyStoreDomainCache([domain]);
   });
+
+  it("1.14: resolves store when $queryRaw returns InstalledIntegration.credentials as a raw JSON string (SQLite / Cloudflare D1)", async () => {
+    const domain = "sqlite-raw-json-shop.myshopify.com";
+    const rawCredentialsJson = JSON.stringify({
+      shop: domain,
+      scope: "read_products,write_discounts",
+      accessToken: encryptedToken,
+      shopVerifiedAt: "2026-08-30T00:00:00.000Z",
+      shopVerificationTokenHash:
+        shopifyCredentialVerificationHash(testAccessToken),
+      installationGeneration: "sgen_d1",
+    });
+
+    (prisma.weleticShopifyStore.findUnique as any).mockResolvedValue({
+      id: "wstore_sqlite_d1",
+      projectId: workspaceId,
+      shopDomain: domain,
+      complianceState: "active",
+      installationGeneration: "sgen_d1",
+    } as any);
+    (prisma.project.findUnique as any).mockResolvedValue({
+      id: workspaceId,
+      shopifyStoreId: domain,
+      defaultProgramId: programId,
+      installedIntegrations: [
+        {
+          id: "integration_sqlite_d1",
+          credentials: JSON.parse(rawCredentialsJson),
+          updatedAt: new Date("2026-08-28T00:00:00.000Z"),
+        },
+      ],
+      weleticShopifyStore: {
+        id: "wstore_sqlite_d1",
+        shopDomain: domain,
+        installationGeneration: "sgen_d1",
+      },
+    } as any);
+    (prisma.$queryRaw as any).mockImplementation(async (query: any) => {
+      if (query.strings.join("").includes("FROM InstalledIntegration")) {
+        return [
+          {
+            id: "integration_sqlite_d1",
+            projectId: workspaceId,
+            credentials: rawCredentialsJson,
+          },
+        ];
+      }
+      return [
+        {
+          id: "wstore_sqlite_d1",
+          projectId: workspaceId,
+          shopDomain: domain,
+          complianceState: "active",
+          installationGeneration: "sgen_d1",
+        },
+      ] as any;
+    });
+
+    const resolved = await resolveShopifyStoreByDomain(domain);
+    expect(resolved).not.toBeNull();
+    expect(resolved?.accessToken).toBe(testAccessToken);
+    expect(resolved?.myshopifyDomain).toBe(domain);
+  });
 });

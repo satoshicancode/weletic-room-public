@@ -7,21 +7,28 @@ import { createWeleticCommissionRuleSchema } from "@/lib/zod/schemas/weletic-com
 import { nanoid } from "@dub/utils";
 import { NextResponse } from "next/server";
 
-export const GET = withWorkspace(async ({ workspace }) => {
-  const programId = getDefaultProgramIdOrThrow(workspace);
-  const rules = await prisma.weleticCommissionRule.findMany({
-    where: { programId },
-    orderBy: [{ active: "desc" }, { priority: "desc" }, { createdAt: "desc" }],
-  });
-  return NextResponse.json(
-    rules.map((rule) => ({
-      ...rule,
-      fixedAmount: rule.fixedAmount?.toString() ?? null,
-      minOrderAmount: rule.minOrderAmount?.toString() ?? null,
-      maxCommissionAmount: rule.maxCommissionAmount?.toString() ?? null,
-    })),
-  );
-});
+export const GET = withWorkspace(
+  async ({ workspace }) => {
+    const programId = getDefaultProgramIdOrThrow(workspace);
+    const rules = await prisma.weleticCommissionRule.findMany({
+      where: { programId },
+      orderBy: [
+        { active: "desc" },
+        { priority: "desc" },
+        { createdAt: "desc" },
+      ],
+    });
+    return NextResponse.json(
+      rules.map((rule) => ({
+        ...rule,
+        fixedAmount: rule.fixedAmount?.toString() ?? null,
+        minOrderAmount: rule.minOrderAmount?.toString() ?? null,
+        maxCommissionAmount: rule.maxCommissionAmount?.toString() ?? null,
+      })),
+    );
+  },
+  { requiredPermissions: ["integrations.read"] },
+);
 
 export const POST = withWorkspace(
   async ({ workspace, req, session }) => {
@@ -117,5 +124,5 @@ export const POST = withWorkspace(
       { status: 201 },
     );
   },
-  { requiredRoles: ["owner"] },
+  { requiredPermissions: ["integrations.write"], requiredRoles: ["owner"] },
 );

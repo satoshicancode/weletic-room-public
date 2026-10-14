@@ -21,4 +21,5 @@ database_id = "weletic-d1-prod"
 
 [alias]
 "server-only" = "../empty.ts"
+"sharp" = "../empty.ts"
 

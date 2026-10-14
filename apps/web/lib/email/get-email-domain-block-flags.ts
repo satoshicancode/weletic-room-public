@@ -14,6 +14,13 @@ type EmailDomainBlockFlags = {
 export async function getEmailDomainBlockFlags(
   email: string,
 ): Promise<EmailDomainBlockFlags> {
+  if (process.env.PLAYWRIGHT_TEST === "1") {
+    return {
+      isDisposable: false,
+      matchesBlockedTerms: false,
+    };
+  }
+
   const emailDomain = extractEmailDomain(email);
   if (!emailDomain) {
     return {

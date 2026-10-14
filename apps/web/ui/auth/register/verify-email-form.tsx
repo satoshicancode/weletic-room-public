@@ -41,9 +41,13 @@ export const VerifyEmailForm = () => {
       });
 
       if (response?.ok) {
-        router.push(
-          `/onboarding${next ? `?next=${encodeURIComponent(next)}` : ""}`,
-        );
+        const dest = `/onboarding${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+        router.push(dest);
+        setTimeout(() => {
+          if (!window.location.pathname.startsWith("/onboarding")) {
+            window.location.href = dest;
+          }
+        }, 1000);
       } else {
         isSubmittingRef.current = false;
         setIsRedirecting(false);
@@ -60,19 +64,25 @@ export const VerifyEmailForm = () => {
     },
   });
 
-  const submitVerification = useCallback(() => {
-    if (
-      isSubmittingRef.current ||
-      isPending ||
-      isRedirecting ||
-      code.length < 6
-    ) {
-      return;
-    }
+  const submitVerification = useCallback(
+    (completedCode?: string) => {
+      const codeToSubmit = (
+        typeof completedCode === "string" ? completedCode : code
+      ).trim();
+      if (
+        isSubmittingRef.current ||
+        isPending ||
+        isRedirecting ||
+        codeToSubmit.length < 6
+      ) {
+        return;
+      }
 
-    isSubmittingRef.current = true;
-    executeAsync({ email, password, code });
-  }, [code, email, password, executeAsync, isPending, isRedirecting]);
+      isSubmittingRef.current = true;
+      executeAsync({ email, password, code: codeToSubmit });
+    },
+    [code, email, password, executeAsync, isPending, isRedirecting],
+  );
 
   if (!email || !password) {
     router.push("/register");

@@ -33,6 +33,7 @@ test("sign up and verify new partner", async ({ page }) => {
 
   // The OTP input auto-focuses on desktop — type the digits directly
   await page.keyboard.type(otp);
+  await page.getByRole("button", { name: "Continue" }).click();
 
   // Step 4: Wait for redirect to onboarding after auto-submit
   // CI is slower; use domcontentloaded so we don't wait for full page load (images, etc.)

@@ -121,6 +121,7 @@ test.describe("Shopify reward persisted lifecycle", () => {
     await expect
       .poll(async () => (await persistedActivation())?.published)
       .toBe(false);
+    await expect(page.getByTestId("save-shopify-reward")).toBeHidden();
 
     await page.goto(`${rewardsPath}?rewardId=shopify`);
     await expect(
@@ -136,6 +137,7 @@ test.describe("Shopify reward persisted lifecycle", () => {
         return activation?.published && activation.startsAt !== null;
       })
       .toBe(true);
+    await expect(page.getByTestId("save-shopify-reward")).toBeHidden();
 
     await page.goto(`${rewardsPath}?rewardId=shopify`);
     await expect(
@@ -148,6 +150,7 @@ test.describe("Shopify reward persisted lifecycle", () => {
       startsAt: null,
       endsAt: null,
     });
+    await expect(page.getByTestId("save-shopify-reward")).toBeHidden();
 
     await removeTestRewardThroughUi(page);
     await expect.poll(persistedActivation).toBeNull();

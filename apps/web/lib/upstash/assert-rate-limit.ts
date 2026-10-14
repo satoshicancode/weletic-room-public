@@ -32,7 +32,7 @@ export async function assertRateLimit({
   policy: RatelimitPolicy;
   identifier: string | string[]; // dynamic part(s) of the key, e.g. email or [email, ip]
 }) {
-  if (!shouldApplyRateLimit) {
+  if (process.env.PLAYWRIGHT_TEST === "1" || !shouldApplyRateLimit) {
     return;
   }
 

@@ -66,14 +66,14 @@ export async function readMerchantPointActivitySeries({
     Array<{
       day: string;
       entryType: WeleticPointsLedgerEntryType;
-      positive: Prisma.Decimal;
-      negative: Prisma.Decimal;
+      positive: string | number | bigint | Prisma.Decimal;
+      negative: string | number | bigint | Prisma.Decimal;
     }>
   >`
     SELECT DATE_FORMAT(createdAt, '%Y-%m-%d') AS day,
            entryType,
-           SUM(CASE WHEN pointsDelta > 0 THEN CAST(pointsDelta AS DECIMAL(65, 0)) ELSE 0 END) AS positive,
-           SUM(CASE WHEN pointsDelta < 0 THEN -CAST(pointsDelta AS DECIMAL(65, 0)) ELSE 0 END) AS negative
+           CAST(COALESCE(SUM(CASE WHEN pointsDelta > 0 THEN CAST(pointsDelta AS DECIMAL(65, 0)) ELSE 0 END), 0) AS CHAR) AS positive,
+           CAST(COALESCE(SUM(CASE WHEN pointsDelta < 0 THEN -CAST(pointsDelta AS DECIMAL(65, 0)) ELSE 0 END), 0) AS CHAR) AS negative
     FROM WeleticPointsLedgerEntry
     WHERE storeId = ${storeId} AND createdAt >= ${startAt} AND createdAt <= ${endAt}
     GROUP BY DATE_FORMAT(createdAt, '%Y-%m-%d'), entryType
@@ -85,12 +85,23 @@ export async function readMerchantPointActivitySeries({
       new Date(startDay + index * DAY_MS).toISOString().slice(0, 10),
       emptyValues(),
     );
+  const coerceBigInt = (
+    val: string | number | bigint | Prisma.Decimal | null | undefined,
+  ): bigint => {
+    if (val === null || val === undefined) return BigInt(0);
+    if (typeof val === "bigint") return val;
+    if (typeof val === "number") return BigInt(Math.trunc(val));
+    if (typeof val === "string") return BigInt(val.split(".")[0] || "0");
+    if (typeof (val as any).toFixed === "function")
+      return BigInt((val as any).toFixed(0));
+    return BigInt(String(val).split(".")[0] || "0");
+  };
   for (const row of grouped) {
     const bucket = byDay.get(row.day);
     if (!bucket)
       throw new Error("Ledger activity escaped the authorized range");
-    const positive = BigInt(row.positive.toFixed(0));
-    const negative = BigInt(row.negative.toFixed(0));
+    const positive = coerceBigInt(row.positive);
+    const negative = coerceBigInt(row.negative);
     const type = row.entryType;
     if (LEDGER_ANALYTICS_CLASSIFICATIONS.earned.has(type))
       bucket.earned += positive;

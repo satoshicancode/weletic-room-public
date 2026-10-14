@@ -27,7 +27,7 @@ const CLOCK_RE =
   /\b(?:CURRENT_TIMESTAMP|UTC_TIMESTAMP)(?:\s*\(\s*\d*\s*\))?|\bNOW\s*\(\s*\d*\s*\)|__CLOCK_OFFSET_(MINUS|PLUS)_(\d+)__/gi;
 const DDL_RE = /^\s*(?:CREATE|ALTER|DROP|PRAGMA)\b/i;
 const MYSQL_CONSTRUCTS_RE =
-  /\bNOW\s*\(\s*\d*\s*\)|\b(?:FOR\s+UPDATE|CURRENT_TIMESTAMP|UTC_TIMESTAMP|DATE_FORMAT|DATE_SUB|TIMESTAMPADD|CONVERT_TZ|__CLOCK_OFFSET_|BINARY|JSON_CONTAINS_PATH|JSON_UNQUOTE|JSON_ARRAYAGG|JSON_TYPE|FORCE\s+INDEX|STRAIGHT_JOIN|CHAR_LENGTH|REGEXP|STR_TO_DATE|LEAST)\b/i;
+  /\bNOW\s*\(\s*\d*\s*\)|\b(?:FOR\s+UPDATE|CURRENT_TIMESTAMP|UTC_TIMESTAMP|DATE_FORMAT|DATE_SUB|TIMESTAMPADD|CONVERT_TZ|__CLOCK_OFFSET_|BINARY|JSON_CONTAINS_PATH|JSON_UNQUOTE|JSON_ARRAYAGG|JSON_LENGTH|JSON_TYPE|FORCE\s+INDEX|STRAIGHT_JOIN|CHAR_LENGTH|REGEXP|STR_TO_DATE|LEAST|GROUP_CONCAT)\b|<=>/i;
 
 // Stateless (non-global) variants for detection: global regexes keep
 // `lastIndex` between `.test()` calls.
@@ -36,6 +36,202 @@ const HAS_CLOCK_RE = new RegExp(CLOCK_RE.source, "i");
 const HAS_MYSQL_RE = new RegExp(MYSQL_CONSTRUCTS_RE.source, "i");
 const CLOCK_ONLY_RE =
   /^\s*SELECT\s+(?:(?:CURRENT_TIMESTAMP|UTC_TIMESTAMP)(?:\s*\(\s*\d*\s*\))?|NOW\s*\(\s*\d*\s*\))\s+AS\s+([A-Za-z_][A-Za-z0-9_]*)\s*;?\s*$/i;
+
+interface Span {
+  start: number;
+  end: number;
+  type: "string" | "comment";
+}
+
+function getLiteralAndCommentSpans(sql: string): Span[] {
+  const spans: Span[] = [];
+  let i = 0;
+  const len = sql.length;
+
+  while (i < len) {
+    const ch = sql[i];
+
+    // Single-quote string literal
+    if (ch === "'") {
+      const start = i;
+      i++;
+      while (i < len) {
+        if (sql[i] === "'") {
+          if (sql[i + 1] === "'") {
+            i += 2;
+          } else if (sql[i - 1] === "\\") {
+            i++;
+          } else {
+            i++;
+            break;
+          }
+        } else {
+          i++;
+        }
+      }
+      spans.push({ start, end: i, type: "string" });
+      continue;
+    }
+
+    // Double-quote string literal / identifier
+    if (ch === '"') {
+      const start = i;
+      i++;
+      while (i < len) {
+        if (sql[i] === '"') {
+          if (sql[i + 1] === '"') {
+            i += 2;
+          } else if (sql[i - 1] === "\\") {
+            i++;
+          } else {
+            i++;
+            break;
+          }
+        } else {
+          i++;
+        }
+      }
+      spans.push({ start, end: i, type: "string" });
+      continue;
+    }
+
+    // Block comment: /* ... */
+    if (ch === "/" && sql[i + 1] === "*") {
+      const start = i;
+      i += 2;
+      while (i < len) {
+        if (sql[i] === "*" && sql[i + 1] === "/") {
+          i += 2;
+          break;
+        }
+        i++;
+      }
+      spans.push({ start, end: i, type: "comment" });
+      continue;
+    }
+
+    // Line comment: -- or #
+    if ((ch === "-" && sql[i + 1] === "-") || ch === "#") {
+      const start = i;
+      while (i < len && sql[i] !== "\n") {
+        i++;
+      }
+      spans.push({ start, end: i, type: "comment" });
+      continue;
+    }
+
+    i++;
+  }
+
+  return spans;
+}
+
+function isInsideSpan(spans: Span[], index: number): boolean {
+  let low = 0;
+  let high = spans.length - 1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const span = spans[mid];
+    if (index < span.start) {
+      high = mid - 1;
+    } else if (index >= span.end) {
+      low = mid + 1;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
+function replaceOutsideSpans(
+  sql: string,
+  regex: RegExp,
+  replacement: string | ((match: string, ...args: any[]) => string),
+): string {
+  const spans = getLiteralAndCommentSpans(sql);
+  if (spans.length === 0) {
+    return sql.replace(regex, replacement as any);
+  }
+
+  const flags = regex.flags.includes("g") ? regex.flags : regex.flags + "g";
+  const re = new RegExp(regex.source, flags);
+
+  let result = "";
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = re.exec(sql)) !== null) {
+    const matchStart = match.index;
+    const matchEnd = match.index + match[0].length;
+
+    if (isInsideSpan(spans, matchStart)) {
+      if (match[0].length === 0) {
+        re.lastIndex++;
+      }
+      continue;
+    }
+
+    result += sql.slice(lastIndex, matchStart);
+    if (typeof replacement === "function") {
+      result += replacement(match[0], ...match.slice(1));
+    } else {
+      result += replacement.replace(/\$(\$|&|`|'|\d+)/g, (_m, ref) => {
+        if (ref === "$") return "$";
+        if (ref === "&") return match![0];
+        const num = parseInt(ref, 10);
+        if (!isNaN(num) && num > 0 && num < match!.length) {
+          return match![num] ?? "";
+        }
+        return _m;
+      });
+    }
+    lastIndex = matchEnd;
+    if (match[0].length === 0) {
+      re.lastIndex++;
+    }
+  }
+
+  result += sql.slice(lastIndex);
+  return result;
+}
+
+function mapDateFormatSpecifiers(fmt: string): string {
+  if (fmt === "?") return fmt;
+  return fmt.replace(/%i/g, "%M").replace(/%s/g, "%S");
+}
+
+function splitTopLevelCommas(exprStr: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let depth = 0;
+  let inQuote: "'" | '"' | null = null;
+
+  for (let i = 0; i < exprStr.length; i++) {
+    const ch = exprStr[i];
+    if (inQuote) {
+      if (ch === inQuote) {
+        if (exprStr[i + 1] === inQuote) {
+          i++;
+        } else if (exprStr[i - 1] !== "\\") {
+          inQuote = null;
+        }
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      inQuote = ch;
+    } else if (ch === "(") {
+      depth++;
+    } else if (ch === ")") {
+      depth--;
+    } else if (ch === "," && depth === 0) {
+      parts.push(exprStr.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(exprStr.slice(start).trim());
+  return parts.filter((p) => p.length > 0);
+}
 
 export function isDdl(sql: string): boolean {
   return DDL_RE.test(sql);
@@ -47,7 +243,17 @@ export function matchClockOnlyQuery(sql: string): string | null {
 }
 
 export function stripForUpdate(sql: string): string {
-  return sql.replace(FOR_UPDATE_RE, "");
+  return replaceOutsideSpans(sql, FOR_UPDATE_RE, "");
+}
+
+/**
+ * Interface contract specified by PROJECT.md line 49:
+ * Safely rewrites MySQL-specific constructs (<=> -> IS, GROUP_CONCAT, DATE_FORMAT, LEAST, NOW, FORCE INDEX)
+ * without altering parameterized query placeholders ? or string literals.
+ */
+export function translateSqlToSqlite(sql: string): string {
+  if (isDdl(sql)) return sql;
+  return rewriteConstructs(stripForUpdate(sql));
 }
 
 function rewriteNotRegexp(text: string): string {
@@ -56,10 +262,15 @@ function rewriteNotRegexp(text: string): string {
   let match: RegExpExecArray | null;
   let result = "";
   let lastIndex = 0;
+  const spans = getLiteralAndCommentSpans(text);
 
   while ((match = notRegexpPattern.exec(text)) !== null) {
     const matchStart = match.index;
     const matchEnd = match.index + match[0].length;
+
+    if (isInsideSpan(spans, matchStart)) {
+      continue;
+    }
 
     let exprEnd = matchStart;
     while (exprEnd > lastIndex && /\s/.test(text[exprEnd - 1])) {
@@ -105,9 +316,13 @@ function rewriteJsonUnquote(text: string): string {
   let match: RegExpExecArray | null;
   let result = "";
   let lastIndex = 0;
+  const spans = getLiteralAndCommentSpans(text);
 
   while ((match = jsonUnquoteRe.exec(text)) !== null) {
     const start = match.index;
+    if (isInsideSpan(spans, start)) {
+      continue;
+    }
     const openParen = start + match[0].length - 1;
     let depth = 1;
     let closeParen = -1;
@@ -150,9 +365,13 @@ function rewriteJsonType(text: string): string {
   let match: RegExpExecArray | null;
   let result = "";
   let lastIndex = 0;
+  const spans = getLiteralAndCommentSpans(text);
 
   while ((match = jsonTypeRe.exec(text)) !== null) {
     const start = match.index;
+    if (isInsideSpan(spans, start)) {
+      continue;
+    }
     const openParen = start + match[0].length - 1;
     let depth = 1;
     let closeParen = -1;
@@ -251,17 +470,37 @@ function rewriteLeast(text: string): string {
   let match: RegExpExecArray | null;
   let result = "";
   let lastIndex = 0;
+  const spans = getLiteralAndCommentSpans(text);
 
   while ((match = leastRe.exec(text)) !== null) {
     const start = match.index;
+    if (isInsideSpan(spans, start)) {
+      continue;
+    }
     const openParen = start + match[0].length - 1;
     let depth = 1;
     let closeParen = -1;
     const commaIndices: number[] = [];
 
+    let inQuote: "'" | '"' | null = null;
     for (let i = openParen + 1; i < text.length; i++) {
-      if (text[i] === "(") depth++;
-      else if (text[i] === ")") {
+      const ch = text[i];
+      if (inQuote) {
+        if (ch === inQuote) {
+          if (text[i + 1] === inQuote) {
+            i++;
+          } else if (text[i - 1] !== "\\") {
+            inQuote = null;
+          }
+        }
+        continue;
+      }
+
+      if (ch === "'" || ch === '"') {
+        inQuote = ch;
+      } else if (ch === "(") {
+        depth++;
+      } else if (ch === ")") {
         depth--;
         if (depth === 0) {
           closeParen = i;
@@ -273,6 +512,9 @@ function rewriteLeast(text: string): string {
     }
 
     if (closeParen === -1 || commaIndices.length === 0) {
+      result += text.slice(lastIndex, start) + "MIN(";
+      lastIndex = openParen + 1;
+      leastRe.lastIndex = lastIndex;
       continue;
     }
 
@@ -311,6 +553,98 @@ function rewriteLeast(text: string): string {
   return result;
 }
 
+function rewriteGroupConcat(text: string): string {
+  const groupConcatRe = /\bGROUP_CONCAT\s*\(/gi;
+  let match: RegExpExecArray | null;
+  let result = "";
+  let lastIndex = 0;
+  const spans = getLiteralAndCommentSpans(text);
+
+  while ((match = groupConcatRe.exec(text)) !== null) {
+    const start = match.index;
+    if (isInsideSpan(spans, start)) {
+      continue;
+    }
+    const openParen = start + match[0].length - 1;
+    let depth = 1;
+    let closeParen = -1;
+
+    let inQuote: "'" | '"' | null = null;
+    for (let i = openParen + 1; i < text.length; i++) {
+      const ch = text[i];
+      if (inQuote) {
+        if (ch === inQuote) {
+          if (text[i + 1] === inQuote) {
+            i++;
+          } else if (text[i - 1] !== "\\") {
+            inQuote = null;
+          }
+        }
+        continue;
+      }
+      if (ch === "'" || ch === '"') {
+        inQuote = ch;
+      } else if (ch === "(") {
+        depth++;
+      } else if (ch === ")") {
+        depth--;
+        if (depth === 0) {
+          closeParen = i;
+          break;
+        }
+      }
+    }
+
+    if (closeParen === -1) {
+      continue;
+    }
+
+    let inside = text.slice(openParen + 1, closeParen).trim();
+    let hasDistinct = false;
+    if (/^DISTINCT\s+/i.test(inside)) {
+      hasDistinct = true;
+      inside = inside.replace(/^DISTINCT\s+/i, "");
+    }
+
+    let separator: string | null = null;
+    const sepMatch = inside.match(/\s+SEPARATOR\s+(['"].*?['"]|[^,\s\)]+)/i);
+    if (sepMatch) {
+      separator = sepMatch[1];
+      inside = inside.slice(0, sepMatch.index);
+    }
+
+    // Strip ORDER BY ... clause inside GROUP_CONCAT
+    const orderMatch = inside.match(/\s+ORDER\s+BY\s+[\s\S]*$/i);
+    if (orderMatch) {
+      inside = inside.slice(0, orderMatch.index);
+    }
+
+    // Split multi-column expressions by top-level commas outside quotes/parentheses
+    const parts = splitTopLevelCommas(inside.trim());
+    const expr = parts.length > 1 ? parts.join(" || ") : parts[0];
+
+    let replacement = "";
+    if (hasDistinct) {
+      if (separator && separator !== "','") {
+        replacement = `replace(group_concat(DISTINCT ${expr}), ',', ${separator})`;
+      } else {
+        replacement = `group_concat(DISTINCT ${expr})`;
+      }
+    } else if (separator && separator !== "','") {
+      replacement = `group_concat(${expr}, ${separator})`;
+    } else {
+      replacement = `group_concat(${expr})`;
+    }
+
+    result += text.slice(lastIndex, start) + replacement;
+    lastIndex = closeParen + 1;
+    groupConcatRe.lastIndex = lastIndex;
+  }
+
+  result += text.slice(lastIndex);
+  return result;
+}
+
 /**
  * Rewrites MySQL date/time manipulation functions into SQLite equivalents.
  */
@@ -318,7 +652,8 @@ export function rewriteConstructs(text: string): string {
   let res = text;
 
   // 1. DATE_SUB with CURRENT_TIMESTAMP / UTC_TIMESTAMP / NOW() and INTERVAL
-  res = res.replace(
+  res = replaceOutsideSpans(
+    res,
     /DATE_SUB\s*\(\s*(?:(?:CURRENT_TIMESTAMP|UTC_TIMESTAMP)(?:\s*\(\s*\d*\s*\))?|NOW\s*\(\s*\d*\s*\))\s*,\s*INTERVAL\s+(\d+)\s+([A-Za-z]+)\s*\)/gi,
     (_m, num, unit) => {
       const n = parseInt(num, 10);
@@ -333,7 +668,8 @@ export function rewriteConstructs(text: string): string {
   );
 
   // 2. TIMESTAMPADD with literal number interval and CURRENT_TIMESTAMP / UTC_TIMESTAMP / NOW()
-  res = res.replace(
+  res = replaceOutsideSpans(
+    res,
     /TIMESTAMPADD\s*\(\s*(SECOND|MICROSECOND|MINUTE|HOUR|DAY)\s*,\s*(-?\d+)\s*,\s*(?:(?:CURRENT_TIMESTAMP|UTC_TIMESTAMP)(?:\s*\(\s*\d*\s*\))?|NOW\s*\(\s*\d*\s*\))\s*\)/gi,
     (_m, unit, num) => {
       const n = parseInt(num, 10);
@@ -352,32 +688,46 @@ export function rewriteConstructs(text: string): string {
   );
 
   // 3. DATE_FORMAT(CONVERT_TZ(col, tz1, tz2), fmt)
-  res = res.replace(
+  res = replaceOutsideSpans(
+    res,
     /DATE_FORMAT\s*\(\s*CONVERT_TZ\s*\(\s*([^,]+?)\s*,\s*(?:'[^']+'|"[^"]+"|\?)\s*,\s*(\?|'[^']+'|"[^"]+")\s*\)\s*,\s*(\?|'[^']+'|"[^"]+")\s*\)/gi,
     (_m, col, tz, fmt) => {
-      if (tz === "?" && fmt === "?") {
+      const mappedFmt = mapDateFormatSpecifiers(fmt);
+      if (tz === "?" && mappedFmt === "?") {
         return `CASE WHEN ? IS NOT NULL THEN strftime(?, CASE WHEN typeof(${col}) = 'integer' THEN datetime(${col} / 1000, 'unixepoch') ELSE ${col} END) ELSE '' END`;
       }
-      return `strftime(${fmt}, CASE WHEN typeof(${col}) = 'integer' THEN datetime(${col} / 1000, 'unixepoch') ELSE ${col} END)`;
+      return `strftime(${mappedFmt}, CASE WHEN typeof(${col}) = 'integer' THEN datetime(${col} / 1000, 'unixepoch') ELSE ${col} END)`;
     },
   );
 
   // 4. DATE_FORMAT(col, fmt)
-  res = res.replace(
-    /DATE_FORMAT\s*\(\s*([^,]+?)\s*,\s*(\?|'[^']+'|"[^"]+")\s*\)/gi,
-    "strftime($2, CASE WHEN typeof($1) = 'integer' THEN datetime($1 / 1000, 'unixepoch') ELSE $1 END)",
+  res = replaceOutsideSpans(
+    res,
+    /DATE_FORMAT\s*\(\s*([^,?]+?)\s*,\s*(\?|'[^']+'|"[^"]+")\s*\)/gi,
+    (_m, col, fmt) => {
+      const mappedFmt = mapDateFormatSpecifiers(fmt);
+      return `strftime(${mappedFmt}, CASE WHEN typeof(${col}) = 'integer' THEN datetime(${col} / 1000, 'unixepoch') ELSE ${col} END)`;
+    },
+  );
+  res = replaceOutsideSpans(
+    res,
+    /DATE_FORMAT\s*\(\s*\?\s*,\s*(\?|'[^']+'|"[^"]+")\s*\)/gi,
+    (_m, fmt) => `strftime(${mapDateFormatSpecifiers(fmt)}, ?)`,
   );
 
   // 5. STR_TO_DATE(CONCAT(col, '-01'), '%Y-%m-%d')
-  res = res.replace(
+  res = replaceOutsideSpans(
+    res,
     /STR_TO_DATE\s*\(\s*CONCAT\s*\(\s*([^,]+?)\s*,\s*['"]-01['"]\s*\)\s*,\s*['"]%Y-%m-%d['"]\s*\)/gi,
-    "($1 || '-01T00:00:00.000Z')",
+    (_m, col) => `(${col} || '-01T00:00:00.000Z')`,
   );
 
   // 6. Static JSON_CONTAINS_PATH(col, 'one'|'all', path)
-  res = res.replace(
+  res = replaceOutsideSpans(
+    res,
     /JSON_CONTAINS_PATH\s*\(\s*([^,]+?)\s*,\s*['"](?:one|all)['"]\s*,\s*([^)]+?)\s*\)/gi,
-    "(CASE WHEN json_type($1, $2) IS NOT NULL THEN 1 ELSE 0 END)",
+    (_m, col, path) =>
+      `(CASE WHEN json_type(${col}, ${path}) IS NOT NULL THEN 1 ELSE 0 END)`,
   );
 
   // 7. Static JSON_UNQUOTE
@@ -393,21 +743,31 @@ export function rewriteConstructs(text: string): string {
   res = rewriteLeast(res);
 
   // 11. CAST(... AS BINARY) and BINARY operator
-  res = res.replace(
+  res = replaceOutsideSpans(
+    res,
     /CAST\s*\(\s*(.+?)\s+AS\s+BINARY(?:\s*\(\s*\d+\s*\))?\s*\)/gi,
-    "CAST($1 AS BLOB)",
+    (_m, col) => `CAST(${col} AS BLOB)`,
   );
-  res = res.replace(/\bBINARY\s+/gi, "");
+  res = replaceOutsideSpans(res, /\bBINARY\s+/gi, "");
 
   // 12. FORCE INDEX (...) and STRAIGHT_JOIN
-  res = res.replace(/\bFORCE\s+INDEX\s*\([^)]*\)/gi, "");
-  res = res.replace(/\bSTRAIGHT_JOIN\b/gi, "JOIN");
+  res = replaceOutsideSpans(res, /\bFORCE\s+INDEX\s*\([^)]*\)/gi, "");
+  res = replaceOutsideSpans(res, /\bSTRAIGHT_JOIN\b/gi, "JOIN");
 
   // 13. CHAR_LENGTH( -> length(
-  res = res.replace(/\bCHAR_LENGTH\s*\(/gi, "length(");
+  res = replaceOutsideSpans(res, /\bCHAR_LENGTH\s*\(/gi, "length(");
 
   // 14. JSON_ARRAYAGG( -> json_group_array(
-  res = res.replace(/\bJSON_ARRAYAGG\s*\(/gi, "json_group_array(");
+  res = replaceOutsideSpans(res, /\bJSON_ARRAYAGG\s*\(/gi, "json_group_array(");
+
+  // 15. JSON_LENGTH( -> json_array_length(
+  res = replaceOutsideSpans(res, /\bJSON_LENGTH\s*\(/gi, "json_array_length(");
+
+  // 16. GROUP_CONCAT
+  res = rewriteGroupConcat(res);
+
+  // 17. MySQL NULL-safe <=> operator -> IS
+  res = replaceOutsideSpans(res, /\s*<=>\s*/g, " IS ");
 
   return res;
 }
@@ -426,19 +786,17 @@ function splitClock(text: string, now: Date): ClockPiece[] {
   const out: ClockPiece[] = [];
   let buf = "";
   let i = 0;
+  const spans = getLiteralAndCommentSpans(text);
+
   while (i < text.length) {
     const ch = text[i];
-    if (ch === "'") {
-      // copy the whole literal ('' is an escaped quote)
-      let j = i + 1;
-      while (j < text.length) {
-        if (text[j] === "'" && text[j + 1] === "'") j += 2;
-        else if (text[j] === "'") break;
-        else j++;
+    if (isInsideSpan(spans, i)) {
+      const span = spans.find((s) => i >= s.start && i < s.end);
+      if (span) {
+        buf += text.slice(i, span.end);
+        i = span.end;
+        continue;
       }
-      buf += text.slice(i, Math.min(j + 1, text.length));
-      i = j + 1;
-      continue;
     }
     CLOCK_RE.lastIndex = i;
     const m = CLOCK_RE.exec(text);
@@ -547,6 +905,26 @@ export function rewriteSql(
       );
       strings[i + 1] = strings[i + 1].replace(/^\s*\)\s*\)/i, ")");
     }
+
+    // Cross-boundary: DATE_FORMAT(${date}, '%Y-%m')
+    if (
+      /DATE_FORMAT\s*\(\s*$/i.test(strings[i]) &&
+      /^\s*,\s*['"]%Y-%m['"]\s*\)/i.test(strings[i + 1])
+    ) {
+      const val = values[i];
+      if (val instanceof Date) {
+        values[i] = val.toISOString().slice(0, 7);
+      } else if (typeof val === "number") {
+        values[i] = new Date(val).toISOString().slice(0, 7);
+      } else if (typeof val === "string") {
+        values[i] = val.slice(0, 7);
+      }
+      strings[i] = strings[i].replace(/DATE_FORMAT\s*\(\s*$/i, "");
+      strings[i + 1] = strings[i + 1].replace(
+        /^\s*,\s*['"]%Y-%m['"]\s*\)/i,
+        "",
+      );
+    }
   }
 
   const newStrings: string[] = [];
@@ -566,7 +944,7 @@ export function rewriteSql(
     }
     if (i < values.length) {
       newStrings.push(current);
-      newValues.push(values[i]);
+      newValues.push(coerceParam(values[i]));
       current = "";
     }
   }
@@ -576,6 +954,22 @@ export function rewriteSql(
     newStrings as unknown as TemplateStringsArray,
     ...newValues,
   );
+}
+
+/** Coerces parameter values for dialect compatibility (e.g. SQLite timestamps). */
+export function coerceParam(val: unknown): unknown {
+  if (
+    typeof val === "string" &&
+    /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(
+      val,
+    )
+  ) {
+    const ms = new Date(val).getTime();
+    if (!Number.isNaN(ms)) {
+      return ms;
+    }
+  }
+  return val;
 }
 
 /** Rewrites an `$queryRawUnsafe` / `$executeRawUnsafe` argument list. */
@@ -605,13 +999,13 @@ export function rewriteUnsafe(
     for (let i = 0; i < piece.text.length; i++) {
       const ch = piece.text[i];
       if (ch === "'") inLiteral = !inLiteral;
-      if (ch === "?" && !inLiteral) values.push(params[next++]);
+      if (ch === "?" && !inLiteral) values.push(coerceParam(params[next++]));
     }
     text += piece.text;
   }
   // Any trailing, unconsumed caller params are preserved (driver will complain
   // exactly as it would have without the rewrite).
-  while (next < params.length) values.push(params[next++]);
+  while (next < params.length) values.push(coerceParam(params[next++]));
 
   return [text, ...values];
 }

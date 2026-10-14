@@ -43,6 +43,10 @@ export async function queueRewardProcessing(params: RewardJob) {
             event: params.rewardSnapshot.event,
           });
 
+    if (process.env.PLAYWRIGHT_TEST === "1") {
+      return { messageId: "msg_playwright_test" };
+    }
+
     const response = await qstash.publishJSON({
       url: `${APP_DOMAIN_WITH_NGROK}/api/cron/rewards/process`,
       method: "POST",

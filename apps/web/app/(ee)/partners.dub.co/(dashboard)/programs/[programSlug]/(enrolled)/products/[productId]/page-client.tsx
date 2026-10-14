@@ -457,7 +457,7 @@ export function WeleticProductDetailPageClient() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                    {product.vendor || "Yamax"}
+                    {product.vendor || ""}
                   </span>
                   <span className="text-xs text-neutral-300">•</span>
                   <span className="text-xs font-medium text-neutral-500">

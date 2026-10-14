@@ -77,6 +77,7 @@ async function deleteLinksBatch(links: ExpandedLink[]): Promise<number> {
       linkId: {
         in: linkIds,
       },
+      disabledAt: null,
     },
     include: {
       discount: {

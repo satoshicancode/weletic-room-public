@@ -38,5 +38,5 @@ export const POST = withWorkspace(
       installUrl,
     });
   },
-  { requiredRoles: ["owner"] },
+  { requiredPermissions: ["integrations.write"], requiredRoles: ["owner"] },
 );

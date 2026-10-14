@@ -3,14 +3,17 @@ import { prisma } from "@/lib/prisma";
 import { reconcileWeleticShopifyOrders } from "@/lib/weletic/commerce/reconcile-shopify";
 import { NextResponse } from "next/server";
 
-export const GET = withWorkspace(async ({ workspace }) => {
-  const issues = await prisma.weleticReconciliationIssue.findMany({
-    where: { store: { projectId: workspace.id } },
-    orderBy: [{ status: "asc" }, { detectedAt: "desc" }],
-    take: 250,
-  });
-  return NextResponse.json(issues);
-});
+export const GET = withWorkspace(
+  async ({ workspace }) => {
+    const issues = await prisma.weleticReconciliationIssue.findMany({
+      where: { store: { projectId: workspace.id } },
+      orderBy: [{ status: "asc" }, { detectedAt: "desc" }],
+      take: 250,
+    });
+    return NextResponse.json(issues);
+  },
+  { requiredPermissions: ["integrations.read"] },
+);
 
 export const POST = withWorkspace(
   async ({ workspace }) => {
@@ -19,5 +22,5 @@ export const POST = withWorkspace(
     });
     return NextResponse.json(result);
   },
-  { requiredRoles: ["owner"] },
+  { requiredPermissions: ["integrations.write"], requiredRoles: ["owner"] },
 );

@@ -153,14 +153,18 @@ function withSqlDialect<T extends PrismaClient<any, any, any>>(client: T): T {
 export function createPrismaClient(d1Database?: D1Database) {
   if (d1Database) {
     const adapter = new PrismaD1(d1Database as any);
-    return withSqlDialect(new PrismaClient({ adapter, ...clientOptions }));
+    return withD1TransactionSemantics(
+      withSqlDialect(new PrismaClient({ adapter, ...clientOptions })),
+    );
   }
 
   // Next.js (Node) talking to the same D1 database over Cloudflare's HTTP API.
   const d1Http = getD1HttpConfig();
   if (d1Http) {
-    return withSqlDialect(
-      new PrismaClient({ adapter: new PrismaD1(d1Http), ...clientOptions }),
+    return withD1TransactionSemantics(
+      withSqlDialect(
+        new PrismaClient({ adapter: new PrismaD1(d1Http), ...clientOptions }),
+      ),
     );
   }
 

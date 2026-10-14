@@ -45,6 +45,7 @@ import {
   redactBasicLifecycleText,
   runBasicLifecycleCleanupSteps,
   runBasicLifecycleCustomerDeleteBarrier,
+  runBasicLifecycleLocalPreflight,
   runBasicLifecycleLockedOrchestration,
   serializeBasicLifecycleEvidenceProvenance,
   serializeBasicLifecycleReportForFile,
@@ -1776,5 +1777,20 @@ describe("Shopify Basic loyalty lifecycle harness safety", () => {
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  it("ignores pnpm '--' separators in parseBasicLifecycleArgs and passes local preflight", async () => {
+    const parsed = parseBasicLifecycleArgs([
+      "--",
+      "--confirm-staging",
+      "--store=loyalty-a1-example.myshopify.com",
+    ]);
+    expect(parsed.confirmStaging).toBe(true);
+    expect(parsed.storeDomain).toBe("loyalty-a1-example.myshopify.com");
+
+    const preflight = await runBasicLifecycleLocalPreflight();
+    expect(preflight.overallStatus).toBe("PASSED");
+    expect(preflight.summary.passed).toBe(3);
+    expect(preflight.summary.failed).toBe(0);
   });
 });

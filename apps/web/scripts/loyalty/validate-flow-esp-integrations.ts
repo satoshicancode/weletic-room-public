@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   SHOPIFY_FLOW_MAX_PAYLOAD_BYTES,
   SHOPIFY_FLOW_TRIGGER_HANDLES,
@@ -9,7 +10,9 @@ import { FlowTriggerPayloadSchema } from "../../lib/weletic/loyalty/outbox";
 
 type Check = { name: string; passed: boolean; detail?: string };
 
-const shopifyAppRoot = resolve(process.cwd(), "../../packages/shopify-app");
+const shopifyAppRoot = fileURLToPath(
+  new URL("../../../../packages/shopify-app", import.meta.url),
+);
 const manifestPath = (directory: string) =>
   resolve(shopifyAppRoot, "extensions", directory, "shopify.extension.toml");
 

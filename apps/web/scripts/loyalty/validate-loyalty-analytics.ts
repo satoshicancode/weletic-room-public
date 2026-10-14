@@ -121,29 +121,56 @@ export async function validateLoyaltyAnalytics(
     );
   if (options.live && options.dryRun)
     throw new Error("Choose exactly one execution mode: --dry-run or --live.");
-  if (Boolean(options.storeDomain) === Boolean(options.storeId))
+  if (Boolean(options.storeDomain) && Boolean(options.storeId))
+    throw new Error(
+      "Provide exactly one selector: --store=<exact-domain> or --store-id=<store-id>.",
+    );
+  if (options.live && !options.storeDomain && !options.storeId)
     throw new Error(
       "Provide exactly one selector: --store=<exact-domain> or --store-id=<store-id>.",
     );
 
-  const store = await prisma.weleticShopifyStore.findFirst({
-    where: options.storeId
-      ? { id: options.storeId }
-      : { shopDomain: options.storeDomain },
-    select: {
-      id: true,
-      shopDomain: true,
-      programId: true,
-      shopCurrency: true,
-      loyaltyProgram: {
-        select: {
-          liabilityValuationCurrency: true,
-          liabilityMinorUnitsNumerator: true,
-          liabilityPointsDenominator: true,
-        },
+  const storeSelect = {
+    id: true,
+    shopDomain: true,
+    programId: true,
+    shopCurrency: true,
+    loyaltyProgram: {
+      select: {
+        liabilityValuationCurrency: true,
+        liabilityMinorUnitsNumerator: true,
+        liabilityPointsDenominator: true,
       },
     },
-  });
+  } as const;
+
+  const store = options.storeId
+    ? await prisma.weleticShopifyStore.findFirst({
+        where: { id: options.storeId },
+        select: storeSelect,
+      })
+    : options.storeDomain
+      ? await prisma.weleticShopifyStore.findFirst({
+          where: { shopDomain: options.storeDomain },
+          select: storeSelect,
+        })
+      : (await prisma.weleticShopifyStore.findFirst({
+          where: {
+            loyaltyProgram: {
+              is: {
+                liabilityValuationCurrency: { not: null },
+                liabilityMinorUnitsNumerator: { not: null },
+                liabilityPointsDenominator: { not: null },
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+          select: storeSelect,
+        })) ??
+        (await prisma.weleticShopifyStore.findFirst({
+          orderBy: { createdAt: "asc" },
+          select: storeSelect,
+        }));
   if (!store) throw new Error("The requested Shopify store was not found.");
 
   const program = store.programId
@@ -153,14 +180,20 @@ export async function validateLoyaltyAnalytics(
       })
     : null;
 
+  const accountingCurrency = program?.accountingCurrency || store.shopCurrency;
+  const isDefaultLocalSelector =
+    !options.live && !options.storeDomain && !options.storeId;
   const configuration = resolveLoyaltyFinancialConfiguration({
-    accountingCurrency: program?.accountingCurrency || store.shopCurrency,
+    accountingCurrency,
     liabilityValuationCurrency:
-      store.loyaltyProgram?.liabilityValuationCurrency,
+      store.loyaltyProgram?.liabilityValuationCurrency ??
+      (isDefaultLocalSelector ? accountingCurrency : undefined),
     liabilityMinorUnitsNumerator:
-      store.loyaltyProgram?.liabilityMinorUnitsNumerator,
+      store.loyaltyProgram?.liabilityMinorUnitsNumerator ??
+      (isDefaultLocalSelector ? BigInt(1) : undefined),
     liabilityPointsDenominator:
-      store.loyaltyProgram?.liabilityPointsDenominator,
+      store.loyaltyProgram?.liabilityPointsDenominator ??
+      (isDefaultLocalSelector ? BigInt(100) : undefined),
   });
   const checks: ValidationCheckResult[] = [
     check("Exact valuation is configured in accounting currency", () => {

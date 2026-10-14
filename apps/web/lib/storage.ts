@@ -1,7 +1,7 @@
 import { OG_AVATAR_URL, R2_URL, fetchWithTimeout } from "@dub/utils";
 import { AwsClient } from "aws4fetch";
-import dnsCallback, { promises as dns } from "dns";
-import { isIP } from "net";
+import dnsCallback, { promises as dns } from "node:dns";
+import { isIP } from "node:net";
 
 type Buffer = Uint8Array;
 

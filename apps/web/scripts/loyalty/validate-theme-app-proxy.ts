@@ -197,6 +197,22 @@ export async function runThemeAppProxyValidation(
       ? "live-admin"
       : "dry-run";
 
+  if (executionMode === "live-admin") {
+    if (
+      process.env.NODE_ENV === "production" ||
+      process.env.VERCEL_ENV === "production"
+    ) {
+      throw new Error(
+        "Live theme app proxy validation is forbidden in production.",
+      );
+    }
+    if (!options.confirmStaging) {
+      throw new Error(
+        "Missing mandatory --confirm-staging flag for live validation.",
+      );
+    }
+  }
+
   const provenance: ValidationEvidenceProvenance = {
     source: options.mock
       ? "simulated"
@@ -927,45 +943,66 @@ async function main() {
     options.dryRun = true;
   }
 
-  const report = await runThemeAppProxyValidation(options);
+  try {
+    const report = await runThemeAppProxyValidation(options);
 
-  if (options.json) {
-    console.log(JSON.stringify(report, null, 2));
-  } else {
-    console.log(
-      "\n============================================================",
-    );
-    console.log("       WELETIC THEME APP PROXY VALIDATION REPORT            ");
-    console.log("============================================================");
-    console.log(`Status:         ${report.overallStatus}`);
-    console.log(`Store:          ${report.storeDomain}`);
-    console.log(`Mode:           ${report.executionMode}`);
-    console.log(`Total Checks:   ${report.summary.totalChecks}`);
-    console.log(`Passed:         ${report.summary.passedChecks}`);
-    console.log(`Failed:         ${report.summary.failedChecks}`);
-    console.log(`Duration:       ${report.totalDurationMs}ms\n`);
+    if (options.json) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      console.log(
+        "\n============================================================",
+      );
+      console.log(
+        "       WELETIC THEME APP PROXY VALIDATION REPORT            ",
+      );
+      console.log(
+        "============================================================",
+      );
+      console.log(`Status:         ${report.overallStatus}`);
+      console.log(`Store:          ${report.storeDomain}`);
+      console.log(`Mode:           ${report.executionMode}`);
+      console.log(`Total Checks:   ${report.summary.totalChecks}`);
+      console.log(`Passed:         ${report.summary.passedChecks}`);
+      console.log(`Failed:         ${report.summary.failedChecks}`);
+      console.log(`Duration:       ${report.totalDurationMs}ms\n`);
 
-    for (const phase of report.phases) {
-      console.log(`--- ${phase.phaseName} (${phase.status}) ---`);
-      for (const check of phase.checks) {
-        const symbol = check.passed ? "✓" : "✗";
-        console.log(`  ${symbol} ${check.name} (${check.durationMs}ms)`);
-        if (check.error) {
-          console.log(`     Error: ${check.error}`);
+      for (const phase of report.phases) {
+        console.log(`--- ${phase.phaseName} (${phase.status}) ---`);
+        for (const check of phase.checks) {
+          const symbol = check.passed ? "✓" : "✗";
+          console.log(`  ${symbol} ${check.name} (${check.durationMs}ms)`);
+          if (check.error) {
+            console.log(`     Error: ${check.error}`);
+          }
         }
+        console.log("");
       }
-      console.log("");
     }
-  }
 
-  if (report.overallStatus === "FAILED") {
-    process.exit(1);
+    if (report.overallStatus === "FAILED") {
+      process.exitCode = 1;
+    }
+  } catch (error: any) {
+    const failureReport = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      overallStatus: "FAILED",
+      executionMode: options.dryRun
+        ? "dry-run"
+        : options.live
+          ? "live-admin"
+          : "mock",
+      error: error?.message || String(error),
+    };
+    console.log(JSON.stringify(failureReport, null, 2));
+    process.exitCode = 1;
   }
 }
 
-if (require.main === module) {
-  main().catch((err) => {
-    console.error("Validation failed with uncaught exception:", err);
-    process.exit(1);
-  });
+if (
+  process.argv[1] &&
+  (process.argv[1].endsWith("validate-theme-app-proxy.ts") ||
+    process.argv[1].includes("validate-theme-app-proxy"))
+) {
+  void main();
 }

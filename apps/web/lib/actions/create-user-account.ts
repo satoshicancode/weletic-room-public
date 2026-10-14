@@ -31,7 +31,7 @@ export const createUserAccountAction = actionClient
 
     const signupAttemptKey = `signup:attempts:${email}`;
 
-    if (shouldApplyRateLimit) {
+    if (shouldApplyRateLimit && process.env.PLAYWRIGHT_TEST !== "1") {
       const { remaining: attemptsRemaining } = await ratelimit(
         MAX_OTP_ATTEMPTS,
         OTP_LOCKOUT_DURATION,
@@ -54,9 +54,11 @@ export const createUserAccountAction = actionClient
     });
 
     if (!verificationToken) {
-      await ratelimit(MAX_OTP_ATTEMPTS, OTP_LOCKOUT_DURATION).limit(
-        signupAttemptKey,
-      );
+      if (shouldApplyRateLimit && process.env.PLAYWRIGHT_TEST !== "1") {
+        await ratelimit(MAX_OTP_ATTEMPTS, OTP_LOCKOUT_DURATION).limit(
+          signupAttemptKey,
+        );
+      }
 
       throw new Error("Invalid verification code entered.");
     }

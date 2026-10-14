@@ -38,10 +38,7 @@ export async function getPayoutsTimeseries({
     sqlGranularityMap[granularity];
 
   const whereClauses: string[] = ["createdAt >= ?", "createdAt <= ?"];
-  const queryParams: string[] = [
-    toSqlDateTime(startDate),
-    toSqlDateTime(endDate),
-  ];
+  const queryParams: (string | Date)[] = [startDate, endDate];
 
   if (programId) {
     whereClauses.unshift("programId = ?");

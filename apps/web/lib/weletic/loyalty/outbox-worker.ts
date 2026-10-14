@@ -280,8 +280,8 @@ async function acquireOutboxClaim({
       AND \`status\` = ${candidate.status}
       AND \`attempts\` = ${candidate.attempts}
       AND \`updatedAt\` = ${candidate.updatedAt}
-      AND \`lockedAt\` <=> ${candidate.lockedAt}
-      AND \`lockedBy\` <=> ${candidate.lockedBy}
+      AND \`lockedAt\` IS ${candidate.lockedAt}
+      AND \`lockedBy\` IS ${candidate.lockedBy}
   `;
 }
 
@@ -575,8 +575,8 @@ async function reapStaleOutboxClaim({
       \`id\` = ${staleJob.id}
       AND \`storeId\` = ${staleJob.storeId}
       AND \`status\` = ${WeleticLoyaltyOutboxJobStatus.processing}
-      AND \`lockedAt\` <=> ${staleJob.lockedAt}
-      AND \`lockedBy\` <=> ${staleJob.lockedBy}
+      AND \`lockedAt\` IS ${staleJob.lockedAt}
+      AND \`lockedBy\` IS ${staleJob.lockedBy}
       AND \`attempts\` = ${staleJob.attempts}
       AND \`updatedAt\` = ${currentUpdatedAt}
   `;

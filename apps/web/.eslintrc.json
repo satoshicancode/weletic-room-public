@@ -1,6 +1,11 @@
 {
   "extends": "next/core-web-vitals",
-  "ignorePatterns": ["playwright/**"],
+  "ignorePatterns": [
+    "playwright/**",
+    "playwright-report/**",
+    "test-results/**",
+    "blob-report/**"
+  ],
   "overrides": [
     {
       "files": [

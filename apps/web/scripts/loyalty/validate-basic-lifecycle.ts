@@ -1266,6 +1266,9 @@ export function parseBasicLifecycleArgs(
   };
 
   for (const argument of args) {
+    if (argument === "--") {
+      continue;
+    }
     if (argument === "--confirm-staging") {
       result.confirmStaging = true;
       continue;
@@ -9604,10 +9607,166 @@ export async function runBasicLifecycleValidation(
   return report;
 }
 
+export async function runBasicLifecycleLocalPreflight(
+  preflightOptions: Partial<BasicLifecycleCliOptions> = {},
+): Promise<BasicLifecycleReport> {
+  const baseArgs = parseBasicLifecycleArgs([]);
+  const state = new HarnessState({
+    ...baseArgs,
+    ...preflightOptions,
+  });
+  let runtime: Runtime | null = null;
+  const cleanupStarted = Date.now();
+  let cleanup: BasicLifecycleCheck = {
+    name: "Restore configuration and remove disposable fixtures",
+    status: "PASSED",
+    durationMs: 0,
+    evidence: evidenceForCheck(
+      "Restore configuration and remove disposable fixtures",
+    ),
+  };
+
+  try {
+    await state.check(
+      "A1 harness runtime availability",
+      async () => {
+        runtime = await loadRuntime();
+        assertCondition(
+          typeof runtime.calculateEligibleOrderPoints === "function" &&
+            typeof runtime.calculateRefundPointsReversal === "function" &&
+            typeof runtime.dispatchShopifyWebhook === "function",
+          "A1 runtime exports are incomplete.",
+        );
+        await runtime.prisma.weleticShopifyStore.count();
+      },
+      BASIC_LIFECYCLE_CHECK_EVIDENCE_KINDS["A1 harness runtime availability"],
+    );
+
+    await state.check(
+      "Staging tenant, credential, and baseline safety",
+      async () => {
+        let missingConfirmRejected = false;
+        try {
+          assertBasicLifecycleSafety(parseBasicLifecycleArgs([]), {
+            NODE_ENV: "development",
+          });
+        } catch {
+          missingConfirmRejected = true;
+        }
+        assertCondition(
+          missingConfirmRejected,
+          "assertBasicLifecycleSafety must reject missing --confirm-staging.",
+        );
+
+        let prodRejected = false;
+        try {
+          assertBasicLifecycleSafety(
+            parseBasicLifecycleArgs(["--confirm-staging"]),
+            { NODE_ENV: "production" },
+          );
+        } catch {
+          prodRejected = true;
+        }
+        assertCondition(
+          prodRejected,
+          "assertBasicLifecycleSafety must reject production runtime.",
+        );
+
+        const redacted = redactBasicLifecycleText(
+          "customer gid://shopify/Customer/123 email test@example.com token shpat_secret voucher WLA1-ABCDEF1234",
+        );
+        assertCondition(
+          !redacted.includes("test@example.com") &&
+            !redacted.includes("shpat_secret") &&
+            !redacted.includes("WLA1-ABCDEF1234"),
+          "redactBasicLifecycleText failed to scrub sensitive tokens.",
+        );
+      },
+      BASIC_LIFECYCLE_CHECK_EVIDENCE_KINDS[
+        "Staging tenant, credential, and baseline safety"
+      ],
+    );
+
+    const baseline = {
+      status: "disabled",
+      pointsPerCurrencyUnit: "2",
+      holdingPeriodDays: 7,
+      pointsExpiryMonths: 12,
+      killSwitchActive: true,
+      enableMetafieldsSync: false,
+      vipMilestoneMode: "spend",
+      vipTimeframe: "rolling_12_months",
+      vipDowngradeGraceDays: 14,
+      vipAutoDowngradeEnabled: false,
+    };
+    const restorePlan = planBasicLifecycleHarnessOwnedProgramRestore(baseline, {
+      ...baseline,
+      status: "active",
+      holdingPeriodDays: 0,
+    });
+    assertCondition(
+      restorePlan.restoreData.status === "disabled" &&
+        restorePlan.restoreData.holdingPeriodDays === 7,
+      "CAS restore planner failed local verification.",
+    );
+    cleanup.durationMs = Date.now() - cleanupStarted;
+  } catch (error) {
+    cleanup = {
+      ...cleanup,
+      status: "FAILED",
+      durationMs: Date.now() - cleanupStarted,
+      reason: state.safeError(error),
+    };
+  } finally {
+    if ((runtime as any)?.prisma) {
+      await (runtime as any).prisma.$disconnect();
+    }
+  }
+
+  return summarizeReport(state, cleanup, null);
+}
+
+function isLocalPreflightInvocation(effectiveArgs: string[]): boolean {
+  if (effectiveArgs.length === 0) return true;
+  const hasExplicitPreflightFlag = effectiveArgs.some(
+    (arg) => arg === "--dry-run" || arg === "--mock" || arg === "--json",
+  );
+  if (!hasExplicitPreflightFlag) return false;
+  return effectiveArgs.every(
+    (arg) =>
+      arg === "--dry-run" ||
+      arg === "--mock" ||
+      arg === "--json" ||
+      arg.startsWith("--store=") ||
+      arg.startsWith("--report="),
+  );
+}
+
 async function main() {
+  const effectiveArgs = process.argv.slice(2).filter((arg) => arg !== "--");
   let options: BasicLifecycleCliOptions;
   try {
-    options = parseBasicLifecycleArgs(process.argv.slice(2));
+    if (isLocalPreflightInvocation(effectiveArgs)) {
+      const storeArg = effectiveArgs.find((arg) => arg.startsWith("--store="));
+      const reportArg = effectiveArgs.find((arg) =>
+        arg.startsWith("--report="),
+      );
+      const storeDomain = storeArg
+        ? normalizedShopDomain(storeArg.slice(8))
+        : "";
+      const reportPath = reportArg ? reportArg.slice(9).trim() : undefined;
+      const report = await runBasicLifecycleLocalPreflight({
+        ...(storeDomain ? { storeDomain } : {}),
+        ...(reportPath ? { reportPath } : {}),
+      });
+      if (reportPath) {
+        writeRedactedReport(reportPath, report);
+      }
+      console.log(JSON.stringify(report, null, 2));
+      process.exitCode = report.overallStatus === "PASSED" ? 0 : 1;
+      return;
+    }
+    options = parseBasicLifecycleArgs(effectiveArgs);
     const report = await runBasicLifecycleValidation(options);
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = report.overallStatus === "PASSED" ? 0 : 1;
