@@ -54,6 +54,9 @@ export default defineConfig({
       testMatch: /partners\/auth\.setup\.ts/,
       use: {
         baseURL: partnersBaseURL,
+        extraHTTPHeaders: {
+          "x-vercel-ip-country": "US",
+        },
       },
     },
     {
@@ -62,6 +65,9 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         baseURL: partnersBaseURL,
         storageState: "playwright/.auth/partner.json",
+        extraHTTPHeaders: {
+          "x-vercel-ip-country": "US",
+        },
       },
       testDir: "./playwright/partners",
       testIgnore: /auth\.setup\.ts/,
@@ -85,15 +91,26 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
-    command: "pnpm start -p 8888",
-    port: 8888,
-    reuseExistingServer: true,
-    timeout: 120_000,
-    stdout: "ignore",
-    env: {
-      PLAYWRIGHT_TEST: "1",
-      WELETIC_ALLOW_LOCAL_SQLITE: "1",
+  webServer: [
+    {
+      command: "npx tsx playwright/run-mock-mailhog.ts",
+      port: 8025,
+      reuseExistingServer: true,
+      timeout: 15_000,
     },
-  },
+    {
+      command: "pnpm start -p 8888",
+      port: 8888,
+      reuseExistingServer: true,
+      timeout: 120_000,
+      env: {
+        PLAYWRIGHT_TEST: "1",
+        CI: "true",
+        WELETIC_ALLOW_LOCAL_SQLITE: "1",
+        RESEND_API_KEY: "",
+        SMTP_HOST: "127.0.0.1",
+        SMTP_PORT: "1025",
+      },
+    },
+  ],
 });

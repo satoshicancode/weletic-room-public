@@ -29,6 +29,16 @@ export const test = base.extend<{
         page.getByRole("heading", { name: "Verify your email address" }),
       ).toBeVisible();
       await page.keyboard.type(extractOtp(await waitForEmail(email)));
+
+      // If auto-submit has not yet triggered navigation, click Continue; otherwise proceed
+      await Promise.race([
+        page.waitForURL(/\/onboarding/, { timeout: 15_000 }),
+        page
+          .getByRole("button", { name: "Continue" })
+          .click({ timeout: 3_000 })
+          .catch(() => {}),
+      ]);
+
       await expect(page).toHaveURL(/\/onboarding/, { timeout: 30_000 });
 
       // A new browser context alone is insufficient if storageState restores a

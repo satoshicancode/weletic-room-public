@@ -1,5 +1,4 @@
 import { pretty, render } from "@react-email/render";
-import nodemailer from "nodemailer";
 import type { ResendEmailOptions } from "./resend/types";
 
 /** Render once before durable retention, with the same defaults as SMTP send. */
@@ -34,6 +33,7 @@ export const sendViaNodeMailer = async ({
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("SMTP_PORT must be an integer between 1 and 65535.");
   }
+  const { default: nodemailer } = await import("nodemailer");
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,

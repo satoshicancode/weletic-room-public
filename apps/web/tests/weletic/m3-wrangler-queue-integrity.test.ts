@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import Module from "node:module";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -93,5 +94,144 @@ describe("WRK-AUDIT-04 & WRK-AUDIT-05: Wrangler Configuration & Runbook Normaliz
       expect(runbookContent).not.toContain("wrangler.jsonc");
       expect(runbookContent).toContain("wrangler.toml");
     }
+  });
+
+  it("verifies all 4 Cloudflare Workers compile cleanly under workerd esbuild dry-run with zero server-only or native module leaks", async () => {
+    const requireFromRoot = Module.createRequire(
+      path.join(repoRoot, "package.json"),
+    );
+    const esbuildPath = fs
+      .readdirSync(path.join(repoRoot, "node_modules/.pnpm"))
+      .filter((entry) => entry.startsWith("esbuild@"))
+      .sort()
+      .pop();
+    expect(esbuildPath).toBeDefined();
+    const esbuild = requireFromRoot(
+      path.join(
+        repoRoot,
+        "node_modules/.pnpm",
+        esbuildPath!,
+        "node_modules/esbuild",
+      ),
+    );
+    const builtins = new Set(
+      Module.builtinModules.filter((mod) => mod !== "punycode"),
+    );
+
+    for (const config of workerConfigs) {
+      const workerDir = path.dirname(config.path);
+      const tomlContent = fs.readFileSync(config.path, "utf-8");
+      const mainMatch = tomlContent.match(/^\s*main\s*=\s*"([^"]+)"/m);
+      expect(mainMatch?.[1]).toBe("src/index.ts");
+
+      // Parse [alias] section from wrangler.toml
+      const aliasSection = tomlContent.split("[alias]")[1] ?? "";
+      const tomlAliases: Record<string, string> = {};
+      for (const line of aliasSection.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith("#")) continue;
+        if (trimmed.startsWith("[")) break;
+        const m = trimmed.match(/^"([^"]+)"\s*=\s*"([^"]+)"$/);
+        if (m) {
+          tomlAliases[m[1]] = path.resolve(workerDir, m[2]);
+        }
+      }
+      expect(tomlAliases["server-only"]).toBe(
+        path.join(workersDir, "empty.ts"),
+      );
+
+      const result = await esbuild.build({
+        entryPoints: [path.join(workerDir, mainMatch![1])],
+        bundle: true,
+        write: false,
+        format: "esm",
+        platform: "neutral",
+        mainFields: ["worker", "browser", "module", "main"],
+        conditions: ["workerd", "worker", "browser", "import"],
+        loader: { ".wasm": "binary" },
+        metafile: true,
+        alias: {
+          ...tomlAliases,
+          "@/lib": path.join(repoRoot, "apps/web/lib"),
+          "@/ui": path.join(repoRoot, "apps/web/ui"),
+          "@/styles": path.join(repoRoot, "apps/web/styles"),
+          "@/components": path.join(repoRoot, "apps/web/components"),
+          "@/pages": path.join(repoRoot, "apps/web/pages"),
+          "@weletic/contracts": path.join(repoRoot, "packages/contracts/src"),
+        },
+        external: ["node:*", "cloudflare:*", ...Array.from(builtins)],
+      });
+
+      expect(result.errors).toEqual([]);
+      expect(result.outputFiles.length).toBeGreaterThan(0);
+
+      const inputFiles = Object.keys(result.metafile.inputs);
+      // Verify zero un-aliased server-only or native sharp binary leaks in bundle inputs
+      expect(
+        inputFiles.some((f) => f.includes("node_modules/server-only")),
+      ).toBe(false);
+      expect(inputFiles.some((f) => f.includes("node_modules/sharp/"))).toBe(
+        false,
+      );
+
+      const jsOutput = result.outputFiles.find((f: { path: string }) =>
+        f.path.endsWith(".js"),
+      );
+      if (jsOutput) {
+        const bundleText = new TextDecoder().decode(jsOutput.contents);
+        expect(bundleText).not.toContain('from "punycode/"');
+      }
+    }
+  });
+
+  it("verifies createPrismaClient(d1Database) wraps PrismaD1 with withD1TransactionSemantics and outbox-worker uses SQLite-safe IS instead of MySQL <=>", async () => {
+    const outboxWorkerSource = fs.readFileSync(
+      path.join(repoRoot, "apps/web/lib/weletic/loyalty/outbox-worker.ts"),
+      "utf-8",
+    );
+    expect(outboxWorkerSource).not.toContain("<=>");
+
+    const { createPrismaClient } = await import("@/lib/prisma");
+    const mockD1: any = {
+      prepare() {
+        return {
+          bind() {
+            return this;
+          },
+          async all() {
+            return { results: [], success: true, meta: {} };
+          },
+          async raw() {
+            return [];
+          },
+          async first() {
+            return null;
+          },
+          async run() {
+            return {
+              results: [],
+              success: true,
+              meta: { changes: 0, last_row_id: 0 },
+            };
+          },
+        };
+      },
+      async batch() {
+        return [];
+      },
+      async exec() {
+        return { count: 0, duration: 0 };
+      },
+      async dump() {
+        return new ArrayBuffer(0);
+      },
+    };
+
+    const d1Prisma = createPrismaClient(mockD1);
+    const txResult = await d1Prisma.$transaction(async (tx) => {
+      expect(tx).toBeDefined();
+      return "d1-tx-ok";
+    });
+    expect(txResult).toBe("d1-tx-ok");
   });
 });

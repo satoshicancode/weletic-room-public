@@ -36,6 +36,9 @@ export const POST = withCron(async ({ rawBody }) => {
     },
     include: {
       discountCodes: {
+        where: {
+          disabledAt: null,
+        },
         include: {
           discount: true,
         },
@@ -204,6 +207,7 @@ export const POST = withCron(async ({ rawBody }) => {
     const remainingDiscountCodes = await prisma.discountCode.count({
       where: {
         discountId: oldDiscount.id,
+        disabledAt: null,
       },
     });
     if (remainingDiscountCodes === 0) {

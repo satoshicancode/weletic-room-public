@@ -279,11 +279,12 @@ describe("sql-dialect: MySQL date and time constructs", () => {
   });
 
   it("maps CHAR_LENGTH to length and JSON_ARRAYAGG to json_group_array", () => {
-    const raw = Prisma.sql`SELECT JSON_ARRAYAGG(val), CHAR_LENGTH(name) FROM T`;
+    const raw = Prisma.sql`SELECT JSON_ARRAYAGG(val), CHAR_LENGTH(name), JSON_LENGTH(items) FROM T`;
     const rewritten = rewriteSql(raw, NOW);
     const sql = rewritten.strings.join("");
     expect(sql).toContain("json_group_array(val)");
     expect(sql).toContain("length(name)");
+    expect(sql).toContain("json_array_length(items)");
   });
 
   it("maps ISO-8601 NOT REGEXP to length and LIKE checks", () => {

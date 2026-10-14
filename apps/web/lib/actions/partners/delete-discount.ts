@@ -63,6 +63,7 @@ export const deleteDiscountAction = authActionClient
     const discountCodes = await prisma.discountCode.findMany({
       where: {
         discountId: discount.id,
+        disabledAt: null,
       },
       select: {
         id: true,

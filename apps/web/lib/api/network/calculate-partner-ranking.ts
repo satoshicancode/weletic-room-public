@@ -274,7 +274,7 @@ export async function calculatePartnerRanking({
     LEFT JOIN (
       SELECT 
         pe5.partnerId,
-        GROUP_CONCAT(DISTINCT pc.category ORDER BY pc.category SEPARATOR ',') as categories
+        GROUP_CONCAT(DISTINCT pc.category) as categories
       FROM ProgramEnrollment pe5 FORCE INDEX (ProgramEnrollment_partnerId_programId_key)
       JOIN ProgramCategory pc ON pc.programId = pe5.programId
       WHERE pe5.partnerId IN (
@@ -290,7 +290,7 @@ export async function calculatePartnerRanking({
     LEFT JOIN (
       SELECT 
         ppes.partnerId,
-        GROUP_CONCAT(DISTINCT ppes.preferredEarningStructure ORDER BY ppes.preferredEarningStructure SEPARATOR ',') as preferredEarningStructures
+        GROUP_CONCAT(DISTINCT ppes.preferredEarningStructure) as preferredEarningStructures
       FROM PartnerPreferredEarningStructure ppes
       WHERE ppes.partnerId IN (
         SELECT p_filter.id
@@ -304,7 +304,7 @@ export async function calculatePartnerRanking({
     LEFT JOIN (
       SELECT 
         psc.partnerId,
-        GROUP_CONCAT(DISTINCT psc.salesChannel ORDER BY psc.salesChannel SEPARATOR ',') as salesChannels
+        GROUP_CONCAT(DISTINCT psc.salesChannel) as salesChannels
       FROM PartnerSalesChannel psc
       WHERE psc.partnerId IN (
         SELECT p_filter.id

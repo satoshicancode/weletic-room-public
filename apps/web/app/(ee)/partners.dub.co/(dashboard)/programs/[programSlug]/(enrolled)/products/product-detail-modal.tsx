@@ -128,7 +128,7 @@ export function ProductDetailModal({
           <div className="space-y-4">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-                {product.vendor || "Yamax"}
+                {product.vendor || ""}
               </p>
               <h2 className="mt-1 text-base font-semibold leading-snug text-neutral-900">
                 {product.title}

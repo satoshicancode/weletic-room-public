@@ -7,7 +7,6 @@ import { withDistributedLock } from "@/lib/weletic/redis-lock";
 import { withShopifyCustomerSettlementLocks } from "@/lib/weletic/shopify/customer-settlement-lock";
 import { Prisma, type WeleticReviewMedia } from "@prisma/client";
 import { Input, MP4, UrlSource } from "mediabunny";
-import sharp from "sharp";
 import {
   REVIEW_MAX_PHOTO_BYTES,
   REVIEW_MAX_PHOTOS,
@@ -65,6 +64,11 @@ export async function normalizeReviewPhoto(
     );
   }
   try {
+    const sharpModule = await import("sharp");
+    const sharp = (typeof sharpModule === "function"
+      ? sharpModule
+      : (sharpModule as { default?: typeof import("sharp") }).default ??
+        sharpModule) as unknown as typeof import("sharp");
     const source = sharp(bytes, {
       limitInputPixels: 20_000_000,
       failOn: "warning",

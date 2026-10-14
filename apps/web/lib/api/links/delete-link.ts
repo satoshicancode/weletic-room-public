@@ -1,4 +1,4 @@
-import { enqueueDeleteDiscountCode } from "@/lib/discounts/delete-discount-code";
+import { deleteDiscountCodes } from "@/lib/discounts/delete-discount-code";
 import { prisma } from "@/lib/prisma";
 import { storage } from "@/lib/storage";
 import { recordLink } from "@/lib/tinybird";
@@ -18,6 +18,9 @@ export async function deleteLink(linkId: string) {
       ...includeTags,
       ...includeProgramEnrollment,
       discountCode: {
+        where: {
+          disabledAt: null,
+        },
         include: {
           discount: {
             select: {
@@ -29,24 +32,15 @@ export async function deleteLink(linkId: string) {
     },
   });
 
-  // Delete the discount code and link in a transaction
-  await prisma.$transaction([
-    ...(link.discountCode
-      ? [
-          prisma.discountCode.delete({
-            where: {
-              id: link.discountCode.id,
-            },
-          }),
-        ]
-      : []),
+  if (link.discountCode) {
+    await deleteDiscountCodes([link.discountCode]);
+  }
 
-    prisma.link.delete({
-      where: {
-        id: linkId,
-      },
-    }),
-  ]);
+  await prisma.link.delete({
+    where: {
+      id: linkId,
+    },
+  });
 
   waitUntil(
     Promise.allSettled([
@@ -72,8 +66,6 @@ export async function deleteLink(linkId: string) {
             },
           },
         }),
-
-      link.discountCode && enqueueDeleteDiscountCode([link.discountCode]),
     ]),
   );
 

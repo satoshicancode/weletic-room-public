@@ -1039,4 +1039,37 @@ describe("Loyalty Analytics & Financial Liability Engine — Deterministic Matri
       expect(csv).toContain(scrubbed);
     });
   });
+
+  describe("7. CLI Validator Fail-Closed Guardrails", () => {
+    it("rejects --mock, unconfirmed --live, conflicting selectors, and --live without selector", async () => {
+      const { validateLoyaltyAnalytics } = await import(
+        "../../scripts/loyalty/validate-loyalty-analytics"
+      );
+      await expect(validateLoyaltyAnalytics({ mock: true })).rejects.toThrow(
+        /--mock is not supported/,
+      );
+      await expect(validateLoyaltyAnalytics({ live: true })).rejects.toThrow(
+        /--live requires --confirm-staging/,
+      );
+      await expect(
+        validateLoyaltyAnalytics({
+          live: true,
+          confirmStaging: true,
+          dryRun: true,
+        }),
+      ).rejects.toThrow(/Choose exactly one execution mode/);
+      await expect(
+        validateLoyaltyAnalytics({
+          storeDomain: "a.myshopify.com",
+          storeId: "store_a",
+        }),
+      ).rejects.toThrow(/Provide exactly one selector/);
+      await expect(
+        validateLoyaltyAnalytics({
+          live: true,
+          confirmStaging: true,
+        }),
+      ).rejects.toThrow(/Provide exactly one selector/);
+    });
+  });
 });

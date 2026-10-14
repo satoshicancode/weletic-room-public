@@ -201,16 +201,20 @@ export async function processLoyaltyOutboxJob(
   initCronWorkerPrisma(env);
   const workerId = `cron_${crypto.randomUUID()}`;
 
-  // Lightweight check on D1 if available
+  // Lightweight check on D1 if available (includes pending, retryable failed, and processing jobs)
   if (env.DB?.prepare) {
     const nowMs = Date.now();
     const nowIso = new Date().toISOString();
     const countCheck = await env.DB.prepare(
-      "SELECT COUNT(*) as count FROM WeleticLoyaltyOutboxJob WHERE status = 'pending' AND (" +
+      "SELECT COUNT(*) as count FROM WeleticLoyaltyOutboxJob WHERE " +
+        "(status IN ('pending', 'failed') AND (" +
         "CASE WHEN typeof(scheduledFor) = 'integer' THEN scheduledFor <= ? " +
-        "ELSE scheduledFor <= ? END)",
+        "ELSE scheduledFor <= ? END) AND (" +
+        "nextRetryAt IS NULL OR CASE WHEN typeof(nextRetryAt) = 'integer' THEN nextRetryAt <= ? " +
+        "ELSE nextRetryAt <= ? END)) " +
+        "OR status = 'processing'",
     )
-      .bind(nowMs, nowIso)
+      .bind(nowMs, nowIso, nowMs, nowIso)
       .first<{ count: number }>();
 
     if (!countCheck || countCheck.count === 0) {
@@ -569,15 +573,15 @@ export async function verifyDoubleEntryLedgerJob(env: CronWorkerEnv): Promise<{
     ).all<{
       accountId: string;
       entryCount: number;
-      totalDelta: number;
-      lastBalance: number;
+      totalDelta: number | string | bigint;
+      lastBalance: number | string | bigint;
     }>();
 
     const rows = auditQuery.results || [];
     const discrepancies: unknown[] = [];
 
     for (const row of rows) {
-      if (row.totalDelta !== row.lastBalance) {
+      if (BigInt(row.totalDelta ?? 0) !== BigInt(row.lastBalance ?? 0)) {
         discrepancies.push({
           accountId: row.accountId,
           expectedBalance: row.totalDelta,

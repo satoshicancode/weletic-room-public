@@ -33,7 +33,7 @@ test.describe("Partner onboarding", () => {
 
     await page.waitForURL("/onboarding/platforms");
     await expect(
-      page.getByText("Your social and web platforms", { exact: true }),
+      page.getByRole("heading", { name: "Your social and web platforms" }),
     ).toBeVisible();
   });
 

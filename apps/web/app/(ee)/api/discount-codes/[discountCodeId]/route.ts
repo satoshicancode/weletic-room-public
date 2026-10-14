@@ -13,9 +13,10 @@ export const DELETE = withWorkspace(
     const { discountCodeId } = params;
     const programId = getDefaultProgramIdOrThrow(workspace);
 
-    const discountCode = await prisma.discountCode.findUnique({
+    const discountCode = await prisma.discountCode.findFirst({
       where: {
         id: discountCodeId,
+        disabledAt: null,
       },
       include: {
         discount: {

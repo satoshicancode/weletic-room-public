@@ -79,5 +79,5 @@ export const PATCH = withWorkspace(
       providerAccountConfigured: Boolean(providerAccountRef),
     });
   },
-  { requiredRoles: ["owner"] },
+  { requiredPermissions: ["integrations.write"], requiredRoles: ["owner"] },
 );

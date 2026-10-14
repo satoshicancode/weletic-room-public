@@ -184,4 +184,15 @@ describe("createPrismaClient SQL dialect extension (real SQLite engine)", () => 
       ORDER BY id`;
     expect(rows.map((r) => r.id)).toEqual(["d2"]);
   });
+
+  it("executes JSON_LENGTH against real SQLite engine", async () => {
+    await prisma.$executeRaw`INSERT INTO doc (id, metadata) VALUES ('d3', '{"items":[10,20,30]}')`;
+    const [row] = await prisma.$queryRaw<
+      Array<{ id: string; len: bigint | number }>
+    >`
+      SELECT id, JSON_LENGTH(JSON_EXTRACT(metadata, '$.items')) AS len
+      FROM doc WHERE id = 'd3'`;
+    expect(row?.id).toBe("d3");
+    expect(Number(row?.len)).toBe(3);
+  });
 });

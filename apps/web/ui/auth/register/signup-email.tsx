@@ -37,7 +37,7 @@ export const SignUpEmail = () => {
 
   const { executeAsync, isPending } = useAction(sendOtpAction, {
     onSuccess: () => {
-      setEmail(getValues("email"));
+      setEmail(getValues("email").trim().toLowerCase());
       setPassword(getValues("password"));
       setStep("verify");
     },

@@ -8,7 +8,7 @@ import {
 } from "@/lib/prisma/sql-helpers";
 import { SHOPIFY_INTEGRATION_ID } from "@dub/utils";
 import { Prisma } from "@prisma/client";
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import { readShopifyCredentialSource } from "./credential-source";
 import { advanceLegacyShopifySessionRevision } from "./session-coordination";
 import { configuredShopifySessionScope } from "./session-snapshot";
@@ -59,6 +59,24 @@ export function shopifyCredentialVerificationHash(accessToken: string) {
   return createHash("sha256").update(accessToken).digest("hex");
 }
 
+function normalizeRawCredentialsObject(raw: unknown): Record<string, unknown> {
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+    return {};
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return {};
+}
+
 /**
  * Returns the digest of the credential that is actually persisted, rather
  * than trusting its mutable verification metadata. This is the optimistic
@@ -67,7 +85,9 @@ export function shopifyCredentialVerificationHash(accessToken: string) {
 export function readShopifyCredentialTokenHash(
   credentials: unknown,
 ): string | null {
-  const parsed = integrationCredentialsSchema.safeParse(credentials || {}).data;
+  const parsed = integrationCredentialsSchema.safeParse(
+    normalizeRawCredentialsObject(credentials),
+  ).data;
   if (!parsed?.accessToken) return null;
   try {
     return shopifyCredentialVerificationHash(
@@ -169,7 +189,7 @@ export async function verifyAndBindShopifyIntegrationCredential({
   let credentials: ReturnType<typeof integrationCredentialsSchema.parse>;
   try {
     credentials = integrationCredentialsSchema.parse(
-      installation.credentials || {},
+      normalizeRawCredentialsObject(installation.credentials),
     );
   } catch {
     return null;
@@ -230,7 +250,7 @@ export async function verifyAndBindShopifyIntegrationCredential({
         return null;
       }
       const currentCredentials = integrationCredentialsSchema.safeParse(
-        currentInstallation.credentials || {},
+        normalizeRawCredentialsObject(currentInstallation.credentials),
       ).data;
       if (
         !currentCredentials?.accessToken ||
@@ -298,7 +318,7 @@ export async function verifyAndBindShopifyIntegrationCredential({
       return { kind: "rejected" as const };
     }
     const currentCredentials = integrationCredentialsSchema.safeParse(
-      currentInstallation.credentials || {},
+      normalizeRawCredentialsObject(currentInstallation.credentials),
     ).data;
     if (!currentCredentials?.accessToken) {
       return { kind: "rejected" as const };
@@ -320,11 +340,7 @@ export async function verifyAndBindShopifyIntegrationCredential({
       configuredShopifySessionScope(store.shopDomain),
     );
     const upgradedCredentials = {
-      ...(currentInstallation.credentials &&
-      typeof currentInstallation.credentials === "object" &&
-      !Array.isArray(currentInstallation.credentials)
-        ? currentInstallation.credentials
-        : {}),
+      ...normalizeRawCredentialsObject(currentInstallation.credentials),
       shop: expectedShop,
       installationGeneration: expectedGeneration,
       shopVerifiedAt: new Date().toISOString(),

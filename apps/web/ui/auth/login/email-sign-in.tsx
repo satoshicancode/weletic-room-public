@@ -132,8 +132,20 @@ export const EmailSignIn = ({ next }: { next?: string }) => {
               router.push(finalNext || "/programs");
             } else if (subdomain === "admin") {
               router.push(finalNext || "/");
+            } else if (finalNext) {
+              router.push(finalNext);
+            } else if (response?.url) {
+              if (
+                typeof window !== "undefined" &&
+                response.url.startsWith("http") &&
+                !response.url.startsWith(window.location.origin)
+              ) {
+                window.location.href = response.url;
+              } else {
+                router.push(response.url);
+              }
             } else {
-              router.push(response?.url || finalNext || "/workspaces");
+              router.push("/workspaces");
             }
           }
         }}

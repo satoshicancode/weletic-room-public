@@ -44,6 +44,7 @@ export async function deleteDiscountCodes(
         id: {
           in: discountCodes.map(({ id }) => id),
         },
+        disabledAt: null,
       },
       data: {
         disabledAt: new Date(),

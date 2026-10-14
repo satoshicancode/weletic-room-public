@@ -44,20 +44,23 @@ export async function deleteExpiredShopifyPrivacyTombstonesBatch({
     UPDATE WeleticLoyaltyReferral
     SET metadata = JSON_REMOVE(metadata, '$.friendPrivacySnapshot'),
         updatedAt = UTC_TIMESTAMP(3)
-    WHERE JSON_CONTAINS_PATH(metadata, 'one', '$.friendPrivacySnapshot') = 1
-      AND (
-        COALESCE(JSON_TYPE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot')) <> 'OBJECT', TRUE)
-        OR COALESCE(CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.retainUntil'))), 0) <> 24
-        OR COALESCE(CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt'))), 0) <> 24
-        OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.retainUntil')), '') NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'
-        OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt')), '') NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'
-        OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.retainUntil')) <= ${now.toISOString()}
-        OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt')) <= ${captureCutoff}
-        OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt')) > ${now.toISOString()}
-        OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.retainUntil')) <= JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt'))
-      )
-    ORDER BY id ASC
-    LIMIT ${take}
+    WHERE id IN (
+      SELECT id FROM WeleticLoyaltyReferral
+      WHERE JSON_CONTAINS_PATH(metadata, 'one', '$.friendPrivacySnapshot') = 1
+        AND (
+          COALESCE(JSON_TYPE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot')) <> 'OBJECT', TRUE)
+          OR COALESCE(CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.retainUntil'))), 0) <> 24
+          OR COALESCE(CHAR_LENGTH(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt'))), 0) <> 24
+          OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.retainUntil')), '') NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'
+          OR COALESCE(JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt')), '') NOT REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$'
+          OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.retainUntil')) <= ${now.toISOString()}
+          OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt')) <= ${captureCutoff}
+          OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt')) > ${now.toISOString()}
+          OR JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.retainUntil')) <= JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.friendPrivacySnapshot.capturedAt'))
+        )
+      ORDER BY id ASC
+      LIMIT ${take}
+    )
   `;
   const [customerRows, shopRows] = await Promise.all([
     prisma.weleticShopifyCustomerPrivacyTombstone.findMany({

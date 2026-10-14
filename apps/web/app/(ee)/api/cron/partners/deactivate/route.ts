@@ -38,6 +38,9 @@ export const POST = withCron(async ({ rawBody }) => {
       },
       links: true,
       discountCodes: {
+        where: {
+          disabledAt: null,
+        },
         include: {
           discount: {
             select: {

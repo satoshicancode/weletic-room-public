@@ -29,5 +29,5 @@ export const GET = withWorkspace(
       })),
     );
   },
-  { requiredRoles: ["owner"] },
+  { requiredPermissions: ["integrations.read"], requiredRoles: ["owner"] },
 );

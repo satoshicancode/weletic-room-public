@@ -50,10 +50,10 @@ export async function readMerchantFirstRecordedConfirmedIssuancesSeries({
                AND BINARY h.accountId = BINARY active.accountId
                AND h.storeId = ${storeId}
                AND BINARY h.storeId = BINARY ${storeId}
-               AND h.issuanceConfirmedAt < CASE
-                 WHEN active.month = DATE_FORMAT(${startAt}, '%Y-%m') THEN ${startAt}
-                 ELSE STR_TO_DATE(CONCAT(active.month, '-01'), '%Y-%m-%d')
-               END
+               AND (
+                 DATE_FORMAT(h.issuanceConfirmedAt, '%Y-%m') < active.month
+                 OR (active.month = DATE_FORMAT(${startAt}, '%Y-%m') AND h.issuanceConfirmedAt < ${startAt})
+               )
                AND h.pointsSpent > 0
            ) THEN 1 ELSE 0 END) AS CHAR) AS firstRecordedConfirmedAccounts
     FROM (

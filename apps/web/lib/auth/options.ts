@@ -37,9 +37,11 @@ import { SSO_LOGIN_PROGRAMS } from "./sso-login-programs";
 import { trackDubLead } from "./track-dub-lead";
 
 const isHttps =
-  isProduction ||
-  process.env.NEXTAUTH_URL?.startsWith("https://") ||
-  !!process.env.VERCEL_URL;
+  process.env.PLAYWRIGHT_TEST !== "1" &&
+  !process.env.NEXTAUTH_URL?.startsWith("http://") &&
+  (isProduction ||
+    process.env.NEXTAUTH_URL?.startsWith("https://") ||
+    !!process.env.VERCEL_URL);
 const VERCEL_DEPLOYMENT = !!process.env.VERCEL_URL;
 
 const CustomPrismaAdapter = (p: PrismaClient) => {
@@ -271,15 +273,17 @@ export const authOptions: NextAuthOptions = {
           throw new Error("no-credentials");
         }
 
-        const { email, password } = credentials;
+        const { email: rawEmail, password } = credentials;
 
-        if (!email || !password) {
+        if (!rawEmail || !password) {
           throw new Error("no-credentials");
         }
 
+        const email = rawEmail.trim().toLowerCase();
+
         await assertRateLimit({
           policy: RATELIMIT_POLICIES.login,
-          identifier: email.trim().toLowerCase(),
+          identifier: email,
         });
 
         // SSO enforcement check

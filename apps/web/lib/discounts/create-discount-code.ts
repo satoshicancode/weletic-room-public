@@ -31,7 +31,7 @@ async function findFreeSuffixedCode(programId: string, baseCode: string) {
     let taken: { id: string } | null = null;
     for (const variant of codeVariants(candidate)) {
       taken = await prisma.discountCode.findFirst({
-        where: { programId, code: variant },
+        where: { programId, code: variant, disabledAt: null },
         select: { id: true },
       });
       if (taken) break;

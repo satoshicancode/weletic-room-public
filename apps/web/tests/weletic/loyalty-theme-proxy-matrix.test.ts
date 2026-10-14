@@ -431,5 +431,11 @@ describe("Theme Blocks & Storefront App Proxy Parity Matrix (Nhóm 1.4)", () => 
       expect(report.provenance.live).toBe(false);
       expect(report.summary.passedChecks).toBe(12);
     });
+
+    it("enforces fail-closed guardrail when --live is invoked without --confirm-staging", async () => {
+      await expect(runThemeAppProxyValidation({ live: true })).rejects.toThrow(
+        /confirm-staging/,
+      );
+    });
   });
 });

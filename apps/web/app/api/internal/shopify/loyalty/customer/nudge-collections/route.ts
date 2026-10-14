@@ -73,21 +73,14 @@ export async function GET(request: Request) {
     let storeId: string | null = store?.storeId ?? null;
 
     if (!storeId) {
-      const matchingProject =
-        typeof prisma?.project?.findFirst === "function"
-          ? await prisma.project.findFirst({
-              where: { shopifyStoreId: shop },
-              select: { id: true },
-            })
-          : null;
       const stores =
         typeof prisma?.weleticShopifyStore?.findMany === "function"
           ? await prisma.weleticShopifyStore.findMany({
               where: {
                 OR: [
                   { shopDomain: shop },
-                  ...(matchingProject
-                    ? [{ projectId: matchingProject.id }]
+                  ...(store?.workspaceId
+                    ? [{ projectId: store.workspaceId }]
                     : []),
                 ],
               },

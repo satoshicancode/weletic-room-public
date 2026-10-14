@@ -50,10 +50,10 @@ export async function readMerchantFirstRecordedEarnersSeries({
              WHERE h.accountId = active.accountId
                AND h.storeId = ${storeId}
                AND BINARY h.storeId = BINARY ${storeId}
-               AND h.createdAt < CASE
-                 WHEN active.month = DATE_FORMAT(${startAt}, '%Y-%m') THEN ${startAt}
-                 ELSE STR_TO_DATE(CONCAT(active.month, '-01'), '%Y-%m-%d')
-               END
+               AND (
+                 DATE_FORMAT(h.createdAt, '%Y-%m') < active.month
+                 OR (active.month = DATE_FORMAT(${startAt}, '%Y-%m') AND h.createdAt < ${startAt})
+               )
                AND h.entryType IN ('EARN_ORDER', 'EARN_REFERRAL', 'EARN_BONUS', 'TIER_BONUS')
                AND h.pointsDelta > 0
            ) THEN 1 ELSE 0 END) AS CHAR) AS firstRecordedAccounts

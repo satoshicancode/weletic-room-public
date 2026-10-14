@@ -66,11 +66,13 @@ export function augmentPrismaClientWithEnums() {
     }
   }
 
-  // 1. Runtime JS Augmentation across all entrypoints (including browser bundles)
+  // 1. Runtime JS Augmentation across all entrypoints (including browser, edge, and wasm bundles)
   const targetFiles: string[] = [
     path.join(prismaClientDir, "index.js"),
     path.join(prismaClientDir, "default.js"),
     path.join(prismaClientDir, "index-browser.js"),
+    path.join(prismaClientDir, "edge.js"),
+    path.join(prismaClientDir, "wasm.js"),
   ];
 
   if (dotPrismaDir) {
@@ -78,6 +80,8 @@ export function augmentPrismaClientWithEnums() {
       path.join(dotPrismaDir, "index.js"),
       path.join(dotPrismaDir, "default.js"),
       path.join(dotPrismaDir, "index-browser.js"),
+      path.join(dotPrismaDir, "edge.js"),
+      path.join(dotPrismaDir, "wasm.js"),
     );
   }
 
